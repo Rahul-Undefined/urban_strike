@@ -1,0 +1,20 @@
+{
+  "name": "urban-strike",
+  "version": "1.0.0",
+  "description": "Browser-based 2-4 player tactical FPS. Room codes, urban industrial map, full weapon sandbox.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

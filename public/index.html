@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>URBAN STRIKE — Tactical Browser FPS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="game-canvas"></canvas>
+
+<!-- ============ MENU LAYER ============ -->
+<div id="menu-layer">
+  <div class="menu-vignette"></div>
+
+  <!-- MAIN MENU -->
+  <section class="screen active" id="screen-main">
+    <div class="brand">
+      <div class="brand-eyebrow">SECTOR 7 // INDUSTRIAL DISTRICT</div>
+      <h1>URBAN<span>STRIKE</span></h1>
+      <div class="brand-sub">2–4 player tactical deathmatch · in your browser</div>
+    </div>
+    <div class="menu-actions">
+      <button class="btn btn-primary" id="btn-goto-create">CREATE ROOM</button>
+      <button class="btn" id="btn-goto-join">JOIN WITH CODE</button>
+    </div>
+    <div class="menu-foot">WASD move · SHIFT sprint · C crouch · Q/E lean · RMB aim · TAB scoreboard</div>
+  </section>
+
+  <!-- CREATE -->
+  <section class="screen" id="screen-create">
+    <h2 class="screen-title">CREATE ROOM</h2>
+    <div class="panel">
+      <label class="field"><span>CALLSIGN</span>
+        <input type="text" id="create-name" maxlength="14" placeholder="Your name" autocomplete="off">
+      </label>
+      <label class="field"><span>KILLS TO WIN</span>
+        <select id="create-kills"><option>5</option><option selected>10</option><option>15</option><option>20</option></select>
+      </label>
+      <label class="field"><span>TIME LIMIT</span>
+        <select id="create-time"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="15">15 min</option><option value="0">No limit</option></select>
+      </label>
+      <button class="btn btn-primary wide" id="btn-create">CREATE & GET CODE</button>
+      <button class="btn wide ghost" data-back>BACK</button>
+    </div>
+  </section>
+
+  <!-- JOIN -->
+  <section class="screen" id="screen-join">
+    <h2 class="screen-title">JOIN ROOM</h2>
+    <div class="panel">
+      <label class="field"><span>CALLSIGN</span>
+        <input type="text" id="join-name" maxlength="14" placeholder="Your name" autocomplete="off">
+      </label>
+      <label class="field"><span>ROOM CODE</span>
+        <input type="text" id="join-code" maxlength="5" placeholder="e.g. K7X2P" autocomplete="off" class="code-input">
+      </label>
+      <button class="btn btn-primary wide" id="btn-join">JOIN</button>
+      <button class="btn wide ghost" data-back>BACK</button>
+    </div>
+  </section>
+
+  <!-- LOBBY -->
+  <section class="screen" id="screen-lobby">
+    <h2 class="screen-title">STAGING AREA</h2>
+    <div class="lobby-grid">
+      <div class="panel code-panel">
+        <div class="code-label">ROOM CODE — SHARE THIS</div>
+        <div class="container-plate" id="lobby-code">·····</div>
+        <button class="btn small" id="btn-copy-code">COPY CODE</button>
+      </div>
+      <div class="panel">
+        <div class="panel-head">OPERATORS <span id="lobby-count">0/4</span></div>
+        <ul class="player-list" id="lobby-players"></ul>
+      </div>
+      <div class="panel" id="lobby-settings">
+        <div class="panel-head">MATCH RULES</div>
+        <label class="field"><span>KILLS TO WIN</span>
+          <select id="lobby-kills"><option>5</option><option>10</option><option>15</option><option>20</option></select>
+        </label>
+        <label class="field"><span>TIME LIMIT</span>
+          <select id="lobby-time"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="0">No limit</option></select>
+        </label>
+        <div class="hint" id="lobby-hint">Waiting for host to start…</div>
+        <button class="btn btn-primary wide" id="btn-start" style="display:none">START MATCH</button>
+        <button class="btn wide ghost" id="btn-leave">LEAVE ROOM</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ============ HUD LAYER ============ -->
+<div id="hud-layer" class="hidden">
+  <div id="crosshair"><i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="ch dot"></i></div>
+  <div id="hitmarker"></div>
+  <div id="scope-overlay" class="hidden"><div class="scope-ring"></div><div class="scope-line h"></div><div class="scope-line v"></div></div>
+
+  <div id="damage-vignette"></div>
+  <div id="flash-overlay"></div>
+  <div id="dmg-indicator"></div>
+
+  <div id="hud-top">
+    <div id="match-timer">10:00</div>
+    <div id="kill-target"></div>
+  </div>
+
+  <div id="killfeed"></div>
+
+  <div id="hud-bottom-left">
+    <div class="stat-bar"><div class="stat-label">HP</div><div class="bar"><div id="hp-fill" class="fill hp"></div></div><div class="stat-num" id="hp-num">100</div></div>
+    <div class="stat-bar"><div class="stat-label">AR</div><div class="bar"><div id="armor-fill" class="fill armor"></div></div><div class="stat-num" id="armor-num">50</div></div>
+  </div>
+
+  <div id="hud-bottom-right">
+    <div id="weapon-name">AK-47</div>
+    <div id="ammo"><span id="ammo-mag">30</span><span class="ammo-div">/</span><span id="ammo-reserve">120</span></div>
+    <div id="throw-counts"><span id="tc-frag">G ×2</span><span id="tc-smoke">T ×1</span><span id="tc-flash">F ×1</span></div>
+    <div id="reload-hint" class="hidden">RELOADING…</div>
+  </div>
+
+  <div id="interact-hint" class="hidden"></div>
+
+  <!-- Scoreboard -->
+  <div id="scoreboard" class="hidden">
+    <div class="sb-title">SCOREBOARD <span id="sb-code"></span></div>
+    <table><thead><tr><th>OPERATOR</th><th>K</th><th>D</th><th>PING</th></tr></thead><tbody id="sb-body"></tbody></table>
+  </div>
+
+  <!-- Death overlay -->
+  <div id="death-overlay" class="hidden">
+    <div class="death-title">K.I.A.</div>
+    <div class="death-sub" id="death-info"></div>
+    <div class="death-timer" id="death-timer">Redeploying in 3…</div>
+  </div>
+
+  <!-- Match end -->
+  <div id="end-overlay" class="hidden">
+    <div class="end-title" id="end-title">MATCH OVER</div>
+    <div class="end-sub" id="end-sub"></div>
+    <table class="end-table"><thead><tr><th>OPERATOR</th><th>K</th><th>D</th></tr></thead><tbody id="end-body"></tbody></table>
+    <button class="btn btn-primary" id="btn-back-lobby" style="display:none">BACK TO LOBBY</button>
+    <div class="hint" id="end-hint">Waiting for host…</div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause-overlay" class="hidden">
+    <div class="pause-panel panel">
+      <div class="panel-head">PAUSED</div>
+      <label class="field"><span>SENSITIVITY <b id="sens-val">1.0</b></span>
+        <input type="range" id="sens-range" min="0.2" max="3" step="0.1" value="1">
+      </label>
+      <label class="field"><span>VOLUME <b id="vol-val">70%</b></span>
+        <input type="range" id="vol-range" min="0" max="100" step="5" value="70">
+      </label>
+      <label class="field check"><input type="checkbox" id="quality-shadows" checked><span>Dynamic shadows (turn off on slow PCs)</span></label>
+      <button class="btn btn-primary wide" id="btn-resume">RESUME (click)</button>
+      <button class="btn wide ghost" id="btn-quit">QUIT TO MENU</button>
+    </div>
+  </div>
+
+  <div id="click-to-play" class="hidden"><div>CLICK TO TAKE CONTROL</div></div>
+</div>
+
+<div id="toasts"></div>
+<div id="loading" class="hidden"><div class="loader-bar"></div><div>BUILDING SECTOR 7…</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="js/shared-config.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/map.js"></script>
+<script src="js/effects.js"></script>
+<script src="js/player.js"></script>
+<script src="js/weapons.js"></script>
+<script src="js/network.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
