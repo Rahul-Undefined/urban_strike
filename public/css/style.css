@@ -245,3 +245,50 @@ button { font-family: var(--disp); cursor: pointer; }
 #scoreboard tr.team-hdr.tb td, .end-table tr.team-hdr.tb td { color: #4fa3e0; }
 .end-title.team-a { color: #f0a232; }
 .end-title.team-b { color: #4fa3e0; }
+
+/* ============ v3 additions ============ */
+
+/* dynamic crosshair: bars spread with --chgap set from live weapon spread */
+#crosshair { --chgap: 6px; }
+#crosshair .ch { position: absolute; background: rgba(240,245,248,0.92); box-shadow: 0 0 3px rgba(0,0,0,0.7); }
+#crosshair .ch.t { width: 2px; height: 9px; left: -1px; top: calc(-1 * var(--chgap) - 9px); }
+#crosshair .ch.b { width: 2px; height: 9px; left: -1px; top: var(--chgap); }
+#crosshair .ch.l { width: 9px; height: 2px; top: -1px; left: calc(-1 * var(--chgap) - 9px); }
+#crosshair .ch.r { width: 9px; height: 2px; top: -1px; left: var(--chgap); }
+#crosshair .ch.dot { width: 2px; height: 2px; left: -1px; top: -1px; }
+
+/* center announcements (multikills, sprees, assists) */
+#announce { position: absolute; top: 21%; left: 0; right: 0; text-align: center; pointer-events: none; z-index: 30; }
+#announce .ann {
+  font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 42px; letter-spacing: 4px;
+  color: #ffb340; text-shadow: 0 0 14px rgba(255,140,40,0.55), 0 2px 4px rgba(0,0,0,0.8);
+  animation: annPop 2.2s ease-out forwards;
+}
+#announce .ann.minor { font-size: 22px; color: #9fd6ff; letter-spacing: 2px; animation-duration: 1.5s; }
+@keyframes annPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  12% { transform: scale(1.12); opacity: 1; }
+  22% { transform: scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+/* grenade cook bar */
+#cook-bar { width: 150px; height: 7px; background: rgba(10,14,18,0.75); border: 1px solid rgba(240,162,50,0.5); margin-top: 6px; margin-left: auto; }
+#cook-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #e2503c, #f0a232); transition: width 0.05s linear; }
+
+/* equipped attachments */
+#att-list { display: flex; gap: 6px; justify-content: flex-end; margin-bottom: 4px; flex-wrap: wrap; }
+#att-list span {
+  font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 1px;
+  color: #9fb2c4; background: rgba(16,22,28,0.7); border: 1px solid rgba(120,150,175,0.35);
+  padding: 2px 6px; text-transform: uppercase;
+}
+
+/* wider scoreboard for the new columns */
+#scoreboard table { min-width: 560px; }
+#scoreboard th:nth-child(n+2), #scoreboard td:nth-child(n+2) { text-align: center; min-width: 48px; }
+
+/* killfeed rows slide in */
+#killfeed > div { animation: feedIn 0.22s ease-out; }
+@keyframes feedIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }

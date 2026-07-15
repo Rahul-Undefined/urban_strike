@@ -27,7 +27,7 @@
       <button class="btn btn-primary" id="btn-goto-create">CREATE ROOM</button>
       <button class="btn" id="btn-goto-join">JOIN WITH CODE</button>
     </div>
-    <div class="menu-foot">WASD move · SHIFT sprint · C crouch · Q/E lean · RMB aim · TAB scoreboard</div>
+    <div class="menu-foot">WASD move · SHIFT sprint · C crouch · Q/E lean · RMB aim · hold G cook frag · 9 exclusive · TAB scoreboard</div>
   </section>
 
   <!-- CREATE -->
@@ -113,6 +113,7 @@
     <div id="team-score" class="hidden"></div>
     <div id="kill-target"></div>
   </div>
+  <div id="announce"></div>
 
   <canvas id="minimap" width="200" height="200"></canvas>
 
@@ -124,9 +125,11 @@
   </div>
 
   <div id="hud-bottom-right">
+    <div id="att-list"></div>
     <div id="weapon-name">AK-47</div>
     <div id="ammo"><span id="ammo-mag">30</span><span class="ammo-div">/</span><span id="ammo-reserve">120</span></div>
     <div id="throw-counts"><span id="tc-frag">G ×2</span><span id="tc-smoke">T ×1</span><span id="tc-flash">F ×1</span></div>
+    <div id="cook-bar" class="hidden"><div id="cook-fill"></div></div>
     <div id="reload-hint" class="hidden">RELOADING…</div>
   </div>
 
@@ -135,7 +138,7 @@
   <!-- Scoreboard -->
   <div id="scoreboard" class="hidden">
     <div class="sb-title">SCOREBOARD <span id="sb-code"></span></div>
-    <table><thead><tr><th>OPERATOR</th><th>K</th><th>D</th><th>PING</th></tr></thead><tbody id="sb-body"></tbody></table>
+    <table><thead><tr><th>OPERATOR</th><th>K</th><th>D</th><th>A</th><th>DMG</th><th>STREAK</th><th>PING</th></tr></thead><tbody id="sb-body"></tbody></table>
   </div>
 
   <!-- Death overlay -->

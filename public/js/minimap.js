@@ -88,6 +88,14 @@ var Minimap = (function () {
         if (detected) dot(rx, rz, 4.2, '#e8563e', true);
       }
     });
+
+    // airdrop beacons — pulsing gold blips
+    Pickups.getBeacons().forEach(function (b) {
+      var bx = (b.x - px) * SCALE, bz = (b.z - pz) * SCALE;
+      if (bx * bx + bz * bz > (R + 14) * (R + 14)) return;
+      var pulse = 4 + Math.sin(now * 0.007) * 1.6;
+      dot(bx, bz, pulse, '#f0c040', true);
+    });
     ctx.restore();
 
     // self arrow (always centered, pointing up)

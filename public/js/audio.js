@@ -96,11 +96,21 @@ var AudioSys = (function () {
     uzi:     { body: { f0: 4200, f1: 1100, dur: 0.07, vol: 0.38 },crack: { f: 3000, dur: 0.02, vol: 0.2, type: 'square' } },
     shotgun: { body: { f0: 1300, f1: 230, dur: 0.34, vol: 0.85 }, crack: { f: 700, dur: 0.06, vol: 0.32, type: 'sawtooth' },  boom: { f0: 95, f1: 38, dur: 0.4, vol: 0.62 } },
     pistol:  { body: { f0: 2900, f1: 720, dur: 0.11, vol: 0.48 }, crack: { f: 1950, dur: 0.03, vol: 0.22, type: 'square' },   boom: { f0: 170, f1: 90, dur: 0.07, vol: 0.14 } },
-    rocket:  { body: { f0: 800, f1: 160, dur: 0.7, vol: 0.85, ftype: 'bandpass' }, crack: { f: 420, dur: 0.09, vol: 0.3, type: 'sawtooth' }, boom: { f0: 80, f1: 30, dur: 0.5, vol: 0.55 } }
+    rocket:  { body: { f0: 800, f1: 160, dur: 0.7, vol: 0.85, ftype: 'bandpass' }, crack: { f: 420, dur: 0.09, vol: 0.3, type: 'sawtooth' }, boom: { f0: 80, f1: 30, dur: 0.5, vol: 0.55 } },
+    scarh:   { body: { f0: 2400, f1: 480, dur: 0.17, vol: 0.6 },  crack: { f: 1600, dur: 0.045, vol: 0.26, type: 'square' },  boom: { f0: 125, f1: 58, dur: 0.15, vol: 0.32 }, mech: { f: 700, vol: 0.09 } },
+    mk14:    { body: { f0: 2000, f1: 340, dur: 0.24, vol: 0.7 },  crack: { f: 1200, dur: 0.055, vol: 0.3, type: 'sawtooth' }, boom: { f0: 110, f1: 48, dur: 0.22, vol: 0.4 } },
+    p90:     { body: { f0: 4600, f1: 1300, dur: 0.06, vol: 0.36 },crack: { f: 3300, dur: 0.018, vol: 0.18, type: 'square' } },
+    m249:    { body: { f0: 1900, f1: 380, dur: 0.15, vol: 0.62 }, crack: { f: 1000, dur: 0.05, vol: 0.24, type: 'square' },   boom: { f0: 105, f1: 50, dur: 0.18, vol: 0.42 }, mech: { f: 520, vol: 0.12 } },
+    awm:     { body: { f0: 1400, f1: 170, dur: 0.7, vol: 1.0 },   crack: { f: 780, dur: 0.08, vol: 0.42, type: 'sawtooth' },  boom: { f0: 92, f1: 28, dur: 0.62, vol: 0.78 } }
   };
-  function shot(weapon, pos) {
+  function shot(weapon, pos, opts) {
     if (!ctx) return;
     if (weapon === 'knife') { noiseBurst(pos, { ftype: 'highpass', f0: 3800, dur: 0.09, vol: 0.28 }); return; }
+    if (opts && opts.supp) { // suppressed: soft thup + action click
+      noiseBurst(pos, { f0: 1300, f1: 420, dur: 0.09, vol: 0.2, ftype: 'bandpass' });
+      setTimeout(function () { tone(pos, { type: 'square', f0: 750, f1: 480, dur: 0.02, vol: 0.08 }); }, 25);
+      return;
+    }
     var s = SHOT[weapon] || SHOT.pistol;
     noiseBurst(pos, { f0: s.body.f0, f1: s.body.f1, dur: s.body.dur, vol: s.body.vol, ftype: s.body.ftype });
     tone(pos, { type: s.crack.type, f0: s.crack.f, f1: s.crack.f * 0.35, dur: s.crack.dur, vol: s.crack.vol });
@@ -171,6 +181,19 @@ var AudioSys = (function () {
       setTimeout(function () { tone(pos, { type: 'square', f0: 980, f1: 640, dur: 0.05, vol: 0.2 }); }, 170);
     }
   }
+  function planeFlyby() { // distant cargo plane pass for the airdrop
+    if (!ctx) return;
+    noiseBurst(null, { ftype: 'bandpass', f0: 220, f1: 90, dur: 2.6, vol: 0.22 });
+    tone(null, { type: 'sawtooth', f0: 95, f1: 62, dur: 2.4, vol: 0.1 });
+  }
+  function crateThud(pos) {
+    tone(pos, { type: 'sine', f0: 110, f1: 34, dur: 0.4, vol: 0.6 });
+    noiseBurst(pos, { f0: 900, f1: 150, dur: 0.3, vol: 0.4 });
+  }
+  function stinger(big) { // kill-streak / multikill announcement
+    tone(null, { type: 'square', f0: 620, f1: 620, dur: 0.07, vol: 0.16 });
+    setTimeout(function () { tone(null, { type: 'square', f0: big ? 930 : 830, f1: big ? 930 : 830, dur: 0.11, vol: 0.18 }); }, 90);
+  }
   function flashRing(intensity) {
     if (!ctx) return;
     var t = ctx.currentTime;
@@ -211,6 +234,7 @@ var AudioSys = (function () {
     init: init, resume: resume, setVolume: setVolume, updateListener: updateListener, ambient: ambient,
     shot: shot, reload: reload, magIn: magIn, bolt: bolt, step: step,
     dryFire: dryFire, shellIn: shellIn, pickupSnd: pickupSnd,
+    planeFlyby: planeFlyby, crateThud: crateThud, stinger: stinger,
     explosion: explosion, impact: impact, flesh: flesh, hitmark: hitmark,
     whoosh: whoosh, bounce: bounce, pinPull: pinPull, flashRing: flashRing,
     uiClick: uiClick, death: death

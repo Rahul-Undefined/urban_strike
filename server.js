@@ -49,6 +49,7 @@ function makeRoom(hostSocket, name, settings) {
     settings: {
       killTarget: clampOpt(settings && settings.killTarget, CFG.MATCH.killOptions, CFG.MATCH.defaultKills),
       minutes: clampOpt(settings && settings.minutes, CFG.MATCH.timeOptions, CFG.MATCH.defaultMinutes),
+      airdropSec: settings && settings.airdropSec ? Math.max(5, Math.min(600, settings.airdropSec | 0)) : 0,
       mode
     },
     players: new Map(),
@@ -70,8 +71,9 @@ function addPlayer(room, socket, name) {
     color: CFG.COLORS[0],
     team: null,
     joinOrder: joinCounter++,
-    kills: 0, deaths: 0, ping: 0,
+    kills: 0, deaths: 0, assists: 0, damage: 0, streak: 0, ping: 0,
     hp: CFG.PLAYER.hp, armorLvl: 0, armorDur: 0, alive: false,
+    protUntil: 0, att: { sight: null, muzzle: null, mag: null }, exW: {}, rd: {},
     pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0, mv: 0, wp: 0, ln: 0,
     lastShotAt: {}, history: [], respawnAt: 0
   };
@@ -104,7 +106,8 @@ function lobbyPayload(room) {
     settings: room.settings,
     players: [...room.players.values()].map(p => ({
       id: p.id, name: p.name, color: p.color, team: p.team,
-      kills: p.kills, deaths: p.deaths, ping: p.ping
+      kills: p.kills, deaths: p.deaths, assists: p.assists,
+      damage: Math.round(p.damage), streak: p.streak, ping: p.ping
     }))
   };
 }
@@ -134,17 +137,46 @@ function pickSpawn(room, forP) {
 function spawnPlayer(room, p) {
   const s = pickSpawn(room, p);
   p.hp = CFG.PLAYER.hp; p.armorLvl = 0; p.armorDur = 0; p.alive = true;
+  p.protUntil = now() + CFG.MATCH.spawnProtect * 1000;
   p.pos = [s[0], 0.95, s[1]]; p.ry = s[2]; p.history = [];
-  io.to(room.code).emit('spawn', { id: p.id, pos: p.pos, ry: p.ry });
+  io.to(room.code).emit('spawn', { id: p.id, pos: p.pos, ry: p.ry, prot: CFG.MATCH.spawnProtect });
 }
 
-// ---------- pickups (server-authoritative) ----------
+// ---------- dynamic loot (server-authoritative) ----------
+// Every match rolls fresh loot across CFG.LOOT_POINTS by point class + rarity
+// weights, with guarantees: an L3 vest and at least one legendary weapon exist.
 function initPickups(room) {
-  room.pickups = CFG.PICKUP_SPOTS.map((s, i) => ({
-    id: i, type: s[0], pos: [s[1], s[2], s[3]], active: true, respawnAt: 0
-  }));
+  const items = CFG.LOOT_ITEMS;
+  const byRar = { c: [], r: [], l: [] };
+  for (const t in items) byRar[items[t].rar].push(t);
+  room.nextLootId = 0;
+  room.pickups = [];
+  let hasA3 = false, hasLegW = false;
+  CFG.LOOT_POINTS.forEach(pt => {
+    const w = CFG.LOOT_WEIGHTS[pt[3]] || CFG.LOOT_WEIGHTS.g;
+    let roll = Math.random(), t = null;
+    if (roll >= w.empty) {
+      roll -= w.empty;
+      const rar = roll < w.c ? 'c' : (roll < w.c + w.r ? 'r' : 'l');
+      const pool = byRar[rar];
+      t = pool[Math.floor(Math.random() * pool.length)];
+    }
+    if (!t) return;
+    if (t === 'armor3') hasA3 = true;
+    if (items[t].kind === 'weapon' && items[t].rar === 'l') hasLegW = true;
+    room.pickups.push({ id: room.nextLootId++, t, pos: [pt[0], pt[1], pt[2]], cls: pt[3], active: true, respawnAt: 0 });
+  });
+  const sigs = room.pickups.filter(p => p.cls === 's');
+  if (!hasA3 && sigs.length) sigs[Math.floor(Math.random() * sigs.length)].t = 'armor3';
+  if (!hasLegW) {
+    const cand = room.pickups.filter(p => (p.cls === 's' || p.cls === 'h') && p.t !== 'armor3');
+    if (cand.length) {
+      const pool = CFG.AIRDROP.weaponPool;
+      cand[Math.floor(Math.random() * cand.length)].t = pool[Math.floor(Math.random() * pool.length)];
+    }
+  }
 }
-function pickupList(room) { return room.pickups.map(pk => ({ id: pk.id, active: pk.active })); }
+function pickupList(room) { return room.pickups.map(pk => ({ id: pk.id, t: pk.t, p: pk.pos, active: pk.active })); }
 
 function tryCollect(room, p) {
   if (!p.alive) return;
@@ -154,20 +186,31 @@ function tryCollect(room, p) {
     const dx = p.pos[0] - pk.pos[0], dy = p.pos[1] - pk.pos[1], dz = p.pos[2] - pk.pos[2];
     if (dx * dx + dz * dz > R * R || Math.abs(dy) > 1.3) continue;
 
-    const def = CFG.PICKUPS[pk.type];
-    if (pk.type === 'health') {
+    const it = CFG.LOOT_ITEMS[pk.t];
+    let grant = null;
+    if (it.kind === 'heal') {
       if (p.hp >= CFG.PLAYER.hp) continue;
-      p.hp = Math.min(CFG.PLAYER.hp, p.hp + def.heal);
-    } else {
-      const lvl = def.lvl, max = CFG.ARMOR[lvl].dur;
-      const upgrade = lvl > p.armorLvl || (lvl === p.armorLvl && p.armorDur < max * 0.5);
-      if (!upgrade) continue;
-      p.armorLvl = lvl; p.armorDur = max;
+      p.hp = Math.min(CFG.PLAYER.hp, p.hp + it.heal);
+    } else if (it.kind === 'armor') {
+      const max = CFG.ARMOR[it.lvl].dur;
+      const up = it.lvl > p.armorLvl || (it.lvl === p.armorLvl && p.armorDur < max * 0.5);
+      if (!up) continue;
+      p.armorLvl = it.lvl; p.armorDur = max;
+    } else if (it.kind === 'att') {
+      if (p.att[CFG.ATTACH[it.a].cat] === it.a) continue; // already equipped
+      p.att[CFG.ATTACH[it.a].cat] = it.a;
+      grant = { t: 'att', a: it.a };
+    } else if (it.kind === 'weapon') {
+      if (p.exW[it.w]) grant = { t: 'ammoFor', w: it.w };
+      else { p.exW[it.w] = 1; grant = { t: 'weapon', w: it.w }; }
+    } else if (it.kind === 'ammo') {
+      grant = { t: 'ammo' };
     }
     pk.active = false;
-    pk.respawnAt = now() + def.respawn * 1000;
+    pk.respawnAt = pk.noRespawn ? Infinity : now() + CFG.LOOT_RESPAWN[it.rar] * 1000;
     io.to(p.id).emit('vitals', { hp: Math.round(p.hp), lv: p.armorLvl, du: Math.round(p.armorDur) });
-    io.to(room.code).emit('pickup', { id: pk.id, by: p.id, type: pk.type });
+    if (grant) io.to(p.id).emit('grant', grant);
+    io.to(room.code).emit('pickup', { id: pk.id, by: p.id, t: pk.t });
   }
 }
 function respawnPickups(room) {
@@ -180,12 +223,43 @@ function respawnPickups(room) {
   }
 }
 
+// ---------- airdrops ----------
+function scheduleAirdrop(room) {
+  clearAirdrop(room);
+  const period = Math.max(5, Math.min(600, room.settings.airdropSec || CFG.AIRDROP.periodSec)) * 1000;
+  room.dropTimer = setInterval(() => dropCrate(room), period);
+}
+function clearAirdrop(room) {
+  if (room.dropTimer) { clearInterval(room.dropTimer); room.dropTimer = null; }
+  if (room.dropFall) { clearTimeout(room.dropFall); room.dropFall = null; }
+}
+function dropCrate(room) {
+  if (room.state !== 'playing') return;
+  const pt = CFG.AIRDROP.points[Math.floor(Math.random() * CFG.AIRDROP.points.length)];
+  io.to(room.code).emit('airdrop', { x: pt[0], z: pt[1], landAt: now() + CFG.AIRDROP.fallSec * 1000 });
+  room.dropFall = setTimeout(() => {
+    if (room.state !== 'playing') return;
+    const wp = CFG.AIRDROP.weaponPool, ap = CFG.AIRDROP.attPool;
+    const types = [wp[(Math.random() * wp.length) | 0], 'armor3', 'medkit', ap[(Math.random() * ap.length) | 0]];
+    const offs = [[0.95, 0], [-0.95, 0], [0, 0.95], [0, -0.95]];
+    const items = types.map((t, i) => {
+      const pk = { id: room.nextLootId++, t, pos: [pt[0] + offs[i][0], 1.35, pt[1] + offs[i][1]], cls: 's', active: true, respawnAt: 0, noRespawn: true };
+      room.pickups.push(pk);
+      return { id: pk.id, t: pk.t, p: pk.pos, active: true };
+    });
+    io.to(room.code).emit('lootAdd', { items, x: pt[0], z: pt[1] });
+  }, CFG.AIRDROP.fallSec * 1000);
+}
+
 // ---------- match lifecycle ----------
 function startMatch(room) {
   room.state = 'playing';
   room.startedAt = now();
   room.teamKills = { a: 0, b: 0 };
-  for (const p of room.players.values()) { p.kills = 0; p.deaths = 0; }
+  for (const p of room.players.values()) {
+    p.kills = 0; p.deaths = 0; p.assists = 0; p.damage = 0; p.streak = 0;
+    p.att = { sight: null, muzzle: null, mag: null }; p.exW = {}; p.rd = {};
+  }
   refreshTeamsAndColors(room);
   initPickups(room);
   io.to(room.code).emit('matchStart', {
@@ -197,6 +271,7 @@ function startMatch(room) {
   });
   for (const p of room.players.values()) spawnPlayer(room, p);
   startSnapshots(room);
+  scheduleAirdrop(room);
   if (room.settings.minutes > 0) {
     room.timer = setTimeout(() => endMatch(room, null, 'time'), room.settings.minutes * 60000);
   }
@@ -204,8 +279,10 @@ function startMatch(room) {
 
 function startSnapshots(room) {
   stopSnapshots(room);
+  room.snapN = 0;
   room.snapTimer = setInterval(() => {
     respawnPickups(room);
+    if (++room.snapN % 60 === 0) pushLobby(room); // live K/D/assists/damage refresh (~4 s)
     const players = {};
     for (const p of room.players.values()) {
       players[p.id] = {
@@ -229,6 +306,7 @@ function endMatch(room, winnerId, reason) {
   room.state = 'ended';
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
   stopSnapshots(room);
+  clearAirdrop(room);
   const teams = modeInfo(room).teams;
   let winnerTeam = null;
   if (teams) {
@@ -264,47 +342,73 @@ function weaponServerDamage(weapon, part, pellets, dist) {
   return dmg;
 }
 
-function applyDamage(room, victim, dmg, attackerId, weapon, headshot) {
+function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank) {
   if (!victim.alive) return;
   const attacker = room.players.get(attackerId);
   const teams = modeInfo(room).teams;
   // friendly fire off in team modes (self-damage from explosives still allowed)
   if (teams && attacker && attackerId !== victim.id && attacker.team === victim.team) return;
+  // spawn protection (attacking others still allowed; being hit is not)
+  if (victim.protUntil > now() && attackerId !== victim.id) return;
 
-  // tiered armor with durability
+  // tiered armor with durability; point-blank explosives ignore armor entirely
   let soaked = 0;
-  if (victim.armorLvl > 0) {
+  if (pointBlank) {
+    victim.armorLvl = 0; victim.armorDur = 0;
+    victim.hp = 0;
+  } else if (victim.armorLvl > 0) {
     const rate = CFG.ARMOR[victim.armorLvl].absorb;
     soaked = Math.min(victim.armorDur, dmg * rate);
     victim.armorDur -= soaked;
     if (victim.armorDur <= 0.5) { victim.armorLvl = 0; victim.armorDur = 0; }
   }
-  victim.hp = Math.max(0, victim.hp - (dmg - soaked));
+  if (!pointBlank) victim.hp = Math.max(0, victim.hp - (dmg - soaked));
+  // scoreboard credit + assist bookkeeping
+  if (attacker && attackerId !== victim.id) {
+    attacker.damage += dmg;
+    const rec = victim.rd[attackerId] || (victim.rd[attackerId] = { d: 0, t: 0 });
+    rec.d += dmg; rec.t = now();
+  }
 
   io.to(victim.id).emit('damaged', {
     hp: Math.round(victim.hp), lv: victim.armorLvl, du: Math.round(victim.armorDur),
     from: attackerId, fromPos: attacker ? attacker.pos : null
   });
   if (attacker && attackerId !== victim.id) {
-    io.to(attackerId).emit('hitConfirm', { dmg: Math.round(dmg), headshot: !!headshot, kill: victim.hp <= 0 });
+    io.to(attackerId).emit('hitConfirm', { dmg: Math.round(dmg), headshot: !!headshot, kill: victim.hp <= 0, v: victim.id });
   }
 
   if (victim.hp <= 0) {
     victim.alive = false;
     victim.deaths++;
     victim.respawnAt = now() + CFG.MATCH.respawnDelay * 1000;
-    let killerName = 'the world';
+    let killerName = 'the world', killerStreak = 0;
     if (attacker) {
       if (attackerId === victim.id) { killerName = victim.name; }
       else {
         attacker.kills++;
+        attacker.streak++;
+        killerStreak = attacker.streak;
         killerName = attacker.name;
         if (teams && attacker.team) room.teamKills[attacker.team]++;
       }
     }
+    // assists: meaningful damage shortly before the kill, by someone else
+    const assistIds = [];
+    const cutoff = now() - CFG.MATCH.assistWindow * 1000;
+    for (const aid in victim.rd) {
+      if (aid === attackerId || aid === victim.id) continue;
+      const rec = victim.rd[aid];
+      if (rec.t >= cutoff && rec.d >= CFG.MATCH.assistMinDmg) {
+        const ap = room.players.get(aid);
+        if (ap) { ap.assists++; assistIds.push(aid); }
+      }
+    }
+    victim.rd = {};
+    victim.streak = 0;
     io.to(room.code).emit('death', {
       victimId: victim.id, victimName: victim.name,
-      killerId: attackerId, killerName,
+      killerId: attackerId, killerName, killerStreak, assistIds,
       weapon, headshot: !!headshot, self: attackerId === victim.id
     });
     pushLobby(room);
@@ -425,7 +529,9 @@ io.on('connection', (socket) => {
   // Cosmetic shot relay (muzzle flash / tracer / sound on other clients)
   socket.on('shoot', (d) => {
     const room = getRoom(socket); if (!room || room.state !== 'playing') return;
-    socket.to(room.code).emit('shoot', { id: socket.id, w: d && d.w, o: d && d.o, dir: d && d.dir });
+    const p = room.players.get(socket.id);
+    if (p) p.protUntil = 0;
+    socket.to(room.code).emit('shoot', { id: socket.id, w: d && d.w, o: d && d.o, dir: d && d.dir, sup: d && d.sup ? 1 : 0 });
   });
 
   socket.on('proj', (d) => {
@@ -442,6 +548,7 @@ io.on('connection', (socket) => {
   socket.on('hit', (d) => {
     const room = getRoom(socket); if (!room || room.state !== 'playing') return;
     const shooter = room.players.get(socket.id); if (!shooter || !shooter.alive) return;
+    shooter.protUntil = 0;
     if (!d || !CFG.WEAPONS[d.w] && d.w !== 'frag') return;
     const victim = room.players.get(d.victim); if (!victim || !victim.alive) return;
 
@@ -450,18 +557,20 @@ io.on('connection', (socket) => {
     if (!explosive && !fireRateOk(shooter, d.w)) return;
     if (!positionPlausible(victim, d.vp)) return;
 
-    let dmg;
+    let dmg, pointBlank = false;
     if (d.w === 'frag') {
       dmg = Math.max(0, Math.min(CFG.THROWS.frag.dmg, num(d.dmg)));
+      pointBlank = dmg >= CFG.THROWS.frag.dmg - 0.5; // hugged the blast -> guaranteed kill
     } else if (d.w === 'rocket') {
       dmg = Math.max(0, Math.min(CFG.WEAPONS.rocket.dmg, num(d.dmg)));
+      pointBlank = dmg >= CFG.WEAPONS.rocket.dmg - 0.5;
     } else {
       const dx = shooter.pos[0] - victim.pos[0], dy = shooter.pos[1] - victim.pos[1], dz = shooter.pos[2] - victim.pos[2];
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
       dmg = weaponServerDamage(d.w, d.part, d.pellets, dist);
     }
     if (dmg <= 0) return;
-    applyDamage(room, victim, dmg, socket.id, d.w, d.part === 'head');
+    applyDamage(room, victim, dmg, socket.id, d.w, d.part === 'head', pointBlank);
   });
 
   socket.on('respawn', () => {
@@ -479,6 +588,7 @@ io.on('connection', (socket) => {
     room.players.delete(socket.id);
     if (room.players.size === 0) {
       stopSnapshots(room);
+      clearAirdrop(room);
       if (room.timer) clearTimeout(room.timer);
       rooms.delete(room.code);
       return;

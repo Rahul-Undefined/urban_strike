@@ -2,19 +2,19 @@
 
 A Counter-Strike-inspired shooter you run yourself. No accounts, no downloads for your friends — you share a 5-letter room code, they open a link.
 
-**Map:** "Sector 7" industrial district — enterable warehouse, 3-floor apartment with rooftop sniper nest, office, garage, watchtower, container yards, a **sunken tunnel**, a **construction site** with crane and open sniper decks, the huge **Depot B** warehouse with roof access, **row houses** with a climbable middle rooftop, and a west **rail yard bunker**.
+**Map:** "Sector 7" industrial district — enterable warehouse, 3-floor apartment with rooftop sniper nest, office with a **roof fire-escape**, garage, watchtower, container yards, a **sunken tunnel**, a **construction site** with crane and open sniper decks, the huge **Depot B** warehouse with roof access, **row houses** — all three roofs climbable, each with a **floor-2 balcony** — and a west **rail yard bunker**.
 
 **Modes:** Free For All (up to 10), 3v3, 5v5 — automatic team balancing, team colors, friendly fire off, first team to the kill target wins.
 
-**Weapons:** AK-47, M4A1, bolt-action sniper (with scope), Uzi, pump shotgun, pistol, rocket launcher, knife + frag / smoke / flash grenades. Every gun has its own firing, reload, and dry-fire sound, brass shell ejection, and a recoil pattern with horizontal drift.
+**Weapons:** AK-47, M4A1, bolt-action sniper (with scope), Uzi, pump shotgun, pistol, rocket launcher, knife + frag / smoke / flash grenades. **Frags can be cooked** — hold G, release to throw with the remaining fuse; hold too long and it goes off in your hands. Point-blank explosions are a guaranteed kill through any armor. Five **exclusive weapons** (SCAR-H, MK14 EBR, P90, M249, AWM) exist only as loot — pick one up and it lives in slot 9.
 
-**Pickups:** health packs (+50) and PUBG-style armor vests — L1 common, L2 uncommon, **one single L3 on the apartment roof**. Armor has durability and breaks; your HUD shows the level badge and remaining durability. Everything respawns on timers.
+**Dynamic loot:** every match rolls fresh loot across ~47 points (streets, interiors, rooftops) by rarity — common / rare / legendary rings under each item. Bandages, health packs, med kits, energy drinks, painkillers, ammo caches, L1/L2/L3 vests, **8 attachments** (red dot, 2x, 4x, extended mag, quickdraw mag, suppressor, flash hider, compensator — auto-equipped, stats update instantly), and the exclusive weapons. One L3 vest and at least one legendary weapon are guaranteed per match. **Airdrops** arrive every ~2.5 minutes: a crate falls from the sky with a smoke column, gold light beacon, and minimap blip — inside: a legendary weapon, L3 vest, med kit, and a strong attachment.
 
-**HUD:** rotating minimap (top-right) with teammate dots and enemy detection when they fire or get close, enemy health bars that appear when a target is recently hurt, kill feed, team score, scoreboard.
+**HUD:** rotating minimap with airdrop beacons and enemy detection (suppressors shrink your ping window), floating damage numbers, dynamic spread crosshair, kill-streak and multikill announcements, assist credit, live TAB scoreboard (K / D / A / damage / streak / ping), enemy health bars, kill feed, grenade cook bar, equipped-attachment tags.
 
-**Netcode:** server-authoritative health, armor, and pickups; hit validation with fire-rate + position-history checks; 15 Hz snapshots with client interpolation; team-aware spawn selection.
+**Netcode:** server-authoritative health, armor, loot, grants, assists, streaks, and spawn protection (2.5 s, ends when you attack); hit validation with fire-rate + position-history checks; 15 Hz snapshots with client interpolation.
 
-**Audio:** every sound is synthesized in the browser (Web Audio) — zero audio files.
+**Audio:** every sound is synthesized in the browser (Web Audio) — zero audio files, including the airdrop plane and suppressed gunfire.
 
 ---
 

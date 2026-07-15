@@ -764,7 +764,7 @@ World._buildPart3 = function (T) {
       var base = f * 3.35, top = (f === 0) ? 3.35 : 6.2;
       var front = [win(cx - 3.9, base + 1.05, 1.3, 1.15), win(cx + 2.6, base + 1.05, 1.3, 1.15)];
       if (f === 0) front.push({ u0: cx - 0.65, u1: cx + 0.65, v0: 0, v1: 2.25 });
-      else front.push(win(cx - 0.65, base + 1.05, 1.3, 1.15));
+      else front.push({ u0: cx - 0.65, u1: cx + 0.65, v0: 3.4, v1: 5.65 }); // balcony door
       facade('z', Z0, Z0 + TT, X0, X1, base, top, M.brick, front);
       var back = (f === 0)
         ? [{ u0: cx + 2.2, u1: cx + 3.4, v0: 0, v1: 2.25 }]
@@ -793,12 +793,17 @@ World._buildPart3 = function (T) {
       seg(X0, X1, 6.5, 7.0, Z0, Z0 + 0.22, M.brick);
       seg(X0, X1, 6.5, 7.0, Z1 - 0.22, Z1, M.brick);
     }
+    // front balcony off the floor-2 door
+    seg(cx - 1.5, cx + 1.5, 3.35, 3.55, 52.55, Z0 + 0.05, M.concrete);
+    seg(cx - 1.5, cx + 1.5, 3.55, 4.5, 52.5, 52.62, M.trim);
+    seg(cx - 1.5, cx - 1.38, 3.55, 4.5, 52.5, Z0, M.trim);
+    seg(cx + 1.38, cx + 1.5, 3.55, 4.5, 52.5, Z0, M.trim);
     box(cx - 3, 0.45, 61, 0.9, 0.9, 0.9, M.wood);
     seg(cx - 3.4, cx - 1.9, 3.6, 4.32, 55.4, 56.2, M.wood); // upstairs table
   }
-  rowHouse(-25, false);
-  rowHouse(-3, true);   // middle house — rooftop access
-  rowHouse(19, false);
+  rowHouse(-25, true);
+  rowHouse(-3, true);
+  rowHouse(19, true);   // every roof is climbable now
   // alley clutter between houses
   box(-14, 0.75, 56.5, 2.2, 1.5, 1.3, M.contGreen);
   brokenWall(-11, 61, true);
@@ -826,5 +831,18 @@ World._buildPart3 = function (T) {
     barrel(-55.5, 12.5, true); crates(-63, -18);
     brokenWall(-52, 30, false);
     lamp(-58, 2, 'e');
+  })();
+
+  /* ===== OFFICE ROOF ACCESS (west fire-escape) ===== */
+  (function () {
+    stairFlight(-37.7, 0, 29.9, 0, -1, 12, 0.284, 0.33, 1.2, M.metal);      // ground -> landing
+    seg(-38.35, -37.05, 3.4, 3.62, 24.35, 26.0, M.metal);                    // switchback landing
+    stairFlight(-37.7, 3.62, 24.35, 0, -1, 10, 0.308, 0.33, 1.2, M.metal);  // landing -> roof height
+    seg(-38.35, -36.75, 6.7, 6.92, 20.85, 22.3, M.metal);                    // arrival platform onto roof
+    seg(-38.28, -38.16, 0, 3.4, 25.1, 25.3, M.trim);                         // support post
+    seg(-37, -36.75, 6.7, 7.55, 22.6, 31, M.plaster);                        // west parapet (gap at arrival)
+    seg(-23.25, -23, 6.7, 7.55, 21, 31, M.plaster);                          // east parapet
+    box(-30, 7.15, 27.6, 1.8, 0.9, 1.4, M.metal);                            // roof AC cover
+    box(-25.6, 7.1, 29, 1.4, 0.8, 1.2, M.rust);
   })();
 };

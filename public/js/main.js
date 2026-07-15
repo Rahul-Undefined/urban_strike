@@ -16,6 +16,7 @@ var Game = (function () {
   var flickerBases = null;
   var baseSens = 0.0023;
   var timerAccum = 0;
+  var landDip = 0;
 
   // ---------- boot ----------
   function init() {
@@ -68,16 +69,17 @@ var Game = (function () {
       if (!locked || !playing) return;
       if (map[e.code]) { Input[map[e.code]] = true; if (e.code === 'Space') e.preventDefault(); return; }
       if (e.code === 'KeyR') { Weapons.startReload(); return; }
-      if (e.code === 'KeyG') { Weapons.throwGrenade('frag'); return; }
+      if (e.code === 'KeyG') { Weapons.startCook(); return; } // hold to cook, release to throw
       if (e.code === 'KeyT') { Weapons.throwGrenade('smoke'); return; }
       if (e.code === 'KeyF') { Weapons.throwGrenade('flash'); return; }
       if (e.code.indexOf('Digit') === 0) {
         var n = parseInt(e.code.slice(5), 10);
-        if (n >= 1 && n <= 8) Weapons.selectByKey(n);
+        if (n >= 1 && n <= 9) Weapons.selectByKey(n);
       }
     });
     document.addEventListener('keyup', function (e) {
       if (e.code === 'Tab') { UI.showScoreboard(false); return; }
+      if (e.code === 'KeyG') { Weapons.releaseCook(); return; }
       var map2 = {
         KeyW: 'fwd', KeyS: 'back', KeyA: 'left', KeyD: 'right',
         ShiftLeft: 'sprint', ShiftRight: 'sprint', Space: 'jump',
@@ -144,6 +146,7 @@ var Game = (function () {
     UI.setLoading(true);
     setTimeout(function () {           // let the loading bar paint before the ~1s map build
       World.build(scene);
+      Weapons.matchReset();
       Pickups.build(scene);
       Pickups.init(d.pickups);
       Minimap.init();
@@ -159,12 +162,14 @@ var Game = (function () {
     }, 60);
   }
 
-  function onLocalSpawn(pos, ry) {
+  function onLocalSpawn(pos, ry, prot) {
     PlayerCtl.spawnAt(pos, ry);
     Weapons.resetLoadout();
     UI.hideDeath();
     UI.setVitals(CFG.PLAYER.hp, 0, 0);
     UI.setCrosshair(true);
+    FX.softFlash(0.22);
+    if (prot) UI.toast('Spawn protection ' + prot + 's');
     if (deathInterval) { clearInterval(deathInterval); deathInterval = null; }
   }
 
@@ -228,8 +233,14 @@ var Game = (function () {
     if (playing && World.isBuilt()) {
       var wu = Weapons.update(dt);
       PlayerCtl.update(dt, Input, wu.speedMult, wu.aiming);
+      UI.setCrosshairGap(wu.crossGap);
+
+      var land = PlayerCtl.consumeLand();
+      if (land) landDip = Math.max(landDip, land);
+      landDip *= Math.pow(0.0004, dt);
 
       PlayerCtl.eyePosition(camera.position);
+      camera.position.y -= landDip * 0.2;
       camera.rotation.y = -PlayerCtl.yaw;
       camera.rotation.x = PlayerCtl.pitch;
       camera.rotation.z = -PlayerCtl.lean * CFG.MOVE.leanAngle;

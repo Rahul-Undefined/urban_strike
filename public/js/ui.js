@@ -20,7 +20,8 @@ var UI = (function () {
       'death-overlay', 'death-info', 'death-timer',
       'end-overlay', 'end-title', 'end-sub', 'end-body', 'btn-back-lobby', 'end-hint',
       'pause-overlay', 'sens-range', 'sens-val', 'vol-range', 'vol-val', 'quality-shadows',
-      'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading'
+      'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading',
+      'announce', 'cook-bar', 'cook-fill', 'att-list'
     ].forEach(function (id) { els[id] = $(id); });
   }
 
@@ -152,7 +153,9 @@ var UI = (function () {
       var tr = document.createElement('tr');
       if (p.id === myId) tr.className = 'me';
       var pg = (p.id === myId) ? ping : p.ping;
-      tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (pg | 0) + '</td>';
+      tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td>' +
+        '<td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (p.assists || 0) + '</td>' +
+        '<td>' + (p.damage || 0) + '</td><td>' + (p.streak || 0) + '</td><td>' + (pg | 0) + '</td>';
       els['sb-body'].appendChild(tr);
     }
     var mode = CFG.MODES[(Net.getMatch().mode) || 'ffa'] || CFG.MODES.ffa;
@@ -162,7 +165,7 @@ var UI = (function () {
         var total = members.reduce(function (s, p) { return s + p.kills; }, 0);
         var hdr = document.createElement('tr');
         hdr.className = 'team-hdr t' + t;
-        hdr.innerHTML = '<td>TEAM ' + CFG.TEAMS[t].name + '</td><td>' + total + '</td><td></td><td></td>';
+        hdr.innerHTML = '<td>TEAM ' + CFG.TEAMS[t].name + '</td><td>' + total + '</td><td></td><td></td><td></td><td></td><td></td>';
         els['sb-body'].appendChild(hdr);
         members.sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
       });
@@ -175,7 +178,10 @@ var UI = (function () {
   // ---------- overlays ----------
   function showDeath(d) {
     els['death-overlay'].classList.remove('hidden');
-    els['death-info'].textContent = d.self ? 'Careful with those explosives.' : 'Taken out by ' + d.killerName;
+    var wl = (CFG.WEAPONS[d.weapon] && CFG.WEAPONS[d.weapon].label) ||
+             (CFG.THROWS[d.weapon] && CFG.THROWS[d.weapon].label) || '';
+    els['death-info'].textContent = d.self ? 'Careful with those explosives.'
+      : 'Taken out by ' + d.killerName + (wl ? ' \u00b7 ' + wl : '') + (d.headshot ? ' \u00b7 HEADSHOT' : '');
   }
   function setDeathCountdown(sec) {
     els['death-timer'].textContent = sec > 0 ? 'Redeploying in ' + sec + '\u2026' : 'Redeploying\u2026';
@@ -308,6 +314,32 @@ var UI = (function () {
     // btn-resume is wired by main.js (needs pointer lock).
   }
 
+  // ---------- v3 HUD ----------
+  function setAttachments(atts) {
+    if (!els['att-list']) return;
+    var parts = [];
+    ['sight', 'mag', 'muzzle'].forEach(function (cat) {
+      if (atts[cat] && CFG.ATTACH[atts[cat]]) parts.push('<span>' + CFG.ATTACH[atts[cat]].label + '</span>');
+    });
+    els['att-list'].innerHTML = parts.join('');
+  }
+  function setCooking(on, frac) {
+    if (!els['cook-bar']) return;
+    els['cook-bar'].classList.toggle('hidden', !on);
+    if (on) els['cook-fill'].style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
+  }
+  function announce(text, minor) {
+    if (!els['announce']) return;
+    var div = document.createElement('div');
+    div.className = 'ann' + (minor ? ' minor' : '');
+    div.textContent = text;
+    els['announce'].appendChild(div);
+    setTimeout(function () { div.remove(); }, minor ? 1500 : 2200);
+  }
+  function setCrosshairGap(px) {
+    els['crosshair'].style.setProperty('--chgap', (px | 0) + 'px');
+  }
+
   function init() {
     cache();
     wireMenus();
@@ -320,6 +352,7 @@ var UI = (function () {
     updateLobby: updateLobby,
     setVitals: setVitals, setTeamScore: setTeamScore, setWeapon: setWeapon, setReloading: setReloading,
     setScope: setScope, setCrosshair: setCrosshair,
+    setAttachments: setAttachments, setCooking: setCooking, announce: announce, setCrosshairGap: setCrosshairGap,
     setTimer: setTimer, setKillTarget: setKillTarget,
     addFeed: addFeed, updateScoreboard: updateScoreboard, showScoreboard: showScoreboard,
     showDeath: showDeath, setDeathCountdown: setDeathCountdown, hideDeath: hideDeath,

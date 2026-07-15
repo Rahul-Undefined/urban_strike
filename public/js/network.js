@@ -175,9 +175,15 @@ var Net = (function () {
     s.on('vitals', function (d) { UI.setVitals(d.hp, d.lv, d.du); });
     s.on('pickup', function (d) { Pickups.onCollected(d, d.by === myIdV); });
     s.on('pickupSpawn', function (d) { Pickups.onSpawn(d.id); });
+    s.on('grant', function (d) { Weapons.applyGrant(d); });
+    s.on('airdrop', function (d) {
+      Pickups.airdrop(d.x, d.z, d.landAt);
+      UI.toast('SUPPLY DROP INBOUND');
+    });
+    s.on('lootAdd', function (d) { Pickups.onAdd(d.items); });
 
     s.on('spawn', function (d) {
-      if (d.id === myIdV) { Game.onLocalSpawn(d.pos, d.ry); }
+      if (d.id === myIdV) { Game.onLocalSpawn(d.pos, d.ry, d.prot); }
       else {
         var r = remotes[d.id];
         if (r) { r.buf = []; r.alive = true; r.renderPos.set(d.pos[0], d.pos[1], d.pos[2]); }
@@ -195,11 +201,31 @@ var Net = (function () {
       }
     });
 
-    s.on('hitConfirm', function (d) { FX.hitmarker(d.kill); });
+    var killTimes = [];
+    s.on('hitConfirm', function (d) {
+      FX.hitmarker(d.kill);
+      var vr = remotes[d.v];
+      if (vr) FX.damageNumber(vr.renderPos.clone().add(new THREE.Vector3(0, 0.55, 0)), d.dmg, d.headshot, d.kill);
+      if (d.kill) {
+        var nw = performance.now();
+        killTimes.push(nw);
+        killTimes = killTimes.filter(function (kt) { return nw - kt < 4200; });
+        if (killTimes.length >= 2) {
+          var names = ['DOUBLE KILL', 'TRIPLE KILL', 'QUAD KILL', 'MEGA KILL'];
+          UI.announce(names[Math.min(names.length - 1, killTimes.length - 2)]);
+          AudioSys.stinger(killTimes.length > 2);
+        }
+      }
+    });
 
     s.on('death', function (d) {
       UI.addFeed(d, myIdV);
-      if (d.victimId === myIdV) { AudioSys.death(); Game.onLocalDeath(d); }
+      if (d.killerId === myIdV && !d.self) {
+        var SPREE = { 3: 'KILLING SPREE', 5: 'RAMPAGE', 7: 'UNSTOPPABLE', 10: 'GODLIKE' };
+        if (SPREE[d.killerStreak]) { UI.announce(SPREE[d.killerStreak]); AudioSys.stinger(d.killerStreak >= 7); }
+      }
+      if (d.assistIds && d.assistIds.indexOf(myIdV) !== -1) UI.announce('+ ASSIST', true);
+      if (d.victimId === myIdV) { killTimes = []; AudioSys.death(); Game.onLocalDeath(d); }
       else {
         var r = remotes[d.victimId];
         if (r) { r.alive = false; FX.bloodPuff(r.renderPos.clone().add(new THREE.Vector3(0, 0.4, 0))); }
@@ -284,11 +310,12 @@ var Net = (function () {
   function bindGameplayEvents() {
     socket.on('shoot', function (d) {
       var o = new THREE.Vector3(d.o[0], d.o[1], d.o[2]);
-      AudioSys.shot(d.w, o);
-      FX.muzzle(o, false);
+      AudioSys.shot(d.w, o, { supp: !!d.sup });
+      if (!d.sup) FX.muzzle(o, false);
       var r = remotes[d.id];
       if (r) {
-        r.lastShotAt = performance.now();
+        // suppressed fire pings the minimap for ~1.2 s instead of 3.5 s
+        r.lastShotAt = performance.now() - (d.sup ? 2300 : 0);
         var cp = Math.cos(r.rx);
         var dir = new THREE.Vector3(Math.sin(r.ry) * cp, Math.sin(r.rx), -Math.cos(r.ry) * cp).normalize();
         var wh = World.rayHit(o, dir, 140);
@@ -301,7 +328,8 @@ var Net = (function () {
       AudioSys.shot('rocket', new THREE.Vector3(d.o[0], d.o[1], d.o[2]));
     });
     socket.on('throw', function (d) {
-      Weapons.spawnGrenade(d.type, new THREE.Vector3(d.o[0], d.o[1], d.o[2]), new THREE.Vector3(d.v[0], d.v[1], d.v[2]), false);
+      Weapons.spawnGrenade(d.type, new THREE.Vector3(d.o[0], d.o[1], d.o[2]), new THREE.Vector3(d.v[0], d.v[1], d.v[2]), false,
+        (typeof d.f === 'number') ? d.f : undefined);
     });
   }
 

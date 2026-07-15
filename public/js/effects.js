@@ -59,7 +59,10 @@ var FX = (function () {
   }
 
   function bloodPuff(point) {
-    for (var i = 0; i < 6; i++) {
+    var mist = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x7a1810, transparent: true, opacity: 0.5, depthWrite: false }));
+    mist.position.copy(point); mist.scale.set(0.35, 0.35, 1);
+    add(mist, 0.4, function (e, t) { e.mesh.scale.setScalar(0.35 + t * 0.8); e.mesh.material.opacity = 0.5 * (1 - t); });
+    for (var i = 0; i < 8; i++) {
       var m = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), bloodMat);
       m.position.copy(point);
       var v = new THREE.Vector3((Math.random() - 0.5) * 3, Math.random() * 2.5, (Math.random() - 0.5) * 3);
@@ -101,19 +104,73 @@ var FX = (function () {
 
   // Brass shell ejection: small tumbling box thrown to the shooter's right.
   var brassMat = new THREE.MeshBasicMaterial({ color: 0xd8a740 });
-  function shell(pos, right) {
+  function shell(pos, right, floorY) {
     var m = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.022, 0.055), brassMat);
     m.position.copy(pos);
     var v = new THREE.Vector3()
       .copy(right).multiplyScalar(1.3 + Math.random() * 0.9)
       .add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.6 + Math.random() * 0.8, (Math.random() - 0.5) * 0.4));
     var rs = new THREE.Vector3(Math.random() * 14, Math.random() * 14, Math.random() * 14);
-    add(m, 0.85, function (e, t, dt) {
+    var bounced = false;
+    var fy = (typeof floorY === 'number') ? floorY : -999;
+    add(m, 1.15, function (e, t, dt) {
       v.y -= 11 * dt;
       e.mesh.position.addScaledVector(v, dt);
+      if (!bounced && e.mesh.position.y <= fy + 0.02 && v.y < 0) {
+        bounced = true;
+        e.mesh.position.y = fy + 0.02;
+        v.y *= -0.32; v.x *= 0.55; v.z *= 0.55;
+        rs.multiplyScalar(0.4);
+        AudioSys.bounce(e.mesh.position);
+      } else if (bounced && e.mesh.position.y <= fy + 0.012) {
+        e.mesh.position.y = fy + 0.012; v.set(0, 0, 0); rs.set(0, 0, 0);
+      }
       e.mesh.rotation.x += rs.x * dt; e.mesh.rotation.y += rs.y * dt; e.mesh.rotation.z += rs.z * dt;
     });
   }
+
+  // Floating damage number at the hit point — orange for headshots, red on kill.
+  function damageNumber(pos, dmg, headshot, kill) {
+    var c = document.createElement('canvas'); c.width = 128; c.height = 64;
+    var g = c.getContext('2d');
+    g.font = '700 ' + (headshot || kill ? 46 : 38) + 'px Rajdhani, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.strokeStyle = 'rgba(0,0,0,0.85)'; g.lineWidth = 6;
+    g.strokeText(String(dmg), 64, 32);
+    g.fillStyle = kill ? '#ff4a3a' : headshot ? '#ffb340' : '#f2f5f8';
+    g.fillText(String(dmg), 64, 32);
+    var s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
+    s.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.25, (Math.random() - 0.5) * 0.3));
+    s.scale.set(0.9, 0.45, 1);
+    add(s, 0.75, function (e, t, dt) {
+      e.mesh.position.y += dt * (1.4 - t);
+      e.mesh.material.opacity = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+    });
+  }
+
+  // Pickup burst — expanding ring + rising sparks in the item's color.
+  function pickupBurst(pos, colorHex) {
+    var ringM = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3, 0.3, 0.02, 20, 1, true),
+      new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
+    ringM.position.copy(pos);
+    add(ringM, 0.45, function (e, t) {
+      e.mesh.scale.set(1 + t * 3.2, 1, 1 + t * 3.2);
+      e.mesh.material.opacity = 0.85 * (1 - t);
+    });
+    for (var i = 0; i < 6; i++) {
+      var sp = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05),
+        new THREE.MeshBasicMaterial({ color: colorHex }));
+      sp.position.copy(pos);
+      var v = new THREE.Vector3((Math.random() - 0.5) * 1.6, 1.6 + Math.random() * 1.2, (Math.random() - 0.5) * 1.6);
+      (function (vv) {
+        add(sp, 0.5, function (e, t, dt) { vv.y -= 5 * dt; e.mesh.position.addScaledVector(vv, dt); });
+      })(v);
+    }
+  }
+
+  // Quick soft white fade (respawn feedback) — visual only, no flash audio.
+  function softFlash(v) { flashLevel = Math.max(flashLevel, Math.min(0.4, v)); }
 
   function explosion(pos, radius) {
     var core = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 10),
@@ -236,6 +293,7 @@ var FX = (function () {
   return {
     init: init, initDOM: initDOM, update: update,
     tracer: tracer, impact: impact, bloodPuff: bloodPuff, muzzle: muzzle, shell: shell,
+    damageNumber: damageNumber, pickupBurst: pickupBurst, softFlash: softFlash,
     explosion: explosion, smokeCloud: smokeCloud,
     shake: shake, applyShake: applyShake,
     damageFlash: damageFlash, damageDirection: damageDirection,

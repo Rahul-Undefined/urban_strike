@@ -6,6 +6,7 @@ var PlayerCtl = (function () {
   var vel = new THREE.Vector3();
   var yaw = 0, pitch = 0;
   var crouch = false, grounded = false, alive = false;
+  var landHit = 0; // set on hard landings, consumed by main for a camera dip
   var lean = 0;          // -1 left .. 1 right (smoothed)
   var leanTarget = 0;
   var moveState = 0;     // 0 idle, 1 walk, 2 sprint (broadcast for footstep sync)
@@ -42,7 +43,7 @@ var PlayerCtl = (function () {
       var c = cs[i];
       if (!(v[0] - hx < c[3] && v[0] + hx > c[0] && v[1] - hy < c[4] && v[1] + hy > c[1] && v[2] - hz < c[5] && v[2] + hz > c[2])) continue;
       if (axis === 1) {
-        if (delta < 0) { v[1] = c[4] + hy + 0.001; grounded = true; vel.y = 0; }
+        if (delta < 0) { if (vel.y < -4.5) landHit = Math.min(1, -vel.y / 13); v[1] = c[4] + hy + 0.001; grounded = true; vel.y = 0; }
         else { v[1] = c[1] - hy - 0.001; vel.y = 0; }
       } else {
         // auto-step: climb small ledges (stairs, curbs)
@@ -151,6 +152,7 @@ var PlayerCtl = (function () {
     get lean() { return lean; },
     get moveState() { return moveState; },
     get alive() { return alive; }, set alive(v) { alive = v; },
+    consumeLand: function () { var l = landHit; landHit = 0; return l; },
     spawnAt: spawnAt,
     update: update,
     eyePosition: eyePosition,

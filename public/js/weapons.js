@@ -12,6 +12,40 @@ var Weapons = (function () {
   var triggerDown = false, semiQueued = false;
   var kick = 0, meleeAnim = 0;
   var pumpAnim = 0, slideAnim = 0, recoilAccum = 0, reloadStartAt = 0, reloadDur = 0;
+  var atts = { sight: null, muzzle: null, mag: null };   // equipped attachments by slot
+  var owned = {};                                        // weapon name -> true
+  var cooking = null;                                    // { end, beeped } while holding a live frag
+  var BASE_WEAPONS = CFG.WEAPON_ORDER.filter(function (n) { return !CFG.WEAPONS[n].ex; });
+
+  // Effective stats = base weapon modified by equipped attachments.
+  function eff(name) {
+    var w = CFG.WEAPONS[name];
+    var e = { dmg: w.dmg, mag: w.mag, reload: w.reload, spread: w.spread, ads: w.ads,
+      recoil: w.recoil, drift: w.drift || 0, adsFov: w.adsFov, speed: w.speed,
+      quiet: false, noFlash: false, detectMs: 3500 };
+    var s = atts.sight && CFG.ATTACH[atts.sight];
+    if (s && !w.scope && w.type !== 'melee') {
+      if (s.spreadMult) { e.spread *= s.spreadMult; e.ads *= s.spreadMult; }
+      if (s.adsFov && w.type !== 'rocket') e.adsFov = s.adsFov;
+    }
+    var m = atts.mag && CFG.ATTACH[atts.mag];
+    if (m && w.mag > 0) {
+      if (m.magMult) e.mag = Math.round(w.mag * m.magMult);
+      if (m.reloadMult) e.reload = w.reload * m.reloadMult;
+    }
+    var mu = atts.muzzle && CFG.ATTACH[atts.muzzle];
+    if (mu && w.type !== 'melee' && w.type !== 'rocket') {
+      if (mu.recoilMult) { e.recoil *= mu.recoilMult; e.drift *= mu.recoilMult; }
+      if (mu.quiet) { e.quiet = true; e.detectMs = mu.detectMs || 1500; }
+      if (mu.noFlash) e.noFlash = true;
+    }
+    return e;
+  }
+  function refreshHud() {
+    var w = CFG.WEAPONS[current], a = ammo[current];
+    UI.setWeapon(w.label, a.mag, a.reserve, throwsLeft);
+    UI.setAttachments(atts);
+  }
   var projectiles = [];           // rockets + grenades (local sim on every client)
   var tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpQ = new THREE.Quaternion();
 
@@ -147,17 +181,54 @@ var Weapons = (function () {
     resetLoadout();
   }
 
+  // Full reset at match start: back to the base 8, no attachments.
+  function matchReset() {
+    owned = {};
+    BASE_WEAPONS.forEach(function (n) { owned[n] = true; });
+    atts = { sight: null, muzzle: null, mag: null };
+    cooking = null;
+    UI.setAttachments(atts);
+  }
+  // Per-spawn refill: keep exclusives + attachments earned this match.
   function resetLoadout() {
-    CFG.WEAPON_ORDER.forEach(function (n) {
+    if (!owned.ak47) matchReset();
+    for (var n in owned) {
       var w = CFG.WEAPONS[n];
-      ammo[n] = { mag: w.mag, reserve: w.reserve };
-    });
+      ammo[n] = { mag: eff(n).mag, reserve: w.reserve };
+    }
     throwsLeft = { frag: CFG.THROWS.frag.count, smoke: CFG.THROWS.smoke.count, flash: CFG.THROWS.flash.count };
-    setWeapon('ak47', true);
+    cooking = null; UI.setCooking(false, 0);
+    setWeapon(owned[current] ? current : 'ak47', true);
+  }
+  // ---- loot grants (called by Net on server 'grant') ----
+  function applyGrant(d) {
+    if (d.t === 'weapon') {
+      owned[d.w] = true;
+      ammo[d.w] = { mag: eff(d.w).mag, reserve: CFG.WEAPONS[d.w].reserve };
+      setWeapon(d.w, true);
+      UI.toast(CFG.WEAPONS[d.w].label + ' acquired');
+    } else if (d.t === 'ammoFor') {
+      var a = ammo[d.w];
+      if (a) a.reserve = Math.min(CFG.WEAPONS[d.w].reserve, a.reserve + Math.ceil(CFG.WEAPONS[d.w].reserve * 0.5));
+      UI.toast(CFG.WEAPONS[d.w].label + ' ammo');
+    } else if (d.t === 'ammo') {
+      for (var n in owned) {
+        var w = CFG.WEAPONS[n];
+        if (w.reserve > 0 && ammo[n]) ammo[n].reserve = Math.min(w.reserve, ammo[n].reserve + Math.ceil(w.reserve * 0.4));
+      }
+      UI.toast('Ammo resupplied');
+    } else if (d.t === 'att') {
+      var def = CFG.ATTACH[d.a];
+      if (!def) return;
+      atts[def.cat] = d.a;
+      UI.toast(def.label + ' equipped');
+      UI.setAttachments(atts);
+    }
+    refreshHud();
   }
 
   function setWeapon(name, instant) {
-    if (!CFG.WEAPONS[name]) return;
+    if (!CFG.WEAPONS[name] || !owned[name]) return;
     if (name === current && !instant) return;
     if (models[current]) models[current].visible = false;
     current = name;
@@ -168,22 +239,31 @@ var Weapons = (function () {
     if (!instant) AudioSys.magIn(null);
   }
   function selectByKey(k) {
+    if (k === 9) { // cycle through owned exclusives
+      var ex = CFG.WEAPON_ORDER.filter(function (n) { return CFG.WEAPONS[n].ex && owned[n]; });
+      if (!ex.length) return;
+      var j = (ex.indexOf(current) + 1) % ex.length;
+      setWeapon(ex[j]);
+      return;
+    }
     for (var i = 0; i < CFG.WEAPON_ORDER.length; i++) {
       var n = CFG.WEAPON_ORDER[i];
-      if (CFG.WEAPONS[n].key === k) { setWeapon(n); return; }
+      if (CFG.WEAPONS[n].key === k && owned[n]) { setWeapon(n); return; }
     }
   }
   function cycle(dir) {
     var i = CFG.WEAPON_ORDER.indexOf(current);
-    i = (i + dir + CFG.WEAPON_ORDER.length) % CFG.WEAPON_ORDER.length;
-    setWeapon(CFG.WEAPON_ORDER[i]);
+    for (var step = 0; step < CFG.WEAPON_ORDER.length; step++) {
+      i = (i + dir + CFG.WEAPON_ORDER.length) % CFG.WEAPON_ORDER.length;
+      if (owned[CFG.WEAPON_ORDER[i]]) { setWeapon(CFG.WEAPON_ORDER[i]); return; }
+    }
   }
 
   function startReload() {
-    var w = CFG.WEAPONS[current], a = ammo[current];
-    if (w.type === 'melee' || a.mag >= w.mag || a.reserve <= 0 || isReloading()) return;
+    var w = CFG.WEAPONS[current], a = ammo[current], E = eff(current);
+    if (w.type === 'melee' || a.mag >= E.mag || a.reserve <= 0 || isReloading()) return;
     reloadStartAt = performance.now();
-    reloadDur = w.reload * 1000;
+    reloadDur = E.reload * 1000;
     if (w.shellReload) { reloadingShell = true; reloadUntil = reloadStartAt + reloadDur; }
     else { reloadUntil = reloadStartAt + reloadDur; AudioSys.reload(current, null); }
     UI.setReloading(true);
@@ -191,15 +271,15 @@ var Weapons = (function () {
   function isReloading() { return performance.now() < reloadUntil; }
 
   function finishReload() {
-    var w = CFG.WEAPONS[current], a = ammo[current];
+    var w = CFG.WEAPONS[current], a = ammo[current], E = eff(current);
     if (w.shellReload) {
-      if (a.mag < w.mag && a.reserve > 0) { a.mag++; a.reserve--; AudioSys.shellIn(null); }
-      if (a.mag < w.mag && a.reserve > 0 && reloadingShell) {
+      if (a.mag < E.mag && a.reserve > 0) { a.mag++; a.reserve--; AudioSys.shellIn(null); }
+      if (a.mag < E.mag && a.reserve > 0 && reloadingShell) {
         reloadStartAt = performance.now();
-        reloadUntil = reloadStartAt + w.reload * 1000; // next shell
+        reloadUntil = reloadStartAt + E.reload * 1000; // next shell
       } else { reloadingShell = false; UI.setReloading(false); }
     } else {
-      var need = w.mag - a.mag, take = Math.min(need, a.reserve);
+      var need = E.mag - a.mag, take = Math.min(need, a.reserve);
       a.mag += take; a.reserve -= take;
       UI.setReloading(false);
     }
@@ -263,8 +343,9 @@ var Weapons = (function () {
 
   function fireHitscan(w) {
     var pellets = w.pellets || 1;
+    var E = eff(current);
     var aiming = Input.aim && w.type !== 'melee';
-    var spread = aiming ? w.ads : w.spread;
+    var spread = aiming ? E.ads : E.spread;
     if (PlayerCtl.moveState === 2) spread *= 2.6;
     else if (PlayerCtl.moveState === 1) spread *= 1.5;
     if (!PlayerCtl.grounded) spread *= 2.2;
@@ -291,8 +372,8 @@ var Weapons = (function () {
       var pv2 = perVictim[id];
       Net.sendHit({ victim: id, w: current, part: pv2.part, pellets: pv2.pellets, vp: pv2.vp });
     }
-    FX.muzzle(mz, true);
-    Net.sendShoot({ w: current, o: [mz.x, mz.y, mz.z], dir: [0, 0, 0] });
+    if (!E.noFlash) FX.muzzle(mz, true);
+    Net.sendShoot({ w: current, o: [mz.x, mz.y, mz.z], dir: [0, 0, 0], sup: E.quiet ? 1 : 0 });
   }
 
   function fireMelee(w) {
@@ -310,7 +391,8 @@ var Weapons = (function () {
 
   function fireRocket(w) {
     var o = muzzleWorld(new THREE.Vector3()).clone();
-    var d = rayDir(Input.aim ? w.ads : w.spread, new THREE.Vector3());
+    var E2 = eff(current);
+    var d = rayDir(Input.aim ? E2.ads : E2.spread, new THREE.Vector3());
     var v = d.multiplyScalar(w.projSpeed);
     spawnRocket(o, v, true);
     Net.sendProj({ type: 'rocket', o: [o.x, o.y, o.z], v: [v.x, v.y, v.z] });
@@ -337,20 +419,21 @@ var Weapons = (function () {
     }
     nextFireAt = t + 60000 / w.rpm;
     kick = 1;
+    var EF = eff(current);
     // Pattern recoil: vertical kick + horizontal drift that wanders as a burst grows.
-    recoilAccum += w.recoil;
-    PlayerCtl.pitch += w.recoil * (0.9 + Math.random() * 0.25);
-    PlayerCtl.yaw += ((Math.random() - 0.5) + (w.drift || 0) * 0.5 * Math.sin(recoilAccum * 24)) * w.recoil * 0.5;
+    recoilAccum += EF.recoil;
+    PlayerCtl.pitch += EF.recoil * (0.9 + Math.random() * 0.25);
+    PlayerCtl.yaw += ((Math.random() - 0.5) + EF.drift * 0.5 * Math.sin(recoilAccum * 24)) * EF.recoil * 0.5;
 
     if (w.type === 'melee') fireMelee(w);
     else if (w.type === 'rocket') { AudioSys.shot('rocket', null); fireRocket(w); }
     else {
-      AudioSys.shot(current, null);
+      AudioSys.shot(current, null, { supp: EF.quiet });
       fireHitscan(w);
       // brass ejection from the port, thrown to the shooter's right
       var ep = tmpV.set(0.3, -0.16, -0.35).applyQuaternion(camera.getWorldQuaternion(tmpQ)).add(camera.position);
       var right = new THREE.Vector3(1, 0, 0).applyQuaternion(tmpQ);
-      FX.shell(ep, right);
+      FX.shell(ep, right, PlayerCtl.pos.y - 0.93);
       if (w.type === 'bolt') { boltUntil = t + w.boltTime * 1000; setTimeout(function () { AudioSys.bolt(null); }, 260); }
       if (w.type === 'pump') { pumpAnim = 1; setTimeout(function () { AudioSys.bolt(null); }, 130); }
       if (current === 'pistol') slideAnim = 1;
@@ -360,19 +443,40 @@ var Weapons = (function () {
   }
 
   // ---------- throwables ----------
-  function throwGrenade(type) {
-    if (!PlayerCtl.alive || throwsLeft[type] <= 0) return;
-    throwsLeft[type]--;
-    AudioSys.pinPull(null);
+  function hurl(type, fuse) {
     var o = camera.position.clone();
     var d = camera.getWorldDirection(new THREE.Vector3());
     var spec = CFG.THROWS[type];
     var v = d.multiplyScalar(spec.throwVel).add(new THREE.Vector3(0, 2.6, 0));
     v.x += PlayerCtl.vel.x * 0.4; v.z += PlayerCtl.vel.z * 0.4;
-    spawnGrenade(type, o, v, true);
-    Net.sendThrow({ type: type, o: [o.x, o.y, o.z], v: [v.x, v.y, v.z] });
+    spawnGrenade(type, o, v, true, fuse);
+    Net.sendThrow({ type: type, o: [o.x, o.y, o.z], v: [v.x, v.y, v.z], f: fuse });
     AudioSys.whoosh(null);
-    UI.setWeapon(CFG.WEAPONS[current].label, ammo[current].mag, ammo[current].reserve, throwsLeft);
+    refreshHud();
+  }
+  function throwGrenade(type) {
+    if (!PlayerCtl.alive || throwsLeft[type] <= 0 || cooking) return;
+    if (type === 'frag' && CFG.THROWS.frag.cook) { startCook(); return; }
+    throwsLeft[type]--;
+    AudioSys.pinPull(null);
+    hurl(type, undefined);
+  }
+  // Hold G to cook a frag — release to throw with the remaining fuse.
+  // Hold it too long and it detonates in your hands.
+  function startCook() {
+    if (!PlayerCtl.alive || cooking || throwsLeft.frag <= 0) return;
+    throwsLeft.frag--;
+    cooking = { end: performance.now() + CFG.THROWS.frag.fuse * 1000, beeped: 99 };
+    AudioSys.pinPull(null);
+    UI.setCooking(true, 1);
+    refreshHud();
+  }
+  function releaseCook() {
+    if (!cooking) return;
+    var remain = Math.max(0.12, (cooking.end - performance.now()) / 1000);
+    cooking = null;
+    UI.setCooking(false, 0);
+    hurl('frag', remain);
   }
 
   function grenadeMesh(type) {
@@ -381,10 +485,11 @@ var Weapons = (function () {
     m.castShadow = true;
     return m;
   }
-  function spawnGrenade(type, o, v, mine) {
+  function spawnGrenade(type, o, v, mine, fuseOverride) {
     var m = grenadeMesh(type);
     m.position.copy(o); scene.add(m);
-    projectiles.push({ kind: 'nade', type: type, pos: o.clone(), vel: v.clone(), fuse: CFG.THROWS[type].fuse + 0.35, mesh: m, mine: mine });
+    var fuse = (typeof fuseOverride === 'number') ? fuseOverride : CFG.THROWS[type].fuse + 0.35;
+    projectiles.push({ kind: 'nade', type: type, pos: o.clone(), vel: v.clone(), fuse: fuse, mesh: m, mine: mine });
   }
   function spawnRocket(o, v, mine) {
     var g = new THREE.Group();
@@ -501,9 +606,25 @@ var Weapons = (function () {
   // ---------- per-frame ----------
   function update(dt) {
     var w = CFG.WEAPONS[current];
+    var E = eff(current);
     var t = performance.now();
 
     if (reloadUntil > 0 && t >= reloadUntil) { reloadUntil = 0; finishReload(); }
+
+    // grenade cooking
+    if (cooking) {
+      var leftS = (cooking.end - t) / 1000;
+      UI.setCooking(true, Math.max(0, leftS / CFG.THROWS.frag.fuse));
+      var sec = Math.ceil(leftS);
+      if (sec < cooking.beeped) { cooking.beeped = sec; if (sec > 0) AudioSys.uiClick(); }
+      if (leftS <= 0) { // cooked too long — it goes off in your hands
+        cooking = null;
+        UI.setCooking(false, 0);
+        var o = camera.position.clone();
+        spawnGrenade('frag', o, new THREE.Vector3(0, 0.4, 0), true, 0.02);
+        Net.sendThrow({ type: 'frag', o: [o.x, o.y, o.z], v: [0, 0.4, 0], f: 0.02 });
+      }
+    }
 
     if (triggerDown && (w.type === 'auto')) tryFire();
     if (semiQueued) { semiQueued = false; tryFire(); }
@@ -551,13 +672,24 @@ var Weapons = (function () {
     }
 
     updateProjectiles(dt);
-    return { aiming: aiming, scoped: scoped, adsFov: w.adsFov, speedMult: w.speed };
+    // dynamic crosshair gap from current effective spread + stance
+    var chS = aiming ? E.ads : E.spread;
+    if (PlayerCtl.moveState === 2) chS *= 2.6; else if (PlayerCtl.moveState === 1) chS *= 1.5;
+    if (!PlayerCtl.grounded) chS *= 2.2;
+    if (PlayerCtl.crouch) chS *= 0.75;
+    var crossGap = Math.max(3, Math.min(46, 5 + chS * 1300));
+    return { aiming: aiming, scoped: scoped, adsFov: E.adsFov, speedMult: w.speed, crossGap: crossGap };
   }
 
   return {
     init: init,
     update: update,
     resetLoadout: resetLoadout,
+    matchReset: matchReset,
+    applyGrant: applyGrant,
+    startCook: startCook,
+    releaseCook: releaseCook,
+    getDetectMs: function () { return eff(current).detectMs; },
     selectByKey: selectByKey,
     cycle: cycle,
     startReload: startReload,
