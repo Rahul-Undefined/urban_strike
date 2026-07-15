@@ -21,7 +21,7 @@
     <div class="brand">
       <div class="brand-eyebrow">SECTOR 7 // INDUSTRIAL DISTRICT</div>
       <h1>URBAN<span>STRIKE</span></h1>
-      <div class="brand-sub">2–4 player tactical deathmatch · in your browser</div>
+      <div class="brand-sub">2–10 player tactical combat · FFA · 3v3 · 5v5 · in your browser</div>
     </div>
     <div class="menu-actions">
       <button class="btn btn-primary" id="btn-goto-create">CREATE ROOM</button>
@@ -37,8 +37,11 @@
       <label class="field"><span>CALLSIGN</span>
         <input type="text" id="create-name" maxlength="14" placeholder="Your name" autocomplete="off">
       </label>
+      <label class="field"><span>MODE</span>
+        <select id="create-mode"><option value="ffa" selected>Free For All (10)</option><option value="t3">3 vs 3</option><option value="t5">5 vs 5</option></select>
+      </label>
       <label class="field"><span>KILLS TO WIN</span>
-        <select id="create-kills"><option>5</option><option selected>10</option><option>15</option><option>20</option></select>
+        <select id="create-kills"><option>5</option><option>10</option><option selected>15</option><option>20</option><option>30</option></select>
       </label>
       <label class="field"><span>TIME LIMIT</span>
         <select id="create-time"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="15">15 min</option><option value="0">No limit</option></select>
@@ -78,8 +81,11 @@
       </div>
       <div class="panel" id="lobby-settings">
         <div class="panel-head">MATCH RULES</div>
+        <label class="field"><span>MODE</span>
+          <select id="lobby-mode"><option value="ffa">Free For All</option><option value="t3">3 vs 3</option><option value="t5">5 vs 5</option></select>
+        </label>
         <label class="field"><span>KILLS TO WIN</span>
-          <select id="lobby-kills"><option>5</option><option>10</option><option>15</option><option>20</option></select>
+          <select id="lobby-kills"><option>5</option><option>10</option><option>15</option><option>20</option><option>30</option></select>
         </label>
         <label class="field"><span>TIME LIMIT</span>
           <select id="lobby-time"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="0">No limit</option></select>
@@ -104,14 +110,17 @@
 
   <div id="hud-top">
     <div id="match-timer">10:00</div>
+    <div id="team-score" class="hidden"></div>
     <div id="kill-target"></div>
   </div>
+
+  <canvas id="minimap" width="200" height="200"></canvas>
 
   <div id="killfeed"></div>
 
   <div id="hud-bottom-left">
     <div class="stat-bar"><div class="stat-label">HP</div><div class="bar"><div id="hp-fill" class="fill hp"></div></div><div class="stat-num" id="hp-num">100</div></div>
-    <div class="stat-bar"><div class="stat-label">AR</div><div class="bar"><div id="armor-fill" class="fill armor"></div></div><div class="stat-num" id="armor-num">50</div></div>
+    <div class="stat-bar" id="armor-row"><div class="stat-label" id="armor-badge">AR</div><div class="bar"><div id="armor-fill" class="fill armor"></div></div><div class="stat-num" id="armor-num">0</div></div>
   </div>
 
   <div id="hud-bottom-right">
@@ -176,6 +185,8 @@
 <script src="js/player.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/network.js"></script>
+<script src="js/pickups.js"></script>
+<script src="js/minimap.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>
 </body>

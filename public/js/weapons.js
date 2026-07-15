@@ -11,6 +11,7 @@ var Weapons = (function () {
   var reloadingShell = false;
   var triggerDown = false, semiQueued = false;
   var kick = 0, meleeAnim = 0;
+  var pumpAnim = 0, slideAnim = 0, recoilAccum = 0, reloadStartAt = 0, reloadDur = 0;
   var projectiles = [];           // rockets + grenades (local sim on every client)
   var tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpQ = new THREE.Quaternion();
 
@@ -21,46 +22,117 @@ var Weapons = (function () {
   }
 
   function buildModels() {
-    var gunmetal = mat(0x2b2f34), wood = mat(0x6b4a2a), tan = mat(0x4a4438),
-      green = mat(0x36402e), steel = mat(0x54595f), blade = mat(0xb9bfc6);
-    function rifle(bodyM, len, hasStock) {
+    var gunmetal = mat(0x2b2f34), dark = mat(0x1e2126), wood = mat(0x6b4a2a), tan = mat(0x4a4438),
+      green = mat(0x36402e), steel = mat(0x54595f), blade = mat(0xb9bfc6), brass = mat(0xb08a3a);
+    function cylPart(g, x, y, z, r, len, m, alongZ) {
+      var c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), m);
+      if (alongZ !== false) c.rotation.x = Math.PI / 2;
+      c.position.set(x, y, z); g.add(c); return c;
+    }
+    // Shared long-gun chassis; each weapon customizes on top. Returns group
+    // with userData.mag (and .magHome) for the reload animation.
+    function rifleBase(bodyM, len, hasStock) {
       var g = new THREE.Group();
-      part(g, 0, 0, -len * 0.5, 0.055, 0.075, len, gunmetal);          // barrel/receiver
-      part(g, 0, -0.02, -0.1, 0.06, 0.1, 0.3, bodyM);                  // body
-      part(g, 0, -0.12, -0.16, 0.045, 0.16, 0.07, bodyM);              // mag
+      part(g, 0, 0, -0.08, 0.062, 0.085, 0.34, gunmetal);              // receiver
+      cylPart(g, 0, 0.005, -len * 0.62, 0.017, len * 0.62, dark);      // barrel
+      part(g, 0, -0.015, -len * 0.34, 0.06, 0.06, len * 0.34, bodyM);  // handguard
       part(g, 0, -0.09, 0.06, 0.05, 0.11, 0.06, gunmetal);             // grip
-      if (hasStock) part(g, 0, 0, 0.16, 0.05, 0.08, 0.2, bodyM);
-      part(g, 0, 0.045, -len * 0.85, 0.02, 0.03, 0.05, gunmetal);      // front sight
+      if (hasStock) { part(g, 0, -0.005, 0.2, 0.045, 0.075, 0.22, bodyM); part(g, 0, -0.03, 0.31, 0.05, 0.11, 0.035, bodyM); }
+      part(g, 0, 0.052, -len * 0.86, 0.016, 0.04, 0.016, gunmetal);    // front post
+      part(g, 0, 0.052, 0.04, 0.05, 0.022, 0.03, gunmetal);            // rear sight
+      part(g, 0.036, 0.028, -0.02, 0.018, 0.018, 0.05, steel);         // charging handle
+      var magG = new THREE.Group(); magG.position.set(0, -0.115, -0.15); g.add(magG);
+      g.userData.mag = magG; g.userData.magHome = magG.position.clone();
       return g;
     }
-    models.ak47 = rifle(wood, 0.72, true);
-    models.m4a1 = rifle(tan, 0.68, true);
-    models.uzi = rifle(gunmetal, 0.4, false);
-    models.shotgun = rifle(wood, 0.78, true);
-    models.pistol = (function () {
-      var g = new THREE.Group();
-      part(g, 0, 0, -0.14, 0.045, 0.06, 0.26, gunmetal);
-      part(g, 0, -0.08, 0.02, 0.045, 0.12, 0.06, gunmetal);
+    models.ak47 = (function () {
+      var g = rifleBase(wood, 0.74, true);
+      var m1 = part(g.userData.mag, 0, 0, 0, 0.042, 0.13, 0.07, gunmetal); m1.rotation.x = 0.18;
+      var m2 = part(g.userData.mag, 0, -0.1, 0.028, 0.042, 0.1, 0.065, gunmetal); m2.rotation.x = 0.45; // curved mag
+      part(g, 0, 0.02, -0.66, 0.03, 0.035, 0.06, steel);               // gas block
+      return g;
+    })();
+    models.m4a1 = (function () {
+      var g = rifleBase(tan, 0.7, true);
+      part(g.userData.mag, 0, -0.05, 0, 0.042, 0.15, 0.062, dark);
+      part(g, 0, 0.075, -0.02, 0.035, 0.05, 0.16, gunmetal);           // carry handle
+      cylPart(g, 0, 0.005, -0.74, 0.022, 0.06, steel);                 // flash hider
+      for (var i = 0; i < 3; i++) part(g, 0.033, -0.015, -0.32 - i * 0.07, 0.006, 0.03, 0.03, dark); // rail vents
       return g;
     })();
     models.sniper = (function () {
-      var g = rifle(green, 0.95, true);
-      var sc = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.22, 8), gunmetal);
-      sc.rotation.x = Math.PI / 2; sc.position.set(0, 0.075, -0.2); g.add(sc);
+      var g = rifleBase(green, 1.0, true);
+      part(g.userData.mag, 0, -0.04, 0, 0.045, 0.1, 0.075, dark);
+      cylPart(g, 0, 0.088, -0.16, 0.03, 0.24, dark);                   // scope tube
+      cylPart(g, 0, 0.088, -0.29, 0.036, 0.03, gunmetal);              // objective
+      cylPart(g, 0, 0.088, -0.03, 0.034, 0.03, gunmetal);              // eyepiece
+      part(g, 0, 0.062, -0.1, 0.016, 0.026, 0.02, steel);              // mount F
+      part(g, 0, 0.062, -0.22, 0.016, 0.026, 0.02, steel);             // mount R
+      var bh = cylPart(g, 0.05, 0.01, 0.02, 0.011, 0.07, steel, false); bh.rotation.z = 0.9; // bolt handle
+      part(g, 0.028, -0.05, -0.78, 0.012, 0.1, 0.012, steel);          // bipod legs (folded)
+      part(g, -0.028, -0.05, -0.78, 0.012, 0.1, 0.012, steel);
+      return g;
+    })();
+    models.uzi = (function () {
+      var g = new THREE.Group();
+      part(g, 0, 0, -0.1, 0.07, 0.09, 0.3, gunmetal);                  // boxy receiver
+      cylPart(g, 0, 0.01, -0.32, 0.016, 0.16, dark);                   // stub barrel
+      part(g, 0, -0.09, 0.02, 0.05, 0.1, 0.055, gunmetal);             // grip
+      var magG = new THREE.Group(); magG.position.set(0, -0.17, 0.02); g.add(magG);
+      part(magG, 0, 0, 0, 0.04, 0.12, 0.045, dark);                    // mag-in-grip
+      g.userData.mag = magG; g.userData.magHome = magG.position.clone();
+      part(g, 0, 0.005, 0.13, 0.05, 0.02, 0.14, steel);                // folded stock top bar
+      part(g, 0, 0.05, -0.3, 0.014, 0.03, 0.014, gunmetal);            // front sight
+      part(g, 0, 0.05, 0.03, 0.04, 0.02, 0.02, gunmetal);              // rear sight
+      return g;
+    })();
+    models.shotgun = (function () {
+      var g = new THREE.Group();
+      part(g, 0, 0, -0.02, 0.06, 0.085, 0.3, gunmetal);                // receiver
+      cylPart(g, 0, 0.012, -0.5, 0.019, 0.62, dark);                   // barrel
+      cylPart(g, 0, -0.032, -0.48, 0.016, 0.55, steel);                // mag tube
+      part(g, 0, -0.005, 0.21, 0.05, 0.085, 0.24, wood);               // stock
+      part(g, 0, -0.09, 0.08, 0.05, 0.1, 0.05, wood);                  // grip base
+      var pump = new THREE.Group(); pump.position.set(0, -0.03, -0.34); g.add(pump);
+      part(pump, 0, 0, 0, 0.055, 0.05, 0.16, wood);                    // pump forend
+      g.userData.pump = pump; g.userData.pumpHome = pump.position.clone();
+      part(g, 0, 0.055, -0.72, 0.012, 0.02, 0.012, brass);             // bead sight
+      return g;
+    })();
+    models.pistol = (function () {
+      var g = new THREE.Group();
+      part(g, 0, -0.025, -0.1, 0.042, 0.05, 0.24, gunmetal);           // frame
+      var slide = new THREE.Group(); slide.position.set(0, 0.012, -0.1); g.add(slide);
+      part(slide, 0, 0, 0, 0.044, 0.045, 0.26, dark);                  // slide
+      part(slide, 0, 0.028, 0.1, 0.012, 0.012, 0.02, dark);            // rear sight
+      part(slide, 0, 0.028, -0.11, 0.008, 0.012, 0.01, dark);          // front sight
+      g.userData.slide = slide; g.userData.slideHome = slide.position.clone();
+      part(g, 0, -0.09, 0.03, 0.042, 0.12, 0.055, gunmetal);           // grip
+      part(g, 0, -0.055, -0.055, 0.01, 0.008, 0.07, steel);            // trigger guard
+      var magG = new THREE.Group(); magG.position.set(0, -0.15, 0.03); g.add(magG);
+      part(magG, 0, 0, 0, 0.034, 0.03, 0.045, steel);
+      g.userData.mag = magG; g.userData.magHome = magG.position.clone();
       return g;
     })();
     models.rocket = (function () {
       var g = new THREE.Group();
-      var tube = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.95, 10), green);
-      tube.rotation.x = Math.PI / 2; tube.position.z = -0.25; g.add(tube);
-      part(g, 0, -0.11, 0, 0.05, 0.12, 0.06, gunmetal);
-      part(g, 0, 0.1, -0.05, 0.04, 0.06, 0.1, steel);
+      cylPart(g, 0, 0, -0.2, 0.075, 0.95, green);                      // tube
+      var flare = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.11, 0.14, 10), green);
+      flare.rotation.x = Math.PI / 2; flare.position.set(0, 0, 0.32); g.add(flare); // venturi
+      var tip = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.055, 0.16, 10), mat(0x7a2f22));
+      tip.rotation.x = -Math.PI / 2; tip.position.set(0, 0, -0.72); g.add(tip);     // loaded warhead
+      part(g, 0, -0.12, 0.02, 0.05, 0.12, 0.06, gunmetal);             // grip
+      part(g, 0, -0.12, -0.14, 0.045, 0.1, 0.05, gunmetal);            // fore grip
+      part(g, 0, 0.11, -0.08, 0.035, 0.07, 0.1, steel);                // sight box
       return g;
     })();
     models.knife = (function () {
       var g = new THREE.Group();
-      part(g, 0, -0.02, -0.16, 0.015, 0.05, 0.26, blade);
-      part(g, 0, -0.04, 0.0, 0.03, 0.05, 0.1, gunmetal);
+      part(g, 0, -0.02, -0.17, 0.014, 0.048, 0.24, blade);             // blade
+      part(g, 0, 0.004, -0.19, 0.006, 0.012, 0.2, steel);              // edge bevel
+      part(g, 0, -0.02, -0.045, 0.05, 0.06, 0.018, gunmetal);          // guard
+      part(g, 0, -0.03, 0.02, 0.03, 0.05, 0.11, wood);                 // handle
+      part(g, 0, -0.03, 0.075, 0.034, 0.054, 0.014, steel);            // pommel
       return g;
     })();
     for (var k in models) { models[k].visible = false; rig.add(models[k]); }
@@ -110,9 +182,10 @@ var Weapons = (function () {
   function startReload() {
     var w = CFG.WEAPONS[current], a = ammo[current];
     if (w.type === 'melee' || a.mag >= w.mag || a.reserve <= 0 || isReloading()) return;
-    if (w.shellReload) { reloadingShell = true; reloadUntil = performance.now() + w.reload * 1000; }
-    else { reloadUntil = performance.now() + w.reload * 1000; }
-    AudioSys.reload(null);
+    reloadStartAt = performance.now();
+    reloadDur = w.reload * 1000;
+    if (w.shellReload) { reloadingShell = true; reloadUntil = reloadStartAt + reloadDur; }
+    else { reloadUntil = reloadStartAt + reloadDur; AudioSys.reload(current, null); }
     UI.setReloading(true);
   }
   function isReloading() { return performance.now() < reloadUntil; }
@@ -120,14 +193,14 @@ var Weapons = (function () {
   function finishReload() {
     var w = CFG.WEAPONS[current], a = ammo[current];
     if (w.shellReload) {
-      if (a.mag < w.mag && a.reserve > 0) { a.mag++; a.reserve--; AudioSys.magIn(null); }
+      if (a.mag < w.mag && a.reserve > 0) { a.mag++; a.reserve--; AudioSys.shellIn(null); }
       if (a.mag < w.mag && a.reserve > 0 && reloadingShell) {
-        reloadUntil = performance.now() + w.reload * 1000; // next shell
+        reloadStartAt = performance.now();
+        reloadUntil = reloadStartAt + w.reload * 1000; // next shell
       } else { reloadingShell = false; UI.setReloading(false); }
     } else {
       var need = w.mag - a.mag, take = Math.min(need, a.reserve);
       a.mag += take; a.reserve -= take;
-      AudioSys.magIn(null);
       UI.setReloading(false);
     }
     UI.setWeapon(w.label, a.mag, a.reserve, throwsLeft);
@@ -255,7 +328,7 @@ var Weapons = (function () {
     }
     if (w.type !== 'melee') {
       if (a.mag <= 0) {
-        AudioSys.magIn(null); // dry click
+        AudioSys.dryFire(current);
         if (a.reserve > 0) startReload();
         nextFireAt = t + 250;
         return;
@@ -264,15 +337,23 @@ var Weapons = (function () {
     }
     nextFireAt = t + 60000 / w.rpm;
     kick = 1;
-    PlayerCtl.pitch += w.recoil * (0.85 + Math.random() * 0.35);
-    PlayerCtl.yaw += (Math.random() - 0.5) * w.recoil * 0.45;
+    // Pattern recoil: vertical kick + horizontal drift that wanders as a burst grows.
+    recoilAccum += w.recoil;
+    PlayerCtl.pitch += w.recoil * (0.9 + Math.random() * 0.25);
+    PlayerCtl.yaw += ((Math.random() - 0.5) + (w.drift || 0) * 0.5 * Math.sin(recoilAccum * 24)) * w.recoil * 0.5;
 
     if (w.type === 'melee') fireMelee(w);
     else if (w.type === 'rocket') { AudioSys.shot('rocket', null); fireRocket(w); }
     else {
       AudioSys.shot(current, null);
       fireHitscan(w);
+      // brass ejection from the port, thrown to the shooter's right
+      var ep = tmpV.set(0.3, -0.16, -0.35).applyQuaternion(camera.getWorldQuaternion(tmpQ)).add(camera.position);
+      var right = new THREE.Vector3(1, 0, 0).applyQuaternion(tmpQ);
+      FX.shell(ep, right);
       if (w.type === 'bolt') { boltUntil = t + w.boltTime * 1000; setTimeout(function () { AudioSys.bolt(null); }, 260); }
+      if (w.type === 'pump') { pumpAnim = 1; setTimeout(function () { AudioSys.bolt(null); }, 130); }
+      if (current === 'pistol') slideAnim = 1;
     }
     UI.setWeapon(w.label, a.mag, a.reserve, throwsLeft);
     if (w.type !== 'melee' && a.mag === 0 && a.reserve > 0) setTimeout(startReload, w.type === 'pump' ? 400 : 220);
@@ -427,22 +508,47 @@ var Weapons = (function () {
     if (triggerDown && (w.type === 'auto')) tryFire();
     if (semiQueued) { semiQueued = false; tryFire(); }
 
+    // recoil recovery: after the burst ends, walk ~55% of accumulated kick back down
+    if (recoilAccum > 0.0001 && t > nextFireAt + 90) {
+      var rec = Math.min(recoilAccum, dt * 0.4);
+      PlayerCtl.pitch -= rec * 0.55;
+      recoilAccum -= rec;
+    }
+
     // viewmodel motion
     var aiming = Input.aim && PlayerCtl.alive && w.type !== 'melee';
     var scoped = aiming && w.scope;
     var tx = aiming ? 0 : 0.26;
     var ty = aiming ? -0.115 : -0.22;
     var tz = aiming ? -0.34 : -0.5;
-    if (isReloading()) { ty -= 0.12; }
+    if (isReloading()) { ty -= 0.1; }
     var lerp = Math.min(1, dt * 10);
     rig.position.x += (tx - rig.position.x) * lerp;
     rig.position.y += (ty - rig.position.y) * lerp;
     rig.position.z += (tz + kick * 0.09 - rig.position.z) * lerp;
-    rig.rotation.x = -kick * 0.06 + (isReloading() ? -0.5 : 0) + meleeAnim * -0.9;
+    rig.rotation.x = -kick * 0.06 + (isReloading() ? -0.42 : 0) + meleeAnim * -0.9;
     rig.rotation.z = meleeAnim * 0.4;
     kick *= Math.pow(0.02, dt);
     meleeAnim *= Math.pow(0.003, dt);
+    pumpAnim *= Math.pow(0.004, dt);
+    slideAnim *= Math.pow(0.001, dt);
     rig.visible = PlayerCtl.alive && !scoped;
+
+    // part animations on the active model
+    var mdl = models[current];
+    if (mdl) {
+      if (mdl.userData.mag) {
+        var off = 0;
+        if (isReloading() && !CFG.WEAPONS[current].shellReload && reloadDur > 0) {
+          var ph = (t - reloadStartAt) / reloadDur; // 0..1: mag drops out, pauses, seats back
+          off = ph < 0.38 ? Math.min(1, ph / 0.3) : (ph < 0.56 ? 1 : Math.max(0, 1 - (ph - 0.56) / 0.3));
+        }
+        mdl.userData.mag.position.y = mdl.userData.magHome.y - 0.15 * off;
+        mdl.userData.mag.rotation.x = -0.35 * off;
+      }
+      if (mdl.userData.pump) mdl.userData.pump.position.z = mdl.userData.pumpHome.z + 0.1 * pumpAnim;
+      if (mdl.userData.slide) mdl.userData.slide.position.z = mdl.userData.slideHome.z + 0.06 * slideAnim;
+    }
 
     updateProjectiles(dt);
     return { aiming: aiming, scoped: scoped, adsFov: w.adsFov, speedMult: w.speed };

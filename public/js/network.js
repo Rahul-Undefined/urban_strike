@@ -10,7 +10,9 @@ var Net = (function () {
   var remotes = {};   // id -> remote record
   var roster = [];    // lobby payload players (names/colors/scores)
   var ping = 0;
-  var match = { killTarget: 10, minutes: 10, startedAt: 0, serverOffset: 0 };
+  var match = { killTarget: 15, minutes: 10, mode: 'ffa', startedAt: 0, serverOffset: 0 };
+  var teamKills = { a: 0, b: 0 };
+  var myTeam = null;
   var scene = null;
   var P = CFG.PLAYER;
 
@@ -58,7 +60,27 @@ var Net = (function () {
     var gun = bx(0.18, 0.28, -0.42, 0.08, 0.1, 0.62, dark);
     var tag = nameTag(name, colorHex);
     tag.position.y = 1.18; g.add(tag);
-    return { group: g, legL: legL, legR: legR, gun: gun, head: head, torso: torso };
+    // floating health bar (canvas sprite, redrawn only when hp changes)
+    var hc = document.createElement('canvas'); hc.width = 128; hc.height = 18;
+    var htx = new THREE.CanvasTexture(hc);
+    var hs = new THREE.Sprite(new THREE.SpriteMaterial({ map: htx, depthTest: false, transparent: true }));
+    hs.scale.set(0.92, 0.13, 1);
+    hs.position.y = 0.98; hs.visible = false; g.add(hs);
+    var hb = { sprite: hs, canvas: hc, ctx: hc.getContext('2d'), tex: htx };
+    return { group: g, legL: legL, legR: legR, gun: gun, head: head, torso: torso, hb: hb };
+  }
+
+  function drawHpBar(r, ally) {
+    var g = r.av.hb.ctx, W = 128, H = 18;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = 'rgba(8,10,14,0.78)';
+    g.fillRect(0, 2, W, H - 4);
+    var frac = Math.max(0, Math.min(1, r.dispHp / CFG.PLAYER.hp));
+    g.fillStyle = ally ? (myTeam ? CFG.TEAMS[myTeam].color : '#63d968') : '#e8563e';
+    g.fillRect(2, 4, (W - 4) * frac, H - 8);
+    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 2;
+    g.strokeRect(1, 3, W - 2, H - 6);
+    r.av.hb.tex.needsUpdate = true;
   }
 
   function ensureRemote(rp) {
@@ -68,8 +90,9 @@ var Net = (function () {
       var av = buildAvatar(rp.name, rp.color);
       scene.add(av.group);
       r = remotes[rp.id] = {
-        id: rp.id, name: rp.name, color: rp.color,
+        id: rp.id, name: rp.name, color: rp.color, team: rp.team || null,
         av: av, buf: [], alive: false, crouch: false, mv: 0,
+        hp: 100, dispHp: 100, hbDrawn: -1, lastShotAt: 0, lastDamagedAt: 0,
         renderPos: new THREE.Vector3(0, -50, 0), ry: 0, rx: 0, ln: 0,
         stepAcc: 0, lastRP: new THREE.Vector3(0, -50, 0)
       };
@@ -91,7 +114,16 @@ var Net = (function () {
       isHost = (d.hostId === myIdV);
       match.killTarget = d.settings.killTarget;
       match.minutes = d.settings.minutes;
-      d.players.forEach(function (p) { if (p.id !== myIdV) ensureRemote(p); });
+      match.mode = d.settings.mode || 'ffa';
+      var me = d.players.find(function (p) { return p.id === myIdV; });
+      myTeam = me ? (me.team || null) : myTeam;
+      d.players.forEach(function (p) {
+        if (p.id === myIdV) return;
+        var ex = remotes[p.id];
+        if (ex && ex.color !== p.color) removeRemote(p.id); // team recolor -> rebuild avatar
+        var r2 = ensureRemote(p);
+        if (r2) r2.team = p.team || null;
+      });
       for (var id in remotes) {
         if (!d.players.some(function (p) { return p.id === id; })) removeRemote(id);
       }
@@ -106,18 +138,23 @@ var Net = (function () {
       phase = 'playing';
       match.killTarget = d.settings.killTarget;
       match.minutes = d.settings.minutes;
+      match.mode = d.settings.mode || 'ffa';
       match.startedAt = d.startedAt;
       match.serverOffset = d.serverNow - Date.now();
       roster = d.players;
+      var me = d.players.find(function (p) { return p.id === myIdV; });
+      myTeam = me ? (me.team || null) : null;
+      teamKills = { a: 0, b: 0 };
       Game.onMatchStart(d);
     });
 
     s.on('snap', function (d) {
       var tLocal = performance.now();
+      if (d.tk) teamKills = d.tk;
       for (var id in d.players) {
         var st = d.players[id];
         if (id === myIdV) {
-          UI.setVitals(st.hp, st.ar);
+          UI.setVitals(st.hp, st.lv, st.du);
           continue;
         }
         var r = remotes[id];
@@ -128,9 +165,16 @@ var Net = (function () {
         }
         r.buf.push({ t: tLocal, p: st.p, ry: st.ry, rx: st.rx, cr: st.cr, mv: st.mv, ln: st.ln });
         if (r.buf.length > 40) r.buf.shift();
+        if (st.hp < r.hp) r.lastDamagedAt = tLocal;
+        r.hp = st.hp;
+        r.team = st.tm || null;
         r.alive = !!st.al;
       }
     });
+
+    s.on('vitals', function (d) { UI.setVitals(d.hp, d.lv, d.du); });
+    s.on('pickup', function (d) { Pickups.onCollected(d, d.by === myIdV); });
+    s.on('pickupSpawn', function (d) { Pickups.onSpawn(d.id); });
 
     s.on('spawn', function (d) {
       if (d.id === myIdV) { Game.onLocalSpawn(d.pos, d.ry); }
@@ -141,7 +185,7 @@ var Net = (function () {
     });
 
     s.on('damaged', function (d) {
-      UI.setVitals(d.hp, d.armor);
+      UI.setVitals(d.hp, d.lv, d.du);
       FX.damageFlash(0.3);
       FX.shake(0.12);
       if (d.fromPos) {
@@ -244,6 +288,7 @@ var Net = (function () {
       FX.muzzle(o, false);
       var r = remotes[d.id];
       if (r) {
+        r.lastShotAt = performance.now();
         var cp = Math.cos(r.rx);
         var dir = new THREE.Vector3(Math.sin(r.ry) * cp, Math.sin(r.rx), -Math.cos(r.ry) * cp).normalize();
         var wh = World.rayHit(o, dir, 140);
@@ -296,6 +341,13 @@ var Net = (function () {
       r.av.head.rotation.x = -r.rx * 0.55;
       r.av.gun.rotation.x = -r.rx * 0.7;
 
+      // floating health bar — smooth lerp; allies always, enemies only while recently hurt
+      var ally = !!(myTeam && r.team === myTeam);
+      r.dispHp += (r.hp - r.dispHp) * Math.min(1, dt * 9);
+      var showBar = ally || (r.hp < CFG.PLAYER.hp && (performance.now() - r.lastDamagedAt) < 5000);
+      r.av.hb.sprite.visible = showBar;
+      if (showBar && Math.abs(r.dispHp - r.hbDrawn) > 0.6) { drawHpBar(r, ally); r.hbDrawn = r.dispHp; }
+
       var moved = r.renderPos.distanceTo(r.lastRP);
       r.lastRP.copy(r.renderPos);
       if (r.mv > 0 && moved > 0.001) {
@@ -334,6 +386,9 @@ var Net = (function () {
     getPing: function () { return ping; },
     getMatch: function () { return match; },
     getIsHost: function () { return isHost; },
-    getRoomCode: function () { return roomCode; }
+    getRoomCode: function () { return roomCode; },
+    getMyTeam: function () { return myTeam; },
+    getTeamKills: function () { return teamKills; },
+    isAlly: function (id) { var r = remotes[id]; return !!(myTeam && r && r.team === myTeam); }
   };
 })();

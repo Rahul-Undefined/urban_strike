@@ -198,3 +198,50 @@ button { font-family: var(--disp); cursor: pointer; }
 .loader-bar { width: 220px; height: 3px; background: var(--line); position: relative; overflow: hidden; }
 .loader-bar::after { content: ''; position: absolute; left: -40%; width: 40%; height: 100%; background: var(--amber); animation: load 1s infinite linear; }
 @keyframes load { to { left: 100%; } }
+
+/* ===== v2: minimap, armor badge, teams ===== */
+#minimap {
+  position: fixed; top: 16px; right: 16px;
+  width: 200px; height: 200px;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 14px rgba(0,0,0,0.55));
+  z-index: 5;
+}
+#team-score {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700; font-size: 22px; letter-spacing: 1px;
+  padding: 2px 14px; margin-top: 4px;
+  background: rgba(10,13,18,0.55); border-radius: 4px;
+}
+#team-score .ta { color: #f0a232; }
+#team-score .tb { color: #4fa3e0; }
+#team-score .sep { color: #8b93a0; padding: 0 8px; }
+
+#armor-badge { transition: background 0.2s, color 0.2s; border-radius: 3px; padding: 0 6px; }
+#armor-badge.lv1 { background: #9aa3ad; color: #14171c; }
+#armor-badge.lv2 { background: #4fa3e0; color: #0d1420; }
+#armor-badge.lv3 { background: #f0c040; color: #241c05; }
+#armor-row.empty { opacity: 0.38; }
+
+.player-list li .team-chip {
+  display: inline-block; font-style: normal; font-weight: 700; font-size: 11px;
+  padding: 0 6px; border-radius: 3px; margin-left: 8px; letter-spacing: 0.6px;
+}
+.team-chip.ta { background: rgba(240,162,50,0.18); color: #f0a232; }
+.team-chip.tb { background: rgba(79,163,224,0.18); color: #4fa3e0; }
+.player-list li.hdr {
+  font-family: 'Rajdhani', sans-serif; font-weight: 700; letter-spacing: 1.4px;
+  font-size: 13px; padding: 8px 10px 2px; background: none; border: none;
+}
+.player-list li.hdr.ta { color: #f0a232; }
+.player-list li.hdr.tb { color: #4fa3e0; }
+
+#scoreboard tr.team-hdr td, .end-table tr.team-hdr td {
+  font-family: 'Rajdhani', sans-serif; font-weight: 700; letter-spacing: 1.2px;
+  padding-top: 10px; border-bottom: 1px solid rgba(139,147,160,0.25);
+}
+#scoreboard tr.team-hdr.ta td, .end-table tr.team-hdr.ta td { color: #f0a232; }
+#scoreboard tr.team-hdr.tb td, .end-table tr.team-hdr.tb td { color: #4fa3e0; }
+.end-title.team-a { color: #f0a232; }
+.end-title.team-b { color: #4fa3e0; }

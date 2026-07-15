@@ -50,6 +50,12 @@ var FX = (function () {
       e.mesh.scale.setScalar(0.3 + t * 0.9);
       e.mesh.material.opacity = 0.4 * (1 - t);
     });
+    // Bullet hole — dark decal sprite, pulled a hair off the surface toward the camera.
+    var hole = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x14171c, transparent: true, opacity: 0.85, depthWrite: false }));
+    hole.position.copy(point);
+    if (camera) hole.position.addScaledVector(new THREE.Vector3().subVectors(camera.position, point).normalize(), 0.045);
+    hole.scale.set(0.08, 0.08, 1);
+    add(hole, 4.5, function (e, t) { if (t > 0.6) e.mesh.material.opacity = 0.85 * (1 - (t - 0.6) / 0.4); });
   }
 
   function bloodPuff(point) {
@@ -63,17 +69,50 @@ var FX = (function () {
     }
   }
 
-  // Muzzle flash: sprite + brief point light (local gun) / sprite only (remote)
+  // Muzzle flash: crossed star spikes + hot core + smoke wisp + brief light.
   function muzzle(worldPos, isLocal) {
-    var fl = new THREE.Sprite(fireMat.clone());
-    fl.position.copy(worldPos);
-    fl.scale.set(0.5 + Math.random() * 0.3, 0.5 + Math.random() * 0.3, 1);
-    add(fl, 0.05, function (e, t) { e.mesh.material.opacity = 0.95 * (1 - t); });
+    var baseRot = Math.random() * Math.PI;
+    for (var i = 0; i < 3; i++) {
+      var spike = new THREE.Sprite(fireMat.clone());
+      spike.material.rotation = baseRot + i * 1.05;
+      spike.position.copy(worldPos);
+      var len = 0.55 + Math.random() * 0.35;
+      spike.scale.set(len, 0.14 + Math.random() * 0.06, 1);
+      add(spike, 0.05, function (e, t) { e.mesh.material.opacity = 0.95 * (1 - t); });
+    }
+    var core = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xfff2c8, transparent: true, opacity: 1, depthWrite: false }));
+    core.position.copy(worldPos);
+    core.scale.set(0.22, 0.22, 1);
+    add(core, 0.04, function (e, t) { e.mesh.material.opacity = 1 - t; });
+    var wisp = new THREE.Sprite(smokeMat.clone());
+    wisp.position.copy(worldPos);
+    wisp.scale.set(0.15, 0.15, 1);
+    add(wisp, 0.5, function (e, t, dt) {
+      e.mesh.position.y += 0.45 * dt;
+      e.mesh.scale.setScalar(0.15 + t * 0.55);
+      e.mesh.material.opacity = 0.3 * (1 - t);
+    });
     if (isLocal && muzzleLight) {
       muzzleLight.position.copy(worldPos);
-      muzzleLight.intensity = 2.2;
+      muzzleLight.intensity = 2.6;
       setTimeout(function () { muzzleLight.intensity = 0; }, 45);
     }
+  }
+
+  // Brass shell ejection: small tumbling box thrown to the shooter's right.
+  var brassMat = new THREE.MeshBasicMaterial({ color: 0xd8a740 });
+  function shell(pos, right) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.022, 0.055), brassMat);
+    m.position.copy(pos);
+    var v = new THREE.Vector3()
+      .copy(right).multiplyScalar(1.3 + Math.random() * 0.9)
+      .add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.6 + Math.random() * 0.8, (Math.random() - 0.5) * 0.4));
+    var rs = new THREE.Vector3(Math.random() * 14, Math.random() * 14, Math.random() * 14);
+    add(m, 0.85, function (e, t, dt) {
+      v.y -= 11 * dt;
+      e.mesh.position.addScaledVector(v, dt);
+      e.mesh.rotation.x += rs.x * dt; e.mesh.rotation.y += rs.y * dt; e.mesh.rotation.z += rs.z * dt;
+    });
   }
 
   function explosion(pos, radius) {
@@ -196,7 +235,7 @@ var FX = (function () {
 
   return {
     init: init, initDOM: initDOM, update: update,
-    tracer: tracer, impact: impact, bloodPuff: bloodPuff, muzzle: muzzle,
+    tracer: tracer, impact: impact, bloodPuff: bloodPuff, muzzle: muzzle, shell: shell,
     explosion: explosion, smokeCloud: smokeCloud,
     shake: shake, applyShake: applyShake,
     damageFlash: damageFlash, damageDirection: damageDirection,

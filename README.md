@@ -1,14 +1,20 @@
-# URBAN STRIKE — browser multiplayer FPS (2–4 players)
+# URBAN STRIKE — browser multiplayer FPS (2–10 players · FFA / 3v3 / 5v5)
 
-A Counter-Strike-inspired deathmatch you run yourself. No accounts, no downloads for your friends — you share a 5-letter room code, they open a link.
+A Counter-Strike-inspired shooter you run yourself. No accounts, no downloads for your friends — you share a 5-letter room code, they open a link.
 
-**Map:** "Sector 7" industrial district — enterable warehouse, 3-floor apartment with rooftop sniper nest, office, garage, watchtower, shipping containers, wrecked and parked vehicles as cover, craters, alleys.
+**Map:** "Sector 7" industrial district — enterable warehouse, 3-floor apartment with rooftop sniper nest, office, garage, watchtower, container yards, a **sunken tunnel**, a **construction site** with crane and open sniper decks, the huge **Depot B** warehouse with roof access, **row houses** with a climbable middle rooftop, and a west **rail yard bunker**.
 
-**Weapons:** AK-47, M4A1, bolt-action sniper (with scope), Uzi, pump shotgun, pistol, rocket launcher, knife + frag / smoke / flash grenades.
+**Modes:** Free For All (up to 10), 3v3, 5v5 — automatic team balancing, team colors, friendly fire off, first team to the kill target wins.
 
-**Netcode:** server-authoritative health with hit validation, 15 Hz snapshots, client interpolation, respawn at the spawn farthest from enemies.
+**Weapons:** AK-47, M4A1, bolt-action sniper (with scope), Uzi, pump shotgun, pistol, rocket launcher, knife + frag / smoke / flash grenades. Every gun has its own firing, reload, and dry-fire sound, brass shell ejection, and a recoil pattern with horizontal drift.
 
-**Audio:** every sound is synthesized in the browser (Web Audio) — footsteps are directional and quieter when crouched.
+**Pickups:** health packs (+50) and PUBG-style armor vests — L1 common, L2 uncommon, **one single L3 on the apartment roof**. Armor has durability and breaks; your HUD shows the level badge and remaining durability. Everything respawns on timers.
+
+**HUD:** rotating minimap (top-right) with teammate dots and enemy detection when they fire or get close, enemy health bars that appear when a target is recently hurt, kill feed, team score, scoreboard.
+
+**Netcode:** server-authoritative health, armor, and pickups; hit validation with fire-rate + position-history checks; 15 Hz snapshots with client interpolation; team-aware spawn selection.
+
+**Audio:** every sound is synthesized in the browser (Web Audio) — zero audio files.
 
 ---
 

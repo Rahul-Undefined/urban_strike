@@ -144,12 +144,17 @@ var Game = (function () {
     UI.setLoading(true);
     setTimeout(function () {           // let the loading bar paint before the ~1s map build
       World.build(scene);
+      Pickups.build(scene);
+      Pickups.init(d.pickups);
+      Minimap.init();
       if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
       AudioSys.ambient();
       UI.setLoading(false);
       UI.hideEnd(); UI.hideDeath();
       UI.showHUD();
-      UI.setKillTarget('FIRST TO ' + d.settings.killTarget);
+      var teams = CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams;
+      UI.setKillTarget((teams ? 'FIRST TEAM TO ' : 'FIRST TO ') + d.settings.killTarget);
+      UI.setTeamScore({ a: 0, b: 0 }, Net.getMyTeam(), !!teams);
       UI.showClickToPlay(true);
     }, 60);
   }
@@ -158,7 +163,7 @@ var Game = (function () {
     PlayerCtl.spawnAt(pos, ry);
     Weapons.resetLoadout();
     UI.hideDeath();
-    UI.setVitals(CFG.PLAYER.hp, CFG.PLAYER.armor);
+    UI.setVitals(CFG.PLAYER.hp, 0, 0);
     UI.setCrosshair(true);
     if (deathInterval) { clearInterval(deathInterval); deathInterval = null; }
   }
@@ -240,15 +245,19 @@ var Game = (function () {
       FX.update(dt);
       FX.applyShake(camera);
       FX.updateFlash(dt);
+      Pickups.update(dt);
+      Minimap.update();
 
       camera.getWorldDirection(fwdV);
       AudioSys.updateListener(camera.position, fwdV, upV);
 
-      // match timer
+      // match timer + team score
       timerAccum += dt;
       if (timerAccum > 0.25) {
         timerAccum = 0;
         var m = Net.getMatch();
+        var teamsOn = CFG.MODES[m.mode] && CFG.MODES[m.mode].teams;
+        if (teamsOn) UI.setTeamScore(Net.getTeamKills(), Net.getMyTeam(), true);
         if (m.minutes > 0) {
           var serverNow = Date.now() + m.serverOffset;
           var remain = Math.max(0, m.startedAt + m.minutes * 60000 - serverNow);

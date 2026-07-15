@@ -8,7 +8,8 @@ var UI = (function () {
 
   function cache() {
     ['menu-layer', 'hud-layer', 'screen-main', 'screen-create', 'screen-join', 'screen-lobby',
-      'create-name', 'create-kills', 'create-time', 'btn-create', 'btn-goto-create', 'btn-goto-join',
+      'create-name', 'create-mode', 'create-kills', 'create-time', 'btn-create', 'btn-goto-create', 'btn-goto-join',
+      'lobby-mode', 'team-score', 'armor-badge', 'armor-row',
       'join-name', 'join-code', 'btn-join',
       'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count', 'lobby-kills', 'lobby-time',
       'lobby-hint', 'btn-start', 'btn-leave',
@@ -41,35 +42,70 @@ var UI = (function () {
 
   // ---------- lobby ----------
   function updateLobby(d, myId) {
+    var mode = CFG.MODES[d.settings.mode] || CFG.MODES.ffa;
     els['lobby-code'].textContent = d.code;
-    els['lobby-count'].textContent = d.players.length + '/' + CFG.MATCH.maxPlayers;
+    els['lobby-count'].textContent = d.players.length + '/' + mode.maxPlayers;
     els['lobby-players'].innerHTML = '';
-    d.players.forEach(function (p) {
+
+    function row(p) {
       var li = document.createElement('li');
       var host = p.id === d.hostId ? ' <em class="host-tag">HOST</em>' : '';
       var you = p.id === myId ? ' <em class="you-tag">YOU</em>' : '';
       li.innerHTML = '<i class="dot" style="background:' + p.color + '"></i><b>' + p.name + '</b>' + host + you;
       els['lobby-players'].appendChild(li);
-    });
+    }
+    if (mode.teams) {
+      ['a', 'b'].forEach(function (t) {
+        var hdr = document.createElement('li');
+        hdr.className = 'hdr t' + t;
+        hdr.textContent = 'TEAM ' + CFG.TEAMS[t].name;
+        els['lobby-players'].appendChild(hdr);
+        d.players.filter(function (p) { return p.team === t; }).forEach(row);
+      });
+    } else {
+      d.players.forEach(row);
+    }
+
     var isHost = d.hostId === myId;
     els['btn-start'].style.display = isHost ? '' : 'none';
     els['lobby-hint'].textContent = isHost
       ? (d.players.length < 2 ? 'You can start solo to explore, or wait for friends.' : 'Ready when you are.')
       : 'Waiting for host to start\u2026';
+    els['lobby-mode'].disabled = !isHost;
     els['lobby-kills'].disabled = !isHost;
     els['lobby-time'].disabled = !isHost;
+    els['lobby-mode'].value = d.settings.mode || 'ffa';
     els['lobby-kills'].value = String(d.settings.killTarget);
     els['lobby-time'].value = String(d.settings.minutes);
   }
 
   // ---------- HUD ----------
-  function setVitals(hp, armor) {
-    hp = Math.max(0, Math.round(hp)); armor = Math.max(0, Math.round(armor));
+  function setVitals(hp, lv, du) {
+    hp = Math.max(0, Math.round(hp)); lv = lv | 0; du = Math.max(0, Math.round(du || 0));
     els['hp-fill'].style.width = hp + '%';
     els['hp-num'].textContent = hp;
-    els['armor-fill'].style.width = (armor / CFG.PLAYER.armor * 100) + '%';
-    els['armor-num'].textContent = armor;
     els['hp-fill'].classList.toggle('low', hp <= 30);
+    if (lv > 0 && CFG.ARMOR[lv]) {
+      els['armor-badge'].textContent = CFG.ARMOR[lv].label;
+      els['armor-badge'].className = 'stat-label lv' + lv;
+      els['armor-fill'].style.width = Math.min(100, du / CFG.ARMOR[lv].dur * 100) + '%';
+      els['armor-num'].textContent = du;
+      els['armor-row'].classList.remove('empty');
+    } else {
+      els['armor-badge'].textContent = 'AR';
+      els['armor-badge'].className = 'stat-label';
+      els['armor-fill'].style.width = '0%';
+      els['armor-num'].textContent = 0;
+      els['armor-row'].classList.add('empty');
+    }
+  }
+  function setTeamScore(tk, myTeam, show) {
+    if (!show) { els['team-score'].classList.add('hidden'); return; }
+    els['team-score'].classList.remove('hidden');
+    els['team-score'].innerHTML =
+      '<span class="ta">' + CFG.TEAMS.a.name + ' ' + tk.a + '</span>' +
+      '<span class="sep">\u2013</span>' +
+      '<span class="tb">' + tk.b + ' ' + CFG.TEAMS.b.name + '</span>';
   }
   function setWeapon(label, mag, reserve, throwsLeft) {
     els['weapon-name'].textContent = label;
@@ -111,15 +147,28 @@ var UI = (function () {
 
   function updateScoreboard(roster, myId, code, ping) {
     els['sb-code'].textContent = code ? '\u00b7 ROOM ' + code : '';
-    var rows = roster.slice().sort(function (a, b) { return b.kills - a.kills || a.deaths - b.deaths; });
     els['sb-body'].innerHTML = '';
-    rows.forEach(function (p) {
+    function row(p) {
       var tr = document.createElement('tr');
       if (p.id === myId) tr.className = 'me';
       var pg = (p.id === myId) ? ping : p.ping;
       tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (pg | 0) + '</td>';
       els['sb-body'].appendChild(tr);
-    });
+    }
+    var mode = CFG.MODES[(Net.getMatch().mode) || 'ffa'] || CFG.MODES.ffa;
+    if (mode.teams) {
+      ['a', 'b'].forEach(function (t) {
+        var members = roster.filter(function (p) { return p.team === t; });
+        var total = members.reduce(function (s, p) { return s + p.kills; }, 0);
+        var hdr = document.createElement('tr');
+        hdr.className = 'team-hdr t' + t;
+        hdr.innerHTML = '<td>TEAM ' + CFG.TEAMS[t].name + '</td><td>' + total + '</td><td></td><td></td>';
+        els['sb-body'].appendChild(hdr);
+        members.sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
+      });
+    } else {
+      roster.slice().sort(function (a, b) { return b.kills - a.kills || a.deaths - b.deaths; }).forEach(row);
+    }
   }
   function showScoreboard(on) { els['scoreboard'].classList.toggle('hidden', !on); }
 
@@ -136,18 +185,37 @@ var UI = (function () {
   function showEnd(d, myId, isHost) {
     els['end-overlay'].classList.remove('hidden');
     var winner = d.players.find(function (p) { return p.id === d.winnerId; });
-    if (d.winnerId === myId) { els['end-title'].textContent = 'VICTORY'; els['end-title'].className = 'end-title win'; }
-    else { els['end-title'].textContent = 'MATCH OVER'; els['end-title'].className = 'end-title'; }
-    els['end-sub'].textContent = winner
-      ? winner.name + ' wins' + (d.reason === 'time' ? ' on time' : d.reason === 'forfeit' ? ' by forfeit' : '')
-      : 'Time expired';
-    var rows = d.players.slice().sort(function (a, b) { return b.kills - a.kills; });
+    var me = d.players.find(function (p) { return p.id === myId; });
     els['end-body'].innerHTML = '';
-    rows.forEach(function (p) {
+    function row(p) {
       var tr = document.createElement('tr');
       tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td>';
       els['end-body'].appendChild(tr);
-    });
+    }
+    if (d.winnerTeam) {
+      var won = me && me.team === d.winnerTeam;
+      els['end-title'].textContent = won ? 'VICTORY' : ('TEAM ' + CFG.TEAMS[d.winnerTeam].name + ' WINS');
+      els['end-title'].className = 'end-title team-' + d.winnerTeam + (won ? ' win' : '');
+      els['end-sub'].textContent = d.teamKills
+        ? (CFG.TEAMS.a.name + ' ' + d.teamKills.a + ' \u2013 ' + d.teamKills.b + ' ' + CFG.TEAMS.b.name +
+          (d.reason === 'time' ? ' \u00b7 time expired' : d.reason === 'forfeit' ? ' \u00b7 forfeit' : ''))
+        : '';
+      ['a', 'b'].forEach(function (t) {
+        var hdr = document.createElement('tr');
+        hdr.className = 'team-hdr t' + t;
+        hdr.innerHTML = '<td>TEAM ' + CFG.TEAMS[t].name + '</td><td></td><td></td>';
+        els['end-body'].appendChild(hdr);
+        d.players.filter(function (p) { return p.team === t; })
+          .sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
+      });
+    } else {
+      if (d.winnerId === myId) { els['end-title'].textContent = 'VICTORY'; els['end-title'].className = 'end-title win'; }
+      else { els['end-title'].textContent = 'MATCH OVER'; els['end-title'].className = 'end-title'; }
+      els['end-sub'].textContent = winner
+        ? winner.name + ' wins' + (d.reason === 'time' ? ' on time' : d.reason === 'forfeit' ? ' by forfeit' : '')
+        : 'Time expired';
+      d.players.slice().sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
+    }
     els['btn-back-lobby'].style.display = isHost ? '' : 'none';
     els['end-hint'].style.display = isHost ? 'none' : '';
   }
@@ -194,6 +262,7 @@ var UI = (function () {
       if (!name) { toast('Enter a callsign first', true); els['create-name'].focus(); return; }
       els['btn-create'].disabled = true;
       Net.createRoom(name, {
+        mode: els['create-mode'].value,
         killTarget: parseInt(els['create-kills'].value, 10),
         minutes: parseInt(els['create-time'].value, 10)
       }, function (res) {
@@ -222,12 +291,16 @@ var UI = (function () {
       if (navigator.clipboard) navigator.clipboard.writeText(code);
       toast('Code ' + code + ' copied');
     };
-    els['lobby-kills'].addEventListener('change', function () {
-      Net.updateSettings({ killTarget: parseInt(this.value, 10), minutes: parseInt(els['lobby-time'].value, 10) });
-    });
-    els['lobby-time'].addEventListener('change', function () {
-      Net.updateSettings({ killTarget: parseInt(els['lobby-kills'].value, 10), minutes: parseInt(this.value, 10) });
-    });
+    function pushSettings() {
+      Net.updateSettings({
+        mode: els['lobby-mode'].value,
+        killTarget: parseInt(els['lobby-kills'].value, 10),
+        minutes: parseInt(els['lobby-time'].value, 10)
+      });
+    }
+    els['lobby-mode'].addEventListener('change', pushSettings);
+    els['lobby-kills'].addEventListener('change', pushSettings);
+    els['lobby-time'].addEventListener('change', pushSettings);
     els['btn-start'].onclick = function () { Net.startMatch(); };
     els['btn-leave'].onclick = function () { Net.leaveRoom(); showScreen('screen-main'); };
     els['btn-back-lobby'].onclick = function () { Net.returnLobby(); };
@@ -245,7 +318,7 @@ var UI = (function () {
     init: init,
     showScreen: showScreen, showMenu: showMenu, showHUD: showHUD, setLoading: setLoading,
     updateLobby: updateLobby,
-    setVitals: setVitals, setWeapon: setWeapon, setReloading: setReloading,
+    setVitals: setVitals, setTeamScore: setTeamScore, setWeapon: setWeapon, setReloading: setReloading,
     setScope: setScope, setCrosshair: setCrosshair,
     setTimer: setTimer, setKillTarget: setKillTarget,
     addFeed: addFeed, updateScoreboard: updateScoreboard, showScoreboard: showScoreboard,
