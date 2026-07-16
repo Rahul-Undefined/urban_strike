@@ -23,7 +23,7 @@ const PROT = CFG.MATCH.spawnProtect * 1000;
 function phase1(done) {
   console.log('--- Phase 1: FFA / protection / loot ---');
   const A = io(URL), B = io(URL);
-  let bPos = null, bDead = false, bSpawns = 0;
+  let bPos = null, bDead = false, bSpawns = 0, bWp = 0, wpRelayed = false;
   let protViolation = false, gotDamaged = false, gotConfirmV = false, lootList = null;
 
   A.on('connect', () => {
@@ -51,7 +51,8 @@ function phase1(done) {
     bPos = d.pos.slice();
     if (bSpawns === 1) {
       ok(typeof d.prot === 'number' && d.prot > 0, 'spawn event announces protection window');
-      setInterval(() => { if (!bDead) B.emit('st', { p: bPos, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0, ping: 20 }); }, 50);
+      setInterval(() => { if (!bDead) B.emit('st', { p: bPos, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: bWp, ping: 20 }); }, 50);
+      setTimeout(() => { bWp = 9; }, 1200); // simulate equipping the slot-9 exclusive
       // shot INSIDE the protection window must be ignored
       setTimeout(() => A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: bPos }), 700);
       setTimeout(() => {
@@ -80,6 +81,13 @@ function phase1(done) {
   A.on('hitConfirm', (d) => {
     if (!gotConfirmV && d.v) { gotConfirmV = true; ok(d.v === B.id, 'hitConfirm carries victim id for damage numbers'); }
   });
+  A.on('snap', (d) => {
+    const st = d.players && d.players[B.id];
+    if (!wpRelayed && st && st.wp === 9) {
+      wpRelayed = true;
+      ok(true, 'snapshot relays equipped weapon index (wp=9) for remote weapon models');
+    }
+  });
   A.on('death', (d) => {
     if (d.victimId !== B.id || bDead) return;
     bDead = true;
@@ -98,7 +106,13 @@ function phase2(done) {
   let ffViolation = false, tkChecked = false;
   let bLv = 0, bDu = 0, bHp = 100;
 
+  let aPos = null;
   [A, B, C].forEach(s => s.on('lobby', (d) => { lastLobby = d; }));
+  A.on('spawn', (d) => {
+    if (d.id !== A.id) return;
+    aPos = d.pos.slice();
+    if (!A._st) A._st = setInterval(() => A.emit('st', { p: aPos, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0 }), 50);
+  });
   function team(id) { return lastLobby.players.find(p => p.id === id).team; }
 
   A.on('connect', () => {
@@ -156,10 +170,13 @@ function phase2(done) {
     }, 500);
   }
   function stepSoak(lvl) {
+    aPos = [bPos[0] + 2, bPos[1], bPos[2]]; // point-blank: no range falloff in the math
     let first = null;
     const h = (d) => { if (!first) { first = d; B.off('damaged', h); } };
     B.on('damaged', h);
-    A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: bPos });
+    setTimeout(() => { // let A's repositioned st stream reach the server first
+      A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: bPos });
+    }, 350);
     setTimeout(() => {
       const soak = Math.min(CFG.ARMOR[lvl].dur, 33 * CFG.ARMOR[lvl].absorb);
       const expDu = Math.round(CFG.ARMOR[lvl].dur - soak);
@@ -168,7 +185,7 @@ function phase2(done) {
         'armor soak math exact (hp ' + expHp + ', dur ' + expDu + ') [got ' + JSON.stringify(first) + ']');
       bHp = first ? first.hp : bHp;
       stepHeal();
-    }, 500);
+    }, 900);
   }
   function stepHeal() {
     const spot = findLoot(e => CFG.LOOT_ITEMS[e.t].kind === 'heal');
@@ -189,11 +206,15 @@ function phase2(done) {
   });
   function stepAssistKill() {
     // C softens B (>= assistMinDmg), then A finishes: C must earn the assist
-    C.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: bPos });
+    cPos = [bPos[0] - 2, bPos[1], bPos[2]];
+    aPos = [bPos[0] + 2, bPos[1], bPos[2]];
+    setTimeout(() => { // repositioned streams must land before the shots
+      C.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: bPos });
+    }, 350);
     setTimeout(() => {
       let n = 0;
       const iv = setInterval(() => {
-        if (bDead || n >= 14) { clearInterval(iv); return; }
+        if (bDead || n >= 16) { clearInterval(iv); return; }
         n++;
         A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: bPos });
       }, 80);

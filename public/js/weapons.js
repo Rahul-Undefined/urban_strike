@@ -169,6 +169,65 @@ var Weapons = (function () {
       part(g, 0, -0.03, 0.075, 0.034, 0.054, 0.014, steel);            // pommel
       return g;
     })();
+    // ---- exclusive loot weapons (key 9) ----
+    models.scarh = (function () {
+      var g = rifleBase(tan, 0.78, true);
+      part(g.userData.mag, 0, -0.05, 0, 0.042, 0.15, 0.062, gunmetal);
+      part(g, 0, 0.07, -0.06, 0.032, 0.03, 0.3, dark);                 // top rail
+      cylPart(g, 0, 0.005, -0.82, 0.02, 0.05, steel);                  // muzzle brake
+      return g;
+    })();
+    models.mk14 = (function () {
+      var g = rifleBase(wood, 0.88, true);
+      part(g.userData.mag, 0, -0.05, 0, 0.045, 0.14, 0.07, gunmetal);
+      part(g, 0, 0.068, -0.05, 0.03, 0.026, 0.22, dark);               // receiver rail
+      cylPart(g, 0, 0.09, -0.12, 0.024, 0.14, dark);                   // DMR optic tube
+      cylPart(g, 0, 0.005, -0.92, 0.02, 0.06, steel);                  // brake
+      return g;
+    })();
+    models.p90 = (function () {                                         // bullpup — custom chassis
+      var g = new THREE.Group();
+      part(g, 0, -0.01, 0.02, 0.07, 0.1, 0.42, tan);                   // polymer shell
+      part(g, 0, -0.075, -0.1, 0.05, 0.06, 0.14, tan);                 // front grip loop
+      part(g, 0, -0.075, 0.12, 0.05, 0.07, 0.1, tan);                  // rear grip loop
+      cylPart(g, 0, 0.01, -0.32, 0.016, 0.22, dark);                   // stub barrel
+      part(g, 0, 0.066, 0.06, 0.05, 0.03, 0.05, gunmetal);             // sight block
+      var magG = new THREE.Group(); magG.position.set(0, 0.052, -0.03); g.add(magG);
+      part(magG, 0, 0, 0, 0.05, 0.026, 0.3, steel);                    // top-mounted mag
+      g.userData.mag = magG; g.userData.magHome = magG.position.clone();
+      return g;
+    })();
+    models.m249 = (function () {
+      var g = rifleBase(green, 0.8, true);
+      cylPart(g, 0, 0.005, -0.46, 0.024, 0.46, dark);                  // heavy barrel shroud
+      part(g, 0, 0.07, 0, 0.03, 0.04, 0.18, gunmetal);                 // feed tray cover
+      part(g.userData.mag, 0, -0.03, 0.02, 0.075, 0.12, 0.11, green);  // belt box
+      part(g, 0.03, -0.05, -0.62, 0.012, 0.12, 0.012, steel);          // bipod legs
+      part(g, -0.03, -0.05, -0.62, 0.012, 0.12, 0.012, steel);
+      return g;
+    })();
+    models.awm = (function () {
+      var g = rifleBase(tan, 1.05, true);
+      part(g.userData.mag, 0, -0.04, 0, 0.045, 0.1, 0.075, dark);
+      cylPart(g, 0, 0.088, -0.16, 0.032, 0.26, dark);                  // scope tube
+      cylPart(g, 0, 0.088, -0.31, 0.038, 0.03, gunmetal);              // objective
+      cylPart(g, 0, 0.088, -0.02, 0.036, 0.03, gunmetal);              // eyepiece
+      part(g, 0, 0.062, -0.1, 0.016, 0.026, 0.02, steel);
+      part(g, 0, 0.062, -0.24, 0.016, 0.026, 0.02, steel);
+      var bh = cylPart(g, 0.05, 0.01, 0.02, 0.011, 0.07, steel, false); bh.rotation.z = 0.9;
+      cylPart(g, 0, 0.005, -1.1, 0.024, 0.08, steel);                  // brake
+      return g;
+    })();
+    // Registry invariant: EVERY weapon in CFG.WEAPON_ORDER must have a
+    // viewmodel. Any future config addition gets a generic rifle instead of
+    // invisible hands — an unknown-but-equipped weapon cannot render as nothing.
+    CFG.WEAPON_ORDER.forEach(function (n) {
+      if (!models[n]) {
+        var g = rifleBase(gunmetal, 0.7, true);
+        part(g.userData.mag, 0, -0.05, 0, 0.042, 0.14, 0.06, dark);
+        models[n] = g;
+      }
+    });
     for (var k in models) { models[k].visible = false; rig.add(models[k]); }
   }
 

@@ -40,6 +40,61 @@ var Net = (function () {
     return s;
   }
 
+  // ---------- third-person weapon models ----------
+  var RGM = {
+    dark: new THREE.MeshLambertMaterial({ color: 0x23262c }),
+    steel: new THREE.MeshLambertMaterial({ color: 0x54595f }),
+    wood: new THREE.MeshLambertMaterial({ color: 0x6b4a2a }),
+    tan: new THREE.MeshLambertMaterial({ color: 0x4a4438 }),
+    green: new THREE.MeshLambertMaterial({ color: 0x36402e })
+  };
+  function rgBox(g, x, y, z, w, h, d, m) {
+    var b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    b.position.set(x, y, z); g.add(b); return b;
+  }
+  function buildRemoteGun(name) {
+    var w = CFG.WEAPONS[name] || CFG.WEAPONS.ak47;
+    var g = new THREE.Group();
+    if (w.type === 'melee') {
+      rgBox(g, 0, 0, -0.12, 0.02, 0.05, 0.26, RGM.steel);
+      rgBox(g, 0, -0.02, 0.04, 0.035, 0.06, 0.1, RGM.wood);
+      return g;
+    }
+    if (name === 'pistol') {
+      rgBox(g, 0, 0, -0.08, 0.05, 0.07, 0.22, RGM.dark);
+      rgBox(g, 0, -0.07, 0.02, 0.045, 0.1, 0.06, RGM.dark);
+      return g;
+    }
+    if (w.type === 'rocket') {
+      rgBox(g, 0, 0.02, -0.1, 0.11, 0.11, 0.85, RGM.green);
+      rgBox(g, 0, 0.02, -0.55, 0.13, 0.13, 0.1, RGM.dark);
+      return g;
+    }
+    var LEN = { sniper: 0.9, awm: 0.98, mk14: 0.82, m249: 0.78, shotgun: 0.68, scarh: 0.66, ak47: 0.64, m4a1: 0.64, uzi: 0.4, p90: 0.44 };
+    var len = LEN[name] || 0.62;
+    var bodyM = (name === 'ak47' || name === 'mk14') ? RGM.wood
+      : (name === 'm249' || name === 'sniper') ? RGM.green
+      : (name === 'scarh' || name === 'awm') ? RGM.tan : RGM.dark;
+    rgBox(g, 0, 0, -len * 0.28, 0.07, 0.095, len, bodyM);                    // body
+    rgBox(g, 0, 0.005, -len * 0.78, 0.03, 0.035, len * 0.5, RGM.dark);       // barrel
+    var magB = rgBox(g, 0, -0.1, -0.06, 0.05, 0.13, 0.07, RGM.dark);         // magazine
+    rgBox(g, 0, -0.02, 0.2, 0.05, 0.08, 0.16, bodyM);                        // stock
+    if (w.scope) rgBox(g, 0, 0.085, -0.12, 0.045, 0.05, 0.2, RGM.dark);      // scope
+    if (name === 'm249') rgBox(g, 0, -0.08, 0.02, 0.1, 0.12, 0.12, RGM.green); // belt box
+    if (name === 'shotgun') rgBox(g, 0, -0.045, -0.34, 0.05, 0.05, 0.16, RGM.wood); // pump
+    if (name === 'p90') { magB.visible = false; rgBox(g, 0, 0.075, -0.05, 0.05, 0.03, 0.26, RGM.steel); } // top mag
+    return g;
+  }
+  // Swap the avatar's held model whenever the snapshot weapon index changes.
+  function setRemoteGun(r, wpIdx) {
+    var name = CFG.WEAPON_ORDER[wpIdx] || 'ak47';
+    if (r.gunName === name) return;
+    r.gunName = name;
+    var h = r.av.gun;
+    while (h.children.length) h.remove(h.children[0]);
+    h.add(buildRemoteGun(name));
+  }
+
   function buildAvatar(name, colorHex) {
     var color = new THREE.Color(colorHex);
     var body = new THREE.MeshLambertMaterial({ color: color });
@@ -57,7 +112,9 @@ var Net = (function () {
     var legR = bx(0.14, -0.55, 0, 0.17, 0.72, 0.2, dark);
     var armL = bx(-0.4, 0.16, 0, 0.13, 0.6, 0.18, body);
     var armR = bx(0.4, 0.16, 0, 0.13, 0.6, 0.18, body);
-    var gun = bx(0.18, 0.28, -0.42, 0.08, 0.1, 0.62, dark);
+    var gun = new THREE.Group();                 // per-weapon model holder
+    gun.position.set(0.18, 0.28, -0.42);
+    g.add(gun);
     var tag = nameTag(name, colorHex);
     tag.position.y = 1.18; g.add(tag);
     // floating health bar (canvas sprite, redrawn only when hp changes)
@@ -94,8 +151,10 @@ var Net = (function () {
         av: av, buf: [], alive: false, crouch: false, mv: 0,
         hp: 100, dispHp: 100, hbDrawn: -1, lastShotAt: 0, lastDamagedAt: 0,
         renderPos: new THREE.Vector3(0, -50, 0), ry: 0, rx: 0, ln: 0,
-        stepAcc: 0, lastRP: new THREE.Vector3(0, -50, 0)
+        stepAcc: 0, lastRP: new THREE.Vector3(0, -50, 0),
+        gunName: null
       };
+      setRemoteGun(r, 0);
       av.group.visible = false;
     }
     return r;
@@ -164,6 +223,7 @@ var Net = (function () {
           if (!r) continue;
         }
         r.buf.push({ t: tLocal, p: st.p, ry: st.ry, rx: st.rx, cr: st.cr, mv: st.mv, ln: st.ln });
+        setRemoteGun(r, st.wp); // replicate equipped weapon (switches, pickups, late sync)
         if (r.buf.length > 40) r.buf.shift();
         if (st.hp < r.hp) r.lastDamagedAt = tLocal;
         r.hp = st.hp;
@@ -293,7 +353,7 @@ var Net = (function () {
       cr: PlayerCtl.crouch ? 1 : 0,
       mv: PlayerCtl.moveState,
       ln: PlayerCtl.lean,
-      wp: CFG.WEAPON_ORDER.indexOf(Weapons.currentName()),
+      wp: Math.max(0, CFG.WEAPON_ORDER.indexOf(Weapons.currentName())),
       ping: ping
     });
   }
