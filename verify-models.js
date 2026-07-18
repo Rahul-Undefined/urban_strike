@@ -5,7 +5,7 @@
    Run: node verify-models.js */
 const vm = require('vm');
 const fs = require('fs');
-const CFG = require('./public/src/config/index.js');
+const CFG = require('./public/js/shared-config.js');
 
 let pass = 0, fail = 0;
 function ok(c, label) { if (c) { pass++; console.log('  PASS  ' + label); } else { fail++; console.log('  FAIL  ' + label); } }
@@ -36,7 +36,7 @@ const noop = () => { };
 const proxyNoop = new Proxy({}, { get: () => noop });
 const ctx = {
   CFG, THREE, console,
-  UI: proxyNoop,
+  UI: { setWeapon: noop, setAttachments: noop, setCooking: noop, setReloading: noop, toast: noop },
   AudioSys: proxyNoop, FX: proxyNoop, Net: proxyNoop, World: proxyNoop, Minimap: proxyNoop, Game: proxyNoop,
   Pickups: proxyNoop, PlayerCtl: { alive: true, pos: new Vec(), vel: new Vec(), yaw: 0, pitch: 0, moveState: 0, grounded: true, crouch: false },
   Input: {}, performance: { now: () => Date.now() },
@@ -45,9 +45,8 @@ const ctx = {
 };
 vm.createContext(ctx);
 
-console.log('--- weapons/: viewmodel registry + equip pipeline ---');
-vm.runInContext(fs.readFileSync('./public/src/weapons/viewmodels.js', 'utf8'), ctx);
-vm.runInContext(fs.readFileSync('./public/src/weapons/system.js', 'utf8'), ctx);
+console.log('--- weapons.js: viewmodel registry + equip pipeline ---');
+vm.runInContext(fs.readFileSync('./public/js/weapons.js', 'utf8'), ctx);
 const W = ctx.Weapons;
 const cam = new Obj();
 W.init(cam, new Obj());
@@ -71,34 +70,13 @@ ok(visibles().length === 1 && W.currentName() === exclusives[exclusives.length -
 for (let k = 1; k <= 9; k++) W.selectByKey(k === 9 ? 9 : k);
 ok(visibles().length === 1, 'rapid weapon switching never leaves zero or multiple visible models');
 
-console.log('--- v4.3: scope zoom + gear grants ---');
-ctx.Input.aim = true;
-while (W.currentName() !== 'awm') W.selectByKey(9);
-W.update(0.016); // establish scoped state
-ok(W.wheelZoom(1) === true, 'wheel zoom engages while scoped on the AWM');
-for (let z = 0; z < 10; z++) W.wheelZoom(1);
-const zr = CFG.WEAPONS.awm.scopeZoom;
-ok(W.update(0.016).adsFov === zr[0], 'zoom-in clamps at configured max (' + zr[0] + ' deg)');
-for (let z = 0; z < 20; z++) W.wheelZoom(-1);
-ok(W.update(0.016).adsFov === zr[1], 'zoom-out clamps at configured min (' + zr[1] + ' deg)');
-ctx.Input.aim = false;
-W.update(0.016);
-W.selectByKey(1);
-ok(W.wheelZoom(1) === false, 'wheel zoom ignores unscoped weapons (wheel keeps cycling)');
-W.applyGrant({ t: 'gear', g: 'mine', n: 7 });
-W.applyGrant({ t: 'gear', g: 'molotov', n: 2 });
-ok(true, 'gear grants (mine total, molotov increment) apply cleanly');
-
-console.log('--- networking/: loads + third-person gun factory present ---');
+console.log('--- network.js: loads + third-person gun factory present ---');
 let netOk = true;
-try {
-  vm.runInContext(fs.readFileSync('./public/src/networking/avatars.js', 'utf8'), ctx);
-  vm.runInContext(fs.readFileSync('./public/src/networking/net.js', 'utf8'), ctx);
-} catch (e) { netOk = false; console.log('   load error: ' + e.message); }
+try { vm.runInContext(fs.readFileSync('./public/js/network.js', 'utf8'), ctx); } catch (e) { netOk = false; console.log('   load error: ' + e.message); }
 ok(netOk, 'network.js evaluates cleanly with third-person weapon factory');
-const netSrc = fs.readFileSync('./public/src/networking/net.js', 'utf8');
-ok(/Avatars\.setRemoteGun\(r, st\.wp\)/.test(netSrc), 'snapshot ingestion applies wp to the avatar (root cause #2 wired)');
-ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc), 'new remotes never spawn empty-handed');
+const netSrc = fs.readFileSync('./public/js/network.js', 'utf8');
+ok(/setRemoteGun\(r, st\.wp\)/.test(netSrc), 'snapshot ingestion applies wp to the avatar (root cause #2 wired)');
+ok(/gunName: null/.test(netSrc) && /setRemoteGun\(r, 0\)/.test(netSrc), 'new remotes never spawn empty-handed');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

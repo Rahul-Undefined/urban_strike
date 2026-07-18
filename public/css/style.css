@@ -292,36 +292,3 @@ button { font-family: var(--disp); cursor: pointer; }
 /* killfeed rows slide in */
 #killfeed > div { animation: feedIn 0.22s ease-out; }
 @keyframes feedIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
-
-/* ============ v4.3 additions ============ */
-#countdown {
-  position: absolute; top: 33%; left: 0; right: 0; text-align: center; z-index: 40;
-  font-family: "Rajdhani", sans-serif; font-weight: 700; font-size: 34px; letter-spacing: 5px;
-  color: #ffd9a0; text-shadow: 0 0 16px rgba(255,170,60,0.5), 0 2px 5px rgba(0,0,0,0.85);
-  animation: annPop 1s ease-out infinite; pointer-events: none;
-}
-#lobby-chat { margin-top: 10px; border: 1px solid rgba(120,150,175,0.25); background: rgba(10,14,18,0.55); }
-#chat-log { height: 110px; overflow-y: auto; padding: 6px 8px; font-size: 12px; line-height: 1.5; }
-#chat-log b { font-weight: 600; }
-#chat-log span { color: #c6cfd8; }
-#chat-input {
-  width: 100%; box-sizing: border-box; background: rgba(16,22,28,0.9); border: 0;
-  border-top: 1px solid rgba(120,150,175,0.25); color: #e8ecf2; padding: 7px 9px;
-  font: 12px "IBM Plex Mono", monospace; outline: none;
-}
-.rdy-tag { color: #63d968; font-style: normal; font-size: 10px; letter-spacing: 1px; margin-left: 6px; }
-#btn-ready.is-ready { border-color: #63d968; color: #63d968; }
-.feed-row .fw {
-  background: rgba(16,22,28,0.75); border: 1px solid rgba(120,150,175,0.3);
-  padding: 1px 5px; font-size: 10px; letter-spacing: 0.5px;
-}
-#tc-mine, #tc-molotov { margin-left: 8px; }
-
-/* ============ v4.5 voice ============ */
-#voice-ind {
-  position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 40;
-  font: 700 12px "Rajdhani", sans-serif; letter-spacing: 2px; color: #63d968;
-  background: rgba(10, 14, 18, 0.7); border: 1px solid rgba(99, 217, 104, 0.5);
-  padding: 3px 10px; pointer-events: none;
-}
-#btn-voice.is-on { border-color: #63d968; color: #63d968; }

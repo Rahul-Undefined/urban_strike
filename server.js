@@ -9,28 +9,7 @@ const path = require('path');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const CFG = require('./public/src/config/index.js');
-const now = () => Date.now();
-
-// lobby auto-start: 5-second countdown once everyone is ready (self-cancelling)
-function beginCountdown(room) {
-  if (room.cdTimer || room.state !== 'lobby') return;
-  room.cdN = 5;
-  io.to(room.code).emit('countdown', { n: room.cdN });
-  room.cdTimer = setInterval(() => {
-    const all = room.state === 'lobby' && room.players.size >= 2 &&
-      [...room.players.values()].every(q => q.ready);
-    if (!all) { cancelCountdown(room); return; }
-    room.cdN--;
-    io.to(room.code).emit('countdown', { n: room.cdN });
-    if (room.cdN <= 0) { cancelCountdown(room, true); startMatch(room); }
-  }, 1000);
-}
-function cancelCountdown(room, silent) {
-  if (room.cdTimer) { clearInterval(room.cdTimer); room.cdTimer = null; }
-  if (!silent && room.cdN > 0) io.to(room.code).emit('countdown', { n: -1 });
-  room.cdN = 0;
-}
+const CFG = require('./public/js/shared-config.js');
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -39,20 +18,102 @@ app.get('/healthz', (req, res) => res.send('ok'));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-const rooms = new Map();
+const rooms = new Map(); // code -> room
+let joinCounter = 0;
 
-// ---------- domain modules (io/state injected; no module touches globals) ----------
-const Rooms = require('./server/lib/rooms.js')({ io, rooms, now });
-const { makeCode, cleanName, num, clampOpt, modeInfo, makeRoom,
-  addPlayer, refreshTeamsAndColors, lobbyPayload, pushLobby } = Rooms;
-const Loot = require('./server/lib/loot.js')({ io, now });
-const { initPickups, pickupList, tryCollect, respawnPickups,
-  scheduleAirdrop, clearAirdrop, dropCrate } = Loot;
-const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
-  endMatch: (...a) => endMatch(...a) });
-const { weaponServerDamage, applyDamage, positionPlausible, fireRateOk } = Combat;
-const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo }); // code -> room
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function makeCode() {
+  let c = '';
+  for (let i = 0; i < 5; i++) c += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+  return rooms.has(c) ? makeCode() : c;
+}
+function cleanName(n) {
+  n = String(n || '').replace(/[<>&"']/g, '').trim().slice(0, 14);
+  return n || 'Operator';
+}
+const now = () => Date.now();
+function num(v) { const n = Number(v); return isFinite(n) ? n : 0; }
+function clampOpt(v, options, dflt) {
+  v = parseInt(v, 10);
+  return options.indexOf(v) >= 0 ? v : dflt;
+}
+function modeInfo(room) { return CFG.MODES[room.settings.mode] || CFG.MODES.ffa; }
 
+function makeRoom(hostSocket, name, settings) {
+  const code = makeCode();
+  const mode = (settings && CFG.MODES[settings.mode]) ? settings.mode : CFG.MATCH.defaultMode;
+  const room = {
+    code,
+    hostId: hostSocket.id,
+    state: 'lobby', // lobby | playing | ended
+    settings: {
+      killTarget: clampOpt(settings && settings.killTarget, CFG.MATCH.killOptions, CFG.MATCH.defaultKills),
+      minutes: clampOpt(settings && settings.minutes, CFG.MATCH.timeOptions, CFG.MATCH.defaultMinutes),
+      airdropSec: settings && settings.airdropSec ? Math.max(5, Math.min(600, settings.airdropSec | 0)) : 0,
+      mode
+    },
+    players: new Map(),
+    teamKills: { a: 0, b: 0 },
+    pickups: [],
+    startedAt: 0,
+    timer: null,
+    snapTimer: null
+  };
+  rooms.set(code, room);
+  addPlayer(room, hostSocket, name);
+  return room;
+}
+
+function addPlayer(room, socket, name) {
+  const p = {
+    id: socket.id,
+    name: cleanName(name),
+    color: CFG.COLORS[0],
+    team: null,
+    joinOrder: joinCounter++,
+    kills: 0, deaths: 0, assists: 0, damage: 0, streak: 0, ping: 0,
+    hp: CFG.PLAYER.hp, armorLvl: 0, armorDur: 0, alive: false,
+    protUntil: 0, att: { sight: null, muzzle: null, mag: null }, exW: {}, rd: {},
+    pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0, mv: 0, wp: 0, ln: 0,
+    lastShotAt: {}, history: [], respawnAt: 0
+  };
+  room.players.set(socket.id, p);
+  socket.join(room.code);
+  socket.data.roomCode = room.code;
+  refreshTeamsAndColors(room);
+}
+
+// Team assignment (alternating by join order = automatic balancing) + colors.
+function refreshTeamsAndColors(room) {
+  const list = [...room.players.values()].sort((a, b) => a.joinOrder - b.joinOrder);
+  const teams = modeInfo(room).teams;
+  list.forEach((p, i) => {
+    if (teams) {
+      p.team = (i % 2 === 0) ? 'a' : 'b';
+      p.color = CFG.TEAMS[p.team].color;
+    } else {
+      p.team = null;
+      p.color = CFG.COLORS[i % CFG.COLORS.length];
+    }
+  });
+}
+
+function lobbyPayload(room) {
+  return {
+    code: room.code,
+    hostId: room.hostId,
+    state: room.state,
+    settings: room.settings,
+    players: [...room.players.values()].map(p => ({
+      id: p.id, name: p.name, color: p.color, team: p.team,
+      kills: p.kills, deaths: p.deaths, assists: p.assists,
+      damage: Math.round(p.damage), streak: p.streak, ping: p.ping
+    }))
+  };
+}
+function pushLobby(room) { io.to(room.code).emit('lobby', lobbyPayload(room)); }
+
+// ---------- spawns ----------
 function pickSpawn(room, forP) {
   const teams = modeInfo(room).teams;
   const candidates = CFG.SPAWNS
@@ -84,6 +145,113 @@ function spawnPlayer(room, p) {
 // ---------- dynamic loot (server-authoritative) ----------
 // Every match rolls fresh loot across CFG.LOOT_POINTS by point class + rarity
 // weights, with guarantees: an L3 vest and at least one legendary weapon exist.
+function initPickups(room) {
+  const items = CFG.LOOT_ITEMS;
+  const byRar = { c: [], r: [], l: [] };
+  for (const t in items) byRar[items[t].rar].push(t);
+  room.nextLootId = 0;
+  room.pickups = [];
+  let hasA3 = false, hasLegW = false;
+  CFG.LOOT_POINTS.forEach(pt => {
+    const w = CFG.LOOT_WEIGHTS[pt[3]] || CFG.LOOT_WEIGHTS.g;
+    let roll = Math.random(), t = null;
+    if (roll >= w.empty) {
+      roll -= w.empty;
+      const rar = roll < w.c ? 'c' : (roll < w.c + w.r ? 'r' : 'l');
+      const pool = byRar[rar];
+      t = pool[Math.floor(Math.random() * pool.length)];
+    }
+    if (!t) return;
+    if (t === 'armor3') hasA3 = true;
+    if (items[t].kind === 'weapon' && items[t].rar === 'l') hasLegW = true;
+    room.pickups.push({ id: room.nextLootId++, t, pos: [pt[0], pt[1], pt[2]], cls: pt[3], active: true, respawnAt: 0 });
+  });
+  const sigs = room.pickups.filter(p => p.cls === 's');
+  if (!hasA3 && sigs.length) sigs[Math.floor(Math.random() * sigs.length)].t = 'armor3';
+  if (!hasLegW) {
+    const cand = room.pickups.filter(p => (p.cls === 's' || p.cls === 'h') && p.t !== 'armor3');
+    if (cand.length) {
+      const pool = CFG.AIRDROP.weaponPool;
+      cand[Math.floor(Math.random() * cand.length)].t = pool[Math.floor(Math.random() * pool.length)];
+    }
+  }
+}
+function pickupList(room) { return room.pickups.map(pk => ({ id: pk.id, t: pk.t, p: pk.pos, active: pk.active })); }
+
+function tryCollect(room, p) {
+  if (!p.alive) return;
+  const R = CFG.MATCH.pickupRadius;
+  for (const pk of room.pickups) {
+    if (!pk.active) continue;
+    const dx = p.pos[0] - pk.pos[0], dy = p.pos[1] - pk.pos[1], dz = p.pos[2] - pk.pos[2];
+    if (dx * dx + dz * dz > R * R || Math.abs(dy) > 1.3) continue;
+
+    const it = CFG.LOOT_ITEMS[pk.t];
+    let grant = null;
+    if (it.kind === 'heal') {
+      if (p.hp >= CFG.PLAYER.hp) continue;
+      p.hp = Math.min(CFG.PLAYER.hp, p.hp + it.heal);
+    } else if (it.kind === 'armor') {
+      const max = CFG.ARMOR[it.lvl].dur;
+      const up = it.lvl > p.armorLvl || (it.lvl === p.armorLvl && p.armorDur < max * 0.5);
+      if (!up) continue;
+      p.armorLvl = it.lvl; p.armorDur = max;
+    } else if (it.kind === 'att') {
+      if (p.att[CFG.ATTACH[it.a].cat] === it.a) continue; // already equipped
+      p.att[CFG.ATTACH[it.a].cat] = it.a;
+      grant = { t: 'att', a: it.a };
+    } else if (it.kind === 'weapon') {
+      if (p.exW[it.w]) grant = { t: 'ammoFor', w: it.w };
+      else { p.exW[it.w] = 1; grant = { t: 'weapon', w: it.w }; }
+    } else if (it.kind === 'ammo') {
+      grant = { t: 'ammo' };
+    }
+    pk.active = false;
+    pk.respawnAt = pk.noRespawn ? Infinity : now() + CFG.LOOT_RESPAWN[it.rar] * 1000;
+    io.to(p.id).emit('vitals', { hp: Math.round(p.hp), lv: p.armorLvl, du: Math.round(p.armorDur) });
+    if (grant) io.to(p.id).emit('grant', grant);
+    io.to(room.code).emit('pickup', { id: pk.id, by: p.id, t: pk.t });
+  }
+}
+function respawnPickups(room) {
+  const t = now();
+  for (const pk of room.pickups) {
+    if (!pk.active && pk.respawnAt <= t) {
+      pk.active = true;
+      io.to(room.code).emit('pickupSpawn', { id: pk.id });
+    }
+  }
+}
+
+// ---------- airdrops ----------
+function scheduleAirdrop(room) {
+  clearAirdrop(room);
+  const period = Math.max(5, Math.min(600, room.settings.airdropSec || CFG.AIRDROP.periodSec)) * 1000;
+  room.dropTimer = setInterval(() => dropCrate(room), period);
+}
+function clearAirdrop(room) {
+  if (room.dropTimer) { clearInterval(room.dropTimer); room.dropTimer = null; }
+  if (room.dropFall) { clearTimeout(room.dropFall); room.dropFall = null; }
+}
+function dropCrate(room) {
+  if (room.state !== 'playing') return;
+  const pt = CFG.AIRDROP.points[Math.floor(Math.random() * CFG.AIRDROP.points.length)];
+  io.to(room.code).emit('airdrop', { x: pt[0], z: pt[1], landAt: now() + CFG.AIRDROP.fallSec * 1000 });
+  room.dropFall = setTimeout(() => {
+    if (room.state !== 'playing') return;
+    const wp = CFG.AIRDROP.weaponPool, ap = CFG.AIRDROP.attPool;
+    const types = [wp[(Math.random() * wp.length) | 0], 'armor3', 'medkit', ap[(Math.random() * ap.length) | 0]];
+    const offs = [[0.95, 0], [-0.95, 0], [0, 0.95], [0, -0.95]];
+    const items = types.map((t, i) => {
+      const pk = { id: room.nextLootId++, t, pos: [pt[0] + offs[i][0], 1.35, pt[1] + offs[i][1]], cls: 's', active: true, respawnAt: 0, noRespawn: true };
+      room.pickups.push(pk);
+      return { id: pk.id, t: pk.t, p: pk.pos, active: true };
+    });
+    io.to(room.code).emit('lootAdd', { items, x: pt[0], z: pt[1] });
+  }, CFG.AIRDROP.fallSec * 1000);
+}
+
+// ---------- match lifecycle ----------
 function startMatch(room) {
   room.state = 'playing';
   room.startedAt = now();
@@ -91,7 +259,6 @@ function startMatch(room) {
   for (const p of room.players.values()) {
     p.kills = 0; p.deaths = 0; p.assists = 0; p.damage = 0; p.streak = 0;
     p.att = { sight: null, muzzle: null, mag: null }; p.exW = {}; p.rd = {};
-    p.ready = false; p.mines = CFG.GEAR.mine.start; p.lastMolo = {};
   }
   refreshTeamsAndColors(room);
   initPickups(room);
@@ -103,8 +270,6 @@ function startMatch(room) {
     pickups: pickupList(room)
   });
   for (const p of room.players.values()) spawnPlayer(room, p);
-  cancelCountdown(room);
-  Mines.reset(room);
   startSnapshots(room);
   scheduleAirdrop(room);
   if (room.settings.minutes > 0) {
@@ -117,14 +282,11 @@ function startSnapshots(room) {
   room.snapN = 0;
   room.snapTimer = setInterval(() => {
     respawnPickups(room);
-    Mines.tick(room);
     if (++room.snapN % 60 === 0) pushLobby(room); // live K/D/assists/damage refresh (~4 s)
     const players = {};
     for (const p of room.players.values()) {
       players[p.id] = {
-        p: [Math.round(p.pos[0] * 100) / 100, Math.round(p.pos[1] * 100) / 100, Math.round(p.pos[2] * 100) / 100],
-        ry: Math.round(p.ry * 1000) / 1000, rx: Math.round(p.rx * 1000) / 1000,
-        cr: p.crouch, mv: p.mv, wp: p.wp, ln: Math.round(p.ln * 100) / 100,
+        p: p.pos, ry: p.ry, rx: p.rx, cr: p.crouch, mv: p.mv, wp: p.wp, ln: p.ln,
         hp: Math.round(p.hp), lv: p.armorLvl, du: Math.round(p.armorDur),
         al: p.alive ? 1 : 0, tm: p.team
       };
@@ -145,7 +307,6 @@ function endMatch(room, winnerId, reason) {
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
   stopSnapshots(room);
   clearAirdrop(room);
-  Mines.clear(room);
   const teams = modeInfo(room).teams;
   let winnerTeam = null;
   if (teams) {
@@ -171,6 +332,127 @@ function endMatch(room, winnerId, reason) {
 }
 
 // ---------- combat validation ----------
+function weaponServerDamage(weapon, part, pellets, dist) {
+  const w = CFG.WEAPONS[weapon];
+  if (!w) return 0;
+  let dmg = w.dmg;
+  if (w.pellets) dmg *= Math.max(1, Math.min(pellets || 1, w.pellets));
+  if (part === 'head') dmg *= (w.head || 1);
+  if (dist > w.range) dmg *= Math.max(0.45, 1 - (dist - w.range) / w.range);
+  return dmg;
+}
+
+function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank) {
+  if (!victim.alive) return;
+  const attacker = room.players.get(attackerId);
+  const teams = modeInfo(room).teams;
+  // friendly fire off in team modes (self-damage from explosives still allowed)
+  if (teams && attacker && attackerId !== victim.id && attacker.team === victim.team) return;
+  // spawn protection (attacking others still allowed; being hit is not)
+  if (victim.protUntil > now() && attackerId !== victim.id) return;
+
+  // tiered armor with durability; point-blank explosives ignore armor entirely
+  let soaked = 0;
+  if (pointBlank) {
+    victim.armorLvl = 0; victim.armorDur = 0;
+    victim.hp = 0;
+  } else if (victim.armorLvl > 0) {
+    const rate = CFG.ARMOR[victim.armorLvl].absorb;
+    soaked = Math.min(victim.armorDur, dmg * rate);
+    victim.armorDur -= soaked;
+    if (victim.armorDur <= 0.5) { victim.armorLvl = 0; victim.armorDur = 0; }
+  }
+  if (!pointBlank) victim.hp = Math.max(0, victim.hp - (dmg - soaked));
+  // scoreboard credit + assist bookkeeping
+  if (attacker && attackerId !== victim.id) {
+    attacker.damage += dmg;
+    const rec = victim.rd[attackerId] || (victim.rd[attackerId] = { d: 0, t: 0 });
+    rec.d += dmg; rec.t = now();
+  }
+
+  io.to(victim.id).emit('damaged', {
+    hp: Math.round(victim.hp), lv: victim.armorLvl, du: Math.round(victim.armorDur),
+    from: attackerId, fromPos: attacker ? attacker.pos : null
+  });
+  if (attacker && attackerId !== victim.id) {
+    io.to(attackerId).emit('hitConfirm', { dmg: Math.round(dmg), headshot: !!headshot, kill: victim.hp <= 0, v: victim.id });
+  }
+
+  if (victim.hp <= 0) {
+    victim.alive = false;
+    victim.deaths++;
+    victim.respawnAt = now() + CFG.MATCH.respawnDelay * 1000;
+    let killerName = 'the world', killerStreak = 0;
+    if (attacker) {
+      if (attackerId === victim.id) { killerName = victim.name; }
+      else {
+        attacker.kills++;
+        attacker.streak++;
+        killerStreak = attacker.streak;
+        killerName = attacker.name;
+        if (teams && attacker.team) room.teamKills[attacker.team]++;
+      }
+    }
+    // assists: meaningful damage shortly before the kill, by someone else
+    const assistIds = [];
+    const cutoff = now() - CFG.MATCH.assistWindow * 1000;
+    for (const aid in victim.rd) {
+      if (aid === attackerId || aid === victim.id) continue;
+      const rec = victim.rd[aid];
+      if (rec.t >= cutoff && rec.d >= CFG.MATCH.assistMinDmg) {
+        const ap = room.players.get(aid);
+        if (ap) { ap.assists++; assistIds.push(aid); }
+      }
+    }
+    victim.rd = {};
+    victim.streak = 0;
+    io.to(room.code).emit('death', {
+      victimId: victim.id, victimName: victim.name,
+      killerId: attackerId, killerName, killerStreak, assistIds,
+      weapon, headshot: !!headshot, self: attackerId === victim.id
+    });
+    pushLobby(room);
+    if (attacker && attackerId !== victim.id) {
+      const target = room.settings.killTarget;
+      if (teams ? room.teamKills[attacker.team] >= target : attacker.kills >= target) {
+        endMatch(room, attackerId, 'kills');
+      }
+    }
+  }
+}
+
+// Lag-compensation lite: accept the claimed victim position only if it is
+// close to where the server has recently seen that victim.
+function positionPlausible(victim, claimPos) {
+  if (!claimPos || claimPos.length !== 3) return false;
+  const tol = CFG.NET.hitTolerance;
+  const cutoff = now() - CFG.NET.historyMs;
+  const check = (pos) => {
+    const dx = pos[0] - claimPos[0], dy = pos[1] - claimPos[1], dz = pos[2] - claimPos[2];
+    return dx * dx + dy * dy + dz * dz <= tol * tol;
+  };
+  if (check(victim.pos)) return true;
+  for (let i = victim.history.length - 1; i >= 0; i--) {
+    const h = victim.history[i];
+    if (h.t < cutoff) break;
+    if (check(h.pos)) return true;
+  }
+  return false;
+}
+
+function fireRateOk(shooter, weapon) {
+  const w = CFG.WEAPONS[weapon];
+  if (!w || !w.rpm) return true;
+  if (weapon === 'frag' || weapon === 'rocket') return true;
+  const minInterval = (60000 / w.rpm) * 0.55; // generous tolerance for jitter
+  const last = shooter.lastShotAt[weapon] || 0;
+  const t = now();
+  if (t - last < minInterval) return false;
+  shooter.lastShotAt[weapon] = t;
+  return true;
+}
+
+// ---------- sockets ----------
 io.on('connection', (socket) => {
   socket.on('createRoom', (data, cb) => {
     const room = makeRoom(socket, data && data.name, data && data.settings);
@@ -213,50 +495,6 @@ io.on('connection', (socket) => {
     pushLobby(room);
   });
 
-  socket.on('setReady', (d) => {
-    const room = getRoom(socket); if (!room || room.state !== 'lobby') return;
-    const p = room.players.get(socket.id); if (!p) return;
-    p.ready = !!(d && d.v);
-    pushLobby(room);
-    const all = room.players.size >= 2 && [...room.players.values()].every(q => q.ready);
-    if (all) beginCountdown(room); else cancelCountdown(room);
-  });
-  socket.on('chat', (d) => {
-    const room = getRoom(socket); if (!room) return;
-    const p = room.players.get(socket.id); if (!p) return;
-    const msg = String((d && d.t) || '').slice(0, 120).trim();
-    if (!msg) return;
-    io.to(room.code).emit('chat', { name: p.name, color: p.color, msg });
-  });
-  socket.on('voiceJoin', () => {
-    const room = getRoom(socket); if (!room) return;
-    const p = room.players.get(socket.id); if (!p) return;
-    p.voice = true;
-    const ids = [...room.players.values()].filter(q => q.voice && q.id !== socket.id).map(q => q.id);
-    socket.emit('voicePeers', { ids });
-    socket.to(room.code).emit('voicePeerJoin', { id: socket.id });
-  });
-  socket.on('voiceLeave', () => {
-    const room = getRoom(socket); if (!room) return;
-    const p = room.players.get(socket.id); if (!p) return;
-    p.voice = false;
-    socket.to(room.code).emit('voicePeerLeave', { id: socket.id });
-  });
-  socket.on('voiceSignal', (d) => {
-    const room = getRoom(socket); if (!room || !d || !d.to) return;
-    const p = room.players.get(socket.id);
-    const q = room.players.get(d.to);
-    if (!p || !q || !p.voice || !q.voice) return; // same room + both opted in
-    io.to(d.to).emit('voiceSignal', { from: socket.id, data: d.data });
-  });
-  socket.on('placeMine', (d, cb) => {
-    const ack = typeof cb === 'function' ? cb : () => {};
-    const room = getRoom(socket);
-    if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
-    const p = room.players.get(socket.id);
-    if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
-    ack(Mines.place(room, p, d && d.p));
-  });
   socket.on('startMatch', () => {
     const room = getRoom(socket);
     if (!room || socket.id !== room.hostId) return;
@@ -268,14 +506,7 @@ io.on('connection', (socket) => {
     const room = getRoom(socket);
     if (!room || socket.id !== room.hostId || room.state !== 'ended') return;
     room.state = 'lobby';
-    cancelCountdown(room);
-    Mines.clear(room);
-    clearAirdrop(room);
-    for (const p of room.players.values()) {
-      p.alive = false; p.kills = 0; p.deaths = 0;
-      p.assists = 0; p.damage = 0; p.streak = 0; p.ready = false;
-      p.mines = 0; p.rd = {}; p.lastMolo = {};
-    }
+    for (const p of room.players.values()) { p.alive = false; p.kills = 0; p.deaths = 0; }
     io.to(room.code).emit('backToLobby');
     pushLobby(room);
   });
@@ -287,7 +518,7 @@ io.on('connection', (socket) => {
     if (!s || !Array.isArray(s.p) || s.p.length !== 3) return;
     p.pos = [num(s.p[0]), num(s.p[1]), num(s.p[2])];
     p.ry = num(s.ry); p.rx = num(s.rx);
-    p.crouch = Math.max(0, Math.min(2, (s.cr | 0))); p.mv = s.mv | 0; p.wp = s.wp | 0; p.ln = num(s.ln); // cr: 0 stand, 1 crouch, 2 prone
+    p.crouch = s.cr ? 1 : 0; p.mv = s.mv | 0; p.wp = s.wp | 0; p.ln = num(s.ln);
     if (typeof s.ping === 'number') p.ping = Math.max(0, Math.min(999, s.ping | 0));
     p.history.push({ t: now(), pos: p.pos });
     const cutoff = now() - CFG.NET.historyMs;
@@ -318,10 +549,10 @@ io.on('connection', (socket) => {
     const room = getRoom(socket); if (!room || room.state !== 'playing') return;
     const shooter = room.players.get(socket.id); if (!shooter || !shooter.alive) return;
     shooter.protUntil = 0;
-    if (!d || !CFG.WEAPONS[d.w] && d.w !== 'frag' && d.w !== 'molotov') return;
+    if (!d || !CFG.WEAPONS[d.w] && d.w !== 'frag') return;
     const victim = room.players.get(d.victim); if (!victim || !victim.alive) return;
 
-    const explosive = d.w === 'frag' || d.w === 'rocket' || d.w === 'molotov';
+    const explosive = (d.w === 'frag' || d.w === 'rocket');
     if (!explosive && d.victim === socket.id) return;
     if (!explosive && !fireRateOk(shooter, d.w)) return;
     if (!positionPlausible(victim, d.vp)) return;
@@ -333,11 +564,6 @@ io.on('connection', (socket) => {
     } else if (d.w === 'rocket') {
       dmg = Math.max(0, Math.min(CFG.WEAPONS.rocket.dmg, num(d.dmg)));
       pointBlank = dmg >= CFG.WEAPONS.rocket.dmg - 0.5;
-    } else if (d.w === 'molotov') {
-      dmg = Math.max(0, Math.min(CFG.THROWS.molotov.dmg, num(d.dmg)));
-      shooter.lastMolo = shooter.lastMolo || {};
-      if (now() - (shooter.lastMolo[d.victim] || 0) < 350) return; // burn-tick throttle
-      shooter.lastMolo[d.victim] = now();
     } else {
       const dx = shooter.pos[0] - victim.pos[0], dy = shooter.pos[1] - victim.pos[1], dz = shooter.pos[2] - victim.pos[2];
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -359,7 +585,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const room = getRoom(socket); if (!room) return;
     const p = room.players.get(socket.id);
-    if (p && p.voice) io.to(room.code).emit('voicePeerLeave', { id: socket.id }); // socket.to() is dead inside disconnect
     room.players.delete(socket.id);
     if (room.players.size === 0) {
       stopSnapshots(room);
