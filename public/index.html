@@ -27,7 +27,7 @@
       <button class="btn btn-primary" id="btn-goto-create">CREATE ROOM</button>
       <button class="btn" id="btn-goto-join">JOIN WITH CODE</button>
     </div>
-    <div class="menu-foot">WASD move · SHIFT sprint · C crouch · Q/E lean · RMB aim · hold G cook frag · 9 exclusive · TAB scoreboard</div>
+    <div class="menu-foot">WASD move · SHIFT sprint · C crouch · Q/E lean · RMB aim · hold G cook frag · X prone · H molotov · V mine · wheel = scope zoom · 9 exclusive · TAB scoreboard</div>
   </section>
 
   <!-- CREATE -->
@@ -78,6 +78,10 @@
       <div class="panel">
         <div class="panel-head">OPERATORS <span id="lobby-count">0/4</span></div>
         <ul class="player-list" id="lobby-players"></ul>
+        <div id="lobby-chat">
+          <div id="chat-log"></div>
+          <input id="chat-input" maxlength="120" placeholder="Say something\u2026 (Enter to send)" autocomplete="off">
+        </div>
       </div>
       <div class="panel" id="lobby-settings">
         <div class="panel-head">MATCH RULES</div>
@@ -91,6 +95,8 @@
           <select id="lobby-time"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="0">No limit</option></select>
         </label>
         <div class="hint" id="lobby-hint">Waiting for host to start…</div>
+        <button class="btn wide ghost" id="btn-ready" data-r="0">READY UP</button>
+        <button class="btn wide ghost" id="btn-voice">JOIN VOICE</button>
         <button class="btn btn-primary wide" id="btn-start" style="display:none">START MATCH</button>
         <button class="btn wide ghost" id="btn-leave">LEAVE ROOM</button>
       </div>
@@ -114,6 +120,8 @@
     <div id="kill-target"></div>
   </div>
   <div id="announce"></div>
+  <div id="countdown" class="hidden"></div>
+  <div id="voice-ind" class="hidden">● TALKING</div>
 
   <canvas id="minimap" width="200" height="200"></canvas>
 
@@ -128,7 +136,7 @@
     <div id="att-list"></div>
     <div id="weapon-name">AK-47</div>
     <div id="ammo"><span id="ammo-mag">30</span><span class="ammo-div">/</span><span id="ammo-reserve">120</span></div>
-    <div id="throw-counts"><span id="tc-frag">G ×2</span><span id="tc-smoke">T ×1</span><span id="tc-flash">F ×1</span></div>
+    <div id="throw-counts"><span id="tc-frag">G ×2</span><span id="tc-smoke">T ×1</span><span id="tc-flash">F ×1</span><span id="tc-molotov">H ×3</span><span id="tc-mine">V ×5</span></div>
     <div id="cook-bar" class="hidden"><div id="cook-fill"></div></div>
     <div id="reload-hint" class="hidden">RELOADING…</div>
   </div>
@@ -152,7 +160,7 @@
   <div id="end-overlay" class="hidden">
     <div class="end-title" id="end-title">MATCH OVER</div>
     <div class="end-sub" id="end-sub"></div>
-    <table class="end-table"><thead><tr><th>OPERATOR</th><th>K</th><th>D</th></tr></thead><tbody id="end-body"></tbody></table>
+    <table class="end-table"><thead><tr><th>OPERATOR</th><th>K</th><th>D</th><th>A</th><th>DMG</th></tr></thead><tbody id="end-body"></tbody></table>
     <button class="btn btn-primary" id="btn-back-lobby" style="display:none">BACK TO LOBBY</button>
     <div class="hint" id="end-hint">Waiting for host…</div>
   </div>
@@ -181,16 +189,28 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="js/shared-config.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/map.js"></script>
-<script src="js/effects.js"></script>
-<script src="js/player.js"></script>
-<script src="js/weapons.js"></script>
-<script src="js/network.js"></script>
-<script src="js/pickups.js"></script>
-<script src="js/minimap.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/main.js"></script>
+  <script src="src/config/weapons.config.js"></script>
+  <script src="src/config/gameplay.config.js"></script>
+  <script src="src/config/loot.config.js"></script>
+  <script src="src/config/world.config.js"></script>
+  <script src="src/config/index.js"></script>
+  <script src="src/audio/audio.js"></script>
+  <script src="src/audio/voice.js"></script>
+  <script src="src/environment/merge.js"></script>
+  <script src="src/environment/world.js"></script>
+  <script src="src/environment/districts-south.js"></script>
+  <script src="src/environment/districts-north.js"></script>
+  <script src="src/environment/districts-outer.js"></script>
+  <script src="src/environment/deco.js"></script>
+  <script src="src/effects/effects.js"></script>
+  <script src="src/player/controller.js"></script>
+  <script src="src/weapons/viewmodels.js"></script>
+  <script src="src/weapons/system.js"></script>
+  <script src="src/networking/avatars.js"></script>
+  <script src="src/networking/net.js"></script>
+  <script src="src/loot/pickups.js"></script>
+  <script src="src/ui/minimap.js"></script>
+  <script src="src/ui/ui.js"></script>
+  <script src="src/core/game.js"></script>
 </body>
 </html>
