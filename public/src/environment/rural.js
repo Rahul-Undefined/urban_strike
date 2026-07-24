@@ -24,6 +24,10 @@ World._buildRural = function (T) {
     return new THREE.MeshLambertMaterial({ map: t });
   }
   var GRASS = grassMat(), LEAF1 = L(0x2f4a30), LEAF2 = L(0x3a5c3a);
+  var ROADMAT = new THREE.MeshLambertMaterial({
+    map: (M.dirt && M.dirt.map) || null,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+  });
   var ROCK = L(0x6d716b), LOG = L(0x5a4630), CROP = L(0x4f7a3a);
   var WATER = new THREE.MeshLambertMaterial({ color: 0x2c6f8f, transparent: true, opacity: 0.75 });
 
@@ -39,9 +43,9 @@ World._buildRural = function (T) {
   seg(50, 60, -0.14, -0.1, -110, 36, WATER, { collide: false, cast: false });
 
   // dirt roads (visual strips)
-  seg(-3.5, 3.5, 0.012, 0.06, -100, 100, M.dirt, { collide: false, cast: false });
-  seg(-100, -3.5, 0.012, 0.06, -3.5, 3.5, M.dirt, { collide: false, cast: false });
-  seg(3.5, 100, 0.012, 0.06, -3.5, 3.5, M.dirt, { collide: false, cast: false });
+  seg(-3.5, 3.5, 0.012, 0.06, -100, 100, ROADMAT, { collide: false, cast: false });
+  seg(-100, -3.5, 0.012, 0.06, -3.5, 3.5, ROADMAT, { collide: false, cast: false });
+  seg(3.5, 100, 0.012, 0.06, -3.5, 3.5, ROADMAT, { collide: false, cast: false });
 
   /* ================= BRIDGES (wood = metal-free footsteps) ================= */
   function bridge(x0, x1, z0, z1) {

@@ -32,7 +32,13 @@ step); urban fire escapes grounded on stepped stringers; a chat input that survi
 the removal (operators panel) deleted; live scoreboard moved out of the centered
 hud-top container to the LEFT edge (it was overlapping the objective text); lobby
 grid rebalanced to two columns with a labeled MAP select; AC units added to the two
-accessible roofs.
+accessible roofs. Second revision: rural roads moved to a
+polygon-offset material (the grey-green flicker was depth z-fighting between road
+strips and grass at distance, not shadows — the texture fix treated the wrong
+cause); lobby restored to the original three-column template (the two-column
+rework is reverted) with MAP as a standard rules field; chat markup verified
+absent by machine check — a message box after deploying this build means a stale
+index.html in the repo (mixed upload) plus browser cache.
 - **Voice hardening** (reported total silence in the field): dual STUN + optional TURN
   config hook (CFG.VOICE.turn), DOM-attached audio elements with explicit play() and a
   user-gesture retry queue, offer-glare rollback, per-peer connection toasts
