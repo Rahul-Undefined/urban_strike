@@ -80,13 +80,13 @@
       <div class="panel">
         <div class="panel-head">OPERATORS <span id="lobby-count">0/4</span></div>
         <ul class="player-list" id="lobby-players"></ul>
-          <input id="chat-input" maxlength="120" placeholder="Say something\u2026 (Enter to send)" autocomplete="off">
         </div>
       </div>
       <div class="panel" id="lobby-settings">
         <div class="panel-head">MATCH RULES</div>
         <label class="field"><span>MODE</span>
           <select id="lobby-mode"><option value="ffa">Free For All</option><option value="t3">3 vs 3</option><option value="t5">5 vs 5</option></select>
+          <label class="mini-label">MAP</label>
           <select id="lobby-map"><option value="urban">Urban</option><option value="rural">Rural</option></select>
         </label>
         <label class="field"><span>KILLS TO WIN</span>
@@ -119,8 +119,8 @@
     <div id="match-timer">10:00</div>
     <div id="team-score" class="hidden"></div>
     <div id="kill-target"></div>
-    <div id="live-board"></div>
   </div>
+  <div id="live-board"></div>
   <div id="announce"></div>
   <div id="countdown" class="hidden"></div>
   <div id="voice-ind" class="hidden">● TALKING</div>

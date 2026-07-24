@@ -10,7 +10,20 @@ World._buildRural = function (T) {
 
   // ---- local palette (Lambert only, so StaticMerge absorbs everything) ----
   function L(c) { return new THREE.MeshLambertMaterial({ color: c }); }
-  var GRASS = L(0x46603a), LEAF1 = L(0x2f4a30), LEAF2 = L(0x3a5c3a);
+  function grassMat() {
+    var c = document.createElement("canvas"); c.width = 128; c.height = 128;
+    var g = c.getContext("2d");
+    g.fillStyle = "#4a6339"; g.fillRect(0, 0, 128, 128);
+    for (var gi = 0; gi < 900; gi++) {
+      g.fillStyle = ["#3e5731", "#557242", "#42603a", "#5d7a48"][gi & 3];
+      g.fillRect(Math.random() * 128, Math.random() * 128, 2, 2 + Math.random() * 3);
+    }
+    var t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(48, 48);
+    return new THREE.MeshLambertMaterial({ map: t });
+  }
+  var GRASS = grassMat(), LEAF1 = L(0x2f4a30), LEAF2 = L(0x3a5c3a);
   var ROCK = L(0x6d716b), LOG = L(0x5a4630), CROP = L(0x4f7a3a);
   var WATER = new THREE.MeshLambertMaterial({ color: 0x2c6f8f, transparent: true, opacity: 0.75 });
 
@@ -26,8 +39,9 @@ World._buildRural = function (T) {
   seg(50, 60, -0.14, -0.1, -110, 36, WATER, { collide: false, cast: false });
 
   // dirt roads (visual strips)
-  seg(-3.5, 3.5, 0.005, 0.03, -100, 100, M.dirt, { collide: false, cast: false });
-  seg(-100, 100, 0.005, 0.03, -3.5, 3.5, M.dirt, { collide: false, cast: false });
+  seg(-3.5, 3.5, 0.012, 0.06, -100, 100, M.dirt, { collide: false, cast: false });
+  seg(-100, -3.5, 0.012, 0.06, -3.5, 3.5, M.dirt, { collide: false, cast: false });
+  seg(3.5, 100, 0.012, 0.06, -3.5, 3.5, M.dirt, { collide: false, cast: false });
 
   /* ================= BRIDGES (wood = metal-free footsteps) ================= */
   function bridge(x0, x1, z0, z1) {
@@ -73,7 +87,11 @@ World._buildRural = function (T) {
     seg(bx - 2.3, bx + 2.3, platY + 0.3, platY + 1.25, bz + 2.18, bz + 2.3, M.wood);
     seg(bx - 2.3, bx - 2.18, platY + 0.3, platY + 1.25, bz - 2.3, bz + 2.3, M.wood);
     seg(bx - 2.5, bx + 2.5, platY + 2.9, platY + 3.15, bz - 2.5, bz + 2.5, M.wood, { collide: false }); // roof
-    stairFlight(bx + 2.6, baseY, bz, 1, 0, 13, 0.3, 0.5, 1.4, M.wood);            // access stair (+x side)
+    // stair climbs TOWARD the deck; posts + stringer kill the floating-tread look
+    stairFlight(bx + 8.85, baseY, bz, -1, 0, 13, 0.3, 0.5, 1.4, M.wood);
+    seg(bx + 6.7, bx + 8.85, baseY, baseY + 1.35, bz - 0.7, bz + 0.7, M.wood);
+    seg(bx + 4.5, bx + 6.7, baseY, baseY + 2.65, bz - 0.7, bz + 0.7, M.wood);
+    seg(bx + 2.35, bx + 4.5, baseY, baseY + 3.9, bz - 0.7, bz + 0.7, M.wood);
   }
   tower(-62, -58, 3.6);   // NW summit — the long sniping lane
   tower(50, 8, 0);        // village overwatch

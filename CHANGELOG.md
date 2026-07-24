@@ -22,6 +22,17 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 ---
 
 ## v4.7 — Fixes + Visual Pass *(current, includes v4.6)*
+
+**v4.7 revision (post browser test):** rural grass now uses a speckled texture
+(was flat color — read as grey/green shimmer under shadows); dirt roads thickened
+and de-overlapped (z-fighting at the crossroads); watchtower stairs rebuilt to climb
+TOWARD the deck on stepped stringers with support walls (they previously ascended
+away from the platform on floating treads — stairFlight only skirts 0.9m below each
+step); urban fire escapes grounded on stepped stringers; a chat input that survived
+the removal (operators panel) deleted; live scoreboard moved out of the centered
+hud-top container to the LEFT edge (it was overlapping the objective text); lobby
+grid rebalanced to two columns with a labeled MAP select; AC units added to the two
+accessible roofs.
 - **Voice hardening** (reported total silence in the field): dual STUN + optional TURN
   config hook (CFG.VOICE.turn), DOM-attached audio elements with explicit play() and a
   user-gesture retry queue, offer-glare rollback, per-peer connection toasts

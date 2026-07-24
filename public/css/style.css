@@ -69,7 +69,7 @@ button { font-family: var(--disp); cursor: pointer; }
 .btn.small { padding: 8px 16px; font-size: 13px; }
 
 /* Lobby */
-.lobby-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; width: 100%; }
+.lobby-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; width: 100%; max-width: 780px; margin: 0 auto; }
 .lobby-grid .panel { width: auto; }
 @media (max-width: 860px) { .lobby-grid { grid-template-columns: 1fr; } }
 .code-panel { display: flex; flex-direction: column; align-items: center; gap: 14px; justify-content: center; }
@@ -323,7 +323,7 @@ button { font-family: var(--disp); cursor: pointer; }
 
 /* v4.7 live scoreboard */
 #live-board {
-  position: absolute; top: 52px; right: 14px; z-index: 30; width: 224px;
+  position: absolute; top: 64px; left: 14px; z-index: 30; width: 224px;
   font: 600 11px "Rajdhani", monospace; letter-spacing: 0.6px;
   background: rgba(10, 14, 18, 0.62); border: 1px solid rgba(120, 150, 170, 0.25);
   padding: 6px 8px; pointer-events: none; color: #cfd8de;
@@ -335,3 +335,5 @@ button { font-family: var(--disp); cursor: pointer; }
 .lb-row span { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .lb-row b { width: 30px; text-align: right; font-weight: 600; }
 .lb-row.lb-h { color: #7d94a3; border-bottom: 1px solid rgba(120, 150, 170, 0.25); margin-bottom: 2px; }
+
+.mini-label { display: block; font-size: 10px; letter-spacing: 2px; color: #7d94a3; margin: 8px 0 4px; }
