@@ -14,7 +14,7 @@
       var o = sc.children[i];
       if (!o.isMesh || o.matrixAutoUpdate !== false) continue;
       var gt = o.geometry && o.geometry.type;
-      if (gt !== "BoxGeometry" && gt !== "CylinderGeometry") continue;
+      if (gt !== "BoxGeometry" && gt !== "CylinderGeometry" && gt !== "ConeGeometry") continue;
       if (!o.material || o.material.type !== "MeshLambertMaterial") continue;
       if (!o.geometry.index || !o.geometry.attributes.uv) continue;
       var key = o.material.uuid + "|" + (o.castShadow ? 1 : 0) + "|" + (o.receiveShadow ? 1 : 0);

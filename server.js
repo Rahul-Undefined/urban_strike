@@ -12,6 +12,12 @@ const { Server } = require('socket.io');
 const CFG = require('./public/src/config/index.js');
 const now = () => Date.now();
 
+// per-map data resolution (urban keeps the legacy top-level keys)
+function mapData(room) {
+  if (room.settings && room.settings.map === 'rural' && CFG.MAPS_RURAL) return CFG.MAPS_RURAL;
+  return { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points };
+}
+
 // lobby auto-start: 5-second countdown once everyone is ready (self-cancelling)
 function beginCountdown(room) {
   if (room.cdTimer || room.state !== 'lobby') return;
@@ -45,7 +51,7 @@ const rooms = new Map();
 const Rooms = require('./server/lib/rooms.js')({ io, rooms, now });
 const { makeCode, cleanName, num, clampOpt, modeInfo, makeRoom,
   addPlayer, refreshTeamsAndColors, lobbyPayload, pushLobby } = Rooms;
-const Loot = require('./server/lib/loot.js')({ io, now });
+const Loot = require('./server/lib/loot.js')({ io, now, mapData });
 const { initPickups, pickupList, tryCollect, respawnPickups,
   scheduleAirdrop, clearAirdrop, dropCrate } = Loot;
 const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
@@ -55,7 +61,7 @@ const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) =>
 
 function pickSpawn(room, forP) {
   const teams = modeInfo(room).teams;
-  const candidates = CFG.SPAWNS
+  const candidates = mapData(room).SPAWNS
     .map((s, i) => ({ s, i }))
     .filter(c => !teams || c.s[3] === forP.team || c.s[3] === 'n');
   const enemies = [...room.players.values()]
@@ -202,6 +208,7 @@ io.on('connection', (socket) => {
     const room = getRoom(socket); if (!room || socket.id !== room.hostId || room.state !== 'lobby') return;
     room.settings.killTarget = clampOpt(s && s.killTarget, CFG.MATCH.killOptions, room.settings.killTarget);
     room.settings.minutes = clampOpt(s && s.minutes, CFG.MATCH.timeOptions, room.settings.minutes);
+    if (s && s.map && CFG.MAPS[s.map] && CFG.MAPS[s.map].ready !== false) room.settings.map = s.map;
     if (s && CFG.MODES[s.mode]) {
       if (room.players.size > CFG.MODES[s.mode].maxPlayers) {
         socket.emit('toast', { msg: 'Too many players in room for that mode' });
@@ -220,13 +227,6 @@ io.on('connection', (socket) => {
     pushLobby(room);
     const all = room.players.size >= 2 && [...room.players.values()].every(q => q.ready);
     if (all) beginCountdown(room); else cancelCountdown(room);
-  });
-  socket.on('chat', (d) => {
-    const room = getRoom(socket); if (!room) return;
-    const p = room.players.get(socket.id); if (!p) return;
-    const msg = String((d && d.t) || '').slice(0, 120).trim();
-    if (!msg) return;
-    io.to(room.code).emit('chat', { name: p.name, color: p.color, msg });
   });
   socket.on('voiceJoin', () => {
     const room = getRoom(socket); if (!room) return;

@@ -22,7 +22,7 @@ var FX = (function () {
     live.push({ mesh: mesh, life: 0, ttl: ttl, update: update });
   }
 
-  function tracer(from, to) {
+  function tracer(from, to, color) {
     var dir = new THREE.Vector3().subVectors(to, from);
     var len = dir.length();
     if (len < 0.5) return;

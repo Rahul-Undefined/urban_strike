@@ -46,7 +46,9 @@ const files = [
   "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js",
   "public/src/environment/districts-outer.js",
-  "public/src/environment/deco.js"
+  "public/src/environment/deco.js",
+  "public/src/environment/rural.js",
+  "public/src/environment/access.js"
 ];
 for (const f of files) {
   try { vm.runInContext(fs.readFileSync(f, "utf8"), ctx, { filename: f }); }
@@ -60,17 +62,30 @@ try {
       var scene = new THREE.Scene();
       World.build(scene);
       var meshes = 0, sprites = 0, lines = 0, other = 0;
-      scene.children.forEach(function (o) {
+      scene.traverse(function (o) {
         if (o.isMesh) meshes++; else if (o.isSprite) sprites++;
-        else if (o.isLine) lines++; else other++;
+        else if (o.isLine) lines++; else if (o !== scene) other++;
       });
       return { children: scene.children.length, meshes: meshes, sprites: sprites,
                lines: lines, other: other, colliders: World.colliders.length };
     })();
   `, ctx, { filename: "<build-run>" });
-  console.log("BUILD OK: " + JSON.stringify(result));
-  if (result.colliders < 1000) { console.log("SUSPICIOUS: collider count too low"); process.exit(1); }
-  console.log("verify-build: PASS");
+  console.log("URBAN BUILD OK: " + JSON.stringify(result));
+  if (result.colliders < 1000) { console.log("SUSPICIOUS: urban collider count too low"); process.exit(1); }
+  const rural = vm.runInContext(`
+    (function () {
+      var scene2 = new THREE.Scene();
+      // intentionally rebuild on a fresh scene after reset: exercises disposal
+      World.reset();
+      World.buildMap(scene2, "rural");
+      var meshes = 0;
+      scene2.traverse(function (o) { if (o.isMesh) meshes++; });
+      return { map: World.builtMap, meshes: meshes, colliders: World.colliders.length };
+    })();
+  `, ctx, { filename: "<rural-run>" });
+  console.log("RURAL BUILD OK: " + JSON.stringify(rural));
+  if (rural.map !== "rural" || rural.colliders < 300) { console.log("rural build unhealthy"); process.exit(1); }
+  console.log("verify-build: PASS (both maps, reset path exercised)");
 } catch (e) {
   console.log("BUILD CRASH:\n" + (e.stack || e));
   process.exit(1);

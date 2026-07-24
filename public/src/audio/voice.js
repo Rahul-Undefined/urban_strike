@@ -10,7 +10,26 @@ var VoiceChat = (function () {
   var talking = false;
   var sendSignal = null;     // set by init: function (toId, data)
 
-  var RTC_CFG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+  var RTC_CFG = { iceServers: [
+    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
+  ] };
+  if (typeof CFG !== "undefined" && CFG.VOICE && CFG.VOICE.turn) RTC_CFG.iceServers.push(CFG.VOICE.turn);
+  var pendingPlay = [];
+  var gestureHooked = false;
+  function flushPlay() {
+    while (pendingPlay.length) {
+      var e2 = pendingPlay.pop();
+      var p2 = e2.play();
+      if (p2 && p2.catch) p2.catch(function () {});
+    }
+  }
+  function hookGesture() {
+    if (gestureHooked) return;
+    gestureHooked = true;
+    ["click", "keydown"].forEach(function (ev) {
+      document.addEventListener(ev, flushPlay);
+    });
+  }
 
   function init(sendSignalFn) { sendSignal = sendSignalFn; }
 
@@ -47,15 +66,27 @@ var VoiceChat = (function () {
   function makePeer(id, initiator) {
     if (peers[id]) return peers[id];
     var pc = new RTCPeerConnection(RTC_CFG);
-    var el = new Audio();
+    var el = document.createElement("audio");
     el.autoplay = true;
+    el.playsInline = true;
+    el.style.display = "none";
+    document.body.appendChild(el);
+    hookGesture();
     var P = { pc: pc, el: el, pendingIce: [] };
     peers[id] = P;
     if (localStream) localStream.getTracks().forEach(function (t) { pc.addTrack(t, localStream); });
-    pc.ontrack = function (ev) { el.srcObject = ev.streams[0]; };
+    pc.ontrack = function (ev) {
+      el.srcObject = ev.streams[0];
+      var pr = el.play();
+      if (pr && pr.catch) pr.catch(function () { pendingPlay.push(el); });
+    };
     pc.onicecandidate = function (ev) { if (ev.candidate) sendSignal(id, { c: ev.candidate }); };
     pc.onconnectionstatechange = function () {
-      if (pc.connectionState === "failed" || pc.connectionState === "closed") closePeer(id);
+      var st = pc.connectionState;
+      var nm = (typeof Net !== "undefined" && Net.peerName) ? Net.peerName(id) : "Player";
+      if (st === "connected") UI.toast(nm + ": voice connected");
+      if (st === "failed") UI.toast(nm + ": voice link FAILED (network/NAT)");
+      if (st === "failed" || st === "closed") closePeer(id);
     };
     if (initiator) {
       pc.createOffer().then(function (o) { return pc.setLocalDescription(o); })
@@ -70,13 +101,14 @@ var VoiceChat = (function () {
     if (!P) return;
     try { P.pc.close(); } catch (e) {}
     P.el.srcObject = null;
+    if (P.el.parentNode) P.el.parentNode.removeChild(P.el);
     delete peers[id];
   }
 
   // ---- events wired from net.js ----
   function onPeerList(ids) {           // I just joined: I initiate to everyone existing
     (ids || []).forEach(function (id) { makePeer(id, true); });
-    UI.setVoiceState("on");
+    UI.setVoiceState("muted");
   }
   function onPeerJoin() { /* newcomer initiates; nothing to do on this side */ }
   function onPeerLeave(id) { closePeer(id); }
@@ -86,7 +118,11 @@ var VoiceChat = (function () {
     var P = makePeer(from, false);
     if (data.sdp) {
       var desc = new RTCSessionDescription(data.sdp);
-      P.pc.setRemoteDescription(desc).then(function () {
+      var pre = Promise.resolve();
+      if (desc.type === "offer" && P.pc.signalingState === "have-local-offer") {
+        pre = P.pc.setLocalDescription({ type: "rollback" }).catch(function () {});
+      }
+      pre.then(function () { return P.pc.setRemoteDescription(desc); }).then(function () {
         P.pendingIce.forEach(function (c) { P.pc.addIceCandidate(c).catch(function () {}); });
         P.pendingIce = [];
         if (desc.type === "offer") {
@@ -105,7 +141,7 @@ var VoiceChat = (function () {
     if (!localStream) return;
     talking = !!b && joined;
     localStream.getAudioTracks().forEach(function (t) { t.enabled = talking; });
-    UI.setVoiceState(joined ? (talking ? "talking" : "on") : "off");
+    UI.setVoiceState(joined ? (talking ? "talking" : "muted") : "off");
   }
 
   return {

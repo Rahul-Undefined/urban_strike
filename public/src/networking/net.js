@@ -285,7 +285,6 @@ var Net = (function () {
       AudioSys.explosion(mp);
     });
     socket.on('countdown', function (d) { UI.setCountdown(d.n); });
-    socket.on('chat', function (d) { UI.addChat(d); });
     socket.on('voicePeers', function (d) { VoiceChat.onPeerList(d.ids); });
     socket.on('voicePeerJoin', function (d) { VoiceChat.onPeerJoin(d.id); });
     socket.on('voicePeerLeave', function (d) { VoiceChat.onPeerLeave(d.id); });
@@ -385,7 +384,7 @@ var Net = (function () {
     sendProj: sendProj, sendThrow: sendThrow, requestRespawn: requestRespawn,
     placeMine: function (d, cb) { if (socket) socket.emit('placeMine', d, cb); },
     setReady: function (v) { if (socket) socket.emit('setReady', { v: !!v }); },
-    sendChat: function (t) { if (socket) socket.emit('chat', { t: t }); },
+    peerName: function (id) { var r = remotes[id]; return (r && r.name) || 'Player'; },
     voiceJoin: function () { if (socket) socket.emit('voiceJoin'); },
     voiceLeave: function () { if (socket) socket.emit('voiceLeave'); },
     bindGameplayEvents: bindGameplayEvents,

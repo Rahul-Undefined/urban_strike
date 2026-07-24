@@ -7,7 +7,8 @@
       require('./weapons.config.js'),
       require('./gameplay.config.js'),
       require('./loot.config.js'),
-      require('./world.config.js')
+      require('./world.config.js'),
+      require('./maps-rural.config.js')
     ]);
   } else {
     root.CFG = factory(root.__CFG_PARTS || []);

@@ -73,7 +73,8 @@ ok(visibles().length === 1, 'rapid weapon switching never leaves zero or multipl
 
 console.log('--- v4.3: scope zoom + gear grants ---');
 ctx.Input.aim = true;
-while (W.currentName() !== 'awm') W.selectByKey(9);
+for (let g9 = 0; g9 < 20 && W.currentName() !== 'awm'; g9++) W.selectByKey(9);
+ok(W.currentName() === 'awm', 'slot-9 cycling reaches the AWM (bounded, no spin)');
 W.update(0.016); // establish scoped state
 ok(W.wheelZoom(1) === true, 'wheel zoom engages while scoped on the AWM');
 for (let z = 0; z < 10; z++) W.wheelZoom(1);

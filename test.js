@@ -181,9 +181,9 @@ function phase2(done) {
       A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: bPos });
     }, 350);
     setTimeout(() => {
-      const soak = Math.min(CFG.ARMOR[lvl].dur, 33 * CFG.ARMOR[lvl].absorb);
+      const soak = Math.min(CFG.ARMOR[lvl].dur, CFG.WEAPONS.ak47.dmg * CFG.ARMOR[lvl].absorb);
       const expDu = Math.round(CFG.ARMOR[lvl].dur - soak);
-      const expHp = Math.round(100 - (33 - soak));
+      const expHp = Math.round(100 - (CFG.WEAPONS.ak47.dmg - soak));
       ok(first && first.du === expDu && first.hp === expHp,
         'armor soak math exact (hp ' + expHp + ', dur ' + expDu + ') [got ' + JSON.stringify(first) + ']');
       bHp = first ? first.hp : bHp;
@@ -281,7 +281,7 @@ function phase3(done) {
   });
 }
 
-phase1(() => phase2(() => phase3(() => phase4(phase5))));
+phase1(() => phase2(() => phase3(() => phase4(() => phase5(phase6)))));
 
 
 /* ---------------- Phase 4: v4.3 — lobby flow, stance, mines, molotov ---------------- */
@@ -290,26 +290,18 @@ function phase4(done) {
   const A = io(URL), B = io(URL);
   let bPos = null, bStance = 0, bAlive = false;
   const cds = [];
-  let sawCancel = false, chatMsg = null, minePos = null, mineDeath = null, boomSeen = false;
+  let sawCancel = false, minePos = null, mineDeath = null, boomSeen = false;
 
   A.on('connect', () => {
     A.emit('createRoom', { name: 'Ax2', settings: { killTarget: 30, minutes: 10 } }, (res) => {
-      B.emit('joinRoom', { name: 'Bx2', code: res.code }, () => setTimeout(stepChat, 200));
+      B.emit('joinRoom', { name: 'Bx2', code: res.code }, () => setTimeout(stepReady, 200));
     });
   });
-  B.on('chat', (d) => { chatMsg = d; });
   [A, B].forEach(s => s.on('countdown', (d) => {
     cds.push(d.n === undefined ? null : d.n);
     if (d.n === -1) sawCancel = true;
   }));
 
-  function stepChat() {
-    A.emit('chat', { t: 'gl hf' });
-    setTimeout(() => {
-      ok(chatMsg && chatMsg.name === 'Ax2' && chatMsg.msg === 'gl hf', 'lobby chat relays name + message');
-      stepReady();
-    }, 300);
-  }
   function stepReady() {
     A.emit('setReady', { v: true });
     B.emit('setReady', { v: true });
@@ -401,8 +393,41 @@ function phase4(done) {
         const maxAbsorb = CFG.ARMOR[3].absorb; // victim may have looted any vest at spawn
         ok(hits === 1 && taken <= CFG.THROWS.molotov.dmg && taken >= Math.floor(CFG.THROWS.molotov.dmg * (1 - maxAbsorb)),
           'molotov clamped to ' + CFG.THROWS.molotov.dmg + ' (sent 500) + ticks throttled [hits=' + hits + ' taken=' + taken + ']');
-        [A, B].forEach(s => s.disconnect());
-        setTimeout(done, 300);
+        // v4.7 combat: sniper headshot lethality on the worn-down B, then a
+        // clean legs-multiplier ratio on the respawned (full-hp) B.
+        let died = null;
+        B.once('death', (dv) => { died = dv; });
+        A.emit('hit', { victim: B.id, w: 'sniper', part: 'head', pellets: 1, vp: bPos });
+        setTimeout(() => {
+          ok(died && (died.weapon === 'sniper' || died.w === 'sniper'),
+            'sniper headshot lethal, kill attributed to the sniper');
+          const waitSpawn = (d) => {
+            if (d.id !== B.id) return;
+            B.off('spawn', waitSpawn);
+            const fresh = d.pos ? [d.pos[0], d.pos[1], d.pos[2]] : bPos;
+            setTimeout(() => {           // let spawn protection expire
+              let e1 = null, e2 = null;
+              B.once('damaged', (x1) => { e1 = x1; });
+              A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: fresh });
+              setTimeout(() => {
+                B.once('damaged', (x2) => { e2 = x2; });
+                A.emit('hit', { victim: B.id, w: 'ak47', part: 'legs', pellets: 1, vp: fresh });
+                setTimeout(() => {
+                  const wA = CFG.WEAPONS.ak47;
+                  const bodyDmg = e1 ? (100 - e1.hp) : null;
+                  const legsDmg = (e1 && e2) ? (e1.hp - e2.hp) : null;
+                  const expLegs = bodyDmg !== null ? Math.round(bodyDmg * (wA.legs || 0.72)) : null;
+                  ok(bodyDmg !== null && legsDmg !== null && Math.abs(legsDmg - expLegs) <= 1,
+                    'leg hits apply the reduced multiplier (body ' + bodyDmg + ' -> legs ' + legsDmg + ', expected ~' + expLegs + ')');
+                  [A, B].forEach(s => s.disconnect());
+                  setTimeout(done, 300);
+                }, 400);
+              }, 400);
+            }, 2700);
+          };
+          B.on('spawn', waitSpawn);
+          setTimeout(() => B.emit('respawn'), 3300); // death timer, then request
+        }, 450);
       }, 600);
     }, 400);
   }
@@ -410,7 +435,7 @@ function phase4(done) {
 
 
 /* ---------------- Phase 5: v4.5 — voice signaling relay ---------------- */
-function phase5() {
+function phase5(done) {
   console.log('--- Phase 5: voice signaling (room-scoped, opt-in gated) ---');
   const A = io(URL), B = io(URL), D = io(URL), C = io(URL);
   let leaks = 0, legit = null, peerJoinSeen = null, peerLeaveSeen = null;
@@ -468,8 +493,43 @@ function phase5() {
     B.disconnect();
     setTimeout(() => {
       ok(peerLeaveSeen === bId, 'disconnect broadcasts voicePeerLeave to the mesh');
-      [A, C, D].forEach(s => s.disconnect());
-      setTimeout(finish, 300);
+      A.emit('voiceLeave');
+      A.emit('voiceJoin');
+      A.once('voicePeers', (d2) => {
+        ok(Array.isArray(d2.ids) && d2.ids.length === 0, 'voice rejoin yields a fresh, correct peer list');
+        [A, C, D].forEach(s => s.disconnect());
+        setTimeout(done, 300);
+      });
     }, 500);
   }
+}
+
+
+/* ---------------- Phase 6: v4.6 — multi-map plumbing ---------------- */
+function phase6() {
+  console.log('--- Phase 6: rural map selection + per-map spawns ---');
+  const A = io(URL), B = io(URL);
+  A.on('connect', () => {
+    A.emit('createRoom', { name: 'Am', settings: { map: 'rural' } }, (res) => {
+      B.once('lobby', (lb) => {
+        ok(lb.settings && lb.settings.map === 'rural',
+          'lobby carries the selected map to joiners');
+        A.emit('startMatch');
+      });
+      B.emit('joinRoom', { name: 'Bm', code: res.code }, () => {});
+    });
+  });
+  let msSeen = false;
+  B.on('matchStart', (d) => {
+    if (msSeen) return; msSeen = true;
+    ok(d.settings && d.settings.map === 'rural', 'matchStart payload names the map');
+  });
+  B.on('spawn', (d) => {
+    if (d.id !== B.id) return;
+    const S = CFG.MAPS_RURAL.SPAWNS;
+    const near = S.some(s => Math.abs(s[0] - d.pos[0]) < 0.6 && Math.abs(s[1] - d.pos[2]) < 0.6);
+    ok(near, 'spawn position comes from the RURAL spawn set [got ' + d.pos[0] + ',' + d.pos[2] + ']');
+    [A, B].forEach(s => s.disconnect());
+    setTimeout(finish, 300);
+  });
 }

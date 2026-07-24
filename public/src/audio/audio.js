@@ -121,6 +121,15 @@ var AudioSys = (function () {
       return;
     }
     var s = SHOT[weapon] || SHOT.pistol;
+    var ov = (typeof CFG !== 'undefined' && CFG.WEAPONS[weapon] && CFG.WEAPONS[weapon].snd) || null;
+    if (ov) {
+      s = {
+        body: Object.assign({}, s.body, ov.body || {}),
+        crack: Object.assign({}, s.crack, ov.crack || {}),
+        boom: ov.boom !== undefined ? ov.boom : s.boom,
+        mech: s.mech
+      };
+    }
     noiseBurst(pos, { f0: s.body.f0, f1: s.body.f1, dur: s.body.dur, vol: s.body.vol, ftype: s.body.ftype });
     tone(pos, { type: s.crack.type, f0: s.crack.f, f1: s.crack.f * 0.35, dur: s.crack.dur, vol: s.crack.vol });
     if (s.boom) tone(pos, { type: 'sine', f0: s.boom.f0, f1: s.boom.f1, dur: s.boom.dur, vol: s.boom.vol });

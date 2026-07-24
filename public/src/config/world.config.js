@@ -16,6 +16,12 @@
     t3:  { label: '3 vs 3',       teams: true,  maxPlayers: 6 },
     t5:  { label: '5 vs 5',       teams: true,  maxPlayers: 10 }
   };
+  // Map registry — rural flips ready:true when its build + data land
+  var MAPS = {
+    urban: { label: 'Urban', ready: true },
+    rural: { label: 'Rural', ready: true }
+  };
+
   var MINIMAP = { proximity: 18 };   // meters at which an enemy pings the minimap without firing
   // V4.1 stylized dusk -- all scene lighting/atmosphere lives here, not in source.
   var RENDER = {
@@ -27,5 +33,5 @@
     lampGlow: 0xffb25a, lampPool: 0.16   // streetlight halo color + ground-pool strength
   };
 
-  return { COLORS: COLORS, TEAMS: TEAMS, MODES: MODES, MINIMAP: MINIMAP, RENDER: RENDER };
+  return { COLORS: COLORS, TEAMS: TEAMS, MODES: MODES, MINIMAP: MINIMAP, RENDER: RENDER, MAPS: MAPS };
 });

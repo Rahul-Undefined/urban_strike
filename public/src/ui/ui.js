@@ -9,7 +9,7 @@ var UI = (function () {
   function cache() {
     ['menu-layer', 'hud-layer', 'screen-main', 'screen-create', 'screen-join', 'screen-lobby',
       'create-name', 'create-mode', 'create-kills', 'create-time', 'btn-create', 'btn-goto-create', 'btn-goto-join',
-      'lobby-mode', 'team-score', 'armor-badge', 'armor-row',
+      'lobby-mode', 'lobby-map', 'create-map', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
       'join-name', 'join-code', 'btn-join',
       'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count', 'lobby-kills', 'lobby-time',
       'lobby-hint', 'btn-start', 'btn-leave',
@@ -22,7 +22,7 @@ var UI = (function () {
       'pause-overlay', 'sens-range', 'sens-val', 'vol-range', 'vol-val', 'quality-shadows',
       'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading',
       'announce', 'cook-bar', 'cook-fill', 'att-list',
-      'tc-mine', 'tc-molotov', 'countdown', 'chat-log', 'chat-input', 'btn-ready',
+      'tc-mine', 'tc-molotov', 'countdown', 'btn-ready',
       'btn-voice', 'voice-ind'
     ].forEach(function (id) { els[id] = $(id); });
   }
@@ -44,7 +44,24 @@ var UI = (function () {
   function setLoading(on) { els['loading'].classList.toggle('hidden', !on); }
 
   // ---------- lobby ----------
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+  function renderBoard(d) {
+    var el = els['live-board'];
+    if (!el || !d || !d.players) return;
+    var rows = d.players.slice().map(function (p) {
+      var s = (p.kills | 0) * 200 + (p.assists | 0) * 50 + Math.round((p.damage || 0) * 0.5);
+      return { n: p.name, k: p.kills | 0, dd: p.deaths | 0, a: p.assists | 0, s: s };
+    }).sort(function (a, b) { return b.s - a.s || b.k - a.k; }).slice(0, 10);
+    var t = (d.teams && d.settings && d.settings.mode !== 'ffa')
+      ? '<div class="lb-teams">A ' + (d.teams.a | 0) + ' \u2014 ' + (d.teams.b | 0) + ' B</div>' : '';
+    el.innerHTML = '<div class="lb-title">' + esc(currentMapLabel).toUpperCase() + '</div>' + t +
+      '<div class="lb-row lb-h"><span>PLAYER</span><b>K</b><b>D</b><b>A</b><b>S</b></div>' +
+      rows.map(function (r) {
+        return '<div class="lb-row"><span>' + esc(r.n) + '</span><b>' + r.k + '</b><b>' + r.dd + '</b><b>' + r.a + '</b><b>' + r.s + '</b></div>';
+      }).join('');
+  }
   function updateLobby(d, myId) {
+    renderBoard(d);
     var mode = CFG.MODES[d.settings.mode] || CFG.MODES.ffa;
     els['lobby-code'].textContent = d.code;
     els['lobby-count'].textContent = d.players.length + '/' + mode.maxPlayers;
@@ -83,9 +100,11 @@ var UI = (function () {
       ? (d.players.length < 2 ? 'You can start solo to explore, or wait for friends.' : 'Ready when you are.')
       : 'Waiting for host to start\u2026';
     els['lobby-mode'].disabled = !isHost;
+    if (els['lobby-map']) els['lobby-map'].disabled = !isHost;
     els['lobby-kills'].disabled = !isHost;
     els['lobby-time'].disabled = !isHost;
     els['lobby-mode'].value = d.settings.mode || 'ffa';
+    if (els['lobby-map']) els['lobby-map'].value = d.settings.map || 'urban';
     els['lobby-kills'].value = String(d.settings.killTarget);
     els['lobby-time'].value = String(d.settings.minutes);
   }
@@ -280,6 +299,7 @@ var UI = (function () {
       els['btn-create'].disabled = true;
       Net.createRoom(name, {
         mode: els['create-mode'].value,
+        map: els['create-map'] ? els['create-map'].value : 'urban',
         killTarget: parseInt(els['create-kills'].value, 10),
         minutes: parseInt(els['create-time'].value, 10)
       }, function (res) {
@@ -310,6 +330,7 @@ var UI = (function () {
     };
     function pushSettings() {
       Net.updateSettings({
+        map: els['lobby-map'] ? els['lobby-map'].value : 'urban',
         mode: els['lobby-mode'].value,
         killTarget: parseInt(els['lobby-kills'].value, 10),
         minutes: parseInt(els['lobby-time'].value, 10)
@@ -334,12 +355,22 @@ var UI = (function () {
     });
     els['att-list'].innerHTML = parts.join('');
   }
+  var currentMapLabel = 'Urban';
+  function setLoadingMap(label) {
+    currentMapLabel = label || 'Urban';
+    if (els['loading-label']) els['loading-label'].textContent = 'BUILDING ' + currentMapLabel.toUpperCase() + '\u2026';
+  }
   function setVoiceState(state) {
     if (els['btn-voice']) {
       els['btn-voice'].textContent = state === 'off' ? 'JOIN VOICE' : 'VOICE ON \u00b7 hold T to talk';
       els['btn-voice'].classList.toggle('is-on', state !== 'off');
     }
-    if (els['voice-ind']) els['voice-ind'].classList.toggle('hidden', state !== 'talking');
+    var ind = els['voice-ind'];
+    if (!ind) return;
+    ind.classList.toggle('hidden', state === 'off');
+    ind.classList.toggle('live', state === 'talking');
+    ind.classList.toggle('muted', state === 'muted');
+    ind.textContent = state === 'talking' ? '\u25CF TALKING' : 'MIC MUTED \u2014 HOLD T';
   }
   function setGear(minesN, molosN) {
     if (els['tc-mine']) els['tc-mine'].textContent = 'V \u00d7' + minesN;
@@ -349,19 +380,6 @@ var UI = (function () {
     if (!els['countdown']) return;
     if (n > 0) { els['countdown'].textContent = 'MATCH STARTS IN ' + n; els['countdown'].classList.remove('hidden'); }
     else els['countdown'].classList.add('hidden');
-  }
-  function addChat(d) {
-    if (!els['chat-log']) return;
-    var row = document.createElement('div');
-    var b2 = document.createElement('b');
-    b2.style.color = d.color || '#9fb2c4';
-    b2.textContent = d.name;
-    var span = document.createElement('span');
-    span.textContent = ' ' + d.msg;
-    row.appendChild(b2); row.appendChild(span);
-    els['chat-log'].appendChild(row);
-    while (els['chat-log'].children.length > 30) els['chat-log'].removeChild(els['chat-log'].firstChild);
-    els['chat-log'].scrollTop = els['chat-log'].scrollHeight;
   }
   function setCooking(on, frac) {
     if (!els['cook-bar']) return;
@@ -384,16 +402,18 @@ var UI = (function () {
     if (els['btn-ready']) els['btn-ready'].addEventListener('click', function () {
       Net.setReady(this.dataset.r !== '1');
     });
+    document.addEventListener('keydown', function (e) {
+      if (e.code !== 'KeyT' || e.repeat) return;
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+      VoiceChat.setTalking(true);
+    });
+    document.addEventListener('keyup', function (e) {
+      if (e.code === 'KeyT') VoiceChat.setTalking(false);
+    });
     if (els['btn-voice']) els['btn-voice'].addEventListener('click', function () {
       if (VoiceChat.isJoined()) VoiceChat.leave();
       else VoiceChat.join();
-    });
-    if (els['chat-input']) els['chat-input'].addEventListener('keydown', function (e) {
-      e.stopPropagation();
-      if (e.key !== 'Enter') return;
-      var t = this.value.trim();
-      if (t) Net.sendChat(t);
-      this.value = '';
     });
   }
 
@@ -411,8 +431,10 @@ var UI = (function () {
     setVitals: setVitals, setTeamScore: setTeamScore, setWeapon: setWeapon, setReloading: setReloading,
     setScope: setScope, setCrosshair: setCrosshair,
     setAttachments: setAttachments, setCooking: setCooking, announce: announce, setCrosshairGap: setCrosshairGap,
-    setGear: setGear, setCountdown: setCountdown, addChat: addChat,
+    setGear: setGear, setCountdown: setCountdown,
     setVoiceState: setVoiceState,
+    setLoadingMap: setLoadingMap,
+    getMapLabel: function () { return currentMapLabel; },
     setTimer: setTimer, setKillTarget: setKillTarget,
     addFeed: addFeed, updateScoreboard: updateScoreboard, showScoreboard: showScoreboard,
     showDeath: showDeath, setDeathCountdown: setDeathCountdown, hideDeath: hideDeath,

@@ -39,6 +39,8 @@
       </label>
       <label class="field"><span>MODE</span>
         <select id="create-mode"><option value="ffa" selected>Free For All (10)</option><option value="t3">3 vs 3</option><option value="t5">5 vs 5</option></select>
+        <label>MAP</label>
+        <select id="create-map"><option value="urban" selected>Urban</option><option value="rural">Rural</option></select>
       </label>
       <label class="field"><span>KILLS TO WIN</span>
         <select id="create-kills"><option>5</option><option>10</option><option selected>15</option><option>20</option><option>30</option></select>
@@ -78,8 +80,6 @@
       <div class="panel">
         <div class="panel-head">OPERATORS <span id="lobby-count">0/4</span></div>
         <ul class="player-list" id="lobby-players"></ul>
-        <div id="lobby-chat">
-          <div id="chat-log"></div>
           <input id="chat-input" maxlength="120" placeholder="Say something\u2026 (Enter to send)" autocomplete="off">
         </div>
       </div>
@@ -87,6 +87,7 @@
         <div class="panel-head">MATCH RULES</div>
         <label class="field"><span>MODE</span>
           <select id="lobby-mode"><option value="ffa">Free For All</option><option value="t3">3 vs 3</option><option value="t5">5 vs 5</option></select>
+          <select id="lobby-map"><option value="urban">Urban</option><option value="rural">Rural</option></select>
         </label>
         <label class="field"><span>KILLS TO WIN</span>
           <select id="lobby-kills"><option>5</option><option>10</option><option>15</option><option>20</option><option>30</option></select>
@@ -118,6 +119,7 @@
     <div id="match-timer">10:00</div>
     <div id="team-score" class="hidden"></div>
     <div id="kill-target"></div>
+    <div id="live-board"></div>
   </div>
   <div id="announce"></div>
   <div id="countdown" class="hidden"></div>
@@ -185,7 +187,7 @@
 </div>
 
 <div id="toasts"></div>
-<div id="loading" class="hidden"><div class="loader-bar"></div><div>BUILDING SECTOR 7…</div></div>
+<div id="loading" class="hidden"><div class="loader-bar"></div><div id="loading-label">BUILDING URBAN…</div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="/socket.io/socket.io.js"></script>
@@ -193,6 +195,7 @@
   <script src="src/config/gameplay.config.js"></script>
   <script src="src/config/loot.config.js"></script>
   <script src="src/config/world.config.js"></script>
+  <script src="src/config/maps-rural.config.js"></script>
   <script src="src/config/index.js"></script>
   <script src="src/audio/audio.js"></script>
   <script src="src/audio/voice.js"></script>
@@ -202,6 +205,8 @@
   <script src="src/environment/districts-north.js"></script>
   <script src="src/environment/districts-outer.js"></script>
   <script src="src/environment/deco.js"></script>
+  <script src="src/environment/rural.js"></script>
+  <script src="src/environment/access.js"></script>
   <script src="src/effects/effects.js"></script>
   <script src="src/player/controller.js"></script>
   <script src="src/weapons/viewmodels.js"></script>

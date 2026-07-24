@@ -15,6 +15,7 @@ var Weapons = (function () {
   var atts = { sight: null, muzzle: null, mag: null };   // equipped attachments by slot
   var mineCount = 0;                                     // server-authoritative mirror
   var fires = [];                                        // my molotov burn areas
+  var bullets = [];                                      // simulated sniper rounds (travel + drop)
   var zoomFov = null, lastScoped = false;                // sniper wheel-zoom state
   var owned = {};                                        // weapon name -> true
   var cooking = null;                                    // { end, beeped } while holding a live frag
@@ -223,13 +224,27 @@ var Weapons = (function () {
       var tBody = rayBox(o, d, c.x, c.y, c.z, P.radius, halfH, P.radius);
       var part = null, t = -1;
       if (tHead >= 0 && (tBody < 0 || tHead <= tBody)) { t = tHead; part = 'head'; }
-      else if (tBody >= 0) { t = tBody; part = 'body'; }
+      else if (tBody >= 0) {
+        t = tBody;
+        part = (o.y + d.y * tBody) < (c.y - halfH * 0.25) ? 'legs' : 'body';
+      }
       if (t >= 0 && t < best) {
         best = t;
         hit = { type: 'player', t: t, id: id, part: part, point: new THREE.Vector3(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t), vp: [c.x, c.y, c.z] };
       }
     });
     return hit;
+  }
+
+  function fireBullet(w) {
+    var E2 = eff(current);
+    var sp = (Input.aim ? E2.ads : E2.spread) * (PlayerCtl.prone ? 0.4 : PlayerCtl.crouch ? 0.6 : 1);
+    var d2 = rayDir(sp, new THREE.Vector3());
+    bullets.push({ pos: camera.position.clone(), vel: d2.multiplyScalar(w.bulletSpeed),
+      drop: w.bulletDrop, life: 0, w: current, trc: w.trc || 0xffe2b0 });
+    var mzB = muzzleWorld(tmpV2).clone();
+    if (!E2.noFlash) FX.muzzle(mzB, true);
+    Net.sendShoot({ w: current, o: [mzB.x, mzB.y, mzB.z], dir: [0, 0, 0], sup: E2.quiet ? 1 : 0 });
   }
 
   function fireHitscan(w) {
@@ -250,14 +265,15 @@ var Weapons = (function () {
       var d = rayDir(spread, new THREE.Vector3());
       var hit = castRay(o, d, 400);
       var end = hit ? hit.point : o.clone().addScaledVector(d, 120);
-      FX.tracer(mz, end);
+      FX.tracer(mz, end, w.trc);
       if (hit && hit.type === 'world') { FX.impact(hit.point); AudioSys.impact(hit.point); }
       if (hit && hit.type === 'player') {
         FX.bloodPuff(hit.point);
         AudioSys.flesh(hit.point);
-        var pv = perVictim[hit.id] || (perVictim[hit.id] = { pellets: 0, part: 'body', vp: hit.vp });
+        var pv = perVictim[hit.id] || (perVictim[hit.id] = { pellets: 0, part: 'legs', vp: hit.vp });
         pv.pellets++;
         if (hit.part === 'head') pv.part = 'head';
+        else if (hit.part === 'body' && pv.part === 'legs') pv.part = 'body';
       }
     }
     for (var id in perVictim) {
@@ -321,7 +337,7 @@ var Weapons = (function () {
     else if (w.type === 'rocket') { AudioSys.shot('rocket', null); fireRocket(w); }
     else {
       AudioSys.shot(current, null, { supp: EF.quiet });
-      fireHitscan(w);
+      if (w.bullet) fireBullet(w); else fireHitscan(w);
       // brass ejection from the port, thrown to the shooter's right
       var ep = tmpV.set(0.3, -0.16, -0.35).applyQuaternion(camera.getWorldQuaternion(tmpQ)).add(camera.position);
       var right = new THREE.Vector3(1, 0, 0).applyQuaternion(tmpQ);
@@ -537,6 +553,32 @@ var Weapons = (function () {
 
     if (reloadUntil > 0 && t >= reloadUntil) { reloadUntil = 0; finishReload(); }
 
+    // simulated sniper rounds: per-frame segment march with gravity drop
+    for (var bi = bullets.length - 1; bi >= 0; bi--) {
+      var BL = bullets[bi];
+      BL.life += dt;
+      if (BL.life > 2.2) { bullets.splice(bi, 1); continue; }
+      var stepLen = Math.max(0.001, BL.vel.length() * dt);
+      var bdir = BL.vel.clone().multiplyScalar(1 / BL.vel.length());
+      var bhit = castRay(BL.pos, bdir, stepLen);
+      var bend = BL.pos.clone().addScaledVector(bdir, bhit ? bhit.t : stepLen);
+      FX.tracer(BL.pos, bend, BL.trc);
+      if (bhit) {
+        if (bhit.type === 'player') {
+          FX.bloodPuff(bhit.point);
+          AudioSys.flesh(bhit.point);
+          Net.sendHit({ victim: bhit.id, w: BL.w, part: bhit.part, pellets: 1, vp: bhit.vp });
+        } else {
+          FX.impact(bhit.point);
+          AudioSys.impact(bhit.point);
+        }
+        bullets.splice(bi, 1);
+        continue;
+      }
+      BL.pos.copy(bend);
+      BL.vel.y -= BL.drop * dt;
+    }
+
     // molotov ground fire — periodic burn ticks, server-clamped like frag damage
     var spec = CFG.THROWS.molotov;
     for (var fi = fires.length - 1; fi >= 0; fi--) {
@@ -627,6 +669,12 @@ var Weapons = (function () {
     if (PlayerCtl.prone) chS *= 0.55;
     else if (PlayerCtl.crouch) chS *= 0.75;
     var crossGap = Math.max(3, Math.min(46, 5 + chS * 1300));
+    if (scoped && w.sway) {
+      var swA = w.sway * (PlayerCtl.prone ? 0.15 : PlayerCtl.crouch ? 0.45 : 1);
+      var swT = t * 0.0011;
+      camera.rotation.x += (Math.sin(swT * 2.1) + Math.sin(swT * 3.7) * 0.5) * swA;
+      camera.rotation.y += (Math.sin(swT * 1.7 + 1.3) + Math.sin(swT * 2.9) * 0.5) * swA;
+    }
     lastScoped = scoped;
     return { aiming: aiming, scoped: scoped, adsFov: (scoped && zoomFov) ? zoomFov : E.adsFov, speedMult: w.speed, crossGap: crossGap };
   }

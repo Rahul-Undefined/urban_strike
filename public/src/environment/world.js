@@ -101,10 +101,11 @@ var World = (function () {
 
   // ---------- geometry helpers ----------
   var minimapShapes = [];
+  var outer = null;
   function addCollider(x0, y0, z0, x1, y1, z1) {
     colliders.push([x0, y0, z0, x1, y1, z1, arguments.length > 6 ? arguments[6] | 0 : 0]); // [6] = footstep surface
     // Auto-capture eye-height footprints for the minimap static layer.
-    if (y0 < 1.7 && y1 > 1.1 && (x1 - x0) < 45 && (z1 - z0) < 45) minimapShapes.push([x0, z0, x1, z1]);
+    if (y0 < 1.7 && y1 > 0.95 && (x1 - x0) < 80 && (z1 - z0) < 80) minimapShapes.push([x0, z0, x1, z1]);
   }
 
   function uvScale(geo, w, h, d) {
@@ -221,8 +222,8 @@ var World = (function () {
 
   // ---------- lighting, sky, ground, roads ----------
   function lighting() {
-    scene.background = new THREE.Color(CFG.RENDER.sky);
-    scene.fog = new THREE.FogExp2(CFG.RENDER.fogColor, CFG.RENDER.fogDensity);
+    outer.background = new THREE.Color(CFG.RENDER.sky);
+    outer.fog = new THREE.FogExp2(CFG.RENDER.fogColor, CFG.RENDER.fogDensity);
 
     var hemi = new THREE.HemisphereLight(CFG.RENDER.hemiSky, CFG.RENDER.hemiGround, CFG.RENDER.hemiIntensity);
     scene.add(hemi);
@@ -290,7 +291,9 @@ var World = (function () {
     BOUND: 100, // playable half-extent (V4.2)
     _colliders: function () { return colliders; }, // test-only introspection
     _initPart1: function (sceneRef) {
-      scene = sceneRef;
+      outer = sceneRef;
+      scene = new THREE.Group();
+      outer.add(scene);
       makeMaterials(); lighting(); groundAndRoads();
     },
     _internals: function () {
@@ -305,6 +308,18 @@ var World = (function () {
     getSun: function () { return sun; },
     isBuilt: function () { return built; },
     _markBuilt: function () { built = true; },
+    builtMap: null,
+    reset: function () {
+      if (!outer || !scene) return;
+      outer.remove(scene);
+      scene.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+      scene = null;
+      colliders.length = 0;
+      minimapShapes.length = 0;
+      if (World._lampSpots) World._lampSpots.length = 0;
+      built = false;
+      World.builtMap = null;
+    },
     build: null // assigned in part 2
   };
 })();
@@ -537,10 +552,36 @@ World.build = function (sceneRef) {
     wheels(cx, cz, r, 1.4, 0.85, 0.33);
   }
   function bus(cx, cz, r) {
-    var paint = new THREE.MeshLambertMaterial({ color: 0x8a7530 });
-    vpart(cx, cz, r, 0, 0, 1.65, 11, 2.6, 2.5, paint);
-    vpart(cx, cz, r, 0, 0, 2.15, 11.02, 0.8, 2.52, M.carGlass, { collide: false });
-    wheels(cx, cz, r, 3.9, 1.1, 0.45);
+    var scene = H.sceneRef();
+    var VGLASS = new THREE.MeshBasicMaterial({ color: 0x151d26 });
+    var VWHEEL = new THREE.MeshLambertMaterial({ color: 0x101214 });
+    var VLF = new THREE.MeshBasicMaterial({ color: 0xfff2c0 });
+    var VLR = new THREE.MeshBasicMaterial({ color: 0xff5040 });
+    var VBUS = new THREE.MeshLambertMaterial({ color: 0x2e5f8a });
+    var VROOF = new THREE.MeshLambertMaterial({ color: 0xd8dde2 });
+    var RY = r, CC = Math.cos(RY), SS = Math.sin(RY);
+    function OFF(dx, dz) { return [cx + dx * CC - dz * SS, cz + dx * SS + dz * CC]; }
+    box(cx, 1.32, cz, 2.45, 1.3, 8.9, VBUS, { rotY: RY });
+    box(cx, 1.78, cz, 2.5, 0.42, 7.6, VGLASS, { rotY: RY, collide: false });
+    box(cx, 2.68, cz, 2.3, 0.1, 8.7, VROOF, { rotY: RY, collide: false });
+    var LAT = 1.05, LZF = 3.1;
+    [[LAT, LZF], [-LAT, LZF], [LAT, -LZF], [-LAT, -LZF]].forEach(function (wf) {
+      var wp = OFF(wf[0], wf[1]);
+      var wm = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 10), VWHEEL);
+      wm.position.set(wp[0], 0.31, wp[1]);
+      wm.rotation.set(0, RY, Math.PI / 2);
+      wm.matrixAutoUpdate = false; wm.updateMatrix();
+      scene.add(wm);
+    });
+    [OFF(LAT, 0), OFF(-LAT, 0)].forEach(function (wp) {
+      var wm = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 10), VWHEEL);
+      wm.position.set(wp[0], 0.31, wp[1]);
+      wm.rotation.set(0, RY, Math.PI / 2);
+      wm.matrixAutoUpdate = false; wm.updateMatrix();
+      scene.add(wm);
+    });
+    var lf = OFF(0, 4.5); box(lf[0], 0.9, lf[1], 2.1, 0.16, 0.06, VLF, { rotY: RY, collide: false });
+    var lr = OFF(0, -4.5); box(lr[0], 0.9, lr[1], 2.1, 0.14, 0.06, VLR, { rotY: RY, collide: false });
   }
   function truck(cx, cz, r) {
     vpart(cx, cz, r, -2.6, 0, 1.35, 2.2, 2.3, 2.4, new THREE.MeshLambertMaterial({ color: 0x5a3b28 }));
@@ -681,12 +722,43 @@ World.build = function (sceneRef) {
   if (World._buildDeco) World._buildDeco({
     seg: seg, box: box, cyl: cyl, M: M, scene: H.sceneRef()
   });
+  if (World._buildAccess) World._buildAccess({
+    seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, M: M, scene: H.sceneRef()
+  });
 
   if (CFG.RENDER.mergeStatic !== false && typeof StaticMerge !== 'undefined') {
     StaticMerge.merge(THREE, H.sceneRef());
   }
 
   World._markBuilt();
+  World.builtMap = 'urban';
 };
 
 /* ---------- PART 3: expansion districts (tunnel, construction, Depot B, row houses, rail yard) ---------- */
+
+/* Map dispatcher (v4.6): urban uses the untouched build(); rural composes the
+   same helper contract via World._buildRural (registered by environment/rural-*.js).
+   Rebuild-on-map-change is safe: reset() disposes the previous world group. */
+World.buildMap = function (sceneRef, map) {
+  map = (CFG.MAPS && CFG.MAPS[map]) ? map : 'urban';
+  if (World.isBuilt()) {
+    if (World.builtMap === map) return;
+    World.reset();
+  }
+  if (map === 'urban' || !World._buildRural) {
+    World.build(sceneRef);
+    World.builtMap = 'urban';
+    return;
+  }
+  World._initPart1(sceneRef);
+  var H = World._internals();
+  World._buildRural({
+    seg: H.seg, box: H.box, cyl: H.cyl, stairFlight: H.stairFlight,
+    M: H.M, rnd: H.rnd, scene: H.sceneRef(), addCollider: H.addCollider
+  });
+  if (CFG.RENDER.mergeStatic !== false && typeof StaticMerge !== 'undefined') {
+    StaticMerge.merge(THREE, H.sceneRef());
+  }
+  World._markBuilt();
+  World.builtMap = 'rural';
+};

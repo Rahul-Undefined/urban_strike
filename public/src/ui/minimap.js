@@ -5,6 +5,7 @@
 var Minimap = (function () {
   var canvas = null, ctx = null;
   var off = null;             // baked static layer
+  function invalidate() { off = null; }
   var SIZE = 200, R = 96;     // canvas px, radar radius
   var SCALE = 3.0;            // px per meter (the "zoom")
   var WORLD = 100;            // world half-extent
@@ -29,8 +30,17 @@ var Minimap = (function () {
     g.fillRect(0, 0, px, px);
     // roads hinted as slightly lighter strips
     g.fillStyle = 'rgba(52,58,66,0.9)';
-    g.fillRect((WORLD - 7) * SCALE, 0, 14 * SCALE, px);
-    g.fillRect(0, (WORLD - 7) * SCALE, px, 14 * SCALE);
+    if (World.builtMap === 'rural') {
+      g.fillStyle = 'rgba(122,96,64,0.55)';
+      g.fillRect((WORLD - 3.5) * SCALE, 0, 7 * SCALE, px);
+      g.fillRect(0, (WORLD - 3.5) * SCALE, px, 7 * SCALE);
+      g.fillStyle = 'rgba(52,118,150,0.7)';
+      g.fillRect(0, (WORLD + 36) * SCALE, px, 12 * SCALE);
+      g.fillRect((WORLD + 50) * SCALE, 0, 10 * SCALE, (WORLD + 48) * SCALE);
+    } else {
+      g.fillRect((WORLD - 7) * SCALE, 0, 14 * SCALE, px);
+      g.fillRect(0, (WORLD - 7) * SCALE, px, 14 * SCALE);
+    }
     // structures
     g.fillStyle = 'rgba(122,134,148,0.95)';
     var shapes = World.minimapShapes || [];
@@ -123,5 +133,5 @@ var Minimap = (function () {
     ctx.fillText('N', nx, ny);
   }
 
-  return { init: init, update: update };
+  return { init: init, update: update , invalidate: invalidate };
 })();

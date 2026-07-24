@@ -11,6 +11,7 @@ function weaponServerDamage(weapon, part, pellets, dist) {
   let dmg = w.dmg;
   if (w.pellets) dmg *= Math.max(1, Math.min(pellets || 1, w.pellets));
   if (part === 'head') dmg *= (w.head || 1);
+  if (part === 'legs') dmg *= (w.legs || 0.72);
   if (dist > w.range) dmg *= Math.max(0.45, 1 - (dist - w.range) / w.range);
   return dmg;
 }

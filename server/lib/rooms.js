@@ -30,6 +30,7 @@ function makeRoom(hostSocket, name, settings) {
     hostId: hostSocket.id,
     state: 'lobby', // lobby | playing | ended
     settings: {
+      map: (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false) ? settings.map : 'urban',
       killTarget: clampOpt(settings && settings.killTarget, CFG.MATCH.killOptions, CFG.MATCH.defaultKills),
       minutes: clampOpt(settings && settings.minutes, CFG.MATCH.timeOptions, CFG.MATCH.defaultMinutes),
       airdropSec: settings && settings.airdropSec ? Math.max(5, Math.min(600, settings.airdropSec | 0)) : 0,
@@ -83,6 +84,7 @@ function refreshTeamsAndColors(room) {
 
 function lobbyPayload(room) {
   return {
+    teams: room.teamKills || null,
     code: room.code,
     hostId: room.hostId,
     state: room.state,

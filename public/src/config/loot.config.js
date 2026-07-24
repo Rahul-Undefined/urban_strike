@@ -96,7 +96,11 @@
     [-36, 4.1, 90, 'h'],       // apartment A floor 2
     [30, 4.1, 90, 'h'],        // apartment B floor 2
     [-3, 0.55, 88, 'g'],       // courtyard
-    [2, 0.55, 74, 'g']         // south gate
+    [2, 0.55, 74, 'g'],        // south gate
+    // v4.7 accessibility roofs (validator-proven)
+    [-12, 4.85, 38, "h"],
+    [-32, 9.7, -28, "s"],
+    [-24, 9.7, -24, "h"]
   ];
 
   var AIRDROP = {

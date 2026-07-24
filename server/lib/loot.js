@@ -3,7 +3,7 @@
 'use strict';
 const CFG = require('../../public/src/config/index.js');
 module.exports = function initLootModule(ctx) {
-  const { io, now } = ctx;
+  const { io, now, mapData } = ctx;
 
 function initPickups(room) {
   const items = CFG.LOOT_ITEMS;
@@ -12,7 +12,7 @@ function initPickups(room) {
   room.nextLootId = 0;
   room.pickups = [];
   let hasA3 = false, hasLegW = false;
-  CFG.LOOT_POINTS.forEach(pt => {
+  mapData(room).LOOT_POINTS.forEach(pt => {
     const w = CFG.LOOT_WEIGHTS[pt[3]] || CFG.LOOT_WEIGHTS.g;
     let roll = Math.random(), t = null;
     if (roll >= w.empty) {
@@ -103,7 +103,8 @@ function clearAirdrop(room) {
 }
 function dropCrate(room) {
   if (room.state !== 'playing') return;
-  const pt = CFG.AIRDROP.points[Math.floor(Math.random() * CFG.AIRDROP.points.length)];
+  const pts = mapData(room).AIRDROP_POINTS;
+  const pt = pts[Math.floor(Math.random() * pts.length)];
   io.to(room.code).emit('airdrop', { x: pt[0], z: pt[1], landAt: now() + CFG.AIRDROP.fallSec * 1000 });
   room.dropFall = setTimeout(() => {
     if (room.state !== 'playing') return;

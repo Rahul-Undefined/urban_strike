@@ -10,7 +10,9 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v4.5 (rebuilt)** | CURRENT — deploy this |
+| **v4.7** | CURRENT — deploy this (contains all of v4.6) |
+| v4.6 | Internal milestone — never shipped standalone; folded into v4.7 |
+| v4.5 (rebuilt) | Good — last release before multi-map |
 | v4.5 (first build) | BROKEN — carried the v4.4 build crash; discard |
 | v4.4 | BROKEN — build crash at "BUILDING SECTOR 7" (see v4.4 defect); do not deploy |
 | v4.3 | Last known-good before the merge system |
@@ -19,7 +21,48 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
-## v4.5 — Voice Chat *(current)*
+## v4.7 — Fixes + Visual Pass *(current, includes v4.6)*
+- **Voice hardening** (reported total silence in the field): dual STUN + optional TURN
+  config hook (CFG.VOICE.turn), DOM-attached audio elements with explicit play() and a
+  user-gesture retry queue, offer-glare rollback, per-peer connection toasts
+  ("<name>: voice connected / voice link FAILED"), an always-visible
+  **MIC MUTED — HOLD T** vs **TALKING** chip, and PTT listeners that work in the lobby.
+  Honest scope: signaling is machine-verified; the audio path is browser-only territory.
+  Discriminating test: two tabs, one machine, headphones.
+- **Minimap fixed**: the bake hardcoded the Urban avenue cross onto every map and
+  dropped structures longer than 45m. Now map-aware (Rural renders dirt roads and
+  rivers) with an 80m capture threshold.
+- **Lobby chat removed** at every layer (was unused).
+- **Vehicles redesigned**: buses and cars get glass bands, wheels, head/tail lights,
+  liveries — one collidable hull each, decoration colliderless, still merge-friendly.
+- Urban gets 3 validator-proven roof loot points on the new accessibility routes.
+
+## v4.6 — Gameplay & Map Expansion *(folded into v4.7)*
+- **Multi-map system**: map choice at room creation, host-changeable in lobby, carried
+  through matchStart; world builds into a disposable root group with a proven reset()
+  path for map switching. Per-map loot/spawns/airdrops server-side (mapData).
+- **RURAL map**: forest theme on the same +-100 bounds — two rivers as walkable fords
+  with three wooden bridges, terraced hills (NW summit watchtower = the long sniping
+  lane), five-cabin village, farm with barn loft + silo, NE logging area, boulder
+  cover, bushes, ~130 trees. 51 loot points / 22 spawns / 8 airdrop zones, all
+  mathematically validated. Post-merge cost: **14 meshes** for the whole map.
+- **Complete weapon rebalance** — every weapon has a role: UZI/P90 shred close and die
+  at range; AK/M4/SCAR split power vs control; MK-14 is the semi-auto DMR; M249 has a
+  100-round belt and a 5.2s reload; the M870 deletes people inside 9m and tickles past
+  it. Per-weapon recoil patterns, reload times, movement penalties, tracer colors, and
+  synthesized sound profiles.
+- **Sniper ballistics**: AWM-S and AWM .338 fire simulated projectiles — real travel
+  time (240/300 m/s), gravity drop, stance-scaled scope sway applied *before* the shot
+  (prone 15% / crouch 45% / standing 100%). Headshots are lethal through any armor;
+  legs take reduced damage on every weapon (client hit zone + server multiplier).
+- **Urban accessibility**: exterior metal fire escapes to the garage roof (4.30) and
+  warehouse roof (9.15) — heights derived from the collider set, roofs railed, and the
+  validator proves loot rests on them.
+- **Persistent live scoreboard** (top-right): K/D/A + score (kills x200 + assists x50 +
+  damage x0.5), sorted, map label, team score in team modes, updates on every lobby
+  push (kills, joins, leaves). HTML-escaped names.
+
+## v4.5 — Voice Chat
 - In-game voice for up to ~10 players over a WebRTC peer-to-peer mesh.
   JOIN VOICE in lobby (one-time mic permission), **hold T** to talk, TALKING indicator.
 - Signaling rides the existing game socket, room-scoped and opt-in gated on both ends;
@@ -124,13 +167,16 @@ geometry. Deployment checkpoints became v4.2 -> v4.3.
 
 ---
 
-## Known issues & accepted limitations (current, v4.5)
+## Known issues & accepted limitations (current, v4.7)
 
-1. **Voice — NAT pairs:** STUN-only (no free TURN exists). A small share of player
-   pairs cannot connect P2P: those two won't hear each other; others unaffected.
-2. **Voice — media path untested headlessly:** signaling is server-verified;
-   microphone/audio requires human browser testing. Two tabs on one machine will
-   feedback-loop — use headphones or a second device.
+1. **Voice — NAT pairs:** STUN-only by default; with two players there is exactly ONE
+   network pair, so a NAT failure is total silence, not a partial one. The TURN hook
+   (CFG.VOICE.turn) accepts credentials if you ever rent or host one. The new chip and
+   toasts now name the failing stage instead of failing silently.
+2. **Voice — media path untested headlessly:** signaling and rejoin are machine-verified;
+   microphone/audio requires human browser testing (two tabs + headphones first).
+2b. **adsTime** exists in config but ADS transition speed is not yet consumed by the
+   viewmodel — deliberate cut. Road texture polish beyond markings also deferred.
 3. **Mine owner splash:** owners can die to their own mine's splash. Design, not bug.
 4. **Audio tuning knobs:** echo depth and siren/traffic volumes are hardcoded in
    `audio.js`, not config. One-line edits if they annoy.
@@ -143,9 +189,9 @@ geometry. Deployment checkpoints became v4.2 -> v4.3.
 
 | Gate | Command | Proves |
 |---|---|---|
-| Integration (44) | `node server.js &` then `node test.js` | full server gameplay, run 3x |
-| Pipeline (17) | `node verify-models.js` | viewmodels, grants, zoom, gear |
-| Map (198) | `node tools/verify-map.js` | loot support, spawn clearance |
+| Integration (49) | `node server.js &` then `node test.js` | full server gameplay incl. voice + maps + ballistics, run 3x |
+| Pipeline (18) | `node verify-models.js` | viewmodels, grants, zoom, gear |
+| Map (358, 2 maps) | `node tools/verify-map.js` | loot support, spawn clearance, roofs |
 | Merge (9) | `node tools/verify-merge.js` | geometry math vs real three |
-| Build chain | `node tools/verify-build.js` | full client world build (real three) |
+| Build chain | `node tools/verify-build.js` | both maps + reset path on real three |
 | Parse sweep | `node --check` on every .js | syntax |

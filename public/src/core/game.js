@@ -151,7 +151,10 @@ var Game = (function () {
   function onMatchStart(d) {
     UI.setLoading(true);
     setTimeout(function () {           // let the loading bar paint before the ~1s map build
-      World.build(scene);
+      var mapId = (d.settings && d.settings.map) || 'urban';
+      UI.setLoadingMap((CFG.MAPS[mapId] || CFG.MAPS.urban).label);
+      World.buildMap(scene, mapId);
+      Minimap.invalidate();
       Weapons.matchReset();
       Pickups.build(scene);
       Pickups.init(d.pickups);

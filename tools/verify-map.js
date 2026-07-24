@@ -61,65 +61,69 @@ const THREE = {
 THREE.Mesh.prototype = Object.create(Obj.prototype);
 THREE.Line.prototype = Object.create(Obj.prototype);
 
-const ctx = {
-  CFG, THREE, console, Math, performance: { now: () => 0 },
-  document: { createElement: () => ({ width: 0, height: 0, getContext: () => gctx }) },
-  window: {}
-};
-vm.createContext(ctx);
-['environment/world.js', 'environment/districts-south.js', 'environment/districts-north.js',
- 'environment/districts-outer.js', 'environment/deco.js'].forEach(f => {
-  const p = path.join(ROOT, 'public/src', f);
-  if (fs.existsSync(p)) vm.runInContext(fs.readFileSync(p, 'utf8'), ctx, { filename: f });
-});
-const scene = new Obj();
-ctx.World.build(scene);
-const cols = ctx.World._colliders();
-console.log('world built headlessly: ' + cols.length + ' colliders');
+function runMap(mapName, data, wallDefault) {
+  const ctx = {
+    CFG, THREE, console, Math, performance: { now: () => 0 },
+    document: { createElement: () => ({ width: 0, height: 0, getContext: () => gctx }) },
+    window: {}
+  };
+  vm.createContext(ctx);
+  ["environment/world.js", "environment/districts-south.js", "environment/districts-north.js",
+   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/access.js"].forEach(f => {
+    const p = path.join(ROOT, "public/src", f);
+    if (fs.existsSync(p)) vm.runInContext(fs.readFileSync(p, "utf8"), ctx, { filename: f });
+  });
+  const scene = new Obj();
+  ctx.World.buildMap(scene, mapName);
+  const cols = ctx.World._colliders();
+  console.log("[" + mapName + "] built headlessly: " + cols.length + " colliders");
+  const WALL = ctx.World.BOUND || wallDefault;
 
-const WALL = ctx.World.BOUND || 70; // playable half-extent (world exports BOUND after V4.2)
-
-function supportAt(x, y, z) {
-  // a collider top within [y-0.85, y-0.30] that contains (x,z)
-  for (const c of cols) {
-    if (x >= c[0] - 0.05 && x <= c[3] + 0.05 && z >= c[2] - 0.05 && z <= c[5] + 0.05) {
-      if (c[4] >= y - 0.85 && c[4] <= y - 0.30) return true;
+  function supportAt(x, y, z) {
+    for (const c of cols) {
+      if (x >= c[0] - 0.05 && x <= c[3] + 0.05 && z >= c[2] - 0.05 && z <= c[5] + 0.05) {
+        if (c[4] >= y - 0.85 && c[4] <= y - 0.30) return true;
+      }
     }
+    return false;
   }
-  return false;
-}
-function boxOverlap(cx, cy, cz, hx, hy, hz, c) {
-  return cx + hx > c[0] + 0.02 && cx - hx < c[3] - 0.02 &&
-         cy + hy > c[1] + 0.02 && cy - hy < c[4] - 0.02 &&
-         cz + hz > c[2] + 0.02 && cz - hz < c[5] - 0.02;
-}
-function standingClear(x, z) {
-  let ground = false;
-  for (const c of cols) {
-    if (c[4] > 0.35 && boxOverlap(x, 0.95, z, 0.34, 0.86, 0.34, c)) return 'inside solid';
-    if (x >= c[0] && x <= c[3] && z >= c[2] && z <= c[5] && c[4] >= -0.06 && c[4] <= 0.35) ground = true;
+  function boxOverlap(cx, cy, cz, hx, hy, hz, c) {
+    return cx + hx > c[0] + 0.02 && cx - hx < c[3] - 0.02 &&
+           cy + hy > c[1] + 0.02 && cy - hy < c[4] - 0.02 &&
+           cz + hz > c[2] + 0.02 && cz - hz < c[5] - 0.02;
   }
-  return ground ? null : 'no ground beneath';
+  function standingClear(x, z) {
+    let ground = false;
+    for (const c of cols) {
+      if (c[4] > 0.35 && boxOverlap(x, 0.95, z, 0.34, 0.86, 0.34, c)) return "inside solid [" + c + "]";
+      if (x >= c[0] && x <= c[3] && z >= c[2] && z <= c[5] && c[4] >= -0.06 && c[4] <= 0.35) ground = true;
+    }
+    return ground ? null : "no ground beneath";
+  }
+
+  console.log("--- [" + mapName + "] loot points (" + data.LOOT_POINTS.length + ") ---");
+  data.LOOT_POINTS.forEach((p, i) => {
+    ok(Math.abs(p[0]) < WALL && Math.abs(p[2]) < WALL, mapName + " loot#" + i + " [" + p + "] inside bounds");
+    ok(supportAt(p[0], p[1], p[2]), mapName + " loot#" + i + " [" + p + "] floats (no support at y=" + p[1] + ")");
+  });
+  console.log("--- [" + mapName + "] spawns (" + data.SPAWNS.length + ") ---");
+  data.SPAWNS.forEach((s, i) => {
+    ok(Math.abs(s[0]) < WALL && Math.abs(s[1]) < WALL, mapName + " spawn#" + i + " [" + s[0] + "," + s[1] + "] inside bounds");
+    const bad = standingClear(s[0], s[1]);
+    ok(!bad, mapName + " spawn#" + i + " [" + s[0] + "," + s[1] + "] " + bad);
+  });
+  console.log("--- [" + mapName + "] airdrop points (" + data.AIRDROP_POINTS.length + ") ---");
+  data.AIRDROP_POINTS.forEach((p, i) => {
+    let blocked = null;
+    for (const c of cols) {
+      if (boxOverlap(p[0], 1.2, p[1], 1.05, 0.95, 1.05, c)) { blocked = c; break; }
+    }
+    ok(!blocked, mapName + " airdrop#" + i + " [" + p + "] landing blocked by [" + blocked + "]");
+  });
 }
 
-console.log('--- loot points (' + CFG.LOOT_POINTS.length + ') ---');
-CFG.LOOT_POINTS.forEach((p, i) => {
-  ok(Math.abs(p[0]) < WALL && Math.abs(p[2]) < WALL, 'loot#' + i + ' [' + p + '] inside bounds');
-  ok(supportAt(p[0], p[1], p[2]), 'loot#' + i + ' [' + p + '] floats (no support at y=' + p[1] + ')');
-});
-console.log('--- spawns (' + CFG.SPAWNS.length + ') ---');
-CFG.SPAWNS.forEach((s, i) => {
-  ok(Math.abs(s[0]) < WALL && Math.abs(s[1]) < WALL, 'spawn#' + i + ' [' + s[0] + ',' + s[1] + '] inside bounds');
-  const bad = standingClear(s[0], s[1]);
-  ok(!bad, 'spawn#' + i + ' [' + s[0] + ',' + s[1] + '] ' + bad);
-});
-console.log('--- airdrop points (' + CFG.AIRDROP.points.length + ') ---');
-CFG.AIRDROP.points.forEach((p, i) => {
-  let blocked = null;
-  for (const c of cols) {
-    if (boxOverlap(p[0], 1.2, p[1], 1.05, 0.95, 1.05, c)) { blocked = c; break; }
-  }
-  ok(!blocked, 'airdrop#' + i + ' [' + p + '] landing blocked by [' + blocked + ']');
-});
-console.log('\n' + pass + ' passed, ' + fail + ' failed');
+runMap("urban", { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points }, 100);
+runMap("rural", CFG.MAPS_RURAL, 100);
+
+console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
