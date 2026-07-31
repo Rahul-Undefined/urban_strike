@@ -14,15 +14,16 @@
     rocket:  { label: 'RPG-L',    type: 'rocket',key: 7, dmg: 120, radius: 6.5, rpm: 30, mag: 1, reserve: 2, reload: 3.6, spread: 0.008, ads: 0.004, recoil: 0.120, drift: 0.2, range: 300, speed: 0.85, adsFov: 58, projSpeed: 30 },
     knife:   { key: 8, label: 'KA-BAR', type: 'melee', dmg: 55, rpm: 110, mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 2.4, head: 1.4, legs: 1.0, speed: 1.08, recoil: 0, drift: 0, adsFov: 60 },
     // Exclusive loot weapons (key 9) — found on the map / in airdrops only.
-    scarh:   { key: 9, ex: 1, label: 'SCAR-H', type: 'auto', dmg: 33, rpm: 560, mag: 25, reserve: 100, reload: 2.4, spread: 0.015, ads: 0.005, range: 50, head: 1.9, legs: 0.72, speed: 0.92, recoil: 0.013, drift: 0.5, adsFov: 48, trc: 0xffcf80 },
-    mk14:    { key: 9, ex: 1, label: 'MK-14 EBR', type: 'semi', dmg: 46, rpm: 300, mag: 15, reserve: 60, reload: 2.6, spread: 0.008, ads: 0.0018, range: 70, head: 2.1, legs: 0.65, speed: 0.90, recoil: 0.02, drift: 0.35, adsFov: 34, trc: 0xd8f0ff },
+    scarh:   { key: 9, ex: 1, mark: 1, label: 'SCAR-H', type: 'auto', dmg: 33, rpm: 560, mag: 25, reserve: 100, reload: 2.4, spread: 0.015, ads: 0.005, range: 50, head: 1.9, legs: 0.72, speed: 0.92, recoil: 0.013, drift: 0.5, adsFov: 48, trc: 0xffcf80 },
+    mk14:    { key: 9, ex: 1, mark: 1, label: 'MK-14 EBR', type: 'semi', dmg: 46, rpm: 300, mag: 15, reserve: 60, reload: 2.6, spread: 0.008, ads: 0.0018, range: 70, head: 2.1, legs: 0.65, speed: 0.90, recoil: 0.02, drift: 0.35, adsFov: 34, trc: 0xd8f0ff },
     p90:     { key: 9, ex: 1, label: 'P90', type: 'auto', dmg: 19, rpm: 900, mag: 50, reserve: 150, reload: 2.4, spread: 0.026, ads: 0.012, range: 26, head: 1.5, legs: 0.72, speed: 1.0, recoil: 0.009, drift: 0.8, adsFov: 54, trc: 0xffd070 },
     m249:    { key: 9, ex: 1, label: 'M249 SAW', type: 'auto', dmg: 27, rpm: 680, mag: 100, reserve: 200, reload: 5.2, spread: 0.024, ads: 0.010, range: 42, head: 1.6, legs: 0.72, speed: 0.84, recoil: 0.014, drift: 1.0, adsFov: 50, trc: 0xffa860, snd: { body: { f0: 1500, f1: 300, dur: 0.11, vol: 0.8 }, crack: { f: 1700, dur: 0.05, vol: 0.35 }, boom: { f0: 170, f1: 90, dur: 0.14, vol: 0.3 } } },
+    aa12:    { key: 9, ex: 1, label: 'AA-12', type: 'auto', dmg: 10, pellets: 6, rpm: 300, mag: 20, reserve: 40, reload: 3.1, spread: 0.055, ads: 0.04, range: 13, head: 1.4, legs: 0.8, speed: 0.90, recoil: 0.028, drift: 0.7, adsFov: 56, trc: 0xffa050, snd: { body: { f0: 780, f1: 170, dur: 0.14, vol: 0.85 }, crack: { f: 950, dur: 0.05, vol: 0.35 }, boom: { f0: 140, f1: 60, dur: 0.2, vol: 0.42 } } },
     awm:     { key: 9, ex: 1, label: 'AWM .338', type: 'bolt', dmg: 118, rpm: 32, mag: 5, reserve: 15, reload: 3.6, spread: 0.001, ads: 0.0003, range: 999, head: 2.0, legs: 0.6, speed: 0.82, recoil: 0.035, drift: 0.2, adsFov: 14, scope: true, boltTime: 1.35, scopeZoom: [8, 24], bullet: true, bulletSpeed: 300, bulletDrop: 3.4, sway: 0.0030, trc: 0xbfe0ff },
   };
 
   var WEAPON_ORDER = ['ak47', 'm4a1', 'sniper', 'uzi', 'shotgun', 'pistol', 'rocket', 'knife',
-    'scarh', 'mk14', 'p90', 'm249', 'awm'];
+    'scarh', 'mk14', 'p90', 'm249', 'awm', 'aa12'];
 
   var THROWS = {
     frag:  { label: 'Frag',  dmg: 110, radius: 7.0, fuse: 2.8, count: 2, throwVel: 16, cook: true },
@@ -39,7 +40,10 @@
   var ATTACH = {
     reddot: { cat: 'sight',  label: 'Red Dot',       spreadMult: 0.85 },
     x2:     { cat: 'sight',  label: '2x Scope',      adsFov: 40, spreadMult: 0.9 },
-    x4:     { cat: 'sight',  label: '4x Scope',      adsFov: 22, spreadMult: 0.9 },
+    x3:     { cat: 'sight',  label: '3x Scope',      adsFov: 30, spreadMult: 0.9 },
+    x4:     { cat: 'sight',  label: '4x Scope',      adsFov: 22, spreadMult: 0.9,  mark: 1 },
+    x6:     { cat: 'sight',  label: '6x Scope',      adsFov: 16, spreadMult: 0.9,  mark: 1 },
+    x8:     { cat: 'sight',  label: '8x Scope',      adsFov: 12, spreadMult: 0.88, mark: 1 },
     extmag: { cat: 'mag',    label: 'Ext. Mag',      magMult: 1.4 },
     quick:  { cat: 'mag',    label: 'Quickdraw Mag', reloadMult: 0.72 },
     supp:   { cat: 'muzzle', label: 'Suppressor',    quiet: 1, noFlash: 1, detectMs: 1200 },

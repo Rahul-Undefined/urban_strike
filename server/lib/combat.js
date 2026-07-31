@@ -37,6 +37,7 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     if (victim.armorDur <= 0.5) { victim.armorLvl = 0; victim.armorDur = 0; }
   }
   if (!pointBlank) victim.hp = Math.max(0, victim.hp - (dmg - soaked));
+  victim.lastHitAt = now();          // v4.9: gates out-of-combat regeneration
   // scoreboard credit + assist bookkeeping
   if (attacker && attackerId !== victim.id) {
     attacker.damage += dmg;
@@ -45,6 +46,11 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
   }
 
   io.to(victim.id).emit('damaged', {
+    // v4.9: report the damage APPLIED, not just the resulting hp. Deriving damage
+    // from an hp delta breaks the moment anything else moves hp between the two
+    // reads (med kits, mines, and now out-of-combat regen). The v4.7 changelog
+    // said this field existed; it did not.
+    dmg: Math.round(dmg),
     hp: Math.round(victim.hp), lv: victim.armorLvl, du: Math.round(victim.armorDur),
     from: attackerId, fromPos: attacker ? attacker.pos : null
   });

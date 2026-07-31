@@ -101,5 +101,43 @@ const netSrc = fs.readFileSync('./public/src/networking/net.js', 'utf8');
 ok(/Avatars\.setRemoteGun\(r, st\.wp\)/.test(netSrc), 'snapshot ingestion applies wp to the avatar (root cause #2 wired)');
 ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc), 'new remotes never spawn empty-handed');
 
+/* ---- v5.1 loot invariants ---------------------------------------------
+   Exercises the REAL server loot module (not a re-implementation) over 400
+   ground loot points and asserts that airdrop-exclusive items never roll. */
+{
+  const initLoot = require('./server/lib/loot.js');
+  const pts = [];
+  for (let i = 0; i < 400; i++) pts.push([0, 0.55, 0, i % 3 === 0 ? 's' : (i % 3 === 1 ? 'h' : 'g')]);
+  const L = initLoot({ io: { to: () => ({ emit: () => {} }) }, now: () => Date.now(), mapData: () => ({ LOOT_POINTS: pts }) });
+  const room = { code: 'X', players: new Map(), settings: {} };
+  let leaked = null, sawWeapon = false;
+  for (let run = 0; run < 25 && !leaked; run++) {
+    L.initPickups(room);
+    for (const pk of room.pickups) {
+      const it = CFG.LOOT_ITEMS[pk.t];
+      if (it && it.drop) leaked = pk.t;
+      if (it && it.kind === 'weapon') sawWeapon = true;
+    }
+  }
+  ok(!leaked, 'airdrop-exclusive items never roll on ground loot' + (leaked ? ' (leaked ' + leaked + ')' : ''));
+  ok(sawWeapon, 'ground loot still produces weapons after the drop:1 filter');
+  const dropOnly = Object.keys(CFG.LOOT_ITEMS).filter(k => CFG.LOOT_ITEMS[k].drop);
+  ok(dropOnly.length > 0 && dropOnly.every(k => CFG.AIRDROP.weaponPool.includes(k) || CFG.AIRDROP.attPool.includes(k)),
+    'every drop-exclusive item is actually reachable from an airdrop crate');
+}
+
+/* ---- v5.1 scope ladder ------------------------------------------------ */
+{
+  const A = CFG.ATTACH, W = CFG.WEAPONS;
+  const sights = Object.keys(A).filter(k => A[k].cat === 'sight');
+  const marks = sights.filter(k => A[k].mark);
+  ok(marks.length === 3 && marks.every(k => /x[468]/.test(k)), 'exactly 4x/6x/8x are marksman-restricted');
+  ok(sights.filter(k => !A[k].mark).length >= 3, '2x/3x/reddot remain available to every weapon');
+  const markW = Object.keys(W).filter(k => W[k].mark);
+  ok(markW.length >= 1 && markW.every(k => !W[k].scope), 'marksman weapons exist and are not already scoped');
+  const fovs = sights.filter(k => A[k].adsFov).map(k => A[k].adsFov);
+  ok(new Set(fovs).size === fovs.length, 'every scope has a distinct magnification');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -88,6 +88,20 @@ var WeaponModels = (function () {
       part(g, 0, 0.055, -0.72, 0.012, 0.02, 0.012, brass);             // bead sight
       return g;
     })();
+    models.aa12 = (function () {                                       // airdrop-exclusive auto shotgun
+      var g = new THREE.Group();
+      part(g, 0, 0, -0.04, 0.07, 0.1, 0.34, dark);                     // boxy receiver
+      cylPart(g, 0, 0.02, -0.52, 0.021, 0.5, gunmetal);                // barrel
+      part(g, 0, 0.055, -0.3, 0.03, 0.02, 0.4, steel);                 // top rail
+      var mag = new THREE.Group(); mag.position.set(0, -0.11, -0.1); g.add(mag);
+      cylPart(mag, 0, 0, 0, 0.055, 0.16, gunmetal);                    // drum magazine
+      g.userData.mag = mag; g.userData.magHome = mag.position.clone();
+      part(g, 0, -0.09, 0.09, 0.05, 0.1, 0.05, dark);                  // grip
+      part(g, 0, -0.005, 0.2, 0.05, 0.08, 0.2, dark);                  // stock
+      part(g, 0, -0.04, -0.33, 0.05, 0.045, 0.14, steel);              // forend
+      part(g, 0, 0.085, -0.46, 0.012, 0.024, 0.012, gunmetal);         // front sight
+      return g;
+    })();
     models.pistol = (function () {
       var g = new THREE.Group();
       part(g, 0, -0.025, -0.1, 0.042, 0.05, 0.24, gunmetal);           // frame

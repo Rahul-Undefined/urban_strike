@@ -8,7 +8,8 @@ module.exports = function initLootModule(ctx) {
 function initPickups(room) {
   const items = CFG.LOOT_ITEMS;
   const byRar = { c: [], r: [], l: [] };
-  for (const t in items) byRar[items[t].rar].push(t);
+  // drop:1 items are airdrop-exclusive and never enter the ground-spawn pools
+  for (const t in items) if (!items[t].drop) byRar[items[t].rar].push(t);
   room.nextLootId = 0;
   room.pickups = [];
   let hasA3 = false, hasLegW = false;
@@ -31,8 +32,10 @@ function initPickups(room) {
   if (!hasLegW) {
     const cand = room.pickups.filter(p => (p.cls === 's' || p.cls === 'h') && p.t !== 'armor3');
     if (cand.length) {
-      const pool = CFG.AIRDROP.weaponPool;
-      cand[Math.floor(Math.random() * cand.length)].t = pool[Math.floor(Math.random() * pool.length)];
+      // guarantee one legendary weapon on the ground, but only from the
+      // normal-spawn set — the airdrop pool now contains a drop-exclusive gun
+      const legW = byRar.l.filter(k => items[k].kind === 'weapon');
+      if (legW.length) cand[Math.floor(Math.random() * cand.length)].t = legW[Math.floor(Math.random() * legW.length)];
     }
   }
 }

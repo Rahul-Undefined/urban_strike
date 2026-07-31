@@ -12,6 +12,7 @@ var Weapons = (function () {
   var triggerDown = false, semiQueued = false;
   var kick = 0, meleeAnim = 0;
   var pumpAnim = 0, slideAnim = 0, recoilAccum = 0, reloadStartAt = 0, reloadDur = 0;
+  var recPitch = 0, recYaw = 0;      // exact un-recovered recoil, in radians
   var atts = { sight: null, muzzle: null, mag: null };   // equipped attachments by slot
   var mineCount = 0;                                     // server-authoritative mirror
   var fires = [];                                        // my molotov burn areas
@@ -28,6 +29,10 @@ var Weapons = (function () {
       recoil: w.recoil, drift: w.drift || 0, adsFov: w.adsFov, speed: w.speed,
       quiet: false, noFlash: false, detectMs: CFG.NET.detectMs };
     var s = atts.sight && CFG.ATTACH[atts.sight];
+    // v5.1: 4x/6x/8x are marksman-only (CFG.ATTACH[..].mark vs CFG.WEAPONS[..].mark).
+    // The scope stays in your kit and works the moment you switch to a marksman
+    // rifle — it just does nothing on an SMG.
+    if (s && s.mark && !w.mark) s = null;
     if (s && !w.scope && w.type !== 'melee') {
       if (s.spreadMult) { e.spread *= s.spreadMult; e.ads *= s.spreadMult; }
       if (s.adsFov && w.type !== 'rocket') e.adsFov = s.adsFov;
@@ -330,8 +335,15 @@ var Weapons = (function () {
     var EF = eff(current);
     // Pattern recoil: vertical kick + horizontal drift that wanders as a burst grows.
     recoilAccum += EF.recoil;
-    PlayerCtl.pitch += EF.recoil * (0.9 + Math.random() * 0.25);
-    PlayerCtl.yaw += ((Math.random() - 0.5) + EF.drift * 0.5 * Math.sin(recoilAccum * 24)) * EF.recoil * 0.5;
+    // Record the EXACT kick applied so recovery can hand back the same amount.
+    // Previously recoilAccum only tracked EF.recoil while the pitch actually
+    // moved by ~1.025x that, and recovery returned 55% of the tracked figure —
+    // so ~47% of every burst's climb was permanent, and yaw drift was never
+    // returned at all. That is the "never recovers to centre" bug.
+    var kp = EF.recoil * (0.9 + Math.random() * 0.25);
+    var ky = ((Math.random() - 0.5) + EF.drift * 0.5 * Math.sin(recoilAccum * 24)) * EF.recoil * 0.5;
+    PlayerCtl.pitch += kp; recPitch += kp;
+    PlayerCtl.yaw += ky;   recYaw += ky;
 
     if (w.type === 'melee') fireMelee(w);
     else if (w.type === 'rocket') { AudioSys.shot('rocket', null); fireRocket(w); }
@@ -619,11 +631,20 @@ var Weapons = (function () {
     if (triggerDown && (w.type === 'auto')) tryFire();
     if (semiQueued) { semiQueued = false; tryFire(); }
 
-    // recoil recovery: after the burst ends, walk ~55% of accumulated kick back down
-    if (recoilAccum > 0.0001 && t > nextFireAt + 90) {
-      var rec = Math.min(recoilAccum, dt * 0.4);
-      PlayerCtl.pitch -= rec * 0.55;
-      recoilAccum -= rec;
+    /* Recoil recovery: once the burst ends, hand back CFG.RECOIL.recover of the
+       exact kick that was applied — vertical and horizontal — over roughly
+       CFG.RECOIL.settleSec. A small residual is intentional so long sprays still
+       cost you something; set recover to 1 for a full return to centre. */
+    var RC = CFG.RECOIL || { recover: 0.9, settleSec: 0.35, delayMs: 90 };
+    if (t > nextFireAt + RC.delayMs && (recPitch !== 0 || recYaw !== 0)) {
+      var f = Math.min(1, dt / RC.settleSec);
+      var dp = recPitch * f, dy = recYaw * f;
+      PlayerCtl.pitch -= dp * RC.recover;
+      PlayerCtl.yaw -= dy * RC.recover;
+      recPitch -= dp; recYaw -= dy;
+      if (Math.abs(recPitch) < 1e-5) recPitch = 0;
+      if (Math.abs(recYaw) < 1e-5) recYaw = 0;
+      recoilAccum = Math.max(0, recoilAccum - recoilAccum * f);
     }
 
     // viewmodel motion

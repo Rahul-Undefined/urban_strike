@@ -177,4 +177,78 @@ World._buildPart5 = function (T) {
   car(8.8, 82, -0.04, M.rust);
   car(9.2, 90, 0.02, M.metal);
   lamp(-8.5, 84, 'e'); lamp(8.5, 92, 'w');
+
+  /* =============== OUTSKIRTS COVER PASS (v5.0) ===============
+     tools/verify-cover.js measured 23.6% of Urban as dead ground (no cover
+     within 14m), worst point 56m, almost all of it in the ring beyond +-45.
+     Rather than hand-placing props off a screenshot, this walks a grid, asks
+     the LIVE collider set whether that spot already has cover, and only fills
+     genuinely empty ground. Self-correcting: if the map gains content later,
+     this pass automatically places less. */
+  (function outskirts() {
+    var cols = World.colliders;
+    function hasCoverNear(x, z, rad) {
+      for (var i = 0; i < cols.length; i++) {
+        var c = cols[i];
+        if (c[4] < 0.5 || c[4] > 3.5) continue;                 // not body-blocking
+        if (c[3] - c[0] > 30 || c[5] - c[2] > 30) continue;     // ground slab, not cover
+        var dx = Math.max(c[0] - x, 0, x - c[3]);
+        var dz = Math.max(c[2] - z, 0, z - c[5]);
+        if (dx * dx + dz * dz < rad * rad) return true;
+      }
+      return false;
+    }
+    function onRoad(x, z) {   // keep the avenues and alleys clear
+      return (Math.abs(x) < 10 && Math.abs(z) < 100) || (Math.abs(z) < 10 && Math.abs(x) < 100)
+          || (x > 18 && x < 26 && z > -52 && z < -6) || (x > -52 && x < -6 && z > 14 && z < 22);
+    }
+
+    function container(x, z, rot) {
+      box(x, 1.3, z, 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0], { rotY: rot });
+      if (rnd() < 0.35) box(x + 0.3, 3.85, z, 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0], { rotY: rot });
+    }
+    function barrierRun(x, z, alongX) {
+      for (var i = -1; i <= 1; i++) {
+        var bx = x + (alongX ? i * 2.1 : 0), bz = z + (alongX ? 0 : i * 2.1);
+        box(bx, 0.45, bz, alongX ? 2.0 : 0.6, 0.9, alongX ? 0.6 : 2.0, M.concrete);
+      }
+    }
+    function shed(x, z) {
+      seg(x - 1.6, x + 1.6, 0, 2.5, z - 1.5, z - 1.35, M.plaster);
+      seg(x - 1.6, x + 1.6, 0, 2.5, z + 1.35, z + 1.5, M.plaster);
+      seg(x - 1.6, x - 1.45, 0, 2.5, z - 1.5, z + 1.5, M.plaster);
+      seg(x + 1.45, x + 1.6, 0, 2.5, z - 1.5, z - 0.5, M.plaster);   // doorway gap
+      seg(x - 1.8, x + 1.8, 2.5, 2.72, z - 1.7, z + 1.7, M.roof, { collide: false });
+    }
+    function pylon(x, z) {
+      box(x, 1.55, z, 0.5, 3.1, 0.5, M.metal);
+      box(x, 1.1, z, 1.9, 0.22, 0.22, M.metal, { collide: false });
+      box(x, 2.4, z, 1.5, 0.2, 0.2, M.metal, { collide: false });
+    }
+    function planter(x, z) {
+      box(x, 0.42, z, 2.2, 0.84, 2.2, M.sidewalk);
+      box(x, 1.15, z, 1.4, 0.7, 1.4, M.dark, { collide: false });
+    }
+    function rubblePile(x, z) {
+      for (var i = 0; i < 5; i++)
+        box(x + (rnd() - 0.5) * 2.6, 0.35 + rnd() * 0.5, z + (rnd() - 0.5) * 2.6,
+          0.7 + rnd() * 0.9, 0.7 + rnd() * 0.9, 0.7 + rnd() * 0.9, M.concrete, { rotY: rnd() * 3.14 });
+    }
+
+    var kinds = [container, barrierRun, shed, pylon, planter, rubblePile, crates, brokenWall];
+    var placed = 0;
+    for (var gx = -94; gx <= 94 && placed < 110; gx += 7) {
+      for (var gz = -94; gz <= 94 && placed < 110; gz += 7) {
+        var x = gx + (rnd() - 0.5) * 4.5, z = gz + (rnd() - 0.5) * 4.5;
+        if (onRoad(x, z)) continue;
+        if (hasCoverNear(x, z, 11)) continue;
+        var k = kinds[(rnd() * kinds.length) | 0];
+        if (k === container) container(x, z, rnd() < 0.5 ? 0 : Math.PI / 2);
+        else if (k === barrierRun) barrierRun(x, z, rnd() < 0.5);
+        else if (k === brokenWall) brokenWall(x, z, rnd() < 0.5);
+        else k(x, z);
+        placed++;
+      }
+    }
+  })();
 };

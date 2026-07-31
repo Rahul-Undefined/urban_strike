@@ -28,6 +28,7 @@ World._buildRural = function (T) {
     return new THREE.MeshLambertMaterial({ map: t });
   }
   var GRASS = grassMat(), LEAF1 = L(0x2f4a30), LEAF2 = L(0x3a5c3a);
+  var BARK1 = L(0x4a3a28), BARK2 = L(0x6b5a44);   // trunk variety
   // No polygonOffset: depth bias on a ground-level slab at grazing angles is
   // what blanked this map in-browser before. Clearance is geometric instead
   // (roads sit 4cm above the grass top, see below).
@@ -81,7 +82,7 @@ World._buildRural = function (T) {
   // SE hill: two tiers
   seg(48, 80, 0, 1.1, 48, 80, GRASS);
   seg(54, 74, 1.1, 2.2, 54, 74, GRASS);
-  stairFlight(64, 0, 46.6, 0, 1, 4, 0.28, 0.55, 6, M.dirt);
+  stairFlight(64, -0.4, 46.05, 0, 1, 5, 0.3, 0.55, 6, M.dirt);   // starts on the ford floor
   stairFlight(64, 1.1, 52.6, 0, 1, 4, 0.28, 0.55, 5, M.dirt);
 
   /* ================= WATCHTOWERS ================= */
@@ -99,12 +100,12 @@ World._buildRural = function (T) {
     seg(bx - 2.5, bx + 2.5, platY + 2.9, platY + 3.15, bz - 2.5, bz + 2.5, M.wood, { collide: false }); // roof
     // stair climbs TOWARD the deck; posts + stringer kill the floating-tread look
     stairFlight(bx + 8.85, baseY, bz, -1, 0, 13, 0.3, 0.5, 1.4, M.wood);
-    seg(bx + 6.7, bx + 8.85, baseY, baseY + 1.35, bz - 0.7, bz + 0.7, M.wood);
-    seg(bx + 4.5, bx + 6.7, baseY, baseY + 2.65, bz - 0.7, bz + 0.7, M.wood);
-    seg(bx + 2.35, bx + 4.5, baseY, baseY + 3.9, bz - 0.7, bz + 0.7, M.wood);
+    seg(bx + 6.7, bx + 8.85, baseY, baseY + 1.35, bz - 0.7, bz + 0.7, M.wood, { collide: false });
+    seg(bx + 4.5, bx + 6.7, baseY, baseY + 2.65, bz - 0.7, bz + 0.7, M.wood, { collide: false });
+    seg(bx + 2.35, bx + 4.5, baseY, baseY + 3.9, bz - 0.7, bz + 0.7, M.wood, { collide: false });
   }
-  tower(-62, -58, 3.6);   // NW summit — the long sniping lane
-  tower(50, 8, 0);        // village overwatch
+  tower(-64.5, -58, 3.6); // NW summit — the long sniping lane (stair base kept on t3, x<=-54)
+  tower(40, 26, 0);       // village overwatch, west bank (was inside river B)
   tower(-38, 30, 0);      // river approach
 
   /* ================= CABIN / BARN BUILDERS ================= */
@@ -187,7 +188,8 @@ World._buildRural = function (T) {
     [-101, 101, 34, 50], [48, 62, -101, 50],                  // rivers + banks
     [18, 50, -16, 18], [-80, -36, 50, 90],                    // village, farm
     [42, 90, -90, -46],                                       // logging
-    [-86, -40, -82, -36], [46, 82, 46, 82]                    // hills
+    [-86, -40, -82, -36], [46, 82, 46, 82],                   // hills
+    [33, 51, 19, 33]                                          // relocated village watchtower
   ];
   var blockedDiscs = [];                                       // filled from data below
   function blocked(x, z) {
@@ -217,10 +219,37 @@ World._buildRural = function (T) {
     m.updateMatrix();
     scene.add(m);
   }
-  function tree(x, z, s) {
-    cyl(x, 1.2 * s, z, 0.2 * s, 2.4 * s, M.wood);
-    cone(x, 2.4 * s + 1.1 * s, z, 1.5 * s, 2.3 * s, LEAF1);
-    cone(x, 2.4 * s + 2.2 * s, z, 1.05 * s, 1.8 * s, LEAF2);
+  /* Five tree silhouettes instead of one. Trunks collide (hard cover),
+     canopies never do (concealment only) — same contract as before, just more
+     shapes. Box/Cylinder/Cone only, so StaticMerge still absorbs every piece. */
+  var NCOL = { collide: false };
+  function tree(x, z, s, kind) {
+    kind = (kind === undefined) ? (rnd() * 5) | 0 : kind;
+    var bark = [BARK1, BARK2, M.wood][(rnd() * 3) | 0];
+    if (kind === 0) {                                  // classic conifer
+      cyl(x, 1.2 * s, z, 0.2 * s, 2.4 * s, bark);
+      cone(x, 3.5 * s, z, 1.5 * s, 2.3 * s, LEAF1);
+      cone(x, 4.6 * s, z, 1.05 * s, 1.8 * s, LEAF2);
+    } else if (kind === 1) {                           // tall bare-trunked pine
+      cyl(x, 2.3 * s, z, 0.17 * s, 4.6 * s, bark);
+      cone(x, 5.2 * s, z, 1.15 * s, 1.9 * s, LEAF1);
+      cone(x, 6.1 * s, z, 0.9 * s, 1.6 * s, LEAF2);
+      cone(x, 6.9 * s, z, 0.6 * s, 1.2 * s, LEAF1);
+    } else if (kind === 2) {                           // broadleaf, rounded crown
+      cyl(x, 1.05 * s, z, 0.24 * s, 2.1 * s, bark);
+      cyl(x, 2.9 * s, z, 1.75 * s, 1.7 * s, LEAF2, NCOL);
+      cyl(x, 4.0 * s, z, 1.15 * s, 1.0 * s, LEAF1, NCOL);
+    } else if (kind === 3) {                           // squat oak, lumpy crown
+      cyl(x, 0.85 * s, z, 0.34 * s, 1.7 * s, bark);
+      cyl(x - 0.7 * s, 2.5 * s, z + 0.3 * s, 1.35 * s, 1.5 * s, LEAF1, NCOL);
+      cyl(x + 0.75 * s, 2.7 * s, z - 0.35 * s, 1.2 * s, 1.4 * s, LEAF2, NCOL);
+      cyl(x, 3.5 * s, z, 1.0 * s, 1.2 * s, LEAF1, NCOL);
+    } else {                                           // dead snag, bare branches
+      cyl(x, 1.7 * s, z, 0.22 * s, 3.4 * s, BARK2);
+      box(x + 0.9 * s, 2.9 * s, z, 1.9 * s, 0.16 * s, 0.16 * s, BARK2, { rotY: 0.5, collide: false });
+      box(x - 0.8 * s, 2.3 * s, z + 0.4 * s, 1.6 * s, 0.14 * s, 0.14 * s, BARK2, { rotY: 2.2, collide: false });
+      box(x, 3.3 * s, z - 0.7 * s, 0.14 * s, 0.14 * s, 1.5 * s, BARK2, { collide: false });
+    }
   }
   function belt(x0, x1, z0, z1, n) {
     var placed = 0, tries = 0;
@@ -239,12 +268,82 @@ World._buildRural = function (T) {
   belt(-98, -84, 50, 96, 8);        // far SW fringe
   belt(-34, 4, 52, 96, 12);         // south meadow copses
   belt(8, 44, -44, -12, 12);        // mid clusters
-  // bushes: concealment, no collision
-  for (var bu = 0; bu < 36; bu++) {
+  // bushes: concealment, no collision. Now clustered into hides of 2-4 rather
+  // than lone cones, and three sizes, so they read as real undergrowth.
+  for (var bu = 0; bu < 78; bu++) {
     var bx2 = -96 + rnd() * 192, bz2 = -96 + rnd() * 192;
     if (blocked(bx2, bz2)) continue;
-    cone(bx2, 0.5, bz2, 0.9, 1.1, LEAF2);
+    var clump = 1 + ((rnd() * 3) | 0);
+    for (var cb = 0; cb < clump; cb++) {
+      var sc = 0.7 + rnd() * 0.8;
+      cone(bx2 + (rnd() - 0.5) * 2.6, 0.5 * sc, bz2 + (rnd() - 0.5) * 2.6,
+        0.9 * sc, 1.1 * sc, rnd() < 0.5 ? LEAF1 : LEAF2);
+    }
   }
+
+  /* =============== RURAL COVER PASS (v5.0) ===============
+     Same data-driven approach as the Urban outskirts pass: walk a grid, ask the
+     LIVE collider set whether that ground already has body-blocking cover, and
+     only fill what is genuinely exposed. Rural pieces are hard cover (you can
+     shoot from behind them), unlike bushes which only conceal. */
+  (function ruralCover() {
+    var cols = World.colliders;
+    function hasCoverNear(x, z, rad) {
+      for (var i = 0; i < cols.length; i++) {
+        var c = cols[i];
+        if (c[4] < 0.5 || c[4] > 3.5) continue;
+        if (c[3] - c[0] > 30 || c[5] - c[2] > 30) continue;
+        var dx = Math.max(c[0] - x, 0, x - c[3]);
+        var dz = Math.max(c[2] - z, 0, z - c[5]);
+        if (dx * dx + dz * dz < rad * rad) return true;
+      }
+      return false;
+    }
+    function boulders(x, z) {
+      box(x, 0.75, z, 1.7 + rnd() * 1.1, 1.5 + rnd(), 1.5 + rnd(), ROCK, { rotY: rnd() * 3.14 });
+      box(x + 1.2, 0.45, z - 0.8, 1.0, 0.9, 1.0, ROCK, { rotY: rnd() * 3.14 });
+    }
+    function haystack(x, z) {
+      cyl(x, 0.85, z, 1.25, 1.7, CROP);
+      if (rnd() < 0.5) cyl(x + 2.6, 0.85, z + 0.6, 1.25, 1.7, CROP);
+    }
+    function logPile(x, z) {
+      for (var i = 0; i < 3; i++)
+        box(x, 0.3 + i * 0.52, z + (i & 1) * 0.3, 0.52, 0.52, 4.4, LOG, { rotY: rnd() * 0.5 });
+    }
+    function stoneWall(x, z, alongX) {
+      seg(x - (alongX ? 3.2 : 0.3), x + (alongX ? 3.2 : 0.3), 0, 1.05,
+        z - (alongX ? 0.3 : 3.2), z + (alongX ? 0.3 : 3.2), ROCK);
+    }
+    function blind(x, z) {            // hunting blind: 3 walls, open front
+      seg(x - 1.3, x + 1.3, 0, 1.45, z + 1.15, z + 1.3, M.wood);
+      seg(x - 1.3, x - 1.15, 0, 1.45, z - 1.3, z + 1.3, M.wood);
+      seg(x + 1.15, x + 1.3, 0, 1.45, z - 1.3, z + 1.3, M.wood);
+      seg(x - 1.5, x + 1.5, 2.05, 2.2, z - 1.5, z + 1.5, M.wood, { collide: false });
+      cyl(x - 1.2, 1.02, z - 1.2, 0.09, 2.05, M.wood, { collide: false });
+      cyl(x + 1.2, 1.02, z - 1.2, 0.09, 2.05, M.wood, { collide: false });
+    }
+    function shack(x, z) {            // tiny stone hut you can stand inside
+      seg(x - 2.1, x + 2.1, 0, 2.35, z - 2.0, z - 1.85, ROCK);
+      seg(x - 2.1, x + 2.1, 0, 2.35, z + 1.85, z + 2.0, ROCK);
+      seg(x - 2.1, x - 1.95, 0, 2.35, z - 2.0, z + 2.0, ROCK);
+      seg(x + 1.95, x + 2.1, 0, 2.35, z - 2.0, z + 0.6, ROCK);   // doorway
+      seg(x - 2.35, x + 2.35, 2.35, 2.6, z - 2.25, z + 2.25, M.wood, { collide: false });
+    }
+    var kinds = [boulders, haystack, logPile, blind, shack, stoneWall, boulders, logPile];
+    var placed = 0;
+    for (var gx = -94; gx <= 94 && placed < 96; gx += 7) {
+      for (var gz = -94; gz <= 94 && placed < 96; gz += 7) {
+        var x = gx + (rnd() - 0.5) * 4.5, z = gz + (rnd() - 0.5) * 4.5;
+        if (blocked(x, z)) continue;                 // roads, rivers, village, farm...
+        if (hasCoverNear(x, z, 11)) continue;
+        var k = kinds[(rnd() * kinds.length) | 0];
+        if (k === stoneWall) stoneWall(x, z, rnd() < 0.5);
+        else k(x, z);
+        placed++;
+      }
+    }
+  })();
   // fallen trees: long logs as low cover
   [[-24, -34, 0.4], [18, 62, 1.2], [-8, -78, 2.2], [72, 30, 0.9]].forEach(function (f) {
     box(f[0], 0.3, f[1], 0.5, 0.5, 5.2, LOG, { rotY: f[2] });

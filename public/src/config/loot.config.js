@@ -22,12 +22,17 @@
     att_quick:  { kind: 'att', a: 'quick', rar: 'r' },
     att_comp:   { kind: 'att', a: 'comp', rar: 'r' },
     att_supp:   { kind: 'att', a: 'supp', rar: 'r' },
+    att_x3:     { kind: 'att', a: 'x3', rar: 'r' },
     att_x4:     { kind: 'att', a: 'x4', rar: 'l' },
+    att_x6:     { kind: 'att', a: 'x6', rar: 'l' },
+    att_x8:     { kind: 'att', a: 'x8', rar: 'l', drop: 1 },
     wpn_scarh: { kind: 'weapon', w: 'scarh', rar: 'r' },
     wpn_mk14:  { kind: 'weapon', w: 'mk14', rar: 'r' },
     wpn_p90:   { kind: 'weapon', w: 'p90', rar: 'r' },
     wpn_m249:  { kind: 'weapon', w: 'm249', rar: 'l' },
-    wpn_awm:   { kind: 'weapon', w: 'awm', rar: 'l' }
+    wpn_awm:   { kind: 'weapon', w: 'awm', rar: 'l' },
+    // drop:1 = NEVER rolls on a ground loot point; airdrop crates only.
+    wpn_aa12:  { kind: 'weapon', w: 'aa12', rar: 'l', drop: 1 }
   };
   // Spawn-point classes: g ground, h elevated/interior-notable, s signature.
 
@@ -108,8 +113,8 @@
     points: [[0, -30], [-20, 8], [24, 40], [-40, -6], [0, -48], [46, 26],
       [-37, -86], [87.7, -18], [0, 86], [-88, 10]],
     // crate contents: one legendary weapon, L3 vest, med kit, one strong attachment
-    weaponPool: ['wpn_awm', 'wpn_m249'],
-    attPool: ['att_supp', 'att_x4', 'att_comp', 'att_quick']
+    weaponPool: ['wpn_aa12', 'wpn_awm', 'wpn_m249'],
+    attPool: ['att_supp', 'att_x4', 'att_x6', 'att_x8', 'att_comp', 'att_quick']
   };
 
   return { LOOT_ITEMS: LOOT_ITEMS, LOOT_WEIGHTS: LOOT_WEIGHTS, LOOT_RESPAWN: LOOT_RESPAWN, LOOT_POINTS: LOOT_POINTS, AIRDROP: AIRDROP };

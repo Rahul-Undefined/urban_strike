@@ -352,6 +352,12 @@ var Net = (function () {
       r.dispHp += (r.hp - r.dispHp) * Math.min(1, dt * 9);
       var showBar = ally || (r.hp < CFG.PLAYER.hp && (performance.now() - r.lastDamagedAt) < 5000);
       r.av.hb.sprite.visible = showBar;
+      /* v4.9: name tags are ALLY-ONLY. The sprite is built with depthTest:false,
+         so an enemy tag rendered through walls and terrain at unlimited range —
+         a free wallhack that made long-range spotting trivial. Enemy awareness
+         now comes only from the minimap, which already reveals a foe who fired
+         within 3.5s or is inside 18m. */
+      r.av.tag.visible = ally;
       if (showBar && Math.abs(r.dispHp - r.hbDrawn) > 0.6) { Avatars.drawHpBar(r, ally); r.hbDrawn = r.dispHp; }
 
       var moved = r.renderPos.distanceTo(r.lastRP);

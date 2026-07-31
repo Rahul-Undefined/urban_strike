@@ -18,6 +18,14 @@
 
   // Attachments — auto-equipped on pickup into one of three slots (cat).
 
+  // v4.9 out-of-combat regeneration (server-authoritative, applied in the
+  // snapshot tick). delaySec = quiet time required after the LAST hit taken.
+  var REGEN = { enabled: true, delaySec: 7, perSec: 6, maxFrac: 1.0 };
+
+  // v5.0 recoil recovery. recover = fraction of applied kick handed back after
+  // a burst (1 = perfect return to centre); settleSec = how long that takes.
+  var RECOIL = { recover: 0.9, settleSec: 0.35, delayMs: 90 };
+
   var MOVE = {
     walk: 4.4, sprint: 6.7, crouch: 2.15, prone: 1.05, adsMult: 0.6,
     jump: 5.7, gravity: 15.5, accel: 42, airAccel: 9, step: 0.42,
@@ -58,5 +66,5 @@
     assistMinDmg: 25
   };
 
-  return { PLAYER: PLAYER, ARMOR: ARMOR, MOVE: MOVE, SPAWNS: SPAWNS, NET: NET, MATCH: MATCH };
+  return { RECOIL: RECOIL, REGEN: REGEN, PLAYER: PLAYER, ARMOR: ARMOR, MOVE: MOVE, SPAWNS: SPAWNS, NET: NET, MATCH: MATCH };
 });

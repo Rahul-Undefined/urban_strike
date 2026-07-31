@@ -8,9 +8,9 @@ World._buildAccess = function (T) {
   /* ---- GARAGE (roof slab x[-16.5,-7.5] z[34,42], top 4.30) ---- */
   // exterior stair up the west face, landing bridges onto the roof edge
   stairFlight(-17.6, 0, 41.5, 0, -1, 14, 0.31, 0.5, 1.4, M.metal);
-  seg(-18.3, -16.9, 0, 1.5, 39.2, 41.6, M.metal);
-  seg(-18.3, -16.9, 0, 2.95, 36.9, 39.2, M.metal);
-  seg(-18.3, -16.9, 0, 4.3, 34.5, 36.9, M.metal);
+  seg(-18.3, -16.9, 0, 1.5, 39.2, 41.6, M.metal, { collide: false });
+  seg(-18.3, -16.9, 0, 2.95, 36.9, 39.2, M.metal, { collide: false });
+  seg(-18.3, -16.9, 0, 4.3, 34.5, 36.9, M.metal, { collide: false });
   seg(-18.3, -16.4, 4.3, 4.45, 33.6, 35.4, M.metal);            // landing
   seg(-18.4, -18.3, 4.45, 5.35, 33.5, 35.5, M.metal);           // landing outer rail
   // roof edge rails (west rail leaves a gap at the landing)
@@ -22,15 +22,15 @@ World._buildAccess = function (T) {
   /* ---- WAREHOUSE (roof x[-46,-18] z[-37,-19], top 9.15) ---- */
   // two-flight fire escape on the south face with a mid landing
   stairFlight(-19.0, 0, -17.3, -1, 0, 15, 0.31, 0.5, 1.4, M.metal);
-  seg(-21.6, -19.1, 0, 1.6, -18.0, -16.6, M.metal);
-  seg(-24.1, -21.6, 0, 3.15, -18.0, -16.6, M.metal);
-  seg(-26.6, -24.1, 0, 4.65, -18.0, -16.6, M.metal);
+  seg(-21.6, -19.1, 0, 1.6, -18.0, -16.6, M.metal, { collide: false });
+  seg(-24.1, -21.6, 0, 3.15, -18.0, -16.6, M.metal, { collide: false });
+  seg(-26.6, -24.1, 0, 4.65, -18.0, -16.6, M.metal, { collide: false });
   seg(-28.4, -26.4, 4.65, 4.8, -18.2, -16.4, M.metal);          // mid landing
   seg(-28.5, -26.3, 4.8, 5.7, -16.5, -16.4, M.metal);           // mid landing rail
   stairFlight(-28.6, 4.65, -17.3, -1, 0, 15, 0.31, 0.5, 1.4, M.metal);
-  seg(-31.2, -28.7, 4.65, 6.25, -18.0, -16.6, M.metal);
-  seg(-33.7, -31.2, 4.65, 7.8, -18.0, -16.6, M.metal);
-  seg(-36.2, -33.7, 4.65, 9.15, -18.0, -16.6, M.metal);
+  seg(-31.2, -28.7, 4.65, 6.25, -18.0, -16.6, M.metal, { collide: false });
+  seg(-33.7, -31.2, 4.65, 7.8, -18.0, -16.6, M.metal, { collide: false });
+  seg(-36.2, -33.7, 4.65, 9.15, -18.0, -16.6, M.metal, { collide: false });
   seg(-37.8, -35.6, 9.15, 9.3, -19.5, -16.6, M.metal);          // top landing onto the roof
   seg(-37.9, -35.5, 9.3, 10.2, -16.7, -16.6, M.metal);          // top landing rail
   // roof edge rails (south rail gapped at the entry)

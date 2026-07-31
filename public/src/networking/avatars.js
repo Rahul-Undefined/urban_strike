@@ -49,7 +49,7 @@ var Avatars = (function () {
       rgBox(g, 0, 0.02, -0.55, 0.13, 0.13, 0.1, RGM.dark);
       return g;
     }
-    var LEN = { sniper: 0.9, awm: 0.98, mk14: 0.82, m249: 0.78, shotgun: 0.68, scarh: 0.66, ak47: 0.64, m4a1: 0.64, uzi: 0.4, p90: 0.44 };
+    var LEN = { sniper: 0.9, awm: 0.98, mk14: 0.82, m249: 0.78, shotgun: 0.68, scarh: 0.66, ak47: 0.64, m4a1: 0.64, uzi: 0.4, p90: 0.44, aa12: 0.62 };
     var len = LEN[name] || 0.62;
     var bodyM = (name === 'ak47' || name === 'mk14') ? RGM.wood
       : (name === 'm249' || name === 'sniper') ? RGM.green
@@ -61,6 +61,7 @@ var Avatars = (function () {
     if (w.scope) rgBox(g, 0, 0.085, -0.12, 0.045, 0.05, 0.2, RGM.dark);      // scope
     if (name === 'm249') rgBox(g, 0, -0.08, 0.02, 0.1, 0.12, 0.12, RGM.green); // belt box
     if (name === 'shotgun') rgBox(g, 0, -0.045, -0.34, 0.05, 0.05, 0.16, RGM.wood); // pump
+    if (name === 'aa12') rgBox(g, 0, -0.1, -0.08, 0.11, 0.11, 0.11, RGM.steel);     // drum mag
     if (name === 'p90') { magB.visible = false; rgBox(g, 0, 0.075, -0.05, 0.05, 0.03, 0.26, RGM.steel); } // top mag
     return g;
   }
@@ -103,7 +104,7 @@ var Avatars = (function () {
     hs.scale.set(0.92, 0.13, 1);
     hs.position.y = 0.98; hs.visible = false; g.add(hs);
     var hb = { sprite: hs, canvas: hc, ctx: hc.getContext('2d'), tex: htx };
-    return { group: g, legL: legL, legR: legR, gun: gun, head: head, torso: torso, hb: hb };
+    return { group: g, legL: legL, legR: legR, gun: gun, head: head, torso: torso, hb: hb, tag: tag };
   }
 
   function drawHpBar(r, ally) {

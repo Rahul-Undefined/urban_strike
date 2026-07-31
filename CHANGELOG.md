@@ -10,7 +10,10 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v4.8** | CURRENT — deploy this (cumulative; fixes the Rural full-screen flicker) |
+| **v5.1** | CURRENT — deploy this (cumulative; scope ladder, AA-12 airdrop weapon) |
+| v5.0 | Good — cover pass, tree variety, recoil recovery |
+| v4.9 | Good — stairs/tags/regen, but 23.6% of Urban is dead ground and recoil never recentres |
+| v4.8 | Good — flicker fix; but NO staircase in either map is climbable standing |
 | v4.7 | Good, but Rural flickers full-screen (Urban ground layer built underneath it) |
 | v4.6 | Internal milestone — never shipped standalone; folded into v4.7 |
 | v4.5 (rebuilt) | Good — last release before multi-map |
@@ -22,7 +25,186 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
-## v4.8 — Rural Flicker Root Cause *(current)*
+## v5.1 — Scope Ladder + Airdrop Weapon *(current)*
+
+Rahul's answers: no new game mode, airdrops should carry a weapon that cannot be
+found on the ground, anti-cheat deferred. Scope rule banked earlier: 2x/3x for
+anyone, 4x and above marksman-only.
+
+**#8 Scope ladder.** `x3` (adsFov 30), `x6` (16), `x8` (12) join the existing
+`reddot`/`x2` (40)/`x4` (22). Magnification now runs 1x -> 8x on a single
+consistent FOV curve, and every scope has a distinct value (gated).
+
+Restriction is enforced in `system.js eff()`: `CFG.ATTACH[..].mark` scopes are
+ignored unless the weapon carries `CFG.WEAPONS[..].mark`. Marksman weapons are
+**SCAR-H** and **MK-14** — the two long-range guns that can mount an external
+sight. The bolt snipers already carry their own 8-26x `scopeZoom` and are
+deliberately untouched. A marksman scope stays in your kit when you're holding an
+SMG; it simply does nothing until you switch. No pickup-flow change.
+
+Loot: `att_x3` rare, `att_x6` legendary, `att_x8` **airdrop-exclusive**.
+
+**#9 Airdrop-exclusive weapon — AA-12.** Automatic shotgun: 6 pellets x 10 dmg,
+300rpm, 20-round drum, 13m range, 3.1s reload. It reuses the existing pellet and
+falloff path, so it is a new *role* rather than a new system — nothing else in
+the 13-weapon roster is a full-auto shotgun. First-person viewmodel (drum mag,
+top rail) and third-person model added; `verify-models` picked it up automatically
+and went 18 -> 19 assertions before the new invariants.
+
+**New `drop: 1` mechanism.** Loot items flagged `drop: 1` are filtered out of the
+ground-spawn rarity pools in `server/lib/loot.js`. The "guarantee one legendary
+weapon on the map" fallback previously drew from `CFG.AIRDROP.weaponPool`, which
+would have leaked the AA-12 onto the ground — it now draws from the legendary
+weapons in the normal-spawn set instead.
+
+**Gate additions — `verify-models.js` (19 -> 26 assertions).** Exercises the REAL
+server loot module over 400 loot points x 25 rolls and asserts no drop-exclusive
+item ever appears; asserts ground loot still yields weapons after the filter;
+asserts every drop-exclusive item is actually reachable from a crate; and asserts
+the scope ladder invariants (exactly 4x/6x/8x restricted, 2x/3x/reddot open,
+marksman weapons not already scoped, all magnifications distinct).
+
+**Anti-cheat: deferred at Rahul's direction.** Recorded here so the decision is
+explicit rather than forgotten. Movement, ammo and fire rate remain fully
+client-trusted. Note this is a *social* boundary, not a technical one — the Render
+URL is public, so anyone with the link can join. The moment the link travels
+beyond people you know, this decision needs revisiting.
+
+**Gates:** integration 49/49 x3 · models 26/26 · map 358/358 · merge 9/9 ·
+ascent 7/7 · cover PASS both maps · build-chain PASS · parse sweep clean.
+
+**Still unconfirmed in a browser: v4.9, v5.0 and now v5.1**, plus voice chat since
+v4.7. The last state Rahul verified live is v4.8.
+
+---
+
+## v5.0 — Cover, Trees, Recoil Recovery
+
+Scope chosen by Rahul: maps first. Recoil came along anyway — see below, it
+turned out to be a bug rather than a balance question.
+
+**New tool + gate — `tools/verify-cover.js`.** Grids the playable area at 4m and
+measures, per cell, the distance to the nearest body-blocking collider (top
+between 0.5m and 3.5m). Cells further than 14m from any cover are "dead ground".
+Run with `--report` for an ASCII cover map. This replaced "send me a screenshot
+of the empty bits" with measured coordinates.
+
+| Map | dead ground before | after | worst point before | after |
+|---|---|---|---|---|
+| Urban | 23.6% (591/2500 cells) | **1.2%** | 56.3 m | 22.5 m |
+| Rural | 14.4% (359/2500 cells) | **1.1%** | 34.7 m | 21.3 m |
+
+**#4 Urban vacant space — outskirts cover pass** (`districts-outer.js`). Walks a
+7m grid, asks the LIVE collider set whether a spot already has cover within 11m,
+and only fills genuinely exposed ground. Up to 110 pieces: shipping containers
+(singles and stacks), jersey-barrier runs, utility sheds, pylons, planters,
+rubble piles, crates, broken walls. Avenues and alleys are excluded. Self-
+correcting — if the map gains content later this pass automatically places less.
+
+**#2 Rural cover** (`rural.js`). Bushes 36 -> 78 clumps of 2-4 at three sizes
+(concealment only, no colliders). Plus the same grid-driven pass placing up to 96
+pieces of HARD cover: boulder groups, haystacks, log piles, hunting blinds
+(three walls, open front), small stone shacks you can stand inside, and dry stone
+walls. Roads, rivers, village and farm footprints are excluded via the existing
+`blocked()` rects.
+
+**#3 Tree variety.** One silhouette became five: classic conifer, tall bare-
+trunked pine, rounded broadleaf, squat lumpy oak, and dead bare snag with
+branches. Three bark tones. Trunks still collide (hard cover), canopies never do
+(concealment) — unchanged contract. Box/Cylinder/Cone only, so StaticMerge still
+absorbs everything: Rural went 13 -> 17 merged meshes for ~200 extra objects.
+
+**#7 Recoil — this was arithmetic, not feel.** Per shot the view pitched by
+`recoil * (0.9 + rand*0.25)` (mean 1.025x) while the accumulator only tracked
+`recoil` (1.0x), and recovery returned 55% of the accumulator. Net: **~47% of
+every burst's climb was permanent**. Horizontal drift was never recovered at all.
+That is exactly "never recovers back to centre" — it was not a tuning problem.
+Now the exact applied pitch AND yaw are recorded and handed back under
+`CFG.RECOIL = { recover: 0.9, settleSec: 0.35, delayMs: 90 }`. Set `recover: 1`
+for a perfect return to centre; 0.9 leaves a deliberate residual so long sprays
+still cost something.
+
+**Counts:** Urban 232 -> 233 merged meshes, 1413 -> 1552 colliders.
+Rural 13 -> 17 merged meshes, 411 -> 535 colliders.
+
+**Gates:** integration 49/49 x3 · models 18/18 · map 358/358 · merge 9/9 ·
+ascent 7/7 · build-chain PASS · **cover PASS both maps** · parse sweep clean.
+
+**One unreproduced failure, not silenced:** a single `test.js` run failed once
+immediately after `verify-build.js` in the same shell, and the assertion name was
+not captured. 12 consecutive clean runs since, including 4 deliberate attempts to
+reproduce under the same CPU contention. Most likely the server had not finished
+binding port 3000. Flagged here rather than swept up; if it recurs, capture the
+`FAIL` line before doing anything else.
+
+**Not verified in-browser.** Walk both maps and check the new cover does not
+block a doorway, stair or spawn, and fire a full magazine to confirm the crosshair
+returns to where you started.
+
+---
+
+## v4.9 — Stairs, Spotting, Regen
+
+Scope note: Rahul raised 11 items. Four shipped here — the ones that were
+deterministic bugs with a provable pass/fail. The content and balance items
+(bushes/cover, tree variety, Urban filler, recoil, scope ladder, airdrop
+variety) are deferred to v5.0 by choice, not by oversight; bundling authoring
+work with collision fixes is how v4.4 shipped broken.
+
+**#1 + #5 — stairs unclimbable (ONE root cause, both maps).**
+v4.7 added "stepped stringer support walls" under each flight to kill a
+floating-tread look. They shipped **with colliders**, so every 0.30-0.31 m tread
+sat buried inside a solid 1.3-1.5 m wall. Auto-step is `CFG.MOVE.step = 0.42`,
+so nothing could be climbed standing. Crouching sometimes worked because the
+shorter capsule passes the auto-step headroom check, which is exactly the
+symptom reported. Fixed by making the 12 stringer blocks decorative
+(`{ collide: false }`) in `access.js` and `rural.js`. Treads and landings still
+collide, so the geometry is unchanged visually.
+
+The new ascent gate then exposed three genuine Rural placement bugs, all masked
+until v4.8 removed the phantom Urban ground:
+- SE terrace stair started at y=0 inside river A, whose ford floor is -0.4 — a
+  0.68 m first step. Now starts on the ford floor with an extra tread.
+- Village watchtower stood **inside river B** (x[50,60]); its stair base was
+  unreachable from the recessed ford. Moved to the west bank at (40, 26).
+- NW summit watchtower's stair base hung ~1 m off the t3 terrace edge. Shifted
+  to bx=-64.5 so the whole run lands on the terrace.
+- Loot points #13 and #14 moved with their towers; forest scatter exclusion
+  added for the relocated tower footprint.
+
+**#6 — enemy position given away.** The name tag sprite is built with
+`depthTest: false` and was never hidden, so an enemy's name rendered **through
+walls and terrain at unlimited range**. Name tags are now ally-only. Enemy
+awareness comes from the minimap alone, which already reveals a foe who fired
+within 3.5 s or is inside 18 m — that behaviour already existed and is unchanged.
+
+**#10 — out-of-combat health regeneration.** New `CFG.REGEN`
+(`delaySec: 7, perSec: 6, maxFrac: 1.0`), applied server-side in the snapshot
+tick at 4 Hz, per-room. Armor does not regenerate. Server-authoritative like every
+other HP change, so no new message type and no trust-model change. Numbers are my
+call and are one config line to retune.
+
+**Test hardening.** The `damaged` payload now actually carries `dmg` — the v4.7
+changelog claimed it did, but the field was never added. The legs-multiplier
+assertion was still deriving damage from an hp delta, which regen broke on a 1-in-4
+flake. It now reads the reported `dmg` and is immune to anything else moving hp.
+
+**New gate — `tools/verify-access.js` (7 assertions).** Ports the real
+`controller.moveAxis` auto-step model and walks a standing capsule up every
+staircase in both maps, asserting it reaches the target height. No previous gate
+checked climbability: `verify-map` proves loot rests on geometry, `verify-build`
+proves the scene constructs. Neither would ever have caught this.
+
+**Gates:** integration 49/49 x3 · models 18/18 · map 358/358 · merge 9/9 ·
+build-chain PASS both maps · **ascent 7/7** · parse sweep clean.
+
+**Not verified in-browser.** Climb both fire escapes, all three watchtowers and
+both terrace stairs standing (no crouch). Confirm enemy names are gone and ally
+names remain.
+
+---
+
+## v4.8 — Rural Flicker Root Cause
 
 **Symptom reported:** Rural "screen flickers"; whole ground blinking green/grey
 under movement. Reproduced from Rahul's 28s screen recording by extracting

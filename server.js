@@ -118,12 +118,31 @@ function startMatch(room) {
   }
 }
 
+/* v4.9 out-of-combat health regeneration. Server-authoritative like all other
+   HP changes; the client just receives the higher hp in the next snapshot, so
+   no new message type and no trust change. Armor does NOT regenerate. */
+function regenTick(room) {
+  const R = CFG.REGEN;
+  if (!R || !R.enabled || !room.startedAt) return;
+  const t = now();
+  if (t - (room.lastRegenAt || 0) < 250) return;   // 4Hz, not snapshot rate
+  const dt = Math.min(1, (t - (room.lastRegenAt || t - 250)) / 1000);
+  room.lastRegenAt = t;
+  const cap = CFG.PLAYER.hp * (R.maxFrac || 1);
+  for (const p of room.players.values()) {
+    if (!p.alive || p.hp >= cap) continue;
+    if (t - (p.lastHitAt || 0) < R.delaySec * 1000) continue;
+    p.hp = Math.min(cap, p.hp + R.perSec * dt);
+  }
+}
+
 function startSnapshots(room) {
   stopSnapshots(room);
   room.snapN = 0;
   room.snapTimer = setInterval(() => {
     respawnPickups(room);
     Mines.tick(room);
+    regenTick(room);
     if (++room.snapN % 60 === 0) pushLobby(room); // live K/D/assists/damage refresh (~4 s)
     const players = {};
     for (const p of room.players.values()) {

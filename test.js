@@ -414,8 +414,10 @@ function phase4(done) {
                 A.emit('hit', { victim: B.id, w: 'ak47', part: 'legs', pellets: 1, vp: fresh });
                 setTimeout(() => {
                   const wA = CFG.WEAPONS.ak47;
-                  const bodyDmg = e1 ? (100 - e1.hp) : null;
-                  const legsDmg = (e1 && e2) ? (e1.hp - e2.hp) : null;
+                  // read the reported dmg, never an hp delta (regen/med kits
+                  // can move hp between the two 'damaged' events)
+                  const bodyDmg = e1 ? e1.dmg : null;
+                  const legsDmg = e2 ? e2.dmg : null;
                   const expLegs = bodyDmg !== null ? Math.round(bodyDmg * (wA.legs || 0.72)) : null;
                   ok(bodyDmg !== null && legsDmg !== null && Math.abs(legsDmg - expLegs) <= 1,
                     'leg hits apply the reduced multiplier (body ' + bodyDmg + ' -> legs ' + legsDmg + ', expected ~' + expLegs + ')');
