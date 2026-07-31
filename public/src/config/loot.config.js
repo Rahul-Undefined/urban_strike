@@ -26,6 +26,8 @@
     att_x4:     { kind: 'att', a: 'x4', rar: 'l' },
     att_x6:     { kind: 'att', a: 'x6', rar: 'l' },
     att_x8:     { kind: 'att', a: 'x8', rar: 'l', drop: 1 },
+    wpn_sniper: { kind: 'weapon', w: 'sniper', rar: 'r' },
+    wpn_rocket: { kind: 'weapon', w: 'rocket', rar: 'l' },
     wpn_scarh: { kind: 'weapon', w: 'scarh', rar: 'r' },
     wpn_mk14:  { kind: 'weapon', w: 'mk14', rar: 'r' },
     wpn_p90:   { kind: 'weapon', w: 'p90', rar: 'r' },
@@ -102,6 +104,13 @@
     [30, 4.1, 90, 'h'],        // apartment B floor 2
     [-3, 0.55, 88, 'g'],       // courtyard
     [2, 0.55, 74, 'g'],        // south gate
+    // v6.0 district rooftops — the payoff for the climb (validator-proven)
+    [61, 18.80, 64, "s"],
+    [83, 21.80, 60, "s"],
+    [67, 18.80, 85, "h"],
+    [69, 6.80, -33, "h"],
+    [-83, 6.80, -86, "h"],
+    [-54, 9.80, 63, "s"],
     // v4.7 accessibility roofs (validator-proven)
     [-12, 4.85, 38, "h"],
     [-32, 9.7, -28, "s"],

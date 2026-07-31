@@ -73,8 +73,10 @@ var Game = (function () {
       if (e.code === 'KeyX') { PlayerCtl.toggleProne(); return; }
       if (e.code === 'KeyH') { Weapons.throwGrenade('molotov'); return; }
       if (e.code === 'KeyV') { Weapons.placeMine(); return; }
-      if (e.code === 'KeyT') { if (!e.repeat) VoiceChat.setTalking(true); return; }
-      if (e.code === 'KeyT') { Weapons.throwGrenade('smoke'); return; }
+      // PTT is registered once, at document level, in ui.js wireV43() — it must
+      // work in the lobby too, so it does NOT live here. The old duplicate also
+      // shadowed the smoke grenade, which had been unbindable ever since.
+      if (e.code === 'KeyB') { Weapons.throwGrenade('smoke'); return; }
       if (e.code === 'KeyF') { Weapons.throwGrenade('flash'); return; }
       if (e.code.indexOf('Digit') === 0) {
         var n = parseInt(e.code.slice(5), 10);
@@ -84,7 +86,6 @@ var Game = (function () {
     document.addEventListener('keyup', function (e) {
       if (e.code === 'Tab') { UI.showScoreboard(false); return; }
       if (e.code === 'KeyG') { Weapons.releaseCook(); return; }
-      if (e.code === 'KeyT') { VoiceChat.setTalking(false); return; }
       var map2 = {
         KeyW: 'fwd', KeyS: 'back', KeyA: 'left', KeyD: 'right',
         ShiftLeft: 'sprint', ShiftRight: 'sprint', Space: 'jump',

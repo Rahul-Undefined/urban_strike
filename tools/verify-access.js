@@ -112,7 +112,20 @@ function run(map, cases) {
 
 run("urban", [
   { name: "garage fire escape -> roof 4.30", x: -17.6, y: 0, z: 42.6, dx: 0, dz: -1, top: 4.30 },
-  { name: "warehouse fire escape -> roof 9.15", x: -18.2, y: 0, z: -17.3, dx: -1, dz: 0, top: 9.15, ticks: 340 }
+  { name: "warehouse fire escape -> roof 9.15", x: -18.2, y: 0, z: -17.3, dx: -1, dz: 0, top: 9.15, ticks: 340 },
+  // railway zone — never gate-tested before v6.0
+  { name: "station house east stair -> roof 4.60", x: 44.7, y: 0, z: -87.4, dx: 0, dz: -1, top: 4.60 },
+  { name: "footbridge south stair -> deck 4.30", x: 74, y: 0, z: -74.8, dx: 0, dz: -1, top: 4.30 },
+  { name: "footbridge north stair -> deck 4.30", x: 74, y: 0, z: -97.2, dx: 0, dz: 1, top: 4.30 },
+  { name: "platform west ramp -> platform 1.12", x: 23, y: 0, z: -75.5, dx: 0, dz: -1, top: 1.12 },
+  { name: "platform east ramp -> platform 1.12", x: 63, y: 0, z: -75.5, dx: 0, dz: -1, top: 1.12 },
+  // v6.0 districts — every multi-storey building's external flight
+  { name: "tower A (6f) -> roof 18.0", x: 52.4, y: 0, z: 55.0, dx: 1, dz: 0, top: 18.0, ticks: 900 },
+  { name: "tower B (7f) -> roof 21.0", x: 74.4, y: 0, z: 51.0, dx: 1, dz: 0, top: 21.0, ticks: 1000 },
+  { name: "tower C (6f) -> roof 18.0", x: 58.4, y: 0, z: 77.0, dx: 1, dz: 0, top: 18.0, ticks: 900 },
+  { name: "mall (2f) -> roof 6.0", x: 50.4, y: 0, z: -45.0, dx: 1, dz: 0, top: 6.0, ticks: 400 },
+  { name: "airport terminal (2f) -> roof 6.0", x: -91.6, y: 0, z: -93.0, dx: 1, dz: 0, top: 6.0, ticks: 400 },
+  { name: "ship bridge (3f) -> roof 9.0", x: -57.6, y: 0, z: 57.0, dx: 1, dz: 0, top: 9.0, ticks: 500 }
 ]);
 
 run("rural", [

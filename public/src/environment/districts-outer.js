@@ -178,6 +178,114 @@ World._buildPart5 = function (T) {
   car(9.2, 90, 0.02, M.metal);
   lamp(-8.5, 84, 'e'); lamp(8.5, 92, 'w');
 
+  /* ==================================================================
+     V6.0 DISTRICTS — airport (NW), harbour (SW), mall (E), towers (SE).
+     Everything multi-storey is built by ONE parameterised helper so the
+     stair geometry is identical everywhere and provable by the ascent gate.
+     Floors are solid slabs; access is an EXTERNAL straight flight along the
+     -z face (the same pattern as the warehouse fire escape, the only stair
+     design in this project with a passing gate history), with a doorway gap
+     punched in the wall at every floor level the stair passes.
+     ================================================================== */
+  var FH = 3.0;          // floor height
+  var SH = 0.30, SD = 0.30;   // stair rise / run: 10 steps per floor
+
+  function building(x0, x1, z0, z1, floors, wallMat, roofMat) {
+    var t = 0.28;
+    var stairX = x0 + 1.2;                       // where the external flight starts
+    for (var f = 0; f <= floors; f++) {
+      var y = f * FH;
+      seg(x0, x1, y, y + 0.25, z0, z1, f === floors ? roofMat : wallMat);   // slab / roof
+      if (f === floors) break;
+      var b0 = y + 0.25, sill = b0 + 0.9, head = b0 + 2.05, top = (f + 1) * FH;
+      var doorX = stairX + f * (10 * SD);        // where the flight is at this level
+      // -z face: lower band split around the doorway, upper band continuous
+      seg(x0, Math.min(x1, doorX - 0.85), b0, sill, z0, z0 + t, wallMat);
+      seg(Math.min(x1, doorX + 0.85), x1, b0, sill, z0, z0 + t, wallMat);
+      seg(x0, x1, head, top, z0, z0 + t, wallMat);
+      seg(x0, x1, b0, sill, z1 - t, z1, wallMat);      // +z face
+      seg(x0, x1, head, top, z1 - t, z1, wallMat);
+      seg(x0, x0 + t, b0, sill, z0, z1, wallMat);      // -x face
+      seg(x0, x0 + t, head, top, z0, z1, wallMat);
+      seg(x1 - t, x1, b0, sill, z0, z1, wallMat);      // +x face
+      seg(x1 - t, x1, head, top, z0, z1, wallMat);
+      // corner posts (full height, so the window band reads as a band)
+      [[x0, x0 + t], [x1 - t, x1]].forEach(function (cx) {
+        [[z0, z0 + t], [z1 - t, z1]].forEach(function (cz) {
+          seg(cx[0], cx[1], b0, top, cz[0], cz[1], wallMat);
+        });
+      });
+    }
+    /* One continuous external flight along the -z face. NO landings: the flight
+       already passes every floor level, and a landing box placed on the run sits
+       on top of the treads and walls the climb off — the exact bug that made the
+       station house roof unreachable. You step sideways through the doorway gap
+       instead, a 0.25m rise from tread to slab, well inside the 0.42m auto-step. */
+    stairFlight(stairX, 0, z0 - 1.0, 1, 0, floors * 10, SH, SD, 1.5, M.metal);
+    // outer handrail runs the whole flight, clear of the treads
+    seg(stairX - 0.3, stairX + floors * 10 * SD, 0.9, 1.75, z0 - 1.9, z0 - 1.78, M.trim, { collide: false });
+    // roof parapet
+    var ry = floors * FH + 0.25;
+    seg(x0, x1, ry, ry + 0.95, z0, z0 + 0.15, M.trim, { cast: false });
+    seg(x0, x1, ry, ry + 0.95, z1 - 0.15, z1, M.trim, { cast: false });
+    seg(x0, x0 + 0.15, ry, ry + 0.95, z0, z1, M.trim, { cast: false });
+    seg(x1 - 0.15, x1, ry, ry + 0.95, z0, z1, M.trim, { cast: false });
+  }
+
+  /* ---- HIGH-RISE CLUSTER (SE, x 52..94 / z 50..92) ---- */
+  building(52, 70, 56, 72, 6, M.concrete, M.roof);      // 6 floors, 18m
+  building(74, 92, 52, 68, 7, M.plaster, M.roof);       // 7 floors, 21m
+  building(58, 76, 78, 92, 6, M.brick, M.roof);         // 6 floors
+  crates(72, 74); crates(50, 62); barrel(93, 72, true); barrel(56, 90, false);
+
+  /* ---- MALL (E, x 46..92 / z -46..-20) — two big floors ---- */
+  building(50, 88, -44, -22, 2, M.plaster, M.roof);
+  // atrium planters + shopfront stalls as interior cover on the ground floor
+  [[58, -38], [68, -30], [78, -38], [62, -26], [80, -26]].forEach(function (q) {
+    box(q[0], 0.55, q[1], 2.4, 1.1, 2.4, M.sidewalk);
+  });
+  [[54, -26], [84, -40]].forEach(function (q) { crates(q[0], q[1]); });
+
+  /* ---- AIRPORT (NW, x -95..-40 / z -95..-45) ---- */
+  seg(-94, -44, 0.02, 0.05, -78, -62, M.asphalt, NC);                     // runway
+  for (var rm = -92; rm < -46; rm += 8)
+    seg(rm, rm + 4, 0.05, 0.07, -70.4, -69.6, M.sidewalk, NC);            // centreline
+  building(-92, -74, -92, -80, 2, M.plaster, M.roof);                     // terminal
+  // hangars: open-fronted sheds
+  [[-68, -94], [-56, -94]].forEach(function (h) {
+    seg(h[0], h[0] + 10, 0, 6.2, h[1], h[1] + 0.3, M.metal);
+    seg(h[0], h[0] + 0.3, 0, 6.2, h[1], h[1] + 12, M.metal);
+    seg(h[0] + 9.7, h[0] + 10, 0, 6.2, h[1], h[1] + 12, M.metal);
+    seg(h[0] - 0.4, h[0] + 10.4, 6.2, 6.5, h[1] - 0.4, h[1] + 12.4, M.roof, { collide: false });
+  });
+  // parked aircraft (fuselage + wings + tail) — hard cover on the apron
+  [[-84, -56], [-62, -52]].forEach(function (a2) {
+    box(a2[0], 2.3, a2[1], 3.0, 3.0, 15, M.metal);                        // fuselage
+    box(a2[0], 2.1, a2[1], 20, 0.5, 2.6, M.metal);                        // wings
+    box(a2[0], 4.2, a2[1] + 6.4, 0.4, 3.4, 3.0, M.metal);                 // tail fin
+    cyl(a2[0] - 5, 1.4, a2[1] - 1, 0.9, 2.6, M.dark);                     // engines
+    cyl(a2[0] + 5, 1.4, a2[1] - 1, 0.9, 2.6, M.dark);
+  });
+  barrel(-90, -60, true); barrel(-88, -58, false); crates(-72, -50);
+
+  /* ---- SHIP HARBOUR (SW, x -95..-44 / z 46..94) ---- */
+  seg(-94, -60, 0, 0.6, 50, 90, M.concrete);                              // quay deck
+  seg(-60, -44, -0.4, -0.36, 46, 94, M.metal, { collide: false, cast: false }); // water
+  // docked ship: hull + superstructure with an external stair to the bridge
+  seg(-60, -46, 0.2, 3.4, 54, 86, M.rust);                                // hull
+  building(-58, -50, 58, 68, 3, M.metal, M.roof);                         // superstructure
+  seg(-56, -48, 3.4, 3.7, 70, 84, M.metal);                               // aft deck
+  // gantry cranes on the quay
+  [[-78, 58], [-78, 78]].forEach(function (c2) {
+    cyl(c2[0] - 3, 4.5, c2[1], 0.35, 9, M.rust); cyl(c2[0] + 3, 4.5, c2[1], 0.35, 9, M.rust);
+    box(c2[0], 9.3, c2[1], 20, 0.7, 1.2, M.rust);
+  });
+  [[-86, 62, 0], [-86, 70, 0], [-90, 66, Math.PI / 2], [-74, 84, 0]].forEach(function (c3) {
+    box(c3[0], 1.3, c3[1], 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0], { rotY: c3[2] });
+  });
+  box(-86, 3.9, 62, 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0]);     // stacked
+  crates(-70, 52);
+
   /* =============== OUTSKIRTS COVER PASS (v5.0) ===============
      tools/verify-cover.js measured 23.6% of Urban as dead ground (no cover
      within 14m), worst point 56m, almost all of it in the ring beyond +-45.

@@ -10,7 +10,10 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v5.1** | CURRENT — deploy this (cumulative; scope ladder, AA-12 airdrop weapon) |
+| **v6.0** | CURRENT — deploy this (cumulative; airport, harbour, mall, towers, rail fixes) |
+| v5.3 | Good — but 3 of 5 railway stairs are unclimbable |
+| v5.2 | Good — voice diagnostics + TURN support |
+| v5.1 | Good — scope ladder + AA-12; voice still STUN-only with no diagnostics |
 | v5.0 | Good — cover pass, tree variety, recoil recovery |
 | v4.9 | Good — stairs/tags/regen, but 23.6% of Urban is dead ground and recoil never recentres |
 | v4.8 | Good — flicker fix; but NO staircase in either map is climbable standing |
@@ -25,7 +28,155 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
-## v5.1 — Scope Ladder + Airdrop Weapon *(current)*
+## v6.0 — Districts, Towers, and the Railway That Never Worked *(current)*
+
+**The railway zone was never useless — it was unreachable.** Adding it to the
+ascent gate for the first time showed **3 of its 5 stairs could not be climbed**:
+
+| Stair | Reached | Needed | Cause |
+|---|---|---|---|
+| Station house east stair | 3.97 m | 4.60 m | roof arrival landing (4.60-4.85) sat ON the last two treads |
+| Platform west ramp | 0.30 m | 1.12 m | flight began INSIDE the platform footprint |
+| Platform east ramp | 0.30 m | 1.12 m | same |
+
+All three are the same defect family as the v4.9 stringers: a solid box placed
+over the treads. Ramps now start clear of the platform edge; the station landing
+moved past the end of the flight. All 5 pass.
+
+**New districts** (`districts-outer.js`), placed in the four quadrants the cover
+tool measured as empty:
+
+- **AIRPORT (NW)** — asphalt runway with centreline, 2-floor terminal, two
+  open-fronted hangars, two parked aircraft (fuselage/wings/tail/engines as hard
+  cover on the apron), fuel drums.
+- **SHIP HARBOUR (SW)** — concrete quay, water channel, docked ship with a hull,
+  a 3-floor superstructure you can climb to the bridge, and an aft deck; two
+  gantry cranes; stacked containers.
+- **MALL (E)** — 38x22 m two-floor box with interior planters and stalls as
+  ground-floor cover.
+- **HIGH-RISE CLUSTER (SE)** — three towers of 6, 7 and 6 floors (18-21 m), each
+  with a continuous window band on every floor to fight and snipe from.
+
+**One parameterised builder for everything multi-storey.** `building(x0,x1,z0,z1,
+floors, wallMat, roofMat)` lays slabs, four walls per floor split into a sill
+band and a header band (leaving a continuous window band), corner posts, a roof
+parapet, and one external flight along the -z face with a doorway gap punched in
+the wall at every floor the flight passes. One stair design everywhere, so one
+gate proves all of them.
+
+**The builder's first version failed the gate**, and instructively: it placed a
+landing box at every floor, centred on the flight. Those landings sat on top of
+the treads and walled the climb off at 2.12 m — the identical bug I had just
+fixed on the station house, reintroduced from scratch an hour later. The flight
+is continuous and passes every floor, so the landings were never needed. Removed;
+you step sideways through the doorway, a 0.25 m rise from tread to slab.
+
+**Rooftop loot** on all six new climbable structures, so the climb pays. Map gate
+358 -> 370 assertions.
+
+**Ascent gate 7 -> 18 assertions** — now covers every staircase in the game:
+2 fire escapes, 5 railway, 6 new buildings, 5 rural.
+
+**Cover:** Urban dead ground 1.2% -> **0.6%**, worst point 22.5 m -> 16.5 m.
+
+**Counts:** Urban 233 merged meshes (unchanged — StaticMerge absorbed the entire
+build), colliders 1552 -> 2191. Rural untouched.
+
+**Gates:** integration 49/49 x3 · models 38/38 · map 370/370 · merge 9/9 ·
+**ascent 18/18** · cover PASS both maps · build-chain PASS · parse sweep clean.
+
+**Not verified in-browser.** Climb all three towers, the mall, the terminal and
+the ship bridge standing. Check the window bands read as windows and not as gaps
+you fall through.
+
+---
+
+## v5.3 — Sniper and RPG Are Loot Now
+
+**#3 / #4 — starting loadout.** `system.js` builds the base loadout as
+`WEAPON_ORDER.filter(n => !WEAPONS[n].ex)`, so the `ex` flag is the whole
+mechanism. Added `ex: 1` to `sniper` and `rocket` and moved both to number key 9,
+which puts them in the existing bounded slot-9 exclusive cycle. Added
+`wpn_sniper` (rare) and `wpn_rocket` (legendary) to `LOOT_ITEMS`.
+
+Every player now spawns with: AK-47, M4A1, UZI, M870, P92, knife. The AWM-S and
+RPG-L must be found. Keys 3 and 7 are now unused; that is deliberate and
+harmless — renumbering the whole ladder would have risked the slot-cycling
+assertions for cosmetic gain.
+
+Gate `slot-9 cycling reaches the AWM (bounded, no spin)` still passes with four
+more weapons in the cycle, which is the assertion that matters here.
+
+**Voice removal: NOT done, deliberately.** See the note below — the premise
+("without signup it won't work") is not established, and v5.2's diagnostics have
+not been deployed yet. Removing a feature on an untested hypothesis, when removal
+touches six layers and has already left debris once (the v4.7 lobby chat
+`chat-input` orphan), is the wrong order of operations.
+
+**Gates:** integration 49/49 x3 · models 38/38 · map 358/358 · merge 9/9 ·
+ascent 7/7 · cover PASS both maps · build-chain PASS · parse sweep clean.
+
+---
+
+## v5.2 — Voice: Make The Failure Legible
+
+Rahul reported voice dead in both directions. Root cause is not one bug — it is
+that the feature was never diagnosable, plus a hard structural gap.
+
+**The structural gap: `CFG.VOICE` never existed.** `voice.js` line 16 read
+`CFG.VOICE && CFG.VOICE.turn` to append a TURN server. `CFG.VOICE` was not
+defined in any config file, so that branch never ran. The mesh has been
+**STUN-only since v4.5**. STUN cannot connect two peers that are both behind
+symmetric NAT / CGNAT — common on Indian mobile and broadband. No amount of
+signalling code fixes that; it needs a relay. The file header even said "STUN
+only: rare NAT pairs may fail (no TURN)" — the hook to fix it was dead.
+
+`CFG.VOICE = { turn: [], debug: true, iceRestart: true }` now exists and
+`voice.js` iterates `turn` as an array. **Rahul must supply credentials** — this
+is the one thing in this release that cannot be finished from here.
+
+**Diagnostics panel (`#voice-diag`).** Voice failed silently across four releases
+because the only feedback was a toast that vanished. The panel now shows, live:
+mic track state (live/muted), whether TURN is configured, and per peer the
+connection state, ICE state, whether a remote audio track arrived, the selected
+candidate pair (`host` = same LAN, `srflx` = direct across NAT, `relay` = via
+TURN), and any error. A failure now names its own stage.
+
+**ICE restart before giving up.** `connectionState === 'failed'` previously
+called `closePeer()` immediately, so any transient drop killed that pair
+permanently. The initiator now retries once with `createOffer({iceRestart:true})`.
+
+**`ontrack` hardening.** `el.srcObject = ev.streams[0]` silently produced no
+audio if the remote sent a track without an associated stream. Falls back to
+`new MediaStream([ev.track])`.
+
+**Push-to-talk was bound twice.** `ui.js wireV43()` registers document-level
+KeyT handlers; `game.js` registered a second pair. Both fired in-match. The
+game.js copy is removed — ui.js is the correct home because PTT must work in the
+lobby too.
+
+**Smoke grenade has been unbindable since v4.5.** In `game.js`:
+
+    if (e.code === 'KeyT') { ...setTalking(true); return; }
+    if (e.code === 'KeyT') { Weapons.throwGrenade('smoke'); return; }
+
+The second line was unreachable — voice took the key and returned first. Smoke is
+now **B**. Nothing in the codebase had ever asserted that a throwable's binding
+was reachable.
+
+**Gate additions — `verify-models.js` (26 -> 36 assertions).** Asserts CFG.VOICE
+exists and is shaped as voice.js expects; that voice.js actually reads it; that
+diagnostics are both exposed and rendered; that the DOM element exists; that ICE
+restart and candidate-pair reporting are present; that PTT is bound exactly once;
+and that every throwable has a distinct reachable key. Cheap static checks that
+would have caught the dead TURN hook the day it shipped.
+
+**Gates:** integration 49/49 x3 · models 36/36 · map 358/358 · merge 9/9 ·
+ascent 7/7 · cover PASS both maps · build-chain PASS · parse sweep clean.
+
+---
+
+## v5.1 — Scope Ladder + Airdrop Weapon
 
 Rahul's answers: no new game mode, airdrops should carry a weapon that cannot be
 found on the ground, anti-cheat deferred. Scope rule banked earlier: 2x/3x for

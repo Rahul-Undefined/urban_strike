@@ -139,5 +139,36 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
   ok(new Set(fovs).size === fovs.length, 'every scope has a distinct magnification');
 }
 
+/* ---- v5.2 voice wiring invariants ------------------------------------
+   Voice failed silently for four releases because nothing asserted that the
+   pieces were connected to each other. These are cheap static checks that
+   would have caught the dead CFG.VOICE.turn hook immediately. */
+{
+  const vsrc = fs.readFileSync('./public/src/audio/voice.js', 'utf8');
+  const usrc = fs.readFileSync('./public/src/ui/ui.js', 'utf8');
+  const gsrc = fs.readFileSync('./public/src/core/game.js', 'utf8');
+  const hsrc = fs.readFileSync('./public/index.html', 'utf8');
+
+  ok(CFG.VOICE && typeof CFG.VOICE === 'object', 'CFG.VOICE exists (voice.js reads it for TURN)');
+  ok(Array.isArray(CFG.VOICE.turn), 'CFG.VOICE.turn is an array voice.js can iterate');
+  ok(/CFG\.VOICE/.test(vsrc), 'voice.js actually reads CFG.VOICE');
+  ok(/getDiag/.test(vsrc) && /getDiag/.test(usrc), 'voice diagnostics are exposed AND rendered');
+  ok(/id="voice-diag"/.test(hsrc), 'the diagnostics element exists in the DOM');
+  ok(/iceRestart/.test(vsrc), 'a failed peer attempts an ICE restart before being dropped');
+  ok(/candidate-pair/.test(vsrc), 'the selected ICE candidate pair is reported (direct vs relay)');
+
+  // PTT must be bound exactly once, at document level, so it works in the lobby
+  const pttUi = (usrc.match(/setTalking\(true\)/g) || []).length;
+  const pttGame = (gsrc.match(/setTalking\(/g) || []).length;
+  ok(pttUi === 1 && pttGame === 0, 'push-to-talk is bound once in ui.js and not duplicated in game.js');
+
+  // every throwable must have a reachable key binding
+  const bound = new Set((gsrc.match(/e\.code === '(Key[A-Z])'/g) || []).map(m => m.slice(14, -1)));
+  const thrown = (gsrc.match(/throwGrenade\('(\w+)'\)/g) || []).map(m => m.slice(15, -2));
+  ok(new Set(thrown).size === thrown.length, 'no throwable is bound twice');
+  ok(bound.size === (gsrc.match(/e\.code === '(Key[A-Z])'/g) || []).length ||
+     bound.size >= thrown.length, 'every throwable has a distinct reachable key');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

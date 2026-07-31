@@ -23,7 +23,7 @@ var UI = (function () {
       'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading',
       'announce', 'cook-bar', 'cook-fill', 'att-list',
       'tc-mine', 'tc-molotov', 'countdown', 'btn-ready',
-      'btn-voice', 'voice-ind'
+      'btn-voice', 'voice-ind', 'voice-diag'
     ].forEach(function (id) { els[id] = $(id); });
   }
 
@@ -372,6 +372,37 @@ var UI = (function () {
     ind.classList.toggle('muted', state === 'muted');
     ind.textContent = state === 'talking' ? '\u25CF TALKING' : 'MIC MUTED \u2014 HOLD T';
   }
+  /* Voice diagnostics. Voice failed silently for four releases because the only
+     feedback was a toast that vanished. This shows the live per-peer state so a
+     failure names its own stage instead of being "it doesn't work". */
+  var vdTimer = null;
+  function esc(t) { return String(t).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+  function renderVoiceDiag() {
+    var el = els['voice-diag'];
+    if (!el || typeof VoiceChat === 'undefined' || !VoiceChat.getDiag) return;
+    var dbg = (typeof CFG !== 'undefined' && CFG.VOICE && CFG.VOICE.debug);
+    var d = VoiceChat.getDiag();
+    if (!dbg || !d.joined) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    var turnBad = d.turn.indexOf('NONE') === 0;
+    var h = '<div class="vd-h">VOICE DIAGNOSTICS</div>';
+    h += '<div class="vd-row">mic: <span class="' + (d.mic.indexOf('live') > -1 ? 'vd-ok' : '') + '">' + esc(d.mic) + '</span></div>';
+    h += '<div class="vd-row">turn: <span class="' + (turnBad ? 'vd-bad' : 'vd-ok') + '">' + esc(d.turn) + '</span></div>';
+    if (!d.peers.length) h += '<div class="vd-row vd-bad">no peers &mdash; is the other side joined?</div>';
+    d.peers.forEach(function (p) {
+      var good = p.conn === 'connected' && p.track === 'YES';
+      h += '<div class="vd-row">' + esc(p.name) + ': <span class="' + (good ? 'vd-ok' : 'vd-bad') + '">'
+        + esc(p.conn) + '</span> ice=' + esc(p.ice) + ' audio=' + esc(p.track) + '</div>';
+      if (p.cand !== '-') h += '<div class="vd-row">&nbsp;&nbsp;route: ' + esc(p.cand) + '</div>';
+      if (p.err) h += '<div class="vd-row vd-bad">&nbsp;&nbsp;' + esc(p.err) + '</div>';
+    });
+    el.innerHTML = h;
+  }
+  function startVoiceDiag() {
+    if (vdTimer) return;
+    vdTimer = setInterval(renderVoiceDiag, 700);
+  }
+
   function setGear(minesN, molosN) {
     if (els['tc-mine']) els['tc-mine'].textContent = 'V \u00d7' + minesN;
     if (els['tc-molotov']) els['tc-molotov'].textContent = 'H \u00d7' + molosN;
@@ -415,6 +446,7 @@ var UI = (function () {
       if (VoiceChat.isJoined()) VoiceChat.leave();
       else VoiceChat.join();
     });
+    startVoiceDiag();
   }
 
   function init() {

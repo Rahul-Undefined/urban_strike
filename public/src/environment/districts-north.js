@@ -94,8 +94,11 @@ World._buildPart4 = function (T) {
   });
   // passenger platform + end ramp steps
   seg(22, 64, 0, 1.12, -80.6, -76.6, M.concrete);
-  stairFlight(23, 0, -76.5, 0, -1, 4, 0.28, 0.33, 2.4, M.concrete);
-  stairFlight(63, 0, -76.5, 0, -1, 4, 0.28, 0.33, 2.4, M.concrete);
+  // v6.0: ramps now START clear of the platform edge (z=-76.6) and land flush on
+  // top of it. Previously the flight began inside the platform footprint, so the
+  // 1.12m face blocked you after one step.
+  stairFlight(23, 0, -75.28, 0, -1, 4, 0.28, 0.33, 2.4, M.concrete);
+  stairFlight(63, 0, -75.28, 0, -1, 4, 0.28, 0.33, 2.4, M.concrete);
   // parked train: loco + boxcars (cover) + climbable flatcar
   box(26, 1.75, -88.1, 6.4, 3.5, 2.8, M.rust);
   box(30.1, 2.3, -88.1, 1.4, 1.0, 2.4, M.dark);
@@ -117,7 +120,7 @@ World._buildPart4 = function (T) {
     seg(X1 - 0.2, X1, 4.85, 5.6, Z0, -93.6, M.concrete);
     seg(X1 - 0.2, X1, 4.85, 5.6, -92.3, Z1, M.brick);                              // east parapet gap
     stairFlight(44.7, 0, -88.4, 0, -1, 14, 0.329, 0.33, 1.2, M.metal);
-    seg(44.05, 45.35, 4.6, 4.85, -93.7, -92.3, M.metal);             // arrival, flush with roof
+    seg(44.05, 45.35, 4.6, 4.85, -94.4, -93.05, M.metal);            // arrival, clear of the last tread
     box(33, 5.35, -92, 1.5, 1.0, 1.4, M.metal);                          // roof water tank base
     cyl(33, 6.35, -92, 0.9, 1.0, M.metal);
   })();

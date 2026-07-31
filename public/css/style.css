@@ -337,3 +337,17 @@ button { font-family: var(--disp); cursor: pointer; }
 .lb-row.lb-h { color: #7d94a3; border-bottom: 1px solid rgba(120, 150, 170, 0.25); margin-bottom: 2px; }
 
 .mini-label { display: block; font-size: 10px; letter-spacing: 2px; color: #7d94a3; margin: 8px 0 4px; }
+
+
+/* v5.2 voice diagnostics panel — only rendered when CFG.VOICE.debug is on */
+#voice-diag {
+  position: absolute; right: 12px; bottom: 96px; z-index: 40;
+  font: 11px/1.45 'Rajdhani', monospace; color: #cfe0f0;
+  background: rgba(8, 11, 16, 0.82); border: 1px solid rgba(120, 160, 200, 0.28);
+  border-radius: 4px; padding: 7px 10px; min-width: 208px; pointer-events: none;
+  letter-spacing: 0.03em;
+}
+#voice-diag .vd-h { color: #7fd6ff; letter-spacing: 0.12em; margin-bottom: 3px; }
+#voice-diag .vd-bad { color: #ff7a5e; }
+#voice-diag .vd-ok { color: #63d968; }
+#voice-diag .vd-row { white-space: nowrap; }

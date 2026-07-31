@@ -24,6 +24,19 @@
 
   // v5.0 recoil recovery. recover = fraction of applied kick handed back after
   // a burst (1 = perfect return to centre); settleSec = how long that takes.
+  /* VOICE. voice.js has always read CFG.VOICE.turn — but CFG.VOICE was never
+     defined anywhere, so the TURN hook was dead code and the mesh has always
+     been STUN-only. STUN alone cannot connect two peers that are both behind
+     symmetric NAT / CGNAT, which is common on Indian mobile and broadband.
+     Put TURN credentials in `turn` (array, one entry per URL) to fix that.
+     Free tiers exist (e.g. Metered Open Relay, Twilio, Xirsys); self-hosting
+     coturn also works. `debug: true` shows the live per-peer diagnostics panel. */
+  var VOICE = {
+    turn: [],            // e.g. { urls: 'turn:host:80', username: 'u', credential: 'p' }
+    debug: true,
+    iceRestart: true     // retry a failed peer once with an ICE restart
+  };
+
   var RECOIL = { recover: 0.9, settleSec: 0.35, delayMs: 90 };
 
   var MOVE = {
@@ -66,5 +79,5 @@
     assistMinDmg: 25
   };
 
-  return { RECOIL: RECOIL, REGEN: REGEN, PLAYER: PLAYER, ARMOR: ARMOR, MOVE: MOVE, SPAWNS: SPAWNS, NET: NET, MATCH: MATCH };
+  return { VOICE: VOICE, RECOIL: RECOIL, REGEN: REGEN, PLAYER: PLAYER, ARMOR: ARMOR, MOVE: MOVE, SPAWNS: SPAWNS, NET: NET, MATCH: MATCH };
 });
