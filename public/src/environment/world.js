@@ -221,7 +221,7 @@ var World = (function () {
   }
 
   // ---------- lighting, sky, ground, roads ----------
-  function lighting() {
+  function lighting(urban) {
     outer.background = new THREE.Color(CFG.RENDER.sky);
     outer.fog = new THREE.FogExp2(CFG.RENDER.fogColor, CFG.RENDER.fogDensity);
 
@@ -242,7 +242,10 @@ var World = (function () {
     scene.add(sun);
     scene.add(sun.target);
 
-    // Interior lights
+    // Interior lights — Urban buildings only. On other maps these are four
+    // invisible floating lamps (two of them animated by World.flickers), which
+    // both cost shading time and wash odd bright patches over open terrain.
+    if (urban === false) return;
     var wh = new THREE.PointLight(0xffb35c, 1.1, 36, 1.5); wh.position.set(-32, 6.8, -28); scene.add(wh);
     flickers.push(wh);
     var ap = new THREE.PointLight(0x8fb4ff, 0.7, 16, 1.7); ap.position.set(27, 4.6, -35); scene.add(ap);
@@ -290,11 +293,21 @@ var World = (function () {
   return {
     BOUND: 100, // playable half-extent (V4.2)
     _colliders: function () { return colliders; }, // test-only introspection
-    _initPart1: function (sceneRef) {
+    /* opts.urban === false  ->  build shared setup only (materials, sky, fog,
+       hemi/ambient/sun) and SKIP groundAndRoads(). groundAndRoads() lays the
+       Urban dirt ground with its top face at exactly y=0, plus the asphalt
+       avenue cross and eight sidewalk curbs. Rural lays its own grass top at
+       y=0, so leaving the Urban layer in produced ~44,000 m2 of exactly
+       coplanar surface -> full-screen z-fighting (the "blinking grey/green"),
+       a phantom asphalt cross, eight colliding concrete curbs in the forest,
+       and an Urban ground collider at y=0 that filled in the river fords. */
+    _initPart1: function (sceneRef, opts) {
+      var urban = !opts || opts.urban !== false;
       outer = sceneRef;
       scene = new THREE.Group();
       outer.add(scene);
-      makeMaterials(); lighting(); groundAndRoads();
+      makeMaterials(); lighting(urban);
+      if (urban) groundAndRoads();
     },
     _internals: function () {
       return { box: box, seg: seg, cyl: cyl, stairFlight: stairFlight, crater: crater, M: M, rnd: rnd, addCollider: addCollider, sceneRef: function () { return scene; } };
@@ -750,7 +763,7 @@ World.buildMap = function (sceneRef, map) {
     World.builtMap = 'urban';
     return;
   }
-  World._initPart1(sceneRef);
+  World._initPart1(sceneRef, { urban: false });
   var H = World._internals();
   World._buildRural({
     seg: H.seg, box: H.box, cyl: H.cyl, stairFlight: H.stairFlight,

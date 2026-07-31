@@ -8,7 +8,7 @@ World._buildPart5 = function (T) {
   var NC = { collide: false, cast: false };
 
   /* =============== CARGO / CONTAINER YARD (x 74..97, z -44..8) =============== */
-  seg(75, 96, 0.003, 0.016, -43, 7, M.concrete, NC);
+  seg(75, 96, 0.003, 0.016, -43, -7, M.concrete, NC);   // stops at the avenue edge (z=-7)
   var CBOX = [M.contRed, M.contBlue || M.metal, M.contGreen, M.rust];
   function stack(x, z, levels, ci) {
     for (var l = 0; l < levels; l++) {

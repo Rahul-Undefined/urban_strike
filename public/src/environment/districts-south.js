@@ -25,7 +25,10 @@ World._buildPart3 = function (T) {
 
   /* ===== CONSTRUCTION SITE  x[-20,20] z[-70,-52] ===== */
   (function () {
-    seg(-21, 21, 0.004, 0.016, -71, -51, M.concrete, { collide: false, cast: false }); // slab pad
+    // Slab pad, split at the avenue edges (x=+-7). Overlapping the asphalt gave
+    // two coplanar-within-4mm surfaces that z-fight past ~73m.
+    seg(-21, -7, 0.004, 0.016, -71, -51, M.concrete, { collide: false, cast: false });
+    seg(7, 21, 0.004, 0.016, -71, -51, M.concrete, { collide: false, cast: false });
     // skeleton building: 8 columns, 2 open slabs (no walls) — long sightlines
     [-12, -4, 4, 12].forEach(function (x) {
       [-66, -58].forEach(function (z) {

@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v4.7** | CURRENT — deploy this (contains all of v4.6) |
+| **v4.8** | CURRENT — deploy this (cumulative; fixes the Rural full-screen flicker) |
+| v4.7 | Good, but Rural flickers full-screen (Urban ground layer built underneath it) |
 | v4.6 | Internal milestone — never shipped standalone; folded into v4.7 |
 | v4.5 (rebuilt) | Good — last release before multi-map |
 | v4.5 (first build) | BROKEN — carried the v4.4 build crash; discard |
@@ -21,7 +22,81 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
-## v4.7 — Fixes + Visual Pass *(current, includes v4.6)*
+## v4.8 — Rural Flicker Root Cause *(current)*
+
+**Symptom reported:** Rural "screen flickers"; whole ground blinking green/grey
+under movement. Reproduced from Rahul's 28s screen recording by extracting
+consecutive frames — the ground flips flat-green to textured-brown on isolated
+single frames, with a wavy distance-dependent boundary and the near field
+unaffected. That is a depth-precision tie, not a shader or culling fault.
+
+**Root cause (found by headless AABB dump, real three, merge disabled):**
+`World._initPart1()` unconditionally called `groundAndRoads()` — the URBAN
+ground builder — for **every** map. On Rural that laid:
+
+| Surface | Top Y | Footprint |
+|---|---|---|
+| Urban dirt ground (x -110..45.4) | **0** | 34,188 m² |
+| Urban dirt ground (x 48.6..110) | **0** | 13,508 m² |
+| Rural NW / S / NE grass | **0** | 44,300 m² |
+| Urban asphalt avenue cross | 0.02 | 3,808 m² |
+| Urban sidewalk curbs (8, solid) | 0.13 | 590 m² |
+
+92,639 m² of different-material surface sharing one exact plane. The GPU cannot
+break the tie, so the winner changed per frame → full-screen flicker. Present
+since v4.6 (multi-map split). Every previous "grass/road z-fighting" fix targeted
+the wrong pair of surfaces, which is why the polygon-offset attempt blanked the
+map and the geometric-separation rewrite did not stop the blinking.
+
+**Also fixed by the same change (all were Urban leakage into Rural):**
+- phantom asphalt avenue cross floating 2 cm over the grass
+- eight solid concrete curbs with live colliders standing in the forest
+- rivers were not walkable 0.4 m fords — the Urban ground collider at y=0 filled
+  them in; the ford now works as designed (and loot#17, which had been resting on
+  that phantom floor, dropped to the river bed: `[53, 0.55, 12]` → `[53, 0.15, 12]`)
+- four Urban interior point lights (two animated via `World.flickers`) burning
+  shading time in open terrain
+
+**Changes**
+- `world.js` — `_initPart1(sceneRef, opts)`; `opts.urban === false` skips
+  `groundAndRoads()` and the Urban interior point lights. `lighting(urban)` gained
+  the same guard. `World.build()` (Urban) is behaviourally unchanged.
+- `world.js` — `buildMap()` rural path passes `{ urban: false }`.
+- `rural.js` — **removed `polygonOffset` from `ROADMAT`**. It was still shipped
+  despite the v4.7 note saying it had been reverted; it is the exact material
+  state that rendered Rural fully black in-browser. Replaced with geometric
+  clearance: rural dirt roads moved from `0.012..0.06` to `0.04..0.09`, i.e. 4 cm
+  of clear air over the grass top. At `near=0.08 / far=320` the 24-bit depth step
+  reaches 12 mm at ~127 m (inside view distance) but 40 mm only past ~230 m,
+  which is fully fogged.
+- `rural.js` — grass texture `repeat` 48 → 4. `uvScale()` already tiles every 2 m,
+  so 48 meant ~24 tiles/metre: it mip-collapsed to flat paint (why the grass had no
+  visible texture at all) and shimmered under motion. Added `anisotropy = 8`.
+- `districts-south.js` / `districts-outer.js` — two Urban concrete pads sat 4 mm
+  under the asphalt with real overlap (238 + 42 + 294 m²), which fights past ~73 m.
+  Split/truncated to abut the avenue edges instead of running beneath it. Purely
+  geometric; no material or ordering tricks.
+
+**New permanent gate — `tools/verify-build.js`**
+Builds both maps with merge disabled, collects every large flat surface, and fails
+if any two with **different materials** share a top-Y within 4 mm and overlap by
+more than 1 m in both axes. Same-material overlaps are skipped (identical pixels
+either way, so they cannot show a fight). This exact class of bug can no longer
+ship silently.
+
+**Counts:** Rural 15 → 13 merged meshes, 431 → 419 colliders. Urban unchanged
+(232 meshes / 1,413 colliders).
+
+**Gates:** integration 49/49 ×3 · models 18/18 · map 358/358 · merge 9/9 ·
+build-chain PASS both maps incl. new coplanar gate · parse sweep clean.
+
+**Not verified in-browser yet.** Headless gates cannot see render-stage failures —
+this is precisely how the black-Rural regression got through last time. Load Rural
+and confirm before trusting it.
+
+---
+
+## v4.7 — Fixes + Visual Pass *(includes v4.6)*
 
 **v4.7 revision (post browser test):** rural grass now uses a speckled texture
 (was flat color — read as grey/green shimmer under shadows); dirt roads thickened

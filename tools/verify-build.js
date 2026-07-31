@@ -85,7 +85,50 @@ try {
   `, ctx, { filename: "<rural-run>" });
   console.log("RURAL BUILD OK: " + JSON.stringify(rural));
   if (rural.map !== "rural" || rural.colliders < 300) { console.log("rural build unhealthy"); process.exit(1); }
-  console.log("verify-build: PASS (both maps, reset path exercised)");
+
+  /* ---- coplanar-ground gate (added v4.8) -------------------------------
+     Two large horizontal surfaces whose top faces share the same Y AND whose
+     footprints overlap will z-fight for the whole screen at range. Rural
+     shipped this way in v4.7 because _initPart1 laid the Urban ground (top
+     y=0) under the rural grass (top y=0). Fail the build if it comes back. */
+  ctx.CFG.RENDER.mergeStatic = false;   // keep source meshes addressable
+  for (const map of ["urban", "rural"]) {
+    ctx.__m = map;
+    const bad = vm.runInContext(`
+      (function () {
+        var sc = new THREE.Scene();
+        World.reset(); World.buildMap(sc, __m);
+        var grp = null;
+        for (var i = 0; i < sc.children.length; i++) if (sc.children[i].isGroup) grp = sc.children[i];
+        var bb = new THREE.Box3(), planes = [];
+        grp.traverse(function (o) {
+          if (!o.isMesh) return;
+          bb.setFromObject(o);
+          var a = (bb.max.x - bb.min.x) * (bb.max.z - bb.min.z);
+          if (a < 200) return;                                  // only big slabs
+          if (bb.max.y - bb.min.y > 4) return;                  // only flat ones
+          planes.push({ y: bb.max.y, x0: bb.min.x, x1: bb.max.x, z0: bb.min.z, z1: bb.max.z,
+                        a: a, mat: o.material.uuid });
+        });
+        var hits = [];
+        for (var i = 0; i < planes.length; i++) for (var j = i + 1; j < planes.length; j++) {
+          var p = planes[i], q = planes[j];
+          if (p.mat === q.mat) continue;   // identical pixels either way — invisible
+          if (Math.abs(p.y - q.y) > 0.004) continue;            // 4mm tolerance
+          var ox = Math.min(p.x1, q.x1) - Math.max(p.x0, q.x0);
+          var oz = Math.min(p.z1, q.z1) - Math.max(p.z0, q.z0);
+          if (ox > 1 && oz > 1) hits.push("y=" + p.y.toFixed(3) + " overlap " + Math.round(ox * oz) + "m2");
+        }
+        return hits;
+      })();
+    `, ctx, { filename: "<coplanar-" + map + ">" });
+    if (bad.length) {
+      console.log("COPLANAR GROUND on " + map + " (" + bad.length + "): " + bad.slice(0, 6).join(" | "));
+      process.exit(1);
+    }
+    console.log("coplanar-ground gate PASS: " + map);
+  }
+  console.log("verify-build: PASS (both maps, reset path exercised, no coplanar ground)");
 } catch (e) {
   console.log("BUILD CRASH:\n" + (e.stack || e));
   process.exit(1);

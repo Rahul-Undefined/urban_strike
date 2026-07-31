@@ -20,14 +20,18 @@ World._buildRural = function (T) {
     }
     var t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(48, 48);
+    // uvScale() in world.js already tiles every 2m; repeat=4 -> one tile per
+    // 0.5m. The old value (48) meant ~24 tiles per metre, which mip-collapsed
+    // to flat paint at any distance and shimmered under motion.
+    t.repeat.set(4, 4);
+    t.anisotropy = 8;   // clamped to hardware max by three on upload
     return new THREE.MeshLambertMaterial({ map: t });
   }
   var GRASS = grassMat(), LEAF1 = L(0x2f4a30), LEAF2 = L(0x3a5c3a);
-  var ROADMAT = new THREE.MeshLambertMaterial({
-    map: (M.dirt && M.dirt.map) || null,
-    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
-  });
+  // No polygonOffset: depth bias on a ground-level slab at grazing angles is
+  // what blanked this map in-browser before. Clearance is geometric instead
+  // (roads sit 4cm above the grass top, see below).
+  var ROADMAT = new THREE.MeshLambertMaterial({ map: (M.dirt && M.dirt.map) || null });
   var ROCK = L(0x6d716b), LOG = L(0x5a4630), CROP = L(0x4f7a3a);
   var WATER = new THREE.MeshLambertMaterial({ color: 0x2c6f8f, transparent: true, opacity: 0.75 });
 
@@ -42,10 +46,12 @@ World._buildRural = function (T) {
   seg(-110, 110, -0.14, -0.1, 36, 48, WATER, { collide: false, cast: false });
   seg(50, 60, -0.14, -0.1, -110, 36, WATER, { collide: false, cast: false });
 
-  // dirt roads (visual strips)
-  seg(-3.5, 3.5, 0.012, 0.06, -100, 100, ROADMAT, { collide: false, cast: false });
-  seg(-100, -3.5, 0.012, 0.06, -3.5, 3.5, ROADMAT, { collide: false, cast: false });
-  seg(3.5, 100, 0.012, 0.06, -3.5, 3.5, ROADMAT, { collide: false, cast: false });
+  // dirt roads (visual strips). Bottom at 0.04 = 4cm of clear air above the
+  // grass top (y=0). At near=0.08/far=320 the 24-bit depth step only reaches
+  // 4cm past ~230m, which is beyond the fogged-out distance — so no fight.
+  seg(-3.5, 3.5, 0.04, 0.09, -100, 100, ROADMAT, { collide: false, cast: false });
+  seg(-100, -3.5, 0.04, 0.09, -3.5, 3.5, ROADMAT, { collide: false, cast: false });
+  seg(3.5, 100, 0.04, 0.09, -3.5, 3.5, ROADMAT, { collide: false, cast: false });
 
   /* ================= BRIDGES (wood = metal-free footsteps) ================= */
   function bridge(x0, x1, z0, z1) {
