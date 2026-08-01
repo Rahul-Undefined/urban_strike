@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v7.4** | CURRENT — Milestone 8a: menu/lobby overhaul, Metro selectable, host-gated launch. No map geometry touched. |
+| **v7.4.1** | CURRENT — Milestone 8a + browser-reported menu overlap fix, 5s countdown with on-screen ticks. |
+| v7.4 | Superseded — menu footer overlapped the stat strip on short viewports. |
 | v7.3 | Good — METRO CITY COMPLETE. Subway, construction site, tower crane. |
 | v7.2 | Good — Metro City phase 3 |
 | v7.1 | Good — Metro City phase 2 |
@@ -32,6 +33,48 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 | v4.3 | Last known-good before the merge system |
 | v4.2 | Good — map expansion + graphics, before the gameplay update |
 | v3.1 | Good — last pre-refactor build |
+
+---
+
+## v7.4.1 — menu layout fix + visible launch countdown
+
+First browser-reported defect of the milestone, and a gate-blind one.
+
+### Menu text overlap (reported from a screenshot)
+
+`.menu-foot` was `position: fixed; bottom: 20px`. That was safe for as long as
+nothing else occupied the bottom of the screen. v7.4's stat strip is in normal
+flow and landed underneath it, so the keybind hints and the stat strip painted
+on top of each other. No headless gate could see this.
+
+Fixes:
+- `.menu-foot` now flows in-document instead of being fixed.
+- `#menu-layer` scrolls (`overflow-y: auto`) instead of clipping, with
+  `align-items: flex-start` + `margin: auto 0` on the active screen. Auto margins
+  centre the panel when it fits and collapse when it doesn't, which avoids the
+  flexbox top-clipping that `align-items: center` causes on short viewports.
+- `.backdrop`, `.menu-vignette` and `.menu-frame` became `position: fixed`.
+  Absolutely positioned children of a scroll container scroll away with the
+  content and would have left bare background above and below the artwork.
+- New `@media (max-height: 720px)` block shrinks the wordmark and tightens gaps.
+
+Two new assertions guard this: the last `.menu-foot` rule declaring `position`
+must say `static`, and `#menu-layer` must declare `overflow-y: auto`.
+
+### Launch countdown
+
+- `CFG.MATCH.startCountdown` 10 s → **5 s**.
+- `setCountdown` now renders a label, a large amber tick number and a rule,
+  rebuilding the node each tick so the pop animation retriggers on every number.
+  It counts 5 · 4 · 3 · 2 · 1 and clears at 0.
+- Assertion added: `setCountdown` must emit a `cd-num` element, so a countdown
+  that exists in the DOM but renders nothing fails the build.
+
+### Gates
+
+Integration **84 / 84** (was 80). Models 38, map 566, lifts 98, merge 9, cover
+PASS, build chain PASS, ascent 25/27 (same two pre-existing), parse sweep clean.
+Suite runtime dropped ~20 s with the shorter countdown.
 
 ---
 

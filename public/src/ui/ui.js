@@ -501,10 +501,18 @@ var UI = (function () {
     if (els['tc-mine']) els['tc-mine'].textContent = 'V \u00d7' + minesN;
     if (els['tc-molotov']) els['tc-molotov'].textContent = 'H \u00d7' + molosN;
   }
+  /* Rebuilt per tick so the pop animation restarts on every number. Replacing
+     the node is the reliable way to retrigger a CSS animation without a
+     forced-reflow hack. */
   function setCountdown(n) {
-    if (!els['countdown']) return;
-    if (n > 0) { els['countdown'].textContent = 'MATCH STARTS IN ' + n; els['countdown'].classList.remove('hidden'); }
-    else els['countdown'].classList.add('hidden');
+    var el = els['countdown'];
+    if (!el) return;
+    if (!(n > 0)) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+    el.innerHTML =
+      '<div class="cd-label">MATCH STARTS IN</div>' +
+      '<div class="cd-num">' + n + '</div>' +
+      '<div class="cd-ring"></div>';
+    el.classList.remove('hidden');
   }
   function setCooking(on, frac) {
     if (!els['cook-bar']) return;

@@ -44,6 +44,22 @@ function configGates() {
   const hudStart = html.indexOf('<div id="hud-layer"');
   const hudEnd = html.indexOf('<div id="countdown"');
   ok(hudEnd > hudStart, 'countdown sits after the HUD layer, not inside it');
+
+  /* Layout regressions the browser sees but no gate used to. */
+  const css = require('fs').readFileSync('./public/css/style.css', 'utf8');
+  const footBlocks = css.match(/\.menu-foot\s*\{[^}]*\}/g) || [];
+  const lastFootPos = footBlocks.filter(b => /position\s*:/.test(b)).pop() || '';
+  ok(/position\s*:\s*static/.test(lastFootPos),
+    '.menu-foot flows in-document (a fixed footer overlapped the stat strip)');
+  ok(/#menu-layer[^{]*\{[^}]*overflow-y\s*:\s*auto/.test(css),
+    'menu layer scrolls instead of clipping on short viewports');
+
+  /* The countdown must actually render a number, not just exist in the DOM. */
+  const uijs = require('fs').readFileSync('./public/src/ui/ui.js', 'utf8');
+  const cd = uijs.match(/function setCountdown[\s\S]*?\n  \}/);
+  ok(!!cd && cd[0].indexOf('cd-num') !== -1, 'setCountdown renders a large tick number');
+  ok(CFG.MATCH.startCountdown >= 3 && CFG.MATCH.startCountdown <= 15,
+    'launch countdown is a sane length (' + CFG.MATCH.startCountdown + 's)');
 }
 configGates();
 const PROT = CFG.MATCH.spawnProtect * 1000;
