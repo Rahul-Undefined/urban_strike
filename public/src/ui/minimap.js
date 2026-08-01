@@ -41,13 +41,26 @@ var Minimap = (function () {
       g.fillRect((WORLD - 7) * SCALE, 0, 14 * SCALE, px);
       g.fillRect(0, (WORLD - 7) * SCALE, px, 14 * SCALE);
     }
-    // structures
-    g.fillStyle = 'rgba(122,134,148,0.95)';
+    /* Structures, drawn in TWO WEIGHTS. Buildings and long walls carry the
+       strong tone; containers, vehicles and small structures sit back in a
+       lighter one. A flat single-colour pass made a shipping container and an
+       apartment block indistinguishable, which is most of why the map was
+       unreadable even before it saturated. */
     var shapes = World.minimapShapes || [];
-    for (var i = 0; i < shapes.length; i++) {
-      var s = shapes[i];
+    var i, s, w, h;
+    g.fillStyle = 'rgba(96,106,120,0.75)';
+    for (i = 0; i < shapes.length; i++) {
+      s = shapes[i]; w = s[2] - s[0]; h = s[3] - s[1];
+      if (w * h >= 24) continue;
       g.fillRect((s[0] + WORLD) * SCALE, (s[1] + WORLD) * SCALE,
-        Math.max(1.5, (s[2] - s[0]) * SCALE), Math.max(1.5, (s[3] - s[1]) * SCALE));
+        Math.max(1.0, w * SCALE), Math.max(1.0, h * SCALE));
+    }
+    g.fillStyle = 'rgba(138,150,164,0.97)';
+    for (i = 0; i < shapes.length; i++) {
+      s = shapes[i]; w = s[2] - s[0]; h = s[3] - s[1];
+      if (w * h < 24) continue;
+      g.fillRect((s[0] + WORLD) * SCALE, (s[1] + WORLD) * SCALE,
+        Math.max(1.5, w * SCALE), Math.max(1.5, h * SCALE));
     }
   }
 

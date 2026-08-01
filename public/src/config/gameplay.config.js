@@ -90,13 +90,14 @@
   var SPAWNS = [
     [-32, -28, Math.PI * 0.5, 'a'], [-30, 26, Math.PI, 'a'], [-12, 38, Math.PI, 'a'],
     [-44, 2, -Math.PI * 0.5, 'a'], [-58, 8, 0, 'a'], [-14, -60, Math.PI, 'a'],
+    // v7.8: spawn 10 was [19,58], which the rebuilt terrace now encloses; moved to the street
     [32, -30, -Math.PI * 0.5, 'b'], [34, 28, -Math.PI * 0.5, 'b'], [22, -14, 0, 'b'],
-    [60, 2, -Math.PI * 0.5, 'b'], [19, 58, 0, 'b'], [17.5, -60, Math.PI, 'b'],
+    [60, 2, -Math.PI * 0.5, 'b'], [21.5, 50.0, Math.PI, 'b'], [17.5, -60, Math.PI, 'b'],
     [2, 44, Math.PI, 'n'], [-2, -44, Math.PI, 'n'],
     // V4.2 districts
     [-70, -80, Math.PI, 'a'], [-86, 6, Math.PI * 0.5, 'a'], [-24, 90, 0, 'a'],
     [28, -68, Math.PI, 'b'], [88, -16, -Math.PI * 0.5, 'b'], [94.5, 58.5, -Math.PI * 0.5, 'b'],   // v7.6: was [40,-84], now inside the island platform; moved to the station forecourt
-    [0, -92, Math.PI, 'n'], [24, 90, 0, 'n']
+    [0, -92, Math.PI, 'n'], [6, 86, Math.PI, 'n']
   ];
 
   /* ---------------- DYNAMIC LOOT ---------------- */

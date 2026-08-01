@@ -144,6 +144,30 @@ var World = (function () {
     M.steelBlue = L({ color: 0x37536e });     // freight shed cladding
     M.signalRed = E(0xff3a2a);
     M.signalGreen = E(0x3ee06a);
+    /* RESIDENTIAL: warm render over brick, terracotta pantiles, painted doors.
+       Four colours across six houses so a terrace reads as individual homes
+       and a callout can be "the ochre house" rather than "the brick one". */
+    M.terracotta = L({ color: 0x9c4f32 });
+    M.ochre = L({ color: 0xb8894a });
+    M.sage = L({ color: 0x76856a });
+    M.doorPaint = L({ color: 0x2f4a5c });
+    /* THE COLONY: painted concrete slab blocks. Three washed-out municipal
+       colours, one per stair core, so "pink block, third floor" is a callout
+       and the three cores are told apart at a glance from the courtyard. */
+    M.paleYellow = L({ color: 0xc7b579 });
+    M.dustyPink = L({ color: 0xb08279 });
+    M.mint = L({ color: 0x7fa298 });
+    /* MARKET CROSS: the commercial palette. Pale render and blue shop glazing
+       against the residential brick and the industrial rust — the one part of
+       the city that looks like it was built this century. */
+    M.paperWhite = L({ color: 0xd6d4c9 });
+    M.shopGlass = L({ color: 0x35586b });
+    /* IRONGATE DEPOT: one new colour for the whole warehouse district. Hazard
+       yellow does double duty as dock edging, gantry paint and floor lane
+       marking — a single material that makes every industrial surface read
+       as industrial. Everything else reuses steelBlue, rust and the container
+       set that already exist. */
+    M.hazard = L({ color: 0xc9a227 });
 
     /* ---- shared street / prop palette (v7.5) ---------------------------
        Hoisted out of deco.js, where they were minted per call site. */
@@ -166,8 +190,18 @@ var World = (function () {
   var outer = null;
   function addCollider(x0, y0, z0, x1, y1, z1) {
     colliders.push([x0, y0, z0, x1, y1, z1, arguments.length > 6 ? arguments[6] | 0 : 0]); // [6] = footstep surface
-    // Auto-capture eye-height footprints for the minimap static layer.
-    if (y0 < 1.7 && y1 > 0.95 && (x1 - x0) < 80 && (z1 - z0) < 80) minimapShapes.push([x0, z0, x1, z1]);
+    /* Auto-capture eye-height footprints for the minimap static layer.
+       v8.0: FILTERED BY FOOTPRINT. The old rule captured anything crossing eye
+       height, which by v7.9 meant 1,100 shapes on Urban with a median area of
+       0.9 m2 — 740 crates, barrels, bollards, bins and fence posts drawn as
+       solid blocks at the same visual weight as a building wall. The minimap
+       had not gone stale, it had saturated: the districts were all there and
+       none of them were legible. A prop is not a landmark; only things you
+       navigate BY belong on a map. */
+    if (y0 < 1.7 && y1 > 0.95 && (x1 - x0) < 80 && (z1 - z0) < 80) {
+      var w = x1 - x0, d = z1 - z0;
+      if (w * d >= 3.5 && Math.max(w, d) >= 1.8) minimapShapes.push([x0, z0, x1, z1]);
+    }
   }
 
   function uvScale(geo, w, h, d) {
@@ -409,6 +443,14 @@ var World = (function () {
     _markBuilt: function () { built = true; },
     builtMap: null,
     reset: function () {
+      /* Reseed FIRST, and unconditionally. rnd() is a running PRNG shared by
+         every district builder, and it was never reset — so a map's scattered
+         props depended on how many rnd() calls the PREVIOUS map made in the
+         same process. Editing Urban silently moved Rural's crates. In game it
+         only ever mattered on a map switch; in the validators it made every
+         gate non-deterministic, which is worse: it means a number that changed
+         cannot be trusted to mean anything. */
+      seedState = 1337;
       if (!outer || !scene) return;
       outer.remove(scene);
       scene.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
@@ -802,7 +844,15 @@ World.build = function (sceneRef) {
   seg(7, 70.9, 0, 3, 70, 70.9, M.concrete);
   seg(-70.9, -70, 0, 3, -70, -7, M.concrete);
   seg(-70.9, -70, 0, 3, 7, 70, M.concrete);
-  seg(70, 70.9, 0, 3, -70, -7, M.concrete);
+  /* v7.8 MARKET CROSS GATE. This segment ran unbroken from z -70 to -7 and
+     drove a 3 m wall straight through the middle of the mall floor plate
+     (x 50..88, z -44..-22) — the same defect as the station wall in the
+     railway ballast. The mall is now set INTO the wall line, so crossing here
+     means crossing the shop floor. */
+  seg(70, 70.9, 0, 3, -70, -44.4, M.concrete);
+  seg(70, 70.9, 0, 3, -21.6, -7, M.concrete);
+  seg(69.6, 71.3, 0, 4.6, -44.8, -44.4, M.brick);     // piers either side of the mall
+  seg(69.6, 71.3, 0, 4.6, -21.6, -21.2, M.brick);
   seg(70, 70.9, 0, 3, 7, 70, M.concrete);
   // V4.2 outer perimeter
   seg(-100.9, 100.9, 0, 3.2, -100.9, -100, M.concrete);
@@ -823,6 +873,7 @@ World.build = function (sceneRef) {
 
   World._buildPart3({
     seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win, emissive: emissiveMat,
+    bus: bus, sedan: sedan, van: van, jeep: jeep, truck: truck,
     container: container, crates: crates, brokenWall: brokenWall, lamp: lamp, barrel: barrel,
     M: M, rnd: rnd, scene: H.sceneRef()
   });

@@ -245,6 +245,11 @@ var Net = (function () {
       mv: PlayerCtl.moveState,
       ln: PlayerCtl.lean,
       wp: Math.max(0, CFG.WEAPON_ORDER.indexOf(Weapons.currentName())),
+      /* One flag, 15 times a second, so remote players visibly reload. It is
+         the only thing on the animation list that costs bandwidth — strafe,
+         turn and stride are all DERIVED client-side from interpolated position
+         and yaw, which costs nothing. */
+      rl: Weapons.isReloading() ? 1 : 0,
       ping: ping
     });
   }
@@ -299,8 +304,10 @@ var Net = (function () {
   }
 
   // ---------- remote interpolation ----------
-  function updateRemotes(dt) {
+  var _camPos = new THREE.Vector3();
+  function updateRemotes(dt, camera) {
     var renderT = performance.now() - CFG.NET.interpDelay;
+    if (camera) camera.getWorldPosition(_camPos);
     for (var id in remotes) {
       var r = remotes[id];
       var buf = r.buf;
@@ -333,24 +340,33 @@ var Net = (function () {
       var g = r.av.group;
       g.position.copy(r.renderPos);
       g.rotation.y = -r.ry;
-      if (deadAnim) { // fall over, sink, then vanish
-        var df = Math.min(1, deadFor / 350);
-        g.rotation.x = 0;
-        g.rotation.z = df * 1.45;
-        g.scale.y = 1;
-        g.position.y -= df * 0.35;
-      } else {
-        var tx = r.prone ? -Math.PI / 2 : 0;
-        var ts = (r.crouch && !r.prone) ? 0.72 : 1;
-        r.poseX = (r.poseX === undefined) ? tx : r.poseX + (tx - r.poseX) * Math.min(1, dt * 9);
-        r.poseS = (r.poseS === undefined) ? ts : r.poseS + (ts - r.poseS) * Math.min(1, dt * 9);
-        g.rotation.x = r.poseX;
-        g.rotation.z = 0;
-        g.scale.y = r.poseS;
+      r.av.baseY = r.renderPos.y;
+
+      /* Equipment visibility straight off the snapshot. setGear only touches
+         .visible when a tier actually changes, so this is free per frame. */
+      var hl = b.hl | 0, al = b.lv | 0;
+      if (r.gearH !== hl || r.gearA !== al) {
+        r.gearH = hl; r.gearA = al;
+        Avatars.setGear(r.av, hl, al);
       }
-      g.rotation.z = -r.ln * 0.18;
-      r.av.head.rotation.x = -r.rx * 0.55;
-      r.av.gun.rotation.x = -r.rx * 0.7;
+
+      /* Movement DIRECTION is derived here, not networked: take the world-space
+         step since last frame and rotate it into the avatar's own frame. That
+         gives strafe and back-pedal for free at 0 bytes. */
+      var dxw = r.renderPos.x - r.lastRP.x, dzw = r.renderPos.z - r.lastRP.z;
+      var movedNow = Math.sqrt(dxw * dxw + dzw * dzw) +
+        Math.abs(r.renderPos.y - r.lastRP.y) * 0.25;
+      var cs = Math.cos(r.ry), sn = Math.sin(r.ry);
+      var lz = dxw * sn + dzw * cs, lx = dxw * cs - dzw * sn;
+      var mag = Math.sqrt(lx * lx + lz * lz) || 1;
+      r.lastRP.copy(r.renderPos);
+      Avatars.poseAvatar(r.av, {
+        moved: movedNow, mx: lx / mag, mz: lz / mag,
+        run: r.mv === 2, crouch: r.crouch, prone: r.prone,
+        dead: deadAnim, deadT: deadFor / 1000, rx: r.rx, ry: r.ry, lean: r.ln,
+        reloading: !!b.rl,
+        dist: r.renderPos.distanceTo(_camPos), dt: dt
+      });
 
       // floating health bar — smooth lerp; allies always, enemies only while recently hurt
       var ally = !!(myTeam && r.team === myTeam);
@@ -365,21 +381,14 @@ var Net = (function () {
       r.av.tag.visible = ally;
       if (showBar && Math.abs(r.dispHp - r.hbDrawn) > 0.6) { Avatars.drawHpBar(r, ally); r.hbDrawn = r.dispHp; }
 
-      var moved = r.renderPos.distanceTo(r.lastRP);
-      r.lastRP.copy(r.renderPos);
-      if (r.mv > 0 && moved > 0.001) {
-        var swing = Math.sin(performance.now() * 0.011 * (r.mv === 2 ? 1.5 : 1));
-        r.av.legL.rotation.x = swing * 0.65;
-        r.av.legR.rotation.x = -swing * 0.65;
-        r.stepAcc += moved;
+      // footstep audio still keys off distance travelled, not the animation
+      if (r.mv > 0 && movedNow > 0.001) {
+        r.stepAcc += movedNow;
         var stride = r.mv === 2 ? 3.1 : 2.3;
         if (r.stepAcc > stride) {
           r.stepAcc = 0;
           AudioSys.step(r.renderPos, r.crouch, r.mv === 2);
         }
-      } else {
-        r.av.legL.rotation.x *= 0.8;
-        r.av.legR.rotation.x *= 0.8;
       }
     }
   }

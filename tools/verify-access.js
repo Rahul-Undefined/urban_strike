@@ -169,7 +169,41 @@ run("urban", [
   { name: "mall (2f) -> roof 6.0", x: 50.4, y: 0, z: -45.0, dx: 1, dz: 0, top: 6.0, ticks: 400 },
   { name: "airport terminal (2f) -> roof 6.0", x: -91.6, y: 0, z: -93.0, dx: 1, dz: 0, top: 6.0, ticks: 400 },
   { name: "quay -> ship deck 3.40", x: -64.4, y: 0.6, z: 62.0, dx: 1, dz: 0, top: 3.40, ticks: 400 },
-  { name: "ship bridge (3f) -> roof 12.4", x: -58.4, y: 3.4, z: 57.0, dx: 1, dz: 0, top: 12.4, ticks: 700 }
+  { name: "ship bridge (3f) -> roof 12.4", x: -58.4, y: 3.4, z: 57.0, dx: 1, dz: 0, top: 12.4, ticks: 700 },
+
+  /* OLD TOWN TERRACE — rebuilt v7.8. The three houses this replaced had
+     staircases that were NEVER gate-tested; they happened to work. Every
+     flight in the new district is registered. */
+  { name: "ochre house ground -> floor 2 (3.45)", x: -11.15, y: 0, z: 63.1, dx: 0, dz: -1, top: 3.45, ticks: 400 },
+  { name: "ochre house floor 2 -> roof run (6.65)", x: -17.65, y: 3.45, z: 57.8, dx: 0, dz: 1, top: 6.65, ticks: 400 },
+  { name: "sage house ground -> floor 2 (3.45)", x: 16.85, y: 0, z: 63.1, dx: 0, dz: -1, top: 3.45, ticks: 400 },
+  { name: "sage house floor 2 -> roof run (6.65)", x: 11.15, y: 3.45, z: 57.8, dx: 0, dz: 1, top: 6.65, ticks: 400 },
+  { name: "corner shop ground -> stockroom (4.05)", x: 32.55, y: 0, z: 63.1, dx: 0, dz: -1, top: 4.05, ticks: 400 },
+  { name: "corner shop stockroom -> roof terrace (7.9)", x: 26.6, y: 4.05, z: 57.7, dx: 0, dz: 1, top: 7.90, ticks: 400 },
+
+  /* THE COLONY — rebuilt v7.8. Open stair cores, three flights each. The two
+     blocks this replaced had one internal stairwell apiece and neither was
+     ever gate-tested. */
+  { name: "pink deck stair ground -> level 1 (3.30)", x: -43.6, y: 0, z: 78.5, dx: 1, dz: 0, top: 3.30, ticks: 400 },
+  { name: "pink deck stair level 1 -> level 2 (6.60)", x: -39.8, y: 3.30, z: 78.5, dx: 1, dz: 0, top: 6.60, ticks: 400 },
+  { name: "yellow deck stair level 2 -> roof (10.15)", x: -24.4, y: 6.60, z: 78.5, dx: 1, dz: 0, top: 10.15, ticks: 400 },
+  { name: "mint deck stair ground -> level 1 (3.30)", x: 12.4, y: 0, z: 78.5, dx: 1, dz: 0, top: 3.30, ticks: 400 },
+  { name: "mint deck stair level 2 -> roof (10.15)", x: 19.6, y: 6.60, z: 78.5, dx: 1, dz: 0, top: 10.15, ticks: 400 },
+  { name: "west roof -> water tank gantry (13.40)", x: -43.4, y: 10.15, z: 85.6, dx: 1, dz: 0, top: 13.40, ticks: 400 },
+
+  /* MARKET CROSS — rebuilt v7.8. The mall's external flight predates this work
+     and was already gated; the loading dock steps are new. */
+  { name: "service yard -> loading dock (1.10)", x: 53.0, y: 0, z: -45.4, dx: 1, dz: 0, top: 1.10 },
+
+  /* IRONGATE DEPOT — new v7.9. The warehouse shell and its fire escape are
+     v4-era and already gated above; these are the district's new routes. */
+  { name: "depot dock west ramp (1.10)", x: -50.2, y: 0, z: -17.7, dx: 1, dz: 0, top: 1.10 },
+  { name: "depot dock east ramp (1.10)", x: -13.8, y: 0, z: -17.7, dx: -1, dz: 0, top: 1.10 },
+  { name: "gantry ground -> crane deck (9.40)", x: -49.5, y: 0, z: -42.6, dx: 0, dz: 1, top: 9.40, ticks: 600 },
+
+  /* EASTGATE YARD — rebuilt v8.0 */
+  { name: "yard gantry ground -> deck (8.90)", x: 76.2, y: 0, z: 7.4, dx: 0, dz: 1, top: 8.90, ticks: 600 },
+  { name: "yard office ground -> floor 2 (3.30)", x: 77.2, y: 0, z: -1.9, dx: 0, dz: -1, top: 3.30, ticks: 400 }
 ]);
 
 run("rural", [

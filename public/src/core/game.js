@@ -299,7 +299,7 @@ var Game = (function () {
       camera.updateProjectionMatrix();
       UI.setScope(!!wu.scoped);
 
-      Net.updateRemotes(dt);
+      Net.updateRemotes(dt, camera);   // camera drives avatar distance LOD
       Net.sendState();
 
       FX.update(dt);

@@ -163,6 +163,8 @@ function startSnapshots(room) {
         ry: Math.round(p.ry * 1000) / 1000, rx: Math.round(p.rx * 1000) / 1000,
         cr: p.crouch, mv: p.mv, wp: p.wp, ln: Math.round(p.ln * 100) / 100,
         hp: Math.round(p.hp), lv: p.armorLvl, du: Math.round(p.armorDur),
+        hl: p.helmLvl | 0,          // v7.9: helmets are VISIBLE on the model now
+        rl: p.rl | 0,
         al: p.alive ? 1 : 0, tm: p.team
       };
     }
@@ -323,6 +325,7 @@ io.on('connection', (socket) => {
     p.pos = [num(s.p[0]), num(s.p[1]), num(s.p[2])];
     p.ry = num(s.ry); p.rx = num(s.rx);
     p.crouch = Math.max(0, Math.min(2, (s.cr | 0))); p.mv = s.mv | 0; p.wp = s.wp | 0; p.ln = num(s.ln); // cr: 0 stand, 1 crouch, 2 prone
+    p.rl = s.rl ? 1 : 0;                       // reloading — cosmetic only, never trusted for anything
     if (typeof s.ping === 'number') p.ping = Math.max(0, Math.min(999, s.ping | 0));
     p.history.push({ t: now(), pos: p.pos });
     const cutoff = now() - CFG.NET.historyMs;

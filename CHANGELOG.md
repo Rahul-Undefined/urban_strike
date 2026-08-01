@@ -10,7 +10,10 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v7.7** | CURRENT — Architecture gate + fake-architecture pass. Every railway perch made honestly climbable. |
+| **v8.0** | CURRENT — Container Yard rebuilt, mall/yard footprint collision fixed, minimap made legible. |
+| v7.9 | Good — operator rig + animation pass, Warehouse district, frame-cost metrics. |
+| v7.8 | Good — Milestone 9 pt1: Residential, Apartment, Shopping districts. PRNG determinism fix. |
+| v7.7 | Good — Architecture gate + fake-architecture pass. |
 | v7.6 | Good — Railway district rebuilt + edge-on crater disc and dead countdown fixed. |
 | v7.5 | Good — Milestone 8b-1: Urban material consolidation. 233 -> 55 draw calls, 10 -> 7 lights. |
 | v7.4.1 | Good — Milestone 8a + menu overlap fix, 5s countdown with on-screen ticks. |
@@ -36,6 +39,375 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 | v4.3 | Last known-good before the merge system |
 | v4.2 | Good — map expansion + graphics, before the gameplay update |
 | v3.1 | Good — last pre-refactor build |
+
+---
+
+## v8.0 — Eastgate Yard, a building inside a building, and a legible minimap
+
+### Six container stacks were standing inside the mall
+
+The v6.0 cargo yard ran from z -44 with rows at x 78 and x 84.5. The mall's floor
+plate is x 50..88, z -44..-22. **Six container stacks were inside it** — and when
+Market Cross was rebuilt in v7.8, shop units went in on top of them.
+
+Nothing caught it. The map gate checks loot support and spawn clearance; the
+coplanar gate checks large flat surfaces; the architecture gate checks floating
+and unreachable decks. **None of them looks for one building standing inside
+another.** It surfaced only because a gantry stair walked into a parked bus that
+belonged to a different district.
+
+Eastgate Yard now starts at z -8, clear of both the mall and the market square,
+and Market Cross owns everything south of that line.
+
+### EASTGATE YARD — container yard district (x 72..98, z -10..25)
+
+Irongate Depot is already the close-quarters container district, so this one is
+deliberately its opposite: **Eastgate is vertical.**
+
+- **Three rows, three heights.** Stacks run one, two and three high in a
+  deliberate pattern, so a stack roof is always overlooked by a taller stack and
+  no single perch wins.
+- **Every roof has a way up.** A pallet step reaches 2.6 m; a crate *on* a 2.6 m
+  roof reaches 5.2; another reaches 7.8. A three-high stack without that chain
+  is a 2.55 m lie.
+- **The gantry** at 8.9 m beats every stack and has exactly one way up — a
+  28-step flight outside the rows.
+- **Yard office**, two floors with a balcony looking down both lanes.
+- **Reefer row**, chassis trailers, tyre stacks, floodlight masts.
+
+Loot +8 points across three heights. Urban broken promises: 12 → **10**.
+
+The gantry stair took two attempts here as well: the first ran through a pallet
+stack, so the step stacks now sit east on rows 0 and 2 and west on row 1, which
+keeps the x 75..77 strip clear.
+
+Apron top is 0.075 rather than 0.06 — the Market Cross square is already at 0.06
+and the two overlap by 152 m2. The coplanar gate caught it immediately.
+
+### The minimap had not gone stale. It had saturated.
+
+Urban was capturing **1,100 minimap shapes with a median footprint of 0.9 m2**.
+Roughly 740 of them were crates, barrels, bollards, bins and fence posts, each
+drawn as a solid block at the same visual weight as a building wall — and a
+`Math.max(1.5, ...)` floor meant a 0.3 m barrel painted the same as a 1.5 m
+section of wall. Every district was on the map. None of them was legible.
+
+Two changes:
+
+1. **Capture is filtered by footprint** — a shape needs 3.5 m2 and at least
+   1.8 m in one direction. A prop is not a landmark; only things you navigate BY
+   belong on a map. Urban: 1,100 → **198 shapes, median 8.0 m2**.
+2. **Drawn in two weights.** Buildings and long walls carry the strong tone;
+   containers, vehicles and small structures sit back in a lighter one. A flat
+   single-colour pass made a shipping container and an apartment block
+   indistinguishable.
+
+`verify-batch` now gates both shape count and median footprint, so the minimap
+cannot silently re-saturate as districts are added.
+
+### Gates
+
+| Gate | v7.9 | v8.0 |
+|---|---|---|
+| Integration | 85 | 85 |
+| Map | 648 | **664** |
+| Ascent | 47/49 | **49/51** (same two pre-existing) |
+| Architecture | 12 broken promises | **10** |
+| Batching | 30 | **36** |
+| Avatar | 23 | 23 |
+| Models / Lifts / Merge | 38 / 98 / 9 | 38 / 98 / 9 |
+| Build chain / Cover / Parse | PASS | PASS |
+| Cover pieces (urban) | 1470 | **1546**, 0.6% dead |
+
+### Performance
+
+| Map | draws / budget | shadow casters / budget | tris / budget | minimap shapes |
+|---|---|---|---|---|
+| urban | 85 / 115 | 56 / 62 | 72.1k / 95k | 198 / 320 |
+| rural | 17 / 40 | 13 / 20 | 21.9k / 30k | 66 / 200 |
+| metro | 19 / 45 | 14 / 22 | 12.7k / 26k | 79 / 260 |
+
+Zero new materials this release. The yard reuses the container set, hazard
+yellow and the commercial palette already in `M`.
+
+---
+
+## v7.9 — The player, and the frame cost nobody was measuring
+
+### Draw calls were the wrong number
+
+Urban was budgeted at 81 draw calls. It actually submits **134 batches per
+frame**: every shadow-casting batch is drawn twice, once into the 2048x2048
+directional shadow map and once into the main pass, and **54.8k of its 64.3k
+triangles were being rasterised twice**. The project had been budgeting the
+cheaper half of the cost.
+
+`verify-batch` now budgets and prints three numbers per map — draw calls, shadow
+casters and triangles — plus the real per-frame submission count.
+
+| Map | Draw calls | Budget | Shadow casters | Budget | Triangles | Budget |
+|---|---|---|---|---|---|---|
+| urban | 84 | 115 | 56 | 62 | 68.6k | 95k |
+| rural | 17 | 40 | 13 | 20 | 21.9k | 30k |
+| metro | 19 | 45 | 14 | 22 | 12.7k | 26k |
+
+**An optimisation that did not pay, reported rather than kept.** Interior
+fittings sit under roofs, so flagging 25 of them `cast: false` should have been
+free performance. Measured: shadow triangles fell 3%, draw calls rose by one —
+splitting a material group by shadow flag creates a new batch. Reverted.
+
+**And the revert damaged three files.** The regex stripped seven PRE-EXISTING
+`cast: false` flags along with the 25 it was meant to remove. Every gate stayed
+green; draw calls still read 81. The only signal was shadow triangles coming
+back at 55,128 instead of 54,804 — a 324-triangle discrepancy in a metric that
+had existed for under an hour. Diffed against the shipped v7.8 zip, all seven
+restored, `grep -c` parity confirmed.
+
+### TACTICAL OPERATOR RIG
+
+The old avatar was seven boxes with a 0.30 m cube for a head on a 0.70 m torso,
+and it minted **three new materials per instance** — ten players cost thirty
+body materials and roughly 140 draw calls, more than the entire Urban map.
+
+| Measure | Before | After |
+|---|---|---|
+| Visible parts, unequipped | 7 | 13 |
+| Visible parts, fully kitted | 7 (gear invisible) | 16 |
+| Body materials, 10 players | **30** | **16** |
+| Ten kitted players on screen | ~140 draws | **180 draws** |
+
+- **Real joints.** Limbs hang from nested Groups at hip, knee, shoulder and
+  elbow, so a thigh rotates about the hip instead of scissoring about its own
+  centre. Groups cost zero draw calls.
+- **Proportions.** Head 0.21 m against a 0.42 m chest — about seven and a half
+  heads tall, which is what makes a body read as a person.
+- **Crouch bends the knees.** It was `group.scale.y = 0.72`, which squashed the
+  head too.
+- **Identity colour moved to the sleeves**, removing two patch meshes per player
+  and reading at twice the distance.
+- **Weapon parented to the right hand**, so it follows the arm.
+- **Death collapses in three stages** — knees, spine, roll — with the arms
+  releasing the weapon, instead of one rigid topple.
+
+### Animation pass
+
+- **Stride is driven by distance moved**, not the wall clock: legs stop when the
+  player stops, and gait matches real speed.
+- **Strafing opens the hips** and steps across instead of reusing the walk cycle.
+- **Turning** leans the torso and counter-rotates the shoulders from derived yaw
+  rate.
+- **Prone blends slower than crouch** on purpose — going flat is a commitment
+  and now looks like one.
+- **Reload** drops the support hand to the magazine well, tips the weapon down
+  and pulls the head with it. This is the ONLY item on the animation list that
+  costs bandwidth: one flag at 15 Hz. Strafe, turn and stride are all derived
+  client-side from interpolated position and yaw, at zero bytes.
+- **Stance blends seed at standing**, not at the current target — the old
+  seeding made a player who spawned crouched pop straight into the pose.
+
+### Modular equipment
+
+Helmet and vest are built once and toggled with `.visible`; Three.js skips
+invisible objects entirely, so unequipped players pay nothing. The server now
+relays `hl` (helmet tier) alongside `lv`/`du`. Verified live:
+`p,ry,rx,cr,mv,wp,ln,hp,lv,du,hl,rl,al,tm`.
+
+The backpack mesh is **built and wired but never shown**: no item grants it, and
+a pack nobody picked up is decoration that multiplies by ten. The slot means a
+real backpack item is a one-line change, not a second character model.
+
+### New gate: `verify-avatar.js` (23 assertions)
+
+Nothing had ever budgeted the player. This asserts part counts equipped and
+unequipped, body-material sharing across a ten-player lobby, that same-colour
+players share materials, that joints exist, that crouch never uses `scale.y`,
+that stride advances with distance and not time, that strafing differs from
+walking, that turning leans the torso, that reload tips the weapon and returns,
+that prone blends slower than crouch, that LOD drops small parts past 30 m, and
+that ten kitted players stay under 200 draw calls.
+
+It rejected the first build immediately: 17 parts where 13 were budgeted, 23
+kitted, 250 draw calls for a full lobby, and a material budget that wrongly
+counted per-player canvas sprites.
+
+### IRONGATE DEPOT — warehouse district (x -72..-14, z -50..-12)
+
+The v4-era warehouse shell is good and was NOT rebuilt — it has the catwalk, the
+shelving rows and the fire escape every other stair was copied from. What was
+missing is everything around it: it stood alone on bare dirt.
+
+Identity: **close quarters**. Where Market Cross gives a 38 m arcade, almost
+nothing here is longer than 12 m.
+
+- **Container lanes** — four rows forming three corridors, with blast walls
+  turning two of them into chokes. Every container roof carries a step stack, so
+  the tops are an honest second storey looking down into the lanes.
+- **The gantry** — a blue steel crane straddling the lanes at 9.4 m, reached by
+  one 29-step flight. Long, loud and committed, which is right for the only way
+  onto the thing that overlooks every corridor.
+- **Dock apron** — raised platform at 1.10 with three roller openings, hazard
+  edging, trucks backed in, and a ramp at each flank so it can be taken from
+  either side.
+- **North yard** — spoil heaps, skips and a burnt-out truck.
+
+One new material for the whole district (hazard yellow, doing dock edging,
+gantry paint and lane marking). Loot +9 points.
+
+The gantry stair took three attempts: the first threaded a gantry leg, the
+second climbed under the deck it was trying to reach, and the third works.
+Every attempt was caught by the ascent gate, none by eye.
+
+### Gates
+
+| Gate | v7.8 | v7.9 |
+|---|---|---|
+| Integration | 85 | 85 |
+| Map | 630 | **648** |
+| Ascent | 44/46 | **47/49** (same two pre-existing) |
+| Architecture | 12 broken promises | **12** |
+| Batching | 24 | **30** |
+| **Avatar** | — | **23 (new)** |
+| Models/loot/voice | 38 | 38 |
+| Lifts / Merge | 98 / 9 | 98 / 9 |
+| Build chain / Cover / Parse | PASS | PASS |
+| Cover pieces (urban) | 1348, 0.5% dead | **1470, 0.5% dead** |
+
+---
+
+## v7.8 — Milestone 9 (part 1): three districts rebuilt
+
+Four of Urban's districts now meet the Railway benchmark: **Railway** (v7.6),
+**Old Town Terrace**, **The Colony** and **Market Cross**.
+
+### Two more walls in the wrong place
+
+The same defect class as the v7.6 station wall driven into the ballast, found
+twice more by scanning rather than by looking:
+
+| Defect | Fix |
+|---|---|
+| `rowHouse(-3)` spanned x -8..2 — **built on top of the north-south avenue** (x -7..7) | Rebuilt as two terraces either side of the road. Fixed by construction |
+| The inner city wall ran x 70..70.9 from z -70 to -7, driving a 3 m barrier **through the middle of the mall's ground floor** | Wall now stops at the mall and resumes past it. Crossing here means crossing the shop floor |
+
+### OLD TOWN TERRACE — residential (x -36..34, z 50..68)
+
+Three identical detached boxes with a crate and a table inside became six
+terraced houses in two rows. Layers: street, interior, back alley, upstairs,
+roof run. Every house has a front door **and** a back door with a partition
+between front room and kitchen, so going through a house is the safe way to
+cross the street and a room-to-room fight if contested. Upstairs windows look
+onto **both** street and alley — the only place you can watch both routes.
+Eaves are level across each terrace so the roof is a continuous run, and only
+one house per terrace has a stair to it.
+
+Landmark: **the corner shop** — glazed shopfront, projecting lit sign, awning,
+chimney stack, roof terrace that steps down onto the terrace roof run.
+Palette: brick, cream, ochre, sage. Loot 3 → 10 points.
+
+### THE COLONY — apartment (x -44..38, z 74..97)
+
+Two identical two-storey slabs with empty interiors became three-storey
+deck-access blocks around a courtyard. An open access balcony runs the length of
+each block on every floor; flats open onto it, so a flat is a way *through* the
+block. The courtyard is broken into three lanes by a covered garage bay, drying
+frames and planters.
+
+Landmark: **the water tank gantry** on the west roof, reached by a stair off the
+roof — the tallest thing in the south of the map. Palette: pink, yellow, mint,
+one per bay. Loot 6 → 14 points.
+
+### MARKET CROSS — shopping (x 44..94, z -52..-12)
+
+A 38x22 m box containing five planters became the city's commercial crossing.
+The identity here is **medium range**, deliberately the opposite of the terrace
+(close, blind) and the colony (vertical):
+
+- A central **arcade** runs the full 38 m with column cover every 6 m — the one
+  place on the map where a marksman rifle beats a shotgun.
+- Six **shop units** per side per floor, each a room with two doors, so the
+  arcade can always be flanked from inside. Holding the lane needs two people.
+- A **colonnade** on the square face at 3.66 m: vault a market stall canopy
+  (2.66) to reach it, and it looks into the mall's first-floor windows.
+- **Market square** with the fountain landmark, five stalls, planters, benches,
+  street trees, a bus stop with a parked bus.
+- **Service yard** with a loading dock, delivery trucks, dumpsters and a
+  transformer.
+
+Palette: pale render and blue shop glazing. Loot +9 points.
+
+### Determinism bug: editing Urban moved Rural's crates
+
+`rnd()` is a running PRNG shared by every district builder and **`World.reset()`
+never reseeded it**. A map's scattered props therefore depended on how many
+`rnd()` calls the *previous* map made in the same process. In game this only
+surfaced on a map switch; in the validators it made every gate
+non-deterministic, which is worse — a number that changes cannot be trusted to
+mean anything. `reset()` now reseeds first and unconditionally. Two consecutive
+gate runs are now byte-identical.
+
+Reseeding immediately exposed two lift-shaft failures on the mall lift that had
+been masked by drifting geometry. Fixed at the source: the east mall unit is now
+the lift lobby and carries no fittings, because a shaft position is derived by
+search and must never be worked around by eye.
+
+### Stale-comment correction
+
+`districts-outer.js` insisted **"run MUST be ~0.5"** because `stairFlight` used
+to skirt every tread with a 1.2 m box that reached into the climber's chest.
+That stopped being true at v6.2, which made the tread *collider* a thin slab.
+Runs of 0.30 are fine and are now gate-proven across the terrace, the colony and
+the station. The comment would have misled the next person to touch a staircase.
+
+### What the gates caught this milestone
+
+None of these were visible in the geometry:
+
+| Gate | Caught |
+|---|---|
+| Ascent | The kitchen partition ran to the party wall and **sealed the staircase off at the bottom** — in all three terrace houses with stairs |
+| Ascent | The corner shop's two flights were stacked in overlapping lanes; **upper treads clipped the climber's head on the lower flight**. Walker stalled at 2.90 m |
+| Ascent | The Colony's first stair-core design drove every flight through the building face and through the deck slab above it |
+| Ascent | The gantry deck oversailed the top of its own stair — head hit it at 12.23 m |
+| Ascent | A water tank sat directly over the stair arrival: you climbed into the inside of it |
+| Architecture | Market stall canopies at 2.66 m over a 0.95 m trestle — an invitation the square could not honour |
+| Architecture | The colonnade roof at 3.85 was high enough to invite the jump and refuse it. Lowered to 3.66 |
+| Map | Loot stranded and spawns buried by every rebuild, four times |
+| Map | A market stall and a lamp post landed on airdrop pad 7 |
+| Lifts | A shop counter inside the mall lift shaft |
+
+### Gates
+
+| Gate | v7.7 | v7.8 |
+|---|---|---|
+| Integration | 85 | 85 |
+| Map | 582 | **630** |
+| Ascent | 31/33 | **44/46** (same two pre-existing) |
+| Architecture | 15 broken promises | **12** |
+| Batching | 24 | 24 |
+| Models/loot/voice | 38 | 38 |
+| Lifts | 98 | 98 |
+| Merge | 9 | 9 |
+| Build chain | PASS | PASS |
+| Cover | 911 pieces, 0.7% dead | **1348 pieces, 0.5% dead** |
+| Parse sweep | clean | clean |
+
+### Performance
+
+| Map | Draw calls | Budget | Triangles | Lights |
+|---|---|---|---|---|
+| urban | **81** | 95 | 64.3k | 7 |
+| rural | 17 | 40 | 21.9k | 3 |
+| metro | 19 | 45 | 12.7k | 3 |
+
+Nine new materials across three districts (terracotta, ochre, sage, doorPaint,
+paleYellow, dustyPink, mint, paperWhite, shopGlass) — nine draw calls for the
+colour that makes districts callable. Everything else reuses the shared palette:
+the stalls, crates, dumpsters, trucks, fountain, benches, planters, trees and
+transformers cost **zero** new materials.
+
+**14 draw calls of headroom remain for five districts.** The remaining districts
+will reuse the existing palette; new colour will only be added where it earns a
+callout.
 
 ---
 

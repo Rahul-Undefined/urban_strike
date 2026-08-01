@@ -703,6 +703,7 @@ var Weapons = (function () {
   return {
     init: init,
     update: update,
+    isReloading: isReloading,   // v7.9: remote players now play a reload pose
     resetLoadout: resetLoadout,
     matchReset: matchReset,
     applyGrant: applyGrant,

@@ -62,9 +62,20 @@
     [33, 4.2, -33, 'h'],       // apartment floor 1
     [60, 4.85, -8, 'h'],       // Depot mezzanine
     [0, 4.05, -62, 'h'],       // construction slab 1
-    [-3, 7.05, 58.5, 'h'],     // row-house mid roof
-    [-27, 4.15, 60, 'h'],      // row house W floor 2
-    [17, 4.15, 56, 'h'],       // row house E floor 2
+    /* --- OLD TOWN TERRACE (rebuilt v7.8) -------------------------------
+       Loot y is support-top + 0.55. Six houses, and entering any of them has
+       to pay: one upstairs in each, one on each terrace roof run, one behind
+       the shop counter. Nothing on the street — the street is the risk. */
+    [-32.0, 4.00, 60.5, 'h'],  // brick house, upstairs back bedroom
+    [-23.0, 4.00, 55.8, 'h'],  // cream house W, upstairs front
+    [-14.5, 4.00, 60.5, 'h'],  // ochre house, upstairs (roof stair house)
+    [-14.5, 7.20, 56.5, 's'],  // west terrace roof run
+    [13.5, 4.00, 55.8, 'h'],   // sage house, upstairs front
+    [21.5, 4.00, 60.5, 'h'],   // cream house E, upstairs back
+    [16.0, 7.20, 61.5, 's'],   // east terrace roof run
+    [29.0, 1.60, 56.4, 'h'],   // corner shop, behind the counter
+    [27.5, 4.60, 60.5, 'h'],   // shop stockroom
+    [28.0, 8.45, 55.5, 's'],   // shop roof terrace — district high ground
     [-31, 4.0, 27, 'h'],       // office floor 2
     [47, -2.0, -18, 'h'],      // tunnel mid
     [27, 0.72, 25.2, 'h'],     // open container SE
@@ -105,18 +116,66 @@
     [57, 0.55, -93.0, 'h'],    // maintenance hut
     [61, 0.55, -70.5, 'h'],    // forecourt taxi shelter
     [0, 0.55, -74, 'g'],       // north gate
-    [84.5, 5.75, -22, 'h'],    // container 2-stack top
-    [78, 3.15, -38, 'h'],      // container 1-stack top
+    [85.5, 5.75, 12, 'h'],    // container 2-stack top
+    [79, 3.15, -4, 'h'],      // container 1-stack top
     [88, 0.55, -10, 'g'],      // cargo lane
     [78, 4.6, 53, 'h'],        // ticket office roof
     [85, 0.55, 38, 'g'],       // under canopy
     [-88, 8.05, -10, 's'],     // constrW slab 2
     [-86, 4.45, -14, 'h'],     // constrW slab 1
     [-90, 0.55, 8, 'g'],       // constrW ground
-    [-30, 7.65, 87, 'h'],      // apartment A roof
-    [24, 7.65, 87, 'h'],       // apartment B roof
-    [-36, 4.1, 90, 'h'],       // apartment A floor 2
-    [30, 4.1, 90, 'h'],        // apartment B floor 2
+    /* --- THE COLONY (rebuilt v7.8) --------------------------------------
+       Three floors x three cores. Loot climbs with you: ground flats are the
+       cheap pickup, the top floor and the roof are the ones worth the stair
+       core. Nothing on the deck itself — the deck is the exposed route. */
+    [-41.6, 0.55, 81.4, 'h'],  // pink core, ground flat
+    [-41.6, 3.85, 88.0, 'h'],  // pink core, first floor rear room
+    [-41.6, 7.15, 81.4, 's'],  // pink core, top floor
+    [-29.6, 0.55, 81.4, 'h'],  // yellow core, ground flat
+    [-29.6, 7.15, 88.0, 'h'],  // yellow core, top floor rear
+    [-36.0, 10.70, 86.0, 's'], // WEST ROOF — under the water tank gantry
+    [14.4, 0.55, 81.6, 'h'],   // mint core, ground flat
+    [14.4, 3.85, 88.0, 'h'],   // mint core, first floor rear
+    [21.4, 7.15, 81.6, 'h'],   // mint core, top floor
+    [18.0, 10.70, 87.5, 's'],  // EAST ROOF
+    [26.6, 3.85, 81.6, 'h'],   // low wing, upper flat
+    [-12.5, 3.55, 77.2, 'h'],  // garage roof, courtyard hard cover
+    /* --- MARKET CROSS (rebuilt v7.8) ------------------------------------
+       The arcade is the risk, the units are the reward. Two per floor either
+       side, plus the roof and the loading dock. */
+    [53, 0.85, -38.5, 'h'],    // mall unit, ground NW (on the counter)
+    [71, 0.85, -38.5, 'h'],    // mall unit, ground NE
+    [59, 0.85, -26.6, 'h'],    // mall unit, ground SW
+    [84, 0.55, -24.0, 's'],    // lift lobby, ground
+    [53, 3.85, -38.5, 'h'],    // mall unit, first floor NW
+    [77, 3.85, -26.6, 'h'],    // mall unit, first floor SE
+    [66, 6.80, -33.0, 's'],    // MALL ROOF — reached by the external flight
+    [69, 1.65, -45.4, 'h'],    // loading dock
+    [66, 1.47, -16.2, 'g'],    // the fountain
+    /* --- IRONGATE DEPOT (new v7.9) ---------------------------------------
+       Ground loot sits in the lanes where you have to walk a corridor to get
+       it. The container tops and the crane deck are the paid-for positions. */
+    [-67.5, 0.55, -28.0, 'h'],   // second lane, mid corridor
+    [-61.5, 0.55, -21.0, 'h'],   // third lane
+    [-55.5, 0.55, -36.0, 'h'],   // fourth lane, behind the blast wall
+    [-70.5, 3.15, -32.5, 's'],   // container top, west row
+    [-58.5, 3.15, -26.5, 'h'],   // container top, east row
+    [-63.0, 9.95, -30.5, 's'],   // CRANE DECK — nine metres of committed climb
+    [-32.0, 1.65, -17.7, 'h'],   // loading dock, centre bay
+    [-44.0, 1.65, -17.7, 'h'],   // loading dock, west bay
+    [-44.0, 0.55, -47.2, 'g'],   // north yard, the burnt-out truck
+    /* --- EASTGATE YARD (rebuilt v8.0) ------------------------------------
+       Three heights, three rewards. The ground pickup is the cheapest, the
+       three-high roof costs a climb, and the gantry costs a 28-step commitment
+       with one way down. */
+    [79, 8.35, 4, 's'],        // three-high roof, west row
+    [92, 8.35, -4, 's'],       // three-high roof, east row
+    [82.2, 0.63, 8, 'h'],      // west lane, ground
+    [88.7, 0.63, 0, 'h'],      // east lane, ground
+    [85, 9.45, 20, 's'],       // GANTRY DECK
+    [75.4, 0.55, -5.0, 'h'],   // yard office, ground
+    [75.4, 3.85, -5.0, 'h'],   // yard office, upper
+    [84, 3.15, 18, 'h'],       // reefer row roof
     [-3, 0.55, 88, 'g'],       // courtyard
     [2, 0.55, 74, 'g'],        // south gate
     // v6.0 district rooftops — the payoff for the climb (validator-proven)

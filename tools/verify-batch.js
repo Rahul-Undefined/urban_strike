@@ -75,7 +75,17 @@ for (const f of FILES) {
    the pre-v7.5 architecture (Urban was 233), never to cap legitimate content.
    If a district pass pushes a map over, investigate WHY before raising it:
    the cause is almost always one of the four mistakes listed at the top. */
-const BUDGET = { urban: 95, rural: 40, metro: 45 };
+/* Draw calls were the only thing budgeted until v7.9, and they were the wrong
+   number to watch. A shadow-casting batch is submitted TWICE per frame — once
+   into the 2048^2 directional shadow map and once into the main pass — so
+   Urban's "81 draw calls" was really 134 geometry submissions, and 54.8k of its
+   64.3k triangles were being rasterised twice. Shadow casters and triangles are
+   now budgeted alongside draw calls, because those are what actually cost
+   frames on the hardware this game has to run on. */
+const BUDGET = { urban: 115, rural: 40, metro: 45 };
+const CAST_BUDGET = { urban: 62, rural: 20, metro: 22 };
+const TRI_BUDGET = { urban: 95000, rural: 30000, metro: 26000 };
+const MM_BUDGET = { urban: 320, rural: 200, metro: 260 };
 /* Urban ran 10 lights before v7.5 (3 scene + 7 point). Three point lights were
    removed: two street lamps and one open-air construction work light, all
    replaced by emissive geometry. The four that remain light ENCLOSED volumes
@@ -100,12 +110,15 @@ for (const map of ["urban", "rural", "metro"]) {
       var dynamicStatics = [], basicMats = [], groupMeshes = [], nonWhitelisted = [];
       var res = {};
 
+      var casters = 0, castTris = 0;
       root.traverse(function (o) {
         if (o.isLight) { lights++; return; }
         if (o.isSprite) { sprites++; return; }
         if (!o.isMesh) return;
         var g = o.geometry;
-        if (g && g.index) tris += g.index.count / 3;
+        var t = (g && g.index) ? g.index.count / 3 : 0;
+        tris += t;
+        if (o.castShadow) { casters++; castTris += t; }
 
         // a mesh whose parent is a Group (not the scene root) is invisible to StaticMerge
         if (o.parent && o.parent !== root && o.parent.isGroup) {
@@ -155,6 +168,12 @@ for (const map of ["urban", "rural", "metro"]) {
         if (upright < 0.9) edgeOn.push([o.position.x | 0, o.position.y | 0, o.position.z | 0]);
       });
       res.edgeOn = edgeOn;
+      res.casters = casters; res.castTris = Math.round(castTris);
+      var mm = (World.minimapShapes || []).map(function (q) {
+        return (q[2] - q[0]) * (q[3] - q[1]);
+      }).sort(function (a, b) { return a - b; });
+      res.mmShapes = mm.length;
+      res.mmMedian = mm.length ? mm[Math.floor(mm.length / 2)] : 0;
       res.merged = merged; res.loose = loose; res.lights = lights; res.sprites = sprites;
       res.tris = Math.round(tris); res.dynamicStatics = dynamicStatics;
       res.basicMats = basicMats; res.groupMeshes = groupMeshes;
@@ -164,10 +183,17 @@ for (const map of ["urban", "rural", "metro"]) {
   `, ctx, { filename: "<batch-" + map + ">" });
 
   const draws = r.merged + r.loose.length;
+  const subs = draws + r.casters;          // main pass + shadow pass
   console.log("        " + r.merged + " merged batches + " + r.loose.length +
     " loose = " + draws + " draw calls | " + r.tris + " tris | " + r.lights + " lights");
+  console.log("        shadow pass: " + r.casters + " casters, " + r.castTris +
+    " tris  ->  " + subs + " geometry submissions per frame");
 
   ok(draws <= BUDGET[map], map + ": " + draws + " draw calls within budget of " + BUDGET[map]);
+  ok(r.casters <= CAST_BUDGET[map],
+    map + ": " + r.casters + " shadow casters within budget of " + CAST_BUDGET[map]);
+  ok(r.tris <= TRI_BUDGET[map],
+    map + ": " + r.tris + " triangles within budget of " + TRI_BUDGET[map]);
   ok(r.dynamicStatics.length === 0,
     map + ": every static mesh is marked matrixAutoUpdate=false" +
     (r.dynamicStatics.length ? " (" + r.dynamicStatics.length + " missed, e.g. " +
@@ -188,6 +214,15 @@ for (const map of ["urban", "rural", "metro"]) {
     (r.sprites ? " (" + r.sprites + " found)" : ""));
   ok(r.lights <= LIGHT_BUDGET[map],
     map + ": " + r.lights + " lights within budget of " + LIGHT_BUDGET[map]);
+  /* Minimap legibility. Urban reached 1,100 captured shapes with a median area
+     of 0.9 m2 before v8.0 — every crate and bollard drawn at a wall's visual
+     weight. A map you cannot read is worse than no map. */
+  ok(r.mmShapes <= MM_BUDGET[map],
+    map + ": " + r.mmShapes + " minimap shapes (budget " + MM_BUDGET[map] +
+    ", median " + r.mmMedian.toFixed(1) + " m2)");
+  ok(r.mmMedian >= 3.5,
+    map + ": minimap median footprint is " + r.mmMedian.toFixed(1) + " m2 (props filtered out)");
+
   ok(r.edgeOn.length === 0,
     map + ": no thin wide disc is standing on its edge" +
     (r.edgeOn.length ? " (" + r.edgeOn.length + " found, e.g. " +

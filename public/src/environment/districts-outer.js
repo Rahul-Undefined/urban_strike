@@ -5,30 +5,163 @@ World._buildPart5 = function (T) {
   var seg = T.seg, box = T.box, cyl = T.cyl, stairFlight = T.stairFlight,
     facade = T.facade, win = T.win, crates = T.crates, lamp = T.lamp,
     barrel = T.barrel, brokenWall = T.brokenWall, M = T.M, rnd = T.rnd, scene = T.scene,
-    bus = T.bus;
+    bus = T.bus, sedan = T.sedan, container = T.container, truck = T.truck;
   var NC = { collide: false, cast: false };
 
-  /* =============== CARGO / CONTAINER YARD (x 74..97, z -44..8) =============== */
-  seg(75, 96, 0.003, 0.016, -43, -7, M.concrete, NC);   // stops at the avenue edge (z=-7)
-  var CBOX = [M.contRed, M.contBlue || M.metal, M.contGreen, M.rust];
+  /* ==========================================================================
+     EASTGATE YARD — CONTAINER YARD DISTRICT   x 72..98, z -10..25   (v8.0)
+     ==========================================================================
+     Thirteen container stacks on bare concrete with one hand-written climb
+     route and a comment that was unsure whether it worked. Six of the stack
+     roofs were flagged by the architecture gate as invitations the yard could
+     not honour.
+
+     Irongate Depot is already the close-quarters container district, so this
+     one is deliberately its opposite: EASTGATE IS VERTICAL. Stacks run one,
+     two and three high in a deliberate pattern so the yard is a climbing
+     terrain rather than a corridor grid. Almost every fight here is decided by
+     who is a level above whom, and every stack roof has a way up.
+
+       ROWS       x 79 / 85.5 / 92, running the length of the yard
+       LANES      the two gaps between them, long and overlooked from above
+       GANTRY     the rail crane at the north gate — the yard's high ground
+       YARD OFFICE x 72..78, z -9..-1, two floors, watches the south gate
+       REEFER ROW  z 16..19, plant, chassis trailers, tyre stacks
+
+     FOOTPRINT NOTE. The v6.0 yard ran from z -44 and put SIX container stacks
+     inside the mall's floor plate (x 50..88, z -44..-22). Nothing caught it:
+     the map gate checks loot and spawns, the coplanar gate checks large flat
+     surfaces, and neither looks for a building standing inside another one.
+     The yard now starts at z -8, clear of both the mall and the market square,
+     and Market Cross owns everything south of that line.
+
+     Why a player comes here:
+       It is the only place on the map where the ground is the WORST place to
+       be. Three heights of cover in a 20 m square means a stack roof is always
+       overlooked by a taller stack, so no single perch wins — but the gantry at
+       9 m beats all of them, and it has exactly one way up.
+
+     Callouts: "the gantry", "three-high", "reefer row", "yard office", "gate".
+     ====================================================================== */
+  /* Apron top is 0.075, not 0.06: the Market Cross square slab is already at
+     0.06 and the two overlap by 152 m2 in the corner. Two large surfaces at the
+     same height z-fight, and the coplanar-ground gate catches it every time. */
+  seg(74, 97, 0.02, 0.075, -9, 24, M.concrete, NC);
+  var CBOX = [M.contRed, M.contBlue, M.contGreen, M.contGray];
   function stack(x, z, levels, ci) {
     for (var l = 0; l < levels; l++) {
       box(x, 1.3 + l * 2.6, z, 2.44, 2.6, 6.1, CBOX[(ci + l) % CBOX.length]);
     }
   }
-  stack(78, -38, 1, 0); stack(78, -30, 2, 1); stack(78, -22, 1, 2); stack(78, -14, 2, 3); stack(78, -6, 1, 0);
-  stack(84.5, -38, 2, 2); stack(84.5, -30, 1, 3); stack(84.5, -22, 2, 0); stack(84.5, -14, 1, 1);
-  stack(91, -34, 1, 1); stack(91, -26, 2, 2); stack(91, -18, 1, 3); stack(91, -10, 2, 0);
-  // climb route onto the 2-high at (84.5,-22): step blocks 0.9 -> 1.8 -> 2.6 -> 5.2
-  box(87.1, 0.45, -25.4, 1.4, 0.9, 1.4, M.wood);
-  box(86.6, 0.9, -23.6, 1.4, 1.8, 1.4, M.wood);
-  // (from the 1.8 block jump to the 2.6 roof of the single at (84.5,-30)? no — onto (84.5,-22) L1 top)
-  // gantry crane frame over the yard entrance
-  seg(75.6, 76.4, 0, 8, -0.4, 0.4, M.trim);
-  seg(94.6, 95.4, 0, 8, -0.4, 0.4, M.trim);
-  seg(75.6, 95.4, 8, 8.9, -0.6, 0.6, M.rust);
-  box(84, 7.4, 0, 1.6, 1.2, 1.6, M.dark, NC);                          // trolley
-  crates(93, 3); barrel(76.5, -42, true); lamp(86, 6, 'n');
+  /* Step stack: pallets to 1.7, which reaches a 2.6 roof. Placed against the
+     END of a container so it never blocks a lane. */
+  function step3(x, z) {
+    box(x, 0.45, z, 1.6, 0.9, 2.0, M.palletWood);
+    box(x, 1.2, z, 1.3, 0.6, 1.7, M.palletWood);
+    box(x, 1.72, z, 1.0, 0.44, 1.3, M.rust);
+  }
+  /* Roof step: a crate ON a 2.6 roof, reaching the 5.2 roof beside it. This is
+     what makes a two- or three-high stack honest. */
+  function roofStep(x, z) {
+    box(x, 3.05, z, 1.4, 0.9, 1.5, M.palletWood);
+    box(x, 3.78, z, 1.1, 0.56, 1.2, M.rust);
+  }
+
+  var YARD = [
+    { x: 79,   zs: [-4, 4, 12], lv: [1, 3, 2] },
+    { x: 85.5, zs: [-4, 4, 12], lv: [2, 1, 3] },
+    { x: 92,   zs: [-4, 4, 12], lv: [3, 2, 1] }
+  ];
+  YARD.forEach(function (row, i) {
+    row.zs.forEach(function (rz, j) {
+      stack(row.x, rz, row.lv[j], (i + j) % 4);
+      /* Steps go EAST on rows 0 and 2, west on row 1 — that keeps the whole
+         x 75..77 strip clear for the gantry stair, which the first layout ran
+         straight through a pallet stack. */
+      var sx = row.x + (i === 1 ? -2.1 : 2.1);
+      step3(sx, rz + 3.6);
+      if (row.lv[j] > 1) roofStep(sx, rz + 1.4);      // 2.6 -> 5.2
+      if (row.lv[j] > 2) roofStep(row.x + (i === 2 ? -1.0 : 1.0), rz - 3.5);   // 5.2 -> 7.8
+    });
+    seg(row.x - 1.4, row.x + 1.4, 0.075, 0.105, -8, 23, M.hazard, NC);         // row paint
+  });
+
+  /* ---- GANTRY: rail crane over the north gate, and the yard's high ground.
+     Reached by one flight OUTSIDE the rows, landing on the deck's west end. --- */
+  (function () {
+    var GZ = 20, TOPY = 8.9;
+    [[74.6, GZ - 3.2], [74.6, GZ + 3.2], [95.4, GZ - 3.2], [95.4, GZ + 3.2]].forEach(function (p) {
+      cyl(p[0], TOPY / 2, p[1], 0.36, TOPY, M.steelBlue);
+    });
+    seg(74.0, 96.0, TOPY - 0.25, TOPY, GZ - 2.7, GZ + 2.7, M.metal);           // deck
+    seg(74.0, 96.0, TOPY, TOPY + 0.55, GZ + 2.7, GZ + 3.5, M.steelBlue);       // north rail
+    seg(78.4, 96.0, TOPY, TOPY + 0.55, GZ - 3.5, GZ - 2.7, M.steelBlue);       // south rail, gapped
+    seg(74.0, 96.0, TOPY + 0.55, TOPY + 0.8, GZ + 2.7, GZ + 3.5, M.hazard, NC);
+    seg(83.0, 87.0, TOPY - 1.6, TOPY, GZ - 2.4, GZ + 2.4, M.rust);             // trolley
+    seg(84.6, 85.4, TOPY - 5.2, TOPY - 1.6, GZ - 0.4, GZ + 0.4, M.trim, NC);   // hoist rope
+    box(85, 3.3, GZ, 2.0, 1.7, 2.0, M.hazard);                                 // spreader, ground cover
+    stairFlight(76.2, 0, GZ - 11.1, 0, 1, 28, 0.31786, 0.30, 1.3, M.metal);    // -> deck 8.90
+    [GZ - 8.3, GZ - 5.3].forEach(function (sz) {
+      cyl(75.7, 1.55, sz, 0.12, 3.1, M.steelBlue, NC);
+      cyl(76.7, 1.55, sz, 0.12, 3.1, M.steelBlue, NC);
+    });
+  })();
+
+  /* ---- YARD OFFICE: two floors watching the gate, with a balcony that looks
+     straight down the lanes. Small, enterable, and the only interior here. --- */
+  (function () {
+    var X0 = 72.4, X1 = 78.4, Z0 = -8.8, Z1 = -1.2, TT = 0.28, F2 = 3.3, RF = 6.6;
+    facade('z', Z0, Z0 + TT, X0, X1, 0, 3.0, M.paperWhite, [win(74.0, 1.3, 1.4, 1.1)]);
+    facade('z', Z1 - TT, Z1, X0, X1, 0, 3.0, M.paperWhite,
+      [{ u0: 74.6, u1: 76.0, v0: 0, v1: 2.2 }, win(77.2, 1.3, 1.2, 1.1)]);
+    seg(X0, X0 + TT, 0, 3.0, Z0, Z1, M.paperWhite);
+    facade('x', X1 - TT, X1, Z0, Z1, 0, 3.0, M.paperWhite, [win(-7.4, 1.3, 1.6, 1.2), win(-3.0, 1.3, 1.6, 1.2)]);
+    seg(X0, X1, 3.0, F2, Z0, Z1, M.concrete);
+    seg(73.0, 74.4, 0, 1.05, -7.4, -2.8, M.wood, { cast: false });             // counter
+    seg(76.0, 77.8, 0, 1.7, -8.4, -7.7, M.trim, { cast: false });              // lockers
+    stairFlight(77.2, 0, -1.5, 0, -1, 11, 0.3, 0.34, 1.4, M.concrete);         // -> F2 3.30
+    facade('z', Z0, Z0 + TT, X0, X1, F2, RF - 0.3, M.paperWhite, [win(74.4, F2 + 1.1, 2.2, 1.4)]);
+    facade('z', Z1 - TT, Z1, X0, X1, F2, RF - 0.3, M.paperWhite, [win(75.4, F2 + 1.1, 2.2, 1.4)]);
+    // (north face carries the balcony door, cut below)
+    seg(X0, X0 + TT, F2, RF - 0.3, Z0, Z1, M.paperWhite);
+    facade('x', X1 - TT, X1, Z0, Z1, F2, RF - 0.3, M.paperWhite,
+      [{ u0: -6.6, u1: -4.8, v0: F2, v1: F2 + 2.2 }, win(-2.6, F2 + 1.1, 1.6, 1.3)]);
+    seg(X0, X1, RF - 0.3, RF, Z0, Z1, M.roof);
+    seg(X0, X1, RF, RF + 0.8, Z0, Z0 + 0.2, M.paperWhite);
+    seg(X0, X1, RF, RF + 0.8, Z1 - 0.2, Z1, M.paperWhite);
+    seg(X0, X0 + 0.2, RF, RF + 0.8, Z0, Z1, M.paperWhite);
+    // balcony off the upper east door, overlooking the lanes
+    seg(X1, X1 + 1.9, F2 - 0.22, F2, -6.8, -4.6, M.concrete);
+    seg(X1 + 1.75, X1 + 1.9, F2, F2 + 1.0, -6.8, -4.6, M.trim, NC);
+    box(80.6, 0.75, -5.7, 2.2, 1.5, 1.3, M.contBlue);                          // step to the balcony
+    box(80.4, 1.9, -5.8, 1.7, 0.8, 1.1, M.rust);
+  })();
+
+  /* ---- REEFER ROW + PLANT: the north-west corner, storytelling and cover --- */
+  [[80, 18], [84, 18], [88, 18]].forEach(function (p) {
+    box(p[0], 1.3, p[1], 2.44, 2.6, 5.0, M.contGray);
+    box(p[0] - 1.35, 1.5, p[1], 0.3, 1.4, 1.6, M.trim, NC);                    // reefer plant
+    box(p[0] - 1.35, 2.35, p[1], 0.36, 0.3, 1.7, M.hazard, NC);
+  });
+  step3(82, 14.6); step3(90, 17.6);
+  [[75, 14], [75, 21]].forEach(function (p) {                                  // chassis trailers
+    box(p[0], 1.05, p[1], 2.3, 0.35, 7.4, M.rust);
+    [-2.6, 2.6].forEach(function (o) {
+      cyl(p[0] - 1.0, 0.42, p[1] + o, 0.42, 0.3, M.tire, NC);
+      cyl(p[0] + 1.0, 0.42, p[1] + o, 0.42, 0.3, M.tire, NC);
+    });
+  });
+  [[95.5, 8], [95.5, 14]].forEach(function (p) {                               // tyre stacks
+    for (var t = 0; t < 4; t++) cyl(p[0], 0.22 + t * 0.42, p[1], 0.85, 0.4, M.tire);
+  });
+  // floodlight masts: silhouette at zero shadow cost
+  [[74.8, 8], [96.2, 8], [96.2, 22]].forEach(function (p) {
+    cyl(p[0], 4.4, p[1], 0.17, 8.8, M.trim);
+    seg(p[0] - 1.1, p[0] + 1.1, 8.8, 9.2, p[1] - 0.35, p[1] + 0.35, M.trim, NC);
+    seg(p[0] - 0.95, p[0] + 0.95, 8.55, 8.8, p[1] - 0.28, p[1] + 0.28, M.amberGlow, NC);
+  });
+  crates(93, -6); barrel(76.5, 22, true); barrel(94.2, -6.6, false);
+  lamp(86, -7, 'n'); lamp(80, 16, 'e'); lamp(93, 16, 'w');
 
   /* =============== BUS TERMINAL (x 74..97, z 26..60) =============== */
   seg(75, 96, 0.003, 0.016, 27, 59, M.asphalt, NC);
@@ -75,52 +208,222 @@ World._buildPart5 = function (T) {
   seg(-82, -75, 1.0, 2.1, 17.4, 17.55, M.trim, { cast: false });
   seg(-96, -90, 1.0, 2.1, -25.55, -25.4, M.trim, { cast: false });
 
-  /* =============== RESIDENTIAL COLONY (z 76..97) =============== */
-  seg(-7, 7, 0.005, 0.02, 68, 96, M.asphalt, NC);                                  // south connector road
-  function apartment(X0, X1) {
-    var Z0 = 80, Z1 = 94, TT = 0.3;
-    var lane0 = X1 - 1.75, lane1 = X1 - 0.35;                                      // internal stair lane (east)
-    // floor-1 walls: front door + windows (south face), windows elsewhere
-    facade('z', Z0, Z0 + TT, X0, X1, 0, 3.35, M.brick,
-      [{ u0: (X0 + X1) / 2 - 0.9, u1: (X0 + X1) / 2 + 0.9, v0: 0, v1: 2.35 },
-       win(X0 + 3.4, 1.4, 1.4, 1.2), win(X1 - 4.4, 1.4, 1.4, 1.2)]);
-    facade('z', Z1 - TT, Z1, X0, X1, 0, 3.35, M.brick, [win(X0 + 5, 1.4, 1.5, 1.2), win(X1 - 6, 1.4, 1.5, 1.2)]);
-    seg(X0, X0 + TT, 0, 3.35, Z0, Z1, M.brick);
-    seg(X1 - TT, X1, 0, 3.35, Z0, Z1, M.brick);
-    // F2 slab with stair hole over the lane
-    seg(X0, lane0 - 0.1, 3.35, 3.55, Z0, Z1, M.concrete);
-    seg(lane0 - 0.1, X1, 3.35, 3.55, Z0, 80.7, M.concrete);
-    seg(lane0 - 0.1, X1, 3.35, 3.55, 85.0, Z1, M.concrete);
-    // F2 walls: balcony door front-center + windows
-    facade('z', Z0, Z0 + TT, X0, X1, 3.55, 6.85, M.brick,
-      [{ u0: (X0 + X1) / 2 - 0.7, u1: (X0 + X1) / 2 + 0.7, v0: 3.6, v1: 5.85 },
-       win(X0 + 3.4, 4.7, 1.4, 1.15), win(X1 - 4.4, 4.7, 1.4, 1.15)]);
-    facade('z', Z1 - TT, Z1, X0, X1, 3.55, 6.85, M.brick, [win(X0 + 5, 4.7, 1.5, 1.15), win(X1 - 6, 4.7, 1.5, 1.15)]);
-    seg(X0, X0 + TT, 3.55, 6.85, Z0, Z1, M.brick);
-    seg(X1 - TT, X1, 3.55, 6.85, Z0, Z1, M.brick);
-    // balcony (front, F2)
-    seg((X0 + X1) / 2 - 1.5, (X0 + X1) / 2 + 1.5, 3.5, 3.7, 78.6, Z0 + 0.05, M.concrete);
-    seg((X0 + X1) / 2 - 1.5, (X0 + X1) / 2 + 1.5, 3.7, 4.6, 78.55, 78.67, M.trim);
-    // roof with stair hole + parapet
-    seg(X0, lane0 - 0.1, 6.85, 7.1, Z0, Z1, M.roof);
-    seg(lane0 - 0.1, X1, 6.85, 7.1, Z0, 84.9, M.concrete);
-    seg(lane0 - 0.1, X1, 6.85, 7.1, 89.2, Z1, M.roof);
-    seg(X0, X1, 7.1, 7.9, Z0, Z0 + 0.22, M.brick);
-    seg(X0, X1, 7.1, 7.9, Z1 - 0.22, Z1, M.brick);
-    seg(X0, X0 + 0.22, 7.1, 7.9, Z0, Z1, M.brick);
-    seg(X1 - 0.22, X1, 7.1, 7.9, Z0, Z1, M.brick);
-    // internal stairs: ground -> F2 -> roof (east lane)
-    stairFlight((lane0 + lane1) / 2, 0, 81.0, 0, 1, 11, 0.323, 0.33, 1.3, M.concrete);
-    stairFlight((lane0 + lane1) / 2, 3.55, 85.2, 0, 1, 11, 0.323, 0.33, 1.3, M.concrete);
-    // roof water tank
-    cyl(X0 + 3, 7.9, 91, 1.0, 1.6, M.trim);
-  }
-  apartment(-42, -18);
-  apartment(12, 36);
-  // courtyard between blocks: playground + parked cars
-  box(-14, 0.6, 86, 0.14, 1.2, 0.14, M.trim); box(-11, 0.6, 86, 0.14, 1.2, 0.14, M.trim);
-  seg(-14, -11, 1.15, 1.28, 85.9, 86.1, M.trim, NC);                                // swing frame
-  box(-12.5, 0.35, 88.5, 1.6, 0.7, 0.9, M.wood, NC);                   // bench
+  /* ==========================================================================
+     THE COLONY — APARTMENT DISTRICT      x -44..38, z 74..97      (v7.8)
+     ==========================================================================
+     The old version was two identical two-storey brick slabs with completely
+     empty interiors, one internal stairwell each, and a courtyard containing a
+     swing frame and a bench. Nothing happened between them, nothing happened
+     inside them, and the two blocks were indistinguishable on comms.
+
+     Rebuilt as three-storey municipal blocks arranged around a courtyard, with
+     the vertical circulation pulled OUT of the building into open stair cores —
+     which is both what this architecture actually looks like and the single
+     best gameplay change available here: a stair core is a glass box you climb
+     inside, visible from the courtyard and from the opposite block.
+
+       WEST BLOCK   x -44..-20   two cores: PINK (west), YELLOW (east)
+       COURTYARD    x -20..12    the killzone, with real cover
+       EAST BLOCK   x  12..38    one core: MINT
+       DECK WALKWAY  z 79.4      open access decks along the courtyard face
+
+     Why a player comes here, by level:
+       COURTYARD   crossed by every balcony and every deck on both blocks. The
+                   drying frames, planters, garage and parked cars break it
+                   into three lanes so it is survivable but never safe.
+       DECKS       an open access balcony runs the full length of each block on
+                   every floor. It is the horizontal route, it is cover from
+                   below and exposure from across, and it links every flat.
+       FLATS       two flats per core per floor, each with a hall, a room to
+                   the courtyard and a room to the rear. Doors open onto the
+                   deck, so a flat is a way THROUGH the block, not a dead end.
+       CORES       open stairs, three flights, no walls on the courtyard side.
+                   Fast, loud, and watched.
+       ROOF        one core reaches it. Water tanks and lift housings give cover
+                   so the roof is a fight rather than a firing platform.
+
+     Landmark: the WATER TANK GANTRY on the west block roof — four tanks on a
+     steel frame, the tallest thing in the south of the map and visible from the
+     terrace, the avenue and the connector road.
+     ====================================================================== */
+  seg(-7, 7, 0.005, 0.02, 68, 96, M.asphalt, NC);                    // connector road
+
+  (function () {
+    var Z0 = 79.4, Z1 = 91.0, TT = 0.3;          // deck face .. rear face
+    var FH = 3.3;                                 // storey height
+    var LV = [0, 3.3, 6.6];                       // finished floor levels
+    var ROOF = 10.15;
+
+    /* One stair core plus the two flats it serves on each floor.
+       `pal` colours the whole core bay, which is what makes it callable. */
+    function coreBay(X0, X1, pal, toRoof) {
+      var cx = (X0 + X1) / 2;
+      /* Stairs run ALONG the access deck, not into the courtyard.
+         The first version projected an open core out into the courtyard with
+         flights running z-wards; every flight drove through the building face
+         and through the deck slab above it, and the ascent walker was stopped
+         dead by the core's own outer wall. Deck-access blocks put their stairs
+         at the deck, in line with it, which is both what this architecture
+         looks like and the only arrangement a straight-line walker can prove.
+         Each deck is holed over the flight beneath it for head clearance. */
+      var DZ0 = Z0 - 1.7;
+      var f1x = X0 + 0.8, f2x = X0 + 4.6, f3x = X0 + 8.4;   // three staggered lanes
+      stairFlight(f1x, 0, DZ0 + 0.15, 1, 0, 11, 0.30, 0.30, 1.55, M.concrete);
+      stairFlight(f2x, LV[1], DZ0 + 0.15, 1, 0, 11, 0.30, 0.30, 1.55, M.concrete);
+      if (toRoof) stairFlight(f3x, LV[2], DZ0 + 0.15, 1, 0, 11, 0.32273, 0.30, 1.55, M.concrete);
+
+      // ---- flats, two per floor -------------------------------------------
+      for (var g = 0; g < 3; g++) {
+        var B = LV[g], TOPW = B + 2.9;
+        // courtyard face: two flat doors onto the deck, windows between
+        facade('z', Z0, Z0 + TT, X0, X1, B, TOPW, pal,
+          [{ u0: cx - 3.6, u1: cx - 2.4, v0: B, v1: B + 2.2 },
+           { u0: cx + 2.4, u1: cx + 3.6, v0: B, v1: B + 2.2 },
+           win(X0 + 2.2, B + 1.05, 1.6, 1.25), win(X1 - 3.8, B + 1.05, 1.6, 1.25)]);
+        // rear face: windows only — the rear is the quiet side, and knowing
+        // that is worth something
+        facade('z', Z1 - TT, Z1, X0, X1, B, TOPW, pal,
+          [win(X0 + 2.4, B + 1.05, 1.5, 1.2), win(cx - 0.8, B + 1.05, 1.5, 1.2),
+           win(X1 - 3.9, B + 1.05, 1.5, 1.2)]);
+        seg(X0, X0 + TT, B, TOPW, Z0, Z1, M.concrete);                 // party walls
+        seg(X1 - TT, X1, B, TOPW, Z0, Z1, M.concrete);
+        // spine wall splitting front room from rear room, doorway per flat
+        seg(X0 + TT, cx - 4.4, B, TOPW, 85.0, 85.24, M.plaster);
+        seg(cx - 3.2, cx + 3.2, B, TOPW, 85.0, 85.24, M.plaster);
+        seg(cx + 4.4, X1 - TT, B, TOPW, 85.0, 85.24, M.plaster);
+        // party wall between the two flats, with the hall doorway at the deck
+        seg(cx - 0.15, cx + 0.15, B, TOPW, Z0 + 2.6, Z1 - TT, M.plaster);
+        // furniture: cover in both rooms of both flats
+        box(X0 + 2.4, B + 0.42, 81.4, 2.0, 0.84, 0.9, M.wood); // sofa
+        box(X1 - 3.4, B + 0.42, 81.6, 2.0, 0.84, 0.9, M.trim); // sofa
+        seg(X0 + TT, X0 + 2.0, B, B + 1.0, 88.6, 89.4, M.plaster); // kitchen run
+        seg(X1 - 2.0, X1 - TT, B, B + 1.0, 88.6, 89.4, M.plaster);
+        box(X0 + 3.6, B + 0.3, 88.0, 2.0, 0.6, 1.5, M.wood);   // bed
+        box(X1 - 4.6, B + 0.3, 88.0, 2.0, 0.6, 1.5, M.wood);
+        // floor slab above (or the roof)
+        var SL = (g < 2) ? LV[g + 1] : ROOF;
+        seg(X0, X1, SL - 0.25, SL, Z0, Z1, (g < 2) ? M.concrete : M.roof);
+      }
+
+      /* Access decks, each holed over the flight that climbs to it. */
+      function deck(top, holeX) {
+        seg(X0, holeX - 0.15, top - 0.22, top, DZ0, Z0, M.concrete);
+        seg(holeX + 3.45, X1, top - 0.22, top, DZ0, Z0, M.concrete);
+        seg(X0, X1, top, top + 1.05, DZ0 - 0.05, DZ0 + 0.07, pal);     // balustrade, unbroken
+      }
+      deck(LV[1], f1x);
+      deck(LV[2], f2x);
+      // roof oversails the deck band so the top flight lands on it
+      if (toRoof) {
+        seg(X0, f3x - 0.15, ROOF - 0.22, ROOF, DZ0, Z0, M.roof);
+        seg(f3x + 3.45, X1, ROOF - 0.22, ROOF, DZ0, Z0, M.roof);
+      } else {
+        seg(X0, X1, ROOF - 0.22, ROOF, DZ0, Z0, M.roof);
+      }
+      [[X0, X1, DZ0 - 0.05, DZ0 + 0.15], [X0, X1, Z1 - 0.2, Z1],
+       [X0, X0 + 0.2, DZ0, Z1], [X1 - 0.2, X1, DZ0, Z1]].forEach(function (r) {
+        seg(r[0], r[1], ROOF, ROOF + 0.85, r[2], r[3], pal);
+      });
+      box(cx + 5.5, ROOF + 0.7, 87.5, 2.2, 1.4, 2.2, M.trim);          // tank housing, roof cover
+    }
+
+    /* WEST BLOCK — two bays. The east bay carries the roof stair, so the whole
+       west roof is reached from one core and the climb is a commitment. */
+    coreBay(-44, -32, M.dustyPink, false);
+    coreBay(-32, -20, M.paleYellow, true);
+    /* EAST BLOCK — one bay, and it reaches its own roof. */
+    coreBay(12, 24, M.mint, true);
+    // the east block's second bay is a lower two-storey wing: it breaks the
+    // skyline and denies the mint roof a straight look down the rear alley
+    (function () {
+      var X0 = 24, X1 = 38, W = 6.9;
+      for (var g = 0; g < 2; g++) {
+        var B = g * 3.3, TOPW = B + 2.9;
+        facade('z', Z0, Z0 + TT, X0, X1, B, TOPW, M.mint,
+          [{ u0: 29.0, u1: 30.2, v0: B, v1: B + 2.2 }, win(26.4, B + 1.05, 1.6, 1.25),
+           win(34.2, B + 1.05, 1.6, 1.25)]);
+        facade('z', Z1 - TT, Z1, X0, X1, B, TOPW, M.mint,
+          [win(27.0, B + 1.05, 1.5, 1.2), win(33.0, B + 1.05, 1.5, 1.2)]);
+        seg(X1 - TT, X1, B, TOPW, Z0, Z1, M.concrete);
+        seg(X0 + TT, X1 - TT, B, TOPW, 85.0, 85.24, M.plaster);
+        box(26.6, B + 0.42, 81.6, 2.0, 0.84, 0.9, M.wood);
+        seg(33.0, 36.0, B, B + 1.0, 88.6, 89.4, M.plaster);
+        seg(X0, X1, (g ? W : 3.3) - 0.25, (g ? W : 3.3), Z0, Z1, g ? M.roof : M.concrete);
+      }
+      seg(X0, X1, W, W + 0.8, Z0 - 0.2, Z0, M.mint);
+      seg(X0, X1, W, W + 0.8, Z1 - 0.2, Z1, M.mint);
+      seg(X0, X1, 3.3 - 0.22, 3.3, Z0 - 1.7, Z0, M.concrete);          // deck continues
+      seg(X0, X1, 3.3, 3.3 + 1.05, Z0 - 1.75, Z0 - 1.63, M.mint);
+      seg(X0, X1, W, W + 0.8, Z0 - 1.75, Z0 - 1.55, M.mint);
+    })();
+
+    /* ---- LANDMARK: water tank gantry on the west roof --------------------
+       The tallest thing in the south of the map, and CLIMBABLE — a stair off
+       the west roof reaches the gantry deck (13.40) and a service catwalk puts
+       the tank tops (15.60) one step further. The architecture gate flagged the
+       tanks as a broken promise when the gantry was scenery: something that
+       large, that close above a walkable roof, is an invitation. It is now the
+       district's high ground, and it is a dead end with one way down. */
+    [[-40, 84.5], [-33, 84.5], [-40, 88.5], [-33, 88.5]].forEach(function (p) {
+      cyl(p[0], ROOF + 1.5, p[1], 0.16, 3.0, M.trim);
+    });
+    /* Gantry deck 13.40, HOLED over the stair lane. Without the hole the deck
+       oversailed the top of its own stair and the climber's head hit it at
+       12.23 m — the flight looked complete from every angle. */
+    seg(-40.6, -32.4, ROOF + 3.0, ROOF + 3.25, 83.9, 84.85, M.trim);
+    seg(-40.6, -32.4, ROOF + 3.0, ROOF + 3.25, 86.35, 89.1, M.trim);
+    seg(-39.2, -32.4, ROOF + 3.0, ROOF + 3.25, 84.85, 86.35, M.trim);
+    // starts INSIDE the roof parapet and its last tread overlaps the gantry deck
+    stairFlight(-42.6, ROOF, 85.6, 1, 0, 11, 0.29545, 0.30, 1.5, M.metal);
+    /* Tanks sit EAST of the stair arrival. The first placement put a tank
+       directly over the top of the flight — you climbed into the inside of it. */
+    [[-36.8, 85.4], [-33.9, 85.4], [-36.8, 87.6], [-33.9, 87.6]].forEach(function (p) {
+      cyl(p[0], ROOF + 4.35, p[1], 1.2, 2.2, M.steelBlue);
+      cyl(p[0], ROOF + 5.55, p[1], 1.2, 0.25, M.rust, { collide: false });
+    });
+    // catwalks BOTH sides: one edge only served the northern pair of tanks
+    seg(-38.2, -32.6, ROOF + 4.15, ROOF + 4.35, 89.1, 89.75, M.trim); // north catwalk 14.50
+    seg(-38.2, -32.6, ROOF + 4.35, ROOF + 5.1, 89.75, 89.87, M.trim, NC);
+    seg(-38.2, -32.6, ROOF + 4.15, ROOF + 4.35, 83.25, 83.9, M.trim); // south catwalk 14.50
+    seg(-38.2, -32.6, ROOF + 4.35, ROOF + 5.1, 83.13, 83.25, M.trim, NC);
+
+    /* ---- COURTYARD  x -20..12 — three lanes, never a bare box ------------ */
+    seg(-20, 12, 0.02, 0.06, 74.0, 92.0, M.concrete, NC);
+    seg(-19, 11, 0.06, 0.09, 82.6, 83.4, M.roadPaint, NC);             // painted court markings
+    seg(-19, 11, 0.06, 0.09, 78.0, 78.3, M.roadPaint, NC);
+    // covered garage bay: hard cover in the middle of the open ground
+    seg(-16.5, -8.5, 0, 2.7, 75.0, 75.3, M.concrete);
+    seg(-16.5, -16.2, 0, 2.7, 75.0, 79.4, M.concrete);
+    seg(-16.5, -8.5, 2.7, 3.0, 74.8, 79.6, M.roof);
+    sedan(-14.2, 77.2, false, 3, false); sedan(-10.6, 77.4, true, 0, true);
+    // drying frames + planters split the crossing into lanes
+    [[-4.5, 80.5], [-4.5, 86.5], [4.5, 80.5], [4.5, 86.5]].forEach(function (p) {
+      cyl(p[0] - 1.6, 1.15, p[1], 0.11, 2.3, M.trim);
+      cyl(p[0] + 1.6, 1.15, p[1], 0.11, 2.3, M.trim);
+      seg(p[0] - 1.7, p[0] + 1.7, 2.2, 2.32, p[1] - 0.06, p[1] + 0.06, M.trim, NC);
+    });
+    [[-8, 84], [8, 84], [0, 89.5]].forEach(function (p) {
+      seg(p[0] - 1.6, p[0] + 1.6, 0, 0.95, p[1] - 1.1, p[1] + 1.1, M.brick);   // planters
+      seg(p[0] - 1.4, p[0] + 1.4, 0.95, 1.55, p[1] - 0.9, p[1] + 0.9, M.foliage, NC);
+    });
+    box(2.5, 0.35, 87.0, 1.8, 0.7, 0.9, M.wood);                       // bench
+    crates(-18.4, 90.2); barrel(10.6, 74.8, true);
+    car(-8.8, 73.5, 0.06, M.metal);
+    car(8.8, 76.5, -0.04, M.rust);
+    car(9.2, 90.0, 0.02, M.metal);
+    lamp(-8.5, 78, 'e'); lamp(8.5, 88, 'w'); lamp(-21.5, 84, 'w'); lamp(13.5, 84, 'e');
+
+    /* ---- REAR SERVICE STRIP  z 91..96 — the quiet flank ------------------ */
+    seg(-46, 40, 0.02, 0.06, 91.4, 95.4, M.asphalt, NC);
+    seg(-46, 40, 0, 2.2, 95.4, 95.7, M.concrete);
+    [-38, -24, 16, 32].forEach(function (bx) {
+      cyl(bx, 0.55, 93.4, 0.42, 1.1, M.rust);
+      box(bx + 1.6, 0.75, 93.6, 2.0, 1.5, 1.2, M.contGreen);           // step to the wall
+    });
+    container(-6, 93.6, false, M.contBlue, false);
+    crates(4, 93.4);
+  })();
+
   function car(x, z, ry, m) {
     var VGLASS = M.vGlass, VWHEEL = M.tire, VLF = M.headlight, VLR = M.taillight;
     var RY = ry, CC = Math.cos(ry), SS = Math.sin(ry);
@@ -155,12 +458,16 @@ World._buildPart5 = function (T) {
      punched in the wall at every floor level the stair passes.
      ================================================================== */
   var FH = 3.0;          // floor height
-  /* Rise/run copied from the warehouse fire escape, the only stair in this
-     project with a confirmed browser climb. Run MUST be ~0.5: stairFlight gives
-     each tread a 1.2m-deep skirt box, so with a 0.3 run the tread TWO ahead
-     lands inside the player's headroom and the auto-step's clearance check
-     rejects every step. 0.5 puts it clear of the 0.35m capsule radius.
-     8 steps x 0.375 = one 3.0m floor. */
+  /* Rise/run of the warehouse fire escape. 8 steps x 0.375 = one 3.0m floor.
+
+     STALE-COMMENT CORRECTION (v7.8). This block used to insist "run MUST be
+     ~0.5" because stairFlight skirted every tread with a 1.2 m box that reached
+     into the climber's chest. That was true until v6.2, which made the tread
+     COLLIDER a thin slab and left the skirt decorative — the fix that made 40
+     previously-unclimbable staircases work. Runs of 0.30 are fine now and are
+     gate-proven across the terrace, the colony and the station. Kept at 0.50
+     here only because these flights are already built and validated; do not
+     copy the old rule into new work. */
   var SH = 0.375, SD = 0.50;
 
   function building(x0, x1, z0, z1, floors, wallMat, roofMat) {
@@ -214,13 +521,314 @@ World._buildPart5 = function (T) {
   buildingAt(58, 76, 78, 92, 6, M.brick, M.roof, 0, true);         // 6 floors
   crates(72, 74); crates(50, 62); barrel(93, 72, true); barrel(56, 90, false);
 
-  /* ---- MALL (E, x 46..92 / z -46..-20) — two big floors ---- */
-  building(50, 88, -44, -22, 2, M.plaster, M.roof);
-  // atrium planters + shopfront stalls as interior cover on the ground floor
-  [[58, -38], [68, -30], [78, -38], [62, -26], [80, -26]].forEach(function (q) {
-    box(q[0], 0.55, q[1], 2.4, 1.1, 2.4, M.sidewalk);
+  /* ==========================================================================
+     IRONGATE DEPOT — WAREHOUSE DISTRICT    x -72..-14, z -50..-12   (v7.9)
+     ==========================================================================
+     The warehouse shell itself (x -46..-18) is v4-era and already good: it has
+     the catwalk, the shelving rows and the fire escape that every other stair
+     in this project was copied from. It is NOT rebuilt here. What was missing
+     is everything around it — it stood alone on bare dirt with no reason to
+     approach from any particular side.
+
+     Identity: CLOSE QUARTERS. Where Market Cross gives you a 38 m arcade, this
+     district gives you almost no sightline longer than 12 m. Container lanes
+     are corridors with blind corners; the dock is a wall you have to climb; the
+     warehouse interior is shelving you shoot over rather than through.
+
+       CONTAINER LANES  x -72..-50   four parallel rows forming three corridors
+       GANTRY           x -63        straddles the lanes — the landmark
+       DOCK APRON       z -19..-12   raised loading platform, roller doors,
+                                     trucks backed in, pallet stacks
+       NORTH YARD       z -50..-39   spoil, skips, a burnt-out shell
+
+     Why a player comes here:
+       Everything funnels. The lanes have exactly three exits, the dock has two
+       ramps and three roller doors, and the warehouse has one fire escape. A
+       squad that owns the dock owns the district — but the container TOPS are a
+       second storey above the lanes, reachable by step stacks, and anyone up
+       there looks straight down into the corridors. Holding the ground means
+       someone has to watch the roofline.
+
+     Callouts: "the gantry", "second lane", "dock three", "on the containers",
+     "burnt truck".
+     ====================================================================== */
+  (function () {
+    var CBOX = [M.contBlue, M.contRed, M.contGreen, M.contGray];
+    function crate3(x, z, ry) {                       // step stack -> container top
+      ry = ry || 0;
+      box(x, 0.45, z, 1.6, 0.9, 1.9, M.wood, { rotY: ry });
+      box(x, 1.2, z, 1.3, 0.6, 1.6, M.wood, { rotY: ry });
+      box(x, 1.72, z, 1.0, 0.44, 1.2, M.rust, { rotY: ry });
+    }
+
+    /* ---- CONTAINER LANES. Rows run north-south; the gaps between them are
+       the corridors. Every row carries at least one step stack so the tops are
+       an honest second level rather than scenery. ---- */
+    seg(-72, -49, 0.02, 0.06, -44, -14, M.asphalt, { collide: false });
+    var rows = [-70.5, -64.5, -58.5, -52.5];
+    rows.forEach(function (rx, i) {
+      var zs = (i % 2) ? [-40, -32.5, -24, -17] : [-42, -34, -26.5, -19];
+      zs.forEach(function (rz, j) {
+        box(rx, 1.3, rz, 2.44, 2.6, 6.1, CBOX[(i + j) % 4]);
+        var stacked = (i + j) % 3 === 0;
+        if (stacked) box(rx + 0.3, 3.85, rz, 2.44, 2.6, 6.1, CBOX[(i + j + 2) % 4]);
+        /* EVERY container gets a step stack. One per row was not enough — the
+           architecture gate flagged four container roofs that invited a climb
+           and refused it. The crates double as the lane cover this district is
+           built on, so the fix pays twice. */
+        crate3(rx + (i % 2 ? -2.05 : 2.05), rz + 2.4, 0);
+        /* A two-high stack needs a step ON the neighbouring roof, or the upper
+           box is a 2.55 m lie. */
+        if (stacked) {
+          box(rx + (i % 2 ? -2.05 : 2.05), 3.0, rz - 1.9, 1.3, 0.8, 1.4, M.wood);
+          box(rx + (i % 2 ? -2.05 : 2.05), 3.72, rz - 1.9, 1.0, 0.64, 1.1, M.rust);
+        }
+      });
+      seg(rx - 1.4, rx + 1.4, 0.06, 0.09, -44, -14, M.hazard, { collide: false });  // lane paint
+    });
+    // lane-end blast walls turn two of the three corridors into real chokes
+    seg(-68.4, -66.6, 0, 2.4, -22, -14.4, M.concrete);
+    seg(-56.4, -54.6, 0, 2.4, -40, -33.2, M.concrete);
+    crate3(-67.5, -23.6, 0); crate3(-55.5, -32.6, 0);
+
+    /* ---- LANDMARK: the container gantry. Straddles the lanes at x -63, tall
+       enough to be the first thing you see from the avenue, and CLIMBABLE from
+       the container tops so the high ground has an owner. ---- */
+    (function () {
+      var GZ = -30.5, TOPY = 9.4;
+      [[-73.2, GZ - 3.4], [-73.2, GZ + 3.4], [-50.8, GZ - 3.4], [-50.8, GZ + 3.4]].forEach(function (p) {
+        cyl(p[0], TOPY / 2, p[1], 0.34, TOPY, M.steelBlue);
+      });
+      /* South rail is SPLIT where the stair arrives. Without the gap the
+         climber's head met the handrail two steps from the top — the flight
+         looked complete and stopped at 6.38 m. */
+      /* The deck oversails its east leg by 1.8 m so the access stair can land
+         on it from OUTSIDE the container rows. The first two attempts put the
+         stair inside the lanes, where it threaded a gantry leg and then a
+         shipping container. */
+      seg(-73.6, -50.4, TOPY, TOPY + 0.55, GZ - 3.7, GZ - 2.9, M.steelBlue);   // south rail
+      seg(-73.6, -48.6, TOPY, TOPY + 0.55, GZ + 2.9, GZ + 3.7, M.steelBlue);   // north rail
+      seg(-73.6, -48.6, TOPY + 0.55, TOPY + 0.8, GZ + 2.9, GZ + 3.7, M.hazard, { collide: false });
+      // the trolley: hard cover on an otherwise open deck
+      seg(-64.6, -61.4, TOPY - 1.5, TOPY, GZ - 2.6, GZ + 2.6, M.rust);
+      seg(-63.4, -62.6, TOPY - 4.6, TOPY - 1.5, GZ - 0.4, GZ + 0.4, M.trim, { collide: false });
+      box(-63, 3.5, GZ, 1.9, 1.6, 1.9, M.hazard);                              // hanging spreader
+      // deck between the rails, and a ladder-stair up from the tallest stack
+      seg(-73.6, -48.6, TOPY - 0.25, TOPY, GZ - 2.9, GZ + 2.9, M.metal);
+      /* ONE flight, entirely SOUTH of the deck, landing flush on its edge.
+         The two-stage version threaded a leg and then climbed under the deck it
+         was trying to reach. Nine metres in a single run is a long, loud,
+         committed climb — which is exactly right for the only way onto the
+         thing that overlooks every lane. */
+      stairFlight(-49.5, 0, GZ - 11.5, 0, 1, 29, 0.32414, 0.29655, 1.3, M.metal);
+      [GZ - 9.0, GZ - 6.0].forEach(function (sz) {                             // stringer supports
+        cyl(-50.0, 1.6, sz, 0.12, 3.2, M.steelBlue, { collide: false });
+        cyl(-49.0, 1.6, sz, 0.12, 3.2, M.steelBlue, { collide: false });
+      });
+    })();
+
+    /* ---- DOCK APRON. The warehouse's south face becomes a working dock:
+       platform at 1.10, three roller openings, trucks backed in, and two ramps
+       so it can be taken from either flank. ---- */
+    seg(-50, -14, 0.02, 0.06, -19.4, -12.0, M.concrete, { collide: false });
+    seg(-47, -17, 0, 1.10, -19.0, -16.4, M.concrete);
+    seg(-47, -17, 1.10, 1.16, -19.0, -18.8, M.hazard, { collide: false });     // dock edge stripe
+    [-42, -32, -22].forEach(function (dx) {
+      seg(dx - 2.1, dx + 2.1, 1.16, 1.40, -19.0, -18.8, M.hazard, { collide: false });
+      seg(dx - 2.3, dx + 2.3, 1.10, 3.60, -16.6, -16.4, M.rust);               // roller shutter (raised)
+      seg(dx - 2.3, dx + 2.3, 3.60, 3.95, -16.9, -16.2, M.steelBlue);          // shutter housing
+    });
+    stairFlight(-48.9, 0, -17.7, 1, 0, 4, 0.275, 0.42, 2.2, M.concrete);       // west ramp -> 1.10
+    stairFlight(-15.1, 0, -17.7, -1, 0, 4, 0.275, 0.42, 2.2, M.concrete);      // east ramp -> 1.10
+    truck(-44, -22.2, 0); truck(-33.5, -22.6, 0.05); truck(-23, -22.2, -0.04);
+    [[-46.5, -14.6], [-19.5, -14.6]].forEach(function (p) {
+      box(p[0], 0.45, p[1], 1.6, 0.9, 1.9, M.palletWood);
+      box(p[0], 1.2, p[1], 1.3, 0.6, 1.6, M.palletWood);
+    });
+    box(-38, 0.72, -14.4, 2.3, 1.44, 1.6, M.contGreen);                        // skip
+    box(-28, 1.15, -14.2, 2.0, 2.3, 1.4, M.rust);                              // transformer
+    cyl(-28, 2.55, -14.2, 0.1, 0.5, M.trim, { collide: false });
+    lamp(-50, -16, 'e'); lamp(-14, -16, 'w'); lamp(-50, -34, 'e');
+
+    /* ---- NORTH YARD. Spoil heaps, skips and a burnt-out truck: the district's
+       storytelling, and the cover that makes the north approach viable. ---- */
+    seg(-72, -16, 0.02, 0.06, -49.6, -44.4, M.dirt, { collide: false });
+    [[-64, -47], [-52, -46.4], [-36, -47.2], [-24, -46.6]].forEach(function (p) {
+      box(p[0], 0.72, p[1], 2.3, 1.44, 1.6, M.rust);
+      box(p[0] + 2.8, 0.55, p[1] + 0.6, 1.8, 1.1, 1.4, M.contGray);
+    });
+    (function () {                                                            // burnt-out truck
+      var BX = -44, BZ = -47.2;
+      box(BX, 0.62, BZ, 5.6, 1.24, 2.3, M.dark);
+      box(BX - 2.2, 1.55, BZ, 1.9, 1.6, 2.2, M.dark);
+      box(BX + 1.4, 1.35, BZ, 2.6, 0.2, 2.1, M.rust, { collide: false });
+      [[-1.9, -1.2], [-1.9, 1.2], [1.7, -1.2], [1.7, 1.2]].forEach(function (o) {
+        cyl(BX + o[0], 0.42, BZ + o[1], 0.42, 0.3, M.tire, { collide: false });
+      });
+    })();
+    crates(-58, -46.8); barrel(-30.6, -45.4, true); barrel(-31.8, -46.2, false);
+    seg(-72, -16, 0, 2.3, -50.2, -49.8, M.metal);                             // yard fence
+    [-60, -40, -24].forEach(function (fx) { cyl(fx, 1.2, -50.0, 0.12, 2.4, M.trim); });
+    lamp(-46, -44, 'n');
+  })();
+
+  /* ==========================================================================
+     MARKET CROSS — SHOPPING DISTRICT      x 44..94, z -52..-12      (v7.8)
+     ==========================================================================
+     Was a 38x22 m two-storey box containing five planters, with the inner city
+     wall running through the middle of its ground floor. Nobody had a reason to
+     go in, and if they did there was nothing inside but the wall.
+
+     Rebuilt as the city's commercial crossing. The identity here is MEDIUM
+     RANGE: long straight arcades with columns, glass you can shoot through the
+     line of, and a square that is crossed rather than held. It is the opposite
+     of the terrace (close, blind, doorways) and the opposite of the colony
+     (vertical, deck-to-deck).
+
+       SERVICE YARD  z -52..-44   loading bays, dumpsters, delivery trucks
+       MALL          z -44..-22   two floors, shop units both sides of a
+                                  central arcade running the full 38 m
+       COLONNADE     z -22..-20   covered walkway on the square face
+       MARKET SQUARE z -20..-12   fountain, stalls, benches, planters, bus stop
+
+     Why a player comes here:
+       The mall ground floor is now the ONLY way through the city wall on this
+       side — the wall stops at the mall and resumes past it. Crossing between
+       the cargo yard and the centre means crossing the shop floor.
+       The central arcade is a 38 m sightline with column cover every 6 m: the
+       one place on the map where a marksman rifle beats a shotgun.
+       The units either side are rooms with two doors each, so the arcade can
+       always be flanked from inside — holding the lane needs two people.
+       The square outside is deliberately open but never bare: fountain, stalls
+       and planters break it into three crossings.
+
+     Callouts this is built to produce: "the fountain", "under the colonnade",
+     "second floor of the mall", "loading bay", "blue shopfront".
+     ====================================================================== */
+  building(50, 88, -44, -22, 2, M.paperWhite, M.roof);
+
+  /* ---- shop units: rooms with two doors, either side of a central arcade --- */
+  (function () {
+    var AZ0 = -34.5, AZ1 = -31.5;                 // the arcade lane
+    [0, 3].forEach(function (lvl) {               // ground and first floor
+      var B = lvl === 0 ? 0.3 : 3.3, H = B + 2.6;
+      // unit dividers, north side
+      [56, 62, 68, 74, 80].forEach(function (dx) {
+        seg(dx - 0.15, dx + 0.15, B, H, -43.7, AZ0, M.plaster);
+      });
+      [56, 62, 68, 74, 80].forEach(function (dx) {
+        seg(dx - 0.15, dx + 0.15, B, H, AZ1, -22.3, M.plaster);
+      });
+      // shopfronts onto the arcade: glazing with a door gap per unit
+      [[50.3, 56], [56, 62], [62, 68], [68, 74], [74, 80], [80, 87.7]].forEach(function (u) {
+        var mid = (u[0] + u[1]) / 2;
+        seg(u[0], mid - 0.9, B, H, AZ0, AZ0 + 0.2, M.shopGlass);
+        seg(mid + 0.9, u[1], B, H, AZ0, AZ0 + 0.2, M.shopGlass);
+        seg(u[0], mid - 0.9, B, H, AZ1 - 0.2, AZ1, M.shopGlass);
+        seg(mid + 0.9, u[1], B, H, AZ1 - 0.2, AZ1, M.shopGlass);
+        seg(u[0], u[1], B + 2.2, H, AZ0, AZ0 + 0.2, M.trim, { collide: false });
+        seg(u[0], u[1], B + 2.2, H, AZ1 - 0.2, AZ1, M.trim, { collide: false });
+      });
+      // interior fittings: counters and racking give cover inside every unit
+      /* The east unit (ux 84) is the LIFT LOBBY: CFG.LIFTS has a shaft at
+         (84.2, -25.5) r 1.6 and the south counter landed inside it. Fittings
+         are omitted there rather than nudged, because a shaft position is
+         derived by search and must never be worked around by eye. */
+      [53, 59, 65, 71, 77, 84].forEach(function (ux) {
+        seg(ux - 1.9, ux + 1.9, B, B + 1.05, -40.5, -39.7, M.wood); // counter N
+        seg(ux - 1.6, ux + 1.6, B, B + 1.7, -37.4, -36.8, M.trim);  // racking N
+        if (ux === 84) return;
+        seg(ux - 1.9, ux + 1.9, B, B + 1.05, -25.6, -24.8, M.wood); // counter S
+        seg(ux - 1.6, ux + 1.6, B, B + 1.7, -28.4, -27.8, M.trim);  // racking S
+      });
+      // arcade columns every ~6 m — cover in the long lane
+      [53, 59, 65, 71, 77, 83].forEach(function (px) {
+        cyl(px, B + 1.35, -33.0, 0.28, 2.7, M.paperWhite);
+      });
+    });
+    // first-floor balustrade over the arcade, so upstairs overlooks the lane
+    seg(50.3, 87.7, 3.3, 4.35, AZ0 - 0.14, AZ0, M.trim);
+    seg(50.3, 87.7, 3.3, 4.35, AZ1, AZ1 + 0.14, M.trim);
+  })();
+
+  /* ---- COLONNADE on the square face --------------------------------------- */
+  /* Colonnade roof sits at 3.66 on purpose: a market stall canopy is 2.66, so
+     vaulting a stall puts you on the colonnade, and the colonnade looks
+     straight into the mall's first-floor windows. The architecture gate flagged
+     it at 3.85 — high enough to invite the jump and refuse it. */
+  [52, 58, 64, 70, 76, 82, 87].forEach(function (px) {
+    cyl(px, 1.65, -20.6, 0.32, 3.3, M.paperWhite);
   });
-  [[54, -26], [84, -40]].forEach(function (q) { crates(q[0], q[1]); });
+  seg(50, 88, 3.3, 3.66, -21.4, -19.8, M.paperWhite);
+  seg(50, 88, 3.66, 4.3, -20.0, -19.86, M.contRed);                         // parapet band
+
+  /* ---- MARKET SQUARE  z -20..-12 — the outdoor room ------------------------ */
+  seg(44, 94, 0.02, 0.06, -19.6, -12.0, M.sidewalk, NC);
+  seg(46, 92, 0.06, 0.09, -16.2, -15.9, M.roadPaint, NC);
+  /* LANDMARK: the fountain. Low enough to vault, high enough to break a
+     sightline, and the one object in this district visible from the avenue,
+     the colonnade and the mall's first floor. */
+  (function () {
+    var FX = 66, FZ = -16.2;
+    cyl(FX, 0.42, FZ, 4.2, 0.84, M.sidewalk);
+    cyl(FX, 0.92, FZ, 3.7, 0.18, M.shopGlass, NC);                          // water
+    cyl(FX, 1.35, FZ, 1.1, 1.5, M.sidewalk);
+    cyl(FX, 2.25, FZ, 0.55, 1.3, M.sidewalk);
+    cyl(FX, 3.05, FZ, 0.28, 0.9, M.trim, NC);
+    seg(FX - 0.5, FX + 0.5, 3.4, 4.2, FZ - 0.5, FZ + 0.5, M.white, NC);     // lit finial
+  })();
+  // market stalls — hard cover in two staggered rows, the square's combat grid
+  [[52, -18.2], [57.5, -14.2], [76, -18.2], [82, -14.2], [90.5, -13.4]].forEach(function (q) {
+    seg(q[0] - 1.8, q[0] + 1.8, 0, 0.95, q[1] - 1.1, q[1] + 1.1, M.wood);   // trestle
+    cyl(q[0] - 1.7, 1.25, q[1] - 1.0, 0.07, 2.5, M.trim);
+    cyl(q[0] + 1.7, 1.25, q[1] - 1.0, 0.07, 2.5, M.trim);
+    cyl(q[0] - 1.7, 1.25, q[1] + 1.0, 0.07, 2.5, M.trim);
+    cyl(q[0] + 1.7, 1.25, q[1] + 1.0, 0.07, 2.5, M.trim);
+    seg(q[0] - 2.0, q[0] + 2.0, 2.5, 2.66, q[1] - 1.3, q[1] + 1.3, M.contRed);   // canopy
+    /* Stock crates beside every stall. A canopy at 2.66 with only a 0.95 m
+       trestle under it is an invitation the square cannot honour — the crates
+       make the canopy a real perch and give the crossing a second cover
+       height at the same time. */
+    box(q[0] + 2.7, 0.45, q[1] + 0.4, 1.5, 0.9, 1.4, M.wood);
+    box(q[0] + 2.6, 1.2, q[1] + 0.35, 1.2, 0.6, 1.1, M.wood);
+    box(q[0] + 2.7, 1.68, q[1] + 0.4, 0.9, 0.36, 0.9, M.rust);
+  });
+  [[48, -14.6], [62, -13.2], [72, -13.2], [92, -14.6]].forEach(function (p) {
+    seg(p[0] - 1.5, p[0] + 1.5, 0, 0.9, p[1] - 1.0, p[1] + 1.0, M.brick);   // planter
+    seg(p[0] - 1.3, p[0] + 1.3, 0.9, 1.6, p[1] - 0.8, p[1] + 0.8, M.foliage, NC);
+  });
+  [[55, -12.8], [70, -19.0], [86, -12.8]].forEach(function (p) {
+    box(p[0], 0.35, p[1], 1.8, 0.7, 0.9, M.wood);                           // bench
+  });
+  [[46.5, -17.5], [90.5, -17.5]].forEach(function (p) {
+    cyl(p[0], 1.15, p[1], 0.17, 2.3, M.trim);                               // street trees
+    cyl(p[0], 3.3, p[1], 0.06, 2.6, M.foliage, NC);
+  });
+  // bus stop: shelter plus a parked bus, hard cover at the square's east gate
+  seg(84.6, 91.4, 2.55, 2.8, -12.9, -10.7, M.railGreen);
+  box(84.8, 1.28, -11.8, 0.16, 2.55, 0.16, M.trim); box(91.2, 1.28, -11.8, 0.16, 2.55, 0.16, M.trim);
+  box(88, 0.45, -11.4, 3.0, 0.9, 0.5, M.wood);
+  bus(80, -11.6, Math.PI / 2);
+  sedan(50, -13.4, false, 1, false); sedan(58, -19.2, true, 5, false);
+  lamp(48, -18.6, 'e'); lamp(66, -12.4, 'n'); lamp(83, -12.6, 'n');   // clear of airdrop pad 7
+
+  /* ---- SERVICE YARD  z -52..-44 — the back of house ----------------------- */
+  seg(46, 92, 0.02, 0.06, -51.6, -44.4, M.asphalt, NC);
+  // loading docks: raised platform with roller openings into the mall's rear
+  seg(56, 82, 0, 1.1, -46.4, -44.4, M.concrete);
+  stairFlight(54.3, 0, -45.4, 1, 0, 4, 0.275, 0.42, 2.2, M.concrete);       // dock steps -> 1.10
+  [[60, 2.4], [70, 2.4], [78, 2.4]].forEach(function (d) {
+    seg(d[0] - 1.9, d[0] + 1.9, 1.1, 1.35, -46.4, -44.4, M.trim, NC);       // dock lip
+  });
+  truck(64, -49.4, 0); truck(75, -49.0, 0.08);
+  [[50, -48.6], [53, -48.6], [86, -47.4], [89, -47.4]].forEach(function (p) {
+    box(p[0], 0.72, p[1], 2.3, 1.44, 1.6, M.contGreen);                     // dumpsters
+    box(p[0], 1.5, p[1], 2.4, 0.12, 1.7, M.trim, NC);
+  });
+  box(84, 1.15, -50.6, 2.0, 2.3, 1.4, M.rust);                              // transformer
+  cyl(84, 2.55, -50.6, 0.1, 0.5, M.trim, NC);
+  crates(48, -45.6); barrel(92, -49.5, true); barrel(90.6, -50.2, false);
+  lamp(58, -47.8, 'n'); lamp(80, -47.8, 'n');
 
   /* ---- AIRPORT (NW, x -95..-40 / z -95..-45) ---- */
   seg(-94, -44, 0.02, 0.05, -78, -62, M.asphalt, NC);                     // runway
