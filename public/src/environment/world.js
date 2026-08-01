@@ -37,6 +37,13 @@ var World = (function () {
   }
 
   var M = {};
+  /* Unlit look, mergeable material. Lambert output is emissive + diffuse*light;
+     with a black diffuse the result is exactly the Basic colour, but StaticMerge
+     will batch it. Districts get this through the T contract as `emissive` so a
+     district-specific sign or glow never has to reach for MeshBasicMaterial. */
+  function emissiveMat(hex) {
+    return new THREE.MeshLambertMaterial({ color: 0x000000, emissive: hex });
+  }
   function makeMaterials() {
     var L = function (opt) { return new THREE.MeshLambertMaterial(opt); };
     M.asphalt = L({ map: canvasTex(256, function (g, s) {
@@ -91,12 +98,55 @@ var World = (function () {
     M.contGray = ribbed('#5a626b', '#4b525a');
     M.dark = L({ color: 0x15171b });
     M.trim = L({ color: 0x2b313b });
-    M.white = new THREE.MeshBasicMaterial({ color: 0xd8d4c8 });
-    M.amberGlow = new THREE.MeshBasicMaterial({ color: 0xffc069 });
-    M.redGlow = new THREE.MeshBasicMaterial({ color: 0xff4438 });
-    M.blueGlow = new THREE.MeshBasicMaterial({ color: 0x3f8dff });
+
+    /* ---- unlit surfaces (v7.5) ----------------------------------------
+       These were MeshBasicMaterial, which StaticMerge cannot batch: it only
+       accepts MeshLambertMaterial. A Lambert with color 0x000000 and a full
+       emissive term produces byte-identical pixels to Basic (diffuse
+       contribution is zero, so output == emissive) AND merges. 55 unmergeable
+       meshes became merge candidates for free. */
+    var E = emissiveMat;
+    M.white = E(0xd8d4c8);
+    M.amberGlow = E(0xffc069);
+    M.redGlow = E(0xff4438);
+    M.blueGlow = E(0x3f8dff);
+    M.lampGlow = E(CFG.RENDER.lampGlow);
+
     M.tire = L({ color: 0x111214 });
     M.carGlass = L({ color: 0x1a222c });
+
+    /* ---- shared vehicle palette (v7.5) ---------------------------------
+       Every vehicle builder used to construct its own materials on each call.
+       bus() alone minted SIX new materials per bus. StaticMerge batches by
+       material.uuid, so identical-looking paint could never batch and most
+       ended up as singleton groups the merger skips entirely. */
+    M.carPaint = [
+      L({ color: 0x7a2f2f }), L({ color: 0x2f5a7a }), L({ color: 0x6b6f4a }),
+      L({ color: 0x50565e }), L({ color: 0x8a4a20 }), L({ color: 0x2c3e50 })
+    ];
+    M.busBody = L({ color: 0x2e5f8a });
+    M.busRoof = L({ color: 0xd8dde2 });
+    M.vanBody = L({ color: 0xb8b0a0 });
+    M.jeepBody = M.carPaint[5];
+    M.cargoWood = L({ color: 0x5a3b28 });
+    M.vGlass = L({ color: 0x151d26 });
+    M.headlight = E(0xfff2c0);
+    M.taillight = E(0xff5040);
+
+    /* ---- shared street / prop palette (v7.5) ---------------------------
+       Hoisted out of deco.js, where they were minted per call site. */
+    M.roadPaint = L({ color: 0xcfd2c4 });
+    M.roadPaintY = L({ color: 0xb99a3a });
+    M.foliage = L({ color: 0x2f4a2b });
+    M.palletWood = L({ color: 0x6b4a2a });
+    M.palletBase = L({ color: 0x59401f });
+    M.signFrame = L({ color: 0x1c1f24 });
+    // Lambert (not Basic) so StaticMerge can collapse all 17 ground pools into
+    // one mesh. Black diffuse + emissive == the unlit look of the original.
+    M.glowPool = L({
+      color: 0x000000, emissive: CFG.RENDER.lampGlow, transparent: true,
+      opacity: CFG.RENDER.lampPool, blending: THREE.AdditiveBlending, depthWrite: false
+    });
   }
 
   // ---------- geometry helpers ----------
@@ -260,12 +310,17 @@ var World = (function () {
     // invisible floating lamps (two of them animated by World.flickers), which
     // both cost shading time and wash odd bright patches over open terrain.
     if (urban === false) return;
+    /* v7.5 lighting budget. Urban carried 4 interior/street point lights against
+       Metro's 0; every Lambert point light multiplies fragment shading across
+       every lit surface in range. The two STREET lamps at (8.5,-18) and
+       (-8.5,14) were removed: their job — a warm pool under the streetlights —
+       is already done by the emissive lamp heads and the merged ground-glow
+       discs in deco.js, which cost one draw call between them and zero shading.
+       The two INTERIOR lights stay: they light building volumes that no
+       emissive prop can fake, and they are the map's atmosphere. */
     var wh = new THREE.PointLight(0xffb35c, 1.1, 36, 1.5); wh.position.set(-32, 6.8, -28); scene.add(wh);
     flickers.push(wh);
     var ap = new THREE.PointLight(0x8fb4ff, 0.7, 16, 1.7); ap.position.set(27, 4.6, -35); scene.add(ap);
-    var st1 = new THREE.PointLight(0xffb35c, 0.9, 18, 1.6); st1.position.set(8.5, 5, -18); scene.add(st1);
-    flickers.push(st1);
-    var st2 = new THREE.PointLight(0xffb35c, 0.8, 18, 1.6); st2.position.set(-8.5, 5, 14); scene.add(st2);
   }
 
   function groundAndRoads() {
@@ -293,7 +348,9 @@ var World = (function () {
   }
 
   function crater(cx, cz) {
-    var disc = new THREE.Mesh(new THREE.CircleGeometry(3.1, 20), M.dark);
+    // Flat cylinder rather than a circle: CylinderGeometry is merge-whitelisted,
+    // CircleGeometry is not, and at 8mm thickness they are indistinguishable.
+    var disc = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.1, 0.008, 20), M.dark);
     disc.rotation.x = -Math.PI / 2; disc.position.set(cx, 0.035, cz);
     disc.receiveShadow = true; disc.matrixAutoUpdate = false; disc.updateMatrix();
     scene.add(disc);
@@ -324,7 +381,7 @@ var World = (function () {
       if (urban) groundAndRoads();
     },
     _internals: function () {
-      return { box: box, seg: seg, cyl: cyl, stairFlight: stairFlight, crater: crater, M: M, rnd: rnd, addCollider: addCollider, sceneRef: function () { return scene; } };
+      return { box: box, seg: seg, cyl: cyl, stairFlight: stairFlight, crater: crater, M: M, rnd: rnd, addCollider: addCollider, emissive: emissiveMat, sceneRef: function () { return scene; } };
     },
     colliders: colliders,
     minimapShapes: minimapShapes,
@@ -356,6 +413,7 @@ World.build = function (sceneRef) {
   if (World.isBuilt()) return;
   World._initPart1(sceneRef);
   var H = World._internals();
+  var emissiveMat = H.emissive;   // unlit-but-mergeable material factory, for districts
   var seg = H.seg, box = H.box, cyl = H.cyl, stairFlight = H.stairFlight, crater = H.crater, M = H.M, rnd = H.rnd, addCollider = H.addCollider;
 
   // Wall with openings: fixed-plane facade, greedy row-merged into few boxes.
@@ -572,20 +630,21 @@ World.build = function (sceneRef) {
       H.sceneRef().add(m);
     });
   }
-  function sedan(cx, cz, r, color, wreck) {
-    var paint = new THREE.MeshLambertMaterial({ color: color });
+  /* `pi` is an index into the shared M.carPaint palette, not a raw hex. Each
+     colour is now one material shared by every car that wears it, so all the
+     bodies of a colour batch into a single draw call. */
+  function sedan(cx, cz, r, pi, wreck) {
+    var paint = M.carPaint[pi % M.carPaint.length];
     vpart(cx, cz, r, 0, 0, 0.67, 4.2, 0.7, 1.9, paint);
     vpart(cx, cz, r, -0.2, 0, 1.3, 2.2, wreck ? 0.3 : 0.56, 1.7, wreck ? paint : M.carGlass);
     wheels(cx, cz, r, 1.4, 0.85, 0.33);
   }
+  /* Single definition. districts-outer.js carried a byte-identical copy that
+     minted its own six materials; it now calls this one through T.bus. */
   function bus(cx, cz, r) {
     var scene = H.sceneRef();
-    var VGLASS = new THREE.MeshBasicMaterial({ color: 0x151d26 });
-    var VWHEEL = new THREE.MeshLambertMaterial({ color: 0x101214 });
-    var VLF = new THREE.MeshBasicMaterial({ color: 0xfff2c0 });
-    var VLR = new THREE.MeshBasicMaterial({ color: 0xff5040 });
-    var VBUS = new THREE.MeshLambertMaterial({ color: 0x2e5f8a });
-    var VROOF = new THREE.MeshLambertMaterial({ color: 0xd8dde2 });
+    var VGLASS = M.vGlass, VWHEEL = M.tire, VLF = M.headlight,
+        VLR = M.taillight, VBUS = M.busBody, VROOF = M.busRoof;
     var RY = r, CC = Math.cos(RY), SS = Math.sin(RY);
     function OFF(dx, dz) { return [cx + dx * CC - dz * SS, cz + dx * SS + dz * CC]; }
     box(cx, 1.32, cz, 2.45, 1.3, 8.9, VBUS, { rotY: RY });
@@ -611,18 +670,18 @@ World.build = function (sceneRef) {
     var lr = OFF(0, -4.5); box(lr[0], 0.9, lr[1], 2.1, 0.14, 0.06, VLR, { rotY: RY, collide: false });
   }
   function truck(cx, cz, r) {
-    vpart(cx, cz, r, -2.6, 0, 1.35, 2.2, 2.3, 2.4, new THREE.MeshLambertMaterial({ color: 0x5a3b28 }));
+    vpart(cx, cz, r, -2.6, 0, 1.35, 2.2, 2.3, 2.4, M.cargoWood);
     vpart(cx, cz, r, 1.1, 0, 1.75, 4.6, 2.9, 2.5, M.contGray);
     wheels(cx, cz, r, 2.6, 1.05, 0.44);
   }
   function van(cx, cz, r) {
-    var paint = new THREE.MeshLambertMaterial({ color: 0xb8b0a0 });
+    var paint = M.vanBody;
     vpart(cx, cz, r, 0.35, 0, 1.35, 4.0, 2.1, 2.2, paint);
     vpart(cx, cz, r, -2.15, 0, 0.95, 1.0, 1.3, 2.1, paint);
     wheels(cx, cz, r, 1.7, 0.95, 0.36);
   }
   function jeep(cx, cz, r) {
-    var paint = new THREE.MeshLambertMaterial({ color: 0x2c3e50 });
+    var paint = M.jeepBody;
     vpart(cx, cz, r, 0, 0, 0.8, 3.9, 0.9, 1.85, paint);
     vpart(cx, cz, r, -0.3, 0, 1.62, 1.8, 0.68, 1.75, M.carGlass);
     vpart(cx, cz, r, 2.05, 0, 0.75, 0.25, 0.9, 1.7, M.trim);
@@ -634,22 +693,25 @@ World.build = function (sceneRef) {
   truck(-9.6, -26, true);
   van(22, -20, true);
   jeep(-24, 12, false);
-  sedan(3, 26, true, 0x7a2f2f, false);
-  sedan(30, 3, false, 0x2f5a7a, false);
-  sedan(-34, -3, false, 0x6b6f4a, false);
-  sedan(-20, 18, false, 0x50565e, false);
-  sedan(-14.5, 38.5, true, 0x8a4a20, false); // inside garage
+  sedan(3, 26, true, 0, false);
+  sedan(30, 3, false, 1, false);
+  sedan(-34, -3, false, 2, false);
+  sedan(-20, 18, false, 3, false);
+  sedan(-14.5, 38.5, true, 4, false); // inside garage
   // wrecked sedan at the crossroads (visual tilt, fat AABB collider)
   (function () {
-    var g = new THREE.Group();
-    var body = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.7, 1.9), new THREE.MeshLambertMaterial({ color: 0x1d1d1f }));
-    body.position.y = 0.6; g.add(body);
-    var cab = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.34, 1.7), M.dark);
-    cab.position.set(-0.2, 1.1, 0); g.add(cab);
-    g.position.set(2, 0, -15); g.rotation.y = 0.55;
-    g.traverse(function (o) { o.castShadow = true; });
-    H.sceneRef().add(g);
-    addCollider(2 - 2.1, 0, -15 - 2.1, 2 + 2.1, 1.35, -15 + 2.1);
+    /* Was a THREE.Group. Group children are not scene children, so StaticMerge
+       never saw either box and both shipped as their own draw call. Rotated
+       offsets are computed here instead, and box() handles rotY natively —
+       which also keeps this code working under the lightweight THREE stub the
+       map validator uses, where Object3D.matrix does not exist.
+       M.dark instead of a bespoke near-black: joins the existing dark batch.
+       Collider is the original fat AABB, unchanged. */
+    var RY = 0.55, CX = 2, CZ = -15;
+    var c = Math.cos(RY), s2 = Math.sin(RY);
+    box(CX, 0.6, CZ, 4.2, 0.7, 1.9, M.dark, { rotY: RY, collide: false });
+    box(CX - 0.2 * c, 1.1, CZ - 0.2 * s2, 2.1, 0.34, 1.7, M.dark, { rotY: RY, collide: false });
+    addCollider(CX - 2.1, 0, CZ - 2.1, CX + 2.1, 1.35, CZ + 2.1);
   })();
 
   /* ===== COVER PROPS ===== */
@@ -731,23 +793,24 @@ World.build = function (sceneRef) {
   }
 
   World._buildPart3({
-    seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win,
+    seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win, emissive: emissiveMat,
     container: container, crates: crates, brokenWall: brokenWall, lamp: lamp, barrel: barrel,
     M: M, rnd: rnd, scene: H.sceneRef()
   });
 
   if (World._buildPart4) World._buildPart4({
-    seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win,
+    seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win, emissive: emissiveMat,
     container: container, crates: crates, brokenWall: brokenWall, lamp: lamp, barrel: barrel,
     M: M, rnd: rnd, scene: H.sceneRef()
   });
   if (World._buildPart5) World._buildPart5({
-    seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win,
+    seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win, emissive: emissiveMat,
     container: container, crates: crates, brokenWall: brokenWall, lamp: lamp, barrel: barrel,
+    bus: bus, sedan: sedan, van: van, jeep: jeep, truck: truck,
     M: M, rnd: rnd, scene: H.sceneRef()
   });
   if (World._buildDeco) World._buildDeco({
-    seg: seg, box: box, cyl: cyl, M: M, scene: H.sceneRef()
+    seg: seg, box: box, cyl: cyl, M: M, emissive: emissiveMat, scene: H.sceneRef()
   });
   if (World._buildAccess) World._buildAccess({
     seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, M: M, scene: H.sceneRef()

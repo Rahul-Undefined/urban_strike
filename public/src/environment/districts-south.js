@@ -64,8 +64,16 @@ World._buildPart3 = function (T) {
     [[-70, -63], [-59, -51.6]].forEach(function (r) { seg(-21.06, -20.98, 0, 1.9, r[0], r[1], M.metal); });
     [[-70, -64], [-58, -51.6]].forEach(function (r) { seg(20.98, 21.06, 0, 1.9, r[0], r[1], M.metal); });
     lamp(0, -50.2, 's');
-    var cl = new THREE.PointLight(0xcfe0ff, 0.7, 22, 1.7);
-    cl.position.set(0, 8.6, -62); scene.add(cl);
+    /* v7.5: the cool work-light PointLight here lit an OPEN-AIR deck that the
+       sun and hemisphere already reach. Replaced with two emissive flood
+       panels on a mast — same read (a lit construction site at dusk), one
+       shared material, zero per-fragment shading cost. The two interior point
+       lights on this map (tunnel, depot roof) were deliberately KEPT: they
+       light enclosed volumes that no emissive prop can fake. */
+    cyl(-2.4, 4.4, -61.6, 0.11, 8.8, M.trim, { collide: false });
+    box(-2.4, 8.7, -61.0, 1.5, 0.42, 0.16, M.white, { collide: false, cast: false });
+    box(-2.4, 8.2, -61.0, 1.5, 0.42, 0.16, M.white, { collide: false, cast: false });
+    box(-2.4, 8.45, -61.25, 1.7, 1.2, 0.3, M.trim, { collide: false, cast: false });
   })();
 
   /* ===== DEPOT B  x[52,68] z[-12,16]  h10 — big east warehouse ===== */

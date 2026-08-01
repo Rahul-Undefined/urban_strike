@@ -32,7 +32,9 @@
     hemiSky: 0xb8c8e2, hemiGround: 0x33291c, hemiIntensity: 0.82,
     ambColor: 0x3c4658, ambIntensity: 0.34,
     sunColor: 0xffa860, sunIntensity: 1.28, sunPos: [70, 82, 34],
-    lampGlow: 0xffb25a, lampPool: 0.16   // streetlight halo color + ground-pool strength
+    lampGlow: 0xffb25a, lampPool: 0.26   // streetlight halo color + ground-pool strength
+    // lampPool raised 0.16 -> 0.26 in v7.5: it now carries the street lighting
+    // that two point lights used to provide, at zero shading cost.
   };
 
   return { COLORS: COLORS, TEAMS: TEAMS, MODES: MODES, MINIMAP: MINIMAP, RENDER: RENDER, MAPS: MAPS };

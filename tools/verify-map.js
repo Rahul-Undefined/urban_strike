@@ -53,13 +53,27 @@ const THREE = {
   PointLight: function () { Obj.call(this); },
   BoxGeometry: K(), CylinderGeometry: K(), SphereGeometry: K(), PlaneGeometry: K(), ConeGeometry: K(),
   CircleGeometry: K(), RingGeometry: K(), TorusGeometry: K(), EdgesGeometry: K(), LineSegments: function () { Obj.call(this); },
-  BufferGeometry: function () { this.setFromPoints = () => this; },
+  // BufferGeometry/BufferAttribute/Points added v7.5: deco.js batches the 17
+  // streetlamp halos into a single Points cloud. The stub must model what the
+  // real build actually constructs, or the validator crashes on presentation
+  // code it does not even inspect.
+  BufferGeometry: function () {
+    this.setFromPoints = () => this;
+    this.setAttribute = () => this;
+    this.setIndex = () => this;
+    this.attributes = {};
+  },
+  BufferAttribute: function (arr, itemSize) { this.array = arr; this.itemSize = itemSize; this.count = arr ? arr.length / itemSize : 0; },
+  Points: function () { Obj.call(this); },
+  PointsMaterial: K(),
   MeshLambertMaterial: K(), MeshBasicMaterial: K(), SpriteMaterial: K(), LineBasicMaterial: K(),
   CanvasTexture: function () { this.wrapS = this.wrapT = 0; this.repeat = new Vec(1, 1); },
   RepeatWrapping: 1000, DoubleSide: 2, AdditiveBlending: 2, PCFSoftShadowMap: 1
 };
 THREE.Mesh.prototype = Object.create(Obj.prototype);
 THREE.Line.prototype = Object.create(Obj.prototype);
+THREE.Points.prototype = Object.create(Obj.prototype);
+THREE.LineSegments.prototype = Object.create(Obj.prototype);
 
 function runMap(mapName, data, wallDefault) {
   const ctx = {

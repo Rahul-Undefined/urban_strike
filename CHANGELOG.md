@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v7.4.1** | CURRENT — Milestone 8a + browser-reported menu overlap fix, 5s countdown with on-screen ticks. |
+| **v7.5** | CURRENT — Milestone 8b-1: Urban material consolidation. 233 -> 55 draw calls, 10 -> 7 lights. No layout change. |
+| v7.4.1 | Good — Milestone 8a + menu overlap fix, 5s countdown with on-screen ticks. |
 | v7.4 | Superseded — menu footer overlapped the stat strip on short viewports. |
 | v7.3 | Good — METRO CITY COMPLETE. Subway, construction site, tower crane. |
 | v7.2 | Good — Metro City phase 3 |
@@ -33,6 +34,134 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 | v4.3 | Last known-good before the merge system |
 | v4.2 | Good — map expansion + graphics, before the gameplay update |
 | v3.1 | Good — last pre-refactor build |
+
+---
+
+## v7.5 — Milestone 8b-1: Urban material consolidation
+
+Foundation work for the Urban visual pass. **No building moved, no collider
+changed, no spawn or loot point touched.** Cover analysis reports the identical
+827 cover pieces and 0.4% dead ground as v7.4.1, which is the check that the
+map itself is untouched.
+
+### Result
+
+| Map | Draw calls before | after | Lights before | after |
+|---|---|---|---|---|
+| **urban** | **233** | **55** | 10 | 7 |
+| rural | 17 | 17 | 3 | 3 |
+| metro | 19 | 19 | 3 | 3 |
+
+Urban carried 12x Metro's draw calls on 3x the triangles. It now sits at 55 with
+39.5k triangles — the headroom the district colour pass will spend.
+
+### What was actually wrong
+
+The waste was never geometry. Four specific mistakes, all invisible in a
+screenshot and all easy to reintroduce one prop at a time:
+
+| Cause | Count | Why the merger skipped it |
+|---|---|---|
+| Static mesh never marked `matrixAutoUpdate = false` | 121 | `StaticMerge` only takes meshes explicitly flagged static |
+| `MeshBasicMaterial` used for unlit surfaces | 55 | The merger only accepts `MeshLambertMaterial` |
+| Materials minted inside per-call builder functions | ~20 | Batching is by `material.uuid`; identical paint could not share a batch |
+| Props parented to a `THREE.Group` | 10 | Group children are not scene children — the merger never sees them |
+
+`bus()` constructed **six brand-new materials on every call**, and existed as two
+byte-identical copies in `world.js` and `districts-outer.js`. `sedan()` minted
+one paint per car. Every streetlamp minted its own glow material. Every tree
+minted its own foliage material.
+
+### Changes
+
+**Shared palette.** All vehicle, street and prop materials hoisted into the `M`
+dictionary: `carPaint[]`, `busBody`, `busRoof`, `vanBody`, `vGlass`, `headlight`,
+`taillight`, `roadPaint`, `roadPaintY`, `foliage`, `palletWood`, `palletBase`,
+`signFrame`, `glowPool`. Named for the district work ahead so phase 6 extends the
+palette rather than refactoring it again.
+
+**Unlit surfaces became mergeable.** `M.white`, `M.amberGlow`, `M.redGlow`,
+`M.blueGlow` and the lamp pools were `MeshBasicMaterial`. A Lambert with
+`color: 0x000000` and a full emissive term produces byte-identical pixels — the
+diffuse contribution is zero, so output equals emissive — *and* merges. Districts
+get the factory as `T.emissive` so new signage never reaches for Basic again.
+
+**One `bus()`.** The duplicate in `districts-outer.js` was deleted; the shared
+implementation arrives through the district `T` contract.
+
+**deco.js rebuilt.** All 76 road dashes, both yellow lines, all trees and pallets
+now go through a `still()` helper that sets the static flag every time. Pallets no
+longer use a `THREE.Group` — rotation is applied to offsets instead. The wrecked
+sedan lost its Group the same way and now shares `M.dark`.
+
+**17 lamp sprites became 1 Points cloud.** Sprites never batch; `THREE.Points`
+with the same radial texture and additive blend does, at one draw call. The 17
+ground-glow discs now share one material and merge into a single mesh.
+
+**Crater discs** switched from `CircleGeometry` to an 8 mm `CylinderGeometry` —
+visually identical, and cylinders are merge-whitelisted.
+
+### Lighting
+
+Three point lights removed, four kept. The rule applied: **a point light stays
+only if it lights an enclosed volume that emissive geometry cannot fake.**
+
+| Light | Verdict |
+|---|---|
+| Warehouse interior (-32, 6.8, -28) | KEPT — encloses a building volume |
+| Apartment interior (27, 4.6, -35) | KEPT |
+| Sunken tunnel (47, -1.05, -18) | KEPT — genuinely dark without it |
+| Depot roof (60, 7.4, 2) | KEPT — under a roof |
+| Street lamp (8.5, 5, -18) | REMOVED — emissive heads + ground pools do this |
+| Street lamp (-8.5, 5, 14) | REMOVED |
+| Construction work light (0, 8.6, -62) | REMOVED — lit an open-air deck the sun already reaches; replaced with emissive flood panels on a mast |
+
+`CFG.RENDER.lampPool` raised 0.16 → 0.26 so the merged ground glow carries the
+street lighting the two removed lamps provided, at zero shading cost.
+
+### New gate: `tools/verify-batch.js` (21 assertions)
+
+Asserts the **invariants**, not a mesh-count ceiling, so it keeps working as
+districts add content. Per map: draw-call budget, every static mesh flagged
+static, no `MeshBasicMaterial` in static geometry, no mesh hidden in a Group,
+loose meshes use merge-whitelisted geometry, no per-object sprites, light budget.
+It prints the draw-call count for every map — that is the number to watch during
+the visual pass.
+
+Budgets (urban 95, rural 40, metro 45) are headroom to catch a return to the old
+architecture, not targets. If a district pass pushes a map over, the cause is
+almost always one of the four mistakes above — investigate before raising it.
+
+`tools/verify-map.js`'s THREE stub gained `BufferAttribute`, `Points`,
+`PointsMaterial` and the missing `BufferGeometry` methods. The stub was extended
+to model what the build actually constructs; nothing was relaxed.
+
+### Gates
+
+| Gate | v7.4.1 | v7.5 |
+|---|---|---|
+| Integration | 84 | 84 |
+| **Batching** | — | **21 (new)** |
+| Models/loot/voice | 38 | 38 |
+| Map | 566 | 566 |
+| Build chain | PASS | PASS |
+| Ascent | 25/27 | 25/27 (same two pre-existing) |
+| Lifts | 98 | 98 |
+| Cover | 827 pieces, 0.4% dead | identical |
+| Parse sweep | clean | clean |
+
+### NOT browser-confirmed — read this before building on it
+
+This release changed **material instance identity across the whole Urban map**
+and **removed three lights**. That is render-stage work, and render-stage
+failures are exactly what headless gates cannot see: the Rural `polygonOffset`
+road passed 358/358 while rendering the map completely black.
+
+Specifically unverified: that emissive-Lambert reads identically to the Basic
+materials it replaced; that the Points halo cloud looks like the sprites did;
+that Urban is not too dark where the three lights were removed.
+
+One look at Urban answers all three.
 
 ---
 

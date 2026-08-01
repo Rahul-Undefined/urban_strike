@@ -4,7 +4,8 @@ World._buildPart5 = function (T) {
   'use strict';
   var seg = T.seg, box = T.box, cyl = T.cyl, stairFlight = T.stairFlight,
     facade = T.facade, win = T.win, crates = T.crates, lamp = T.lamp,
-    barrel = T.barrel, brokenWall = T.brokenWall, M = T.M, rnd = T.rnd, scene = T.scene;
+    barrel = T.barrel, brokenWall = T.brokenWall, M = T.M, rnd = T.rnd, scene = T.scene,
+    bus = T.bus;
   var NC = { collide: false, cast: false };
 
   /* =============== CARGO / CONTAINER YARD (x 74..97, z -44..8) =============== */
@@ -36,38 +37,7 @@ World._buildPart5 = function (T) {
     cyl(p[0], 2.2, p[1], 0.18, 4.4, M.trim);
   });
   seg(76, 95, 4.4, 4.8, 32, 44, M.roof);
-  // parked buses (solid cover)
-  function bus(x, z, ry) {
-    var VGLASS = new THREE.MeshBasicMaterial({ color: 0x151d26 });
-    var VWHEEL = new THREE.MeshLambertMaterial({ color: 0x101214 });
-    var VLF = new THREE.MeshBasicMaterial({ color: 0xfff2c0 });
-    var VLR = new THREE.MeshBasicMaterial({ color: 0xff5040 });
-    var VBUS = new THREE.MeshLambertMaterial({ color: 0x2e5f8a });
-    var VROOF = new THREE.MeshLambertMaterial({ color: 0xd8dde2 });
-    var RY = ry, CC = Math.cos(RY), SS = Math.sin(RY);
-    function OFF(dx, dz) { return [x + dx * CC - dz * SS, z + dx * SS + dz * CC]; }
-    box(x, 1.32, z, 2.45, 1.3, 8.9, VBUS, { rotY: RY });
-    box(x, 1.78, z, 2.5, 0.42, 7.6, VGLASS, { rotY: RY, collide: false });
-    box(x, 2.68, z, 2.3, 0.1, 8.7, VROOF, { rotY: RY, collide: false });
-    var LAT = 1.05, LZF = 3.1;
-    [[LAT, LZF], [-LAT, LZF], [LAT, -LZF], [-LAT, -LZF]].forEach(function (wf) {
-      var wp = OFF(wf[0], wf[1]);
-      var wm = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 10), VWHEEL);
-      wm.position.set(wp[0], 0.31, wp[1]);
-      wm.rotation.set(0, RY, Math.PI / 2);
-      wm.matrixAutoUpdate = false; wm.updateMatrix();
-      scene.add(wm);
-    });
-    [OFF(LAT, 0), OFF(-LAT, 0)].forEach(function (wp) {
-      var wm = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 10), VWHEEL);
-      wm.position.set(wp[0], 0.31, wp[1]);
-      wm.rotation.set(0, RY, Math.PI / 2);
-      wm.matrixAutoUpdate = false; wm.updateMatrix();
-      scene.add(wm);
-    });
-    var lf = OFF(0, 4.5); box(lf[0], 0.9, lf[1], 2.1, 0.16, 0.06, VLF, { rotY: RY, collide: false });
-    var lr = OFF(0, -4.5); box(lr[0], 0.9, lr[1], 2.1, 0.14, 0.06, VLR, { rotY: RY, collide: false });
-  }
+  // parked buses (solid cover) — bus() lives in world.js and arrives via T.bus
   bus(82, 37, 0); bus(88, 37, 0); bus(84, 52, 0.35); bus(92, 50, -0.2);
   // ticket office with roof access (external north stair)
   (function () {
@@ -152,10 +122,7 @@ World._buildPart5 = function (T) {
   seg(-14, -11, 1.15, 1.28, 85.9, 86.1, M.trim, NC);                                // swing frame
   box(-12.5, 0.35, 88.5, 1.6, 0.7, 0.9, M.wood, NC);                   // bench
   function car(x, z, ry, m) {
-    var VGLASS = new THREE.MeshBasicMaterial({ color: 0x151d26 });
-    var VWHEEL = new THREE.MeshLambertMaterial({ color: 0x101214 });
-    var VLF = new THREE.MeshBasicMaterial({ color: 0xfff2c0 });
-    var VLR = new THREE.MeshBasicMaterial({ color: 0xff5040 });
+    var VGLASS = M.vGlass, VWHEEL = M.tire, VLF = M.headlight, VLR = M.taillight;
     var RY = ry, CC = Math.cos(ry), SS = Math.sin(ry);
     function OFF(dx, dz) { return [x + dx * CC - dz * SS, z + dx * SS + dz * CC]; }
     box(x, 0.55, z, 1.86, 0.62, 4.15, m, { rotY: ry });
