@@ -112,7 +112,8 @@
     defaultKills: 15,
     killOptions: [5, 10, 15, 20, 30],
     defaultMinutes: 10,
-    timeOptions: [5, 10, 15, 0],
+    timeOptions: [5, 10, 15, 30, 60],
+    startCountdown: 10,   // seconds between the host pressing START and the match beginning
     respawnDelay: 3,
     defaultMode: 'ffa',
     pickupRadius: 1.25,

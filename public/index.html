@@ -14,18 +14,66 @@
 
 <!-- ============ MENU LAYER ============ -->
 <div id="menu-layer">
+  <!-- Backdrop: pure CSS + one inline SVG silhouette. No WebGL, no image files,
+       no blur filters. Everything animated here is transform/opacity only, so it
+       stays on the compositor and never touches the game's frame budget. -->
+  <div class="backdrop" aria-hidden="true">
+    <div class="bd-sky"></div>
+    <svg class="bd-skyline" viewBox="0 0 1600 420" preserveAspectRatio="xMidYMax slice">
+      <g class="sky-far">
+        <path d="M0,420 L0,250 L70,250 L70,205 L120,205 L120,250 L190,250 L190,160 L245,160 L245,120 L300,120 L300,250
+                 L360,250 L360,215 L430,215 L430,250 L500,250 L500,175 L565,175 L565,250 L640,250 L640,140 L700,140
+                 L700,250 L770,250 L770,200 L840,200 L840,250 L910,250 L910,165 L975,165 L975,250 L1050,250 L1050,190
+                 L1120,190 L1120,250 L1190,250 L1190,130 L1250,130 L1250,250 L1330,250 L1330,210 L1400,210 L1400,250
+                 L1470,250 L1470,180 L1540,180 L1540,250 L1600,250 L1600,420 Z"/>
+        <rect x="243" y="86" width="4" height="36"/><rect x="1248" y="96" width="4" height="36"/>
+      </g>
+      <g class="sky-mid">
+        <path d="M0,420 L0,320 L110,320 L110,268 L200,268 L200,320 L300,320 L300,240 L390,240 L390,320 L470,320
+                 L470,290 L560,290 L560,320 L660,320 L660,255 L760,255 L760,320 L860,320 L860,300 L960,300
+                 L960,320 L1060,320 L1060,262 L1160,262 L1160,320 L1260,320 L1260,285 L1380,285 L1380,320
+                 L1480,320 L1480,248 L1600,248 L1600,420 Z"/>
+        <!-- gantry crane over the yard -->
+        <path d="M980,255 L980,150 M1180,255 L1180,150 M960,150 L1260,150 M1255,150 L1255,178 M1240,178 L1270,178"/>
+        <!-- comms mast -->
+        <path d="M1520,248 L1520,120 M1500,180 L1540,180 M1506,150 L1534,150"/>
+      </g>
+      <g class="sky-near">
+        <path d="M0,420 L0,368 L150,368 L150,340 L260,340 L260,368 L420,368 L420,352 L560,352 L560,368
+                 L780,368 L780,330 L900,330 L900,368 L1120,368 L1120,346 L1250,346 L1250,368 L1420,368
+                 L1420,358 L1600,358 L1600,420 Z"/>
+      </g>
+      <g class="sky-lights">
+        <circle cx="212" cy="182" r="2.5"/><circle cx="266" cy="142" r="2.5"/><circle cx="662" cy="162" r="2.5"/>
+        <circle cx="1206" cy="152" r="2.5"/><circle cx="1492" cy="200" r="2.5"/><circle cx="322" cy="262" r="2.5"/>
+        <circle cx="682" cy="276" r="2.5"/><circle cx="1082" cy="284" r="2.5"/><circle cx="1500" cy="270" r="2.5"/>
+      </g>
+    </svg>
+    <div class="bd-haze"></div>
+    <div class="bd-dust"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="bd-sweep"></div>
+    <div class="bd-grid"></div>
+  </div>
   <div class="menu-vignette"></div>
+  <div class="menu-frame" aria-hidden="true"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i></div>
 
   <!-- MAIN MENU -->
   <section class="screen active" id="screen-main">
     <div class="brand">
-      <div class="brand-eyebrow">SECTOR 7 // INDUSTRIAL DISTRICT</div>
+      <div class="brand-eyebrow"><i class="live"></i>SECTOR 7 // INDUSTRIAL DISTRICT</div>
       <h1>URBAN<span>STRIKE</span></h1>
-      <div class="brand-sub">2–10 player tactical combat · FFA · 3v3 · 5v5 · in your browser</div>
+      <div class="brand-rule"><i></i><b>TACTICAL COMBAT SIMULATION</b><i></i></div>
+      <div class="brand-sub" id="brand-modes">2–10 player tactical combat · in your browser</div>
     </div>
     <div class="menu-actions">
-      <button class="btn btn-primary" id="btn-goto-create">CREATE ROOM</button>
-      <button class="btn" id="btn-goto-join">JOIN WITH CODE</button>
+      <button class="btn btn-primary" id="btn-goto-create"><span>CREATE ROOM</span></button>
+      <button class="btn" id="btn-goto-join"><span>JOIN WITH CODE</span></button>
+    </div>
+    <div class="menu-stats">
+      <div class="mstat"><b id="stat-maps">3</b><span>THEATRES</span></div>
+      <div class="mstat"><b>14</b><span>WEAPONS</span></div>
+      <div class="mstat"><b>11</b><span>ATTACHMENTS</span></div>
+      <div class="mstat"><b>P2P</b><span>VOICE COMMS</span></div>
     </div>
     <div class="menu-foot">WASD move · SHIFT sprint · C crouch · Q/E lean · RMB aim · hold G cook frag · X prone · H molotov · V mine · wheel = scope zoom · 9 exclusive · TAB scoreboard</div>
   </section>
@@ -37,17 +85,25 @@
       <label class="field"><span>CALLSIGN</span>
         <input type="text" id="create-name" maxlength="14" placeholder="Your name" autocomplete="off">
       </label>
-      <label class="field"><span>MODE</span>
-        <select id="create-mode"><option value="ffa" selected>Free For All (10)</option><option value="t3">3 vs 3</option><option value="t5">5 vs 5</option></select>
-        <label>MAP</label>
-        <select id="create-map"><option value="urban" selected>Urban</option><option value="rural">Rural</option></select>
-      </label>
-      <label class="field"><span>KILLS TO WIN</span>
-        <select id="create-kills"><option>5</option><option>10</option><option selected>15</option><option>20</option><option>30</option></select>
-      </label>
-      <label class="field"><span>TIME LIMIT</span>
-        <select id="create-time"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="15">15 min</option><option value="0">No limit</option></select>
-      </label>
+      <!-- Selects are populated from CFG by UI.populateSelects(). They are left
+           empty here on purpose: hardcoding options in markup is exactly why
+           Metro City existed for three versions but could not be chosen. -->
+      <div class="field-row">
+        <label class="field"><span>MODE</span>
+          <select id="create-mode"></select>
+        </label>
+        <label class="field"><span>MAP</span>
+          <select id="create-map"></select>
+        </label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>KILLS TO WIN</span>
+          <select id="create-kills"></select>
+        </label>
+        <label class="field"><span>MATCH DURATION</span>
+          <select id="create-time"></select>
+        </label>
+      </div>
       <button class="btn btn-primary wide" id="btn-create">CREATE & GET CODE</button>
       <button class="btn wide ghost" data-back>BACK</button>
     </div>
@@ -71,36 +127,63 @@
   <!-- LOBBY -->
   <section class="screen" id="screen-lobby">
     <h2 class="screen-title">STAGING AREA</h2>
+    <!-- Three real grid columns. v7.3 shipped one extra closing tag here, which
+         ended .lobby-grid early and left the rules panel outside the grid. -->
     <div class="lobby-grid">
-      <div class="panel code-panel">
-        <div class="code-label">ROOM CODE — SHARE THIS</div>
-        <div class="container-plate" id="lobby-code">·····</div>
-        <button class="btn small" id="btn-copy-code">COPY CODE</button>
-      </div>
-      <div class="panel">
-        <div class="panel-head">OPERATORS <span id="lobby-count">0/4</span></div>
-        <ul class="player-list" id="lobby-players"></ul>
+
+      <!-- LEFT: room code + room information -->
+      <div class="lobby-col">
+        <div class="panel code-panel">
+          <div class="code-label">ROOM CODE — SHARE THIS</div>
+          <div class="container-plate" id="lobby-code">·····</div>
+          <button class="btn small wide" id="btn-copy-code">COPY CODE</button>
+        </div>
+        <div class="panel">
+          <div class="panel-head">ROOM INFORMATION</div>
+          <ul class="info-list">
+            <li><span>THEATRE</span><b id="info-map">—</b></li>
+            <li><span>ENGAGEMENT</span><b id="info-mode">—</b></li>
+            <li><span>KILL TARGET</span><b id="info-kills">—</b></li>
+            <li><span>DURATION</span><b id="info-time">—</b></li>
+            <li><span>SLOTS</span><b id="info-slots">—</b></li>
+            <li><span>YOUR ROLE</span><b id="info-role">—</b></li>
+          </ul>
         </div>
       </div>
-      <div class="panel" id="lobby-settings">
-        <div class="panel-head">MATCH RULES</div>
-        <label class="field"><span>MODE</span>
-          <select id="lobby-mode"><option value="ffa">Free For All</option><option value="t3">3 vs 3</option><option value="t5">5 vs 5</option></select>
-        </label>
-        <label class="field"><span>MAP</span>
-          <select id="lobby-map"><option value="urban">Urban</option><option value="rural">Rural</option></select>
-        </label>
-        <label class="field"><span>KILLS TO WIN</span>
-          <select id="lobby-kills"><option>5</option><option>10</option><option>15</option><option>20</option><option>30</option></select>
-        </label>
-        <label class="field"><span>TIME LIMIT</span>
-          <select id="lobby-time"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="0">No limit</option></select>
-        </label>
-        <div class="hint" id="lobby-hint">Waiting for host to start…</div>
-        <button class="btn wide ghost" id="btn-ready" data-r="0">READY UP</button>
-        <button class="btn wide ghost" id="btn-voice">JOIN VOICE</button>
-        <button class="btn btn-primary wide" id="btn-start" style="display:none">START MATCH</button>
-        <button class="btn wide ghost" id="btn-leave">LEAVE ROOM</button>
+
+      <!-- CENTER: operators, host, ready + voice status -->
+      <div class="lobby-col">
+        <div class="panel grow">
+          <div class="panel-head">OPERATORS <span id="lobby-count">0/4</span></div>
+          <ul class="player-list" id="lobby-players"></ul>
+          <div class="ready-meter">
+            <div class="ready-bar"><i id="ready-fill"></i></div>
+            <div class="ready-text" id="ready-text">0 of 0 ready</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: match rules, settings, actions -->
+      <div class="lobby-col">
+        <div class="panel" id="lobby-settings">
+          <div class="panel-head">MATCH RULES</div>
+          <div class="field-row">
+            <label class="field"><span>MODE</span><select id="lobby-mode"></select></label>
+            <label class="field"><span>MAP</span><select id="lobby-map"></select></label>
+          </div>
+          <div class="field-row">
+            <label class="field"><span>KILLS</span><select id="lobby-kills"></select></label>
+            <label class="field"><span>DURATION</span><select id="lobby-time"></select></label>
+          </div>
+        </div>
+        <div class="panel actions-panel">
+          <div class="panel-head">ACTIONS</div>
+          <button class="btn wide ghost" id="btn-ready" data-r="0">READY UP</button>
+          <button class="btn wide ghost" id="btn-voice">JOIN VOICE</button>
+          <button class="btn btn-primary wide" id="btn-start" disabled>START MATCH</button>
+          <div class="hint" id="lobby-hint">Waiting for host to start…</div>
+          <button class="btn wide ghost danger" id="btn-leave">LEAVE ROOM</button>
+        </div>
       </div>
     </div>
   </section>
@@ -123,7 +206,6 @@
   </div>
   <div id="live-board"></div>
   <div id="announce"></div>
-  <div id="countdown" class="hidden"></div>
   <div id="voice-ind" class="hidden">● TALKING</div>
   <div id="voice-diag" class="hidden"></div>
 
@@ -188,6 +270,10 @@
   <div id="click-to-play" class="hidden"><div>CLICK TO TAKE CONTROL</div></div>
 </div>
 
+<!-- Launch countdown lives OUTSIDE both layers. It used to sit inside #hud-layer,
+     which is display:none during the lobby — so the pre-match countdown was
+     invisible on the exact screen that triggers it. -->
+<div id="countdown" class="hidden"></div>
 <div id="toasts"></div>
 <div id="loading" class="hidden"><div class="loader-bar"></div><div id="loading-label">BUILDING URBAN…</div></div>
 

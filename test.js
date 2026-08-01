@@ -16,8 +16,46 @@ function finish() {
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 }
-setTimeout(() => { console.log('TIMEOUT'); finish(); }, 90000);
+setTimeout(() => { console.log('TIMEOUT'); finish(); }, 120000);   // +30s: the host-gated launch adds a real 10s countdown
+
+/* ---- static config gates (no server needed) ---- */
+function configGates() {
+  console.log('--- Config: match options + mode registry ---');
+  ok(CFG.MATCH.killOptions.join(',') === '5,10,15,20,30', 'kill options are 5/10/15/20/30 (no Unlimited)');
+  ok(CFG.MATCH.timeOptions.join(',') === '5,10,15,30,60', 'duration options are 5/10/15/30/60 (no No-Limit)');
+  ok(CFG.MATCH.timeOptions.every(n => n > 0), 'no zero duration: every match can end');
+  ok(CFG.MATCH.killOptions.indexOf(CFG.MATCH.defaultKills) >= 0, 'default kill target is a selectable option');
+  ok(CFG.MATCH.timeOptions.indexOf(CFG.MATCH.defaultMinutes) >= 0, 'default duration is a selectable option');
+  ok(typeof CFG.MATCH.startCountdown === 'number' && CFG.MATCH.startCountdown > 0, 'launch countdown is configured');
+  ok(!!CFG.MODES.t2 && CFG.MODES.t2.teams === true && CFG.MODES.t2.maxPlayers === 4, '2v2 mode exists (teams, 4 players)');
+  ['ffa', 't2', 't3', 't5'].forEach(k => ok(!!CFG.MODES[k], 'mode registered: ' + k));
+  ['urban', 'rural', 'metro'].forEach(k =>
+    ok(CFG.MAPS[k] && CFG.MAPS[k].ready !== false, 'map selectable in registry: ' + k));
+
+  // index.html must not hardcode map/mode options — that is how Metro was lost.
+  const html = require('fs').readFileSync('./public/index.html', 'utf8');
+  ['create-map', 'lobby-map', 'create-mode', 'lobby-mode', 'create-kills',
+   'lobby-kills', 'create-time', 'lobby-time'].forEach(id => {
+    const m = html.match(new RegExp('<select id="' + id + '"[^>]*>([\\s\\S]*?)</select>'));
+    ok(m && m[1].indexOf('<option') === -1, id + ' has no hardcoded <option> (built from CFG)');
+  });
+  ok(html.indexOf('id="countdown"') !== -1 && html.indexOf('id="countdown"') > html.indexOf('id="hud-layer"'),
+    'countdown element exists');
+  const hudStart = html.indexOf('<div id="hud-layer"');
+  const hudEnd = html.indexOf('<div id="countdown"');
+  ok(hudEnd > hudStart, 'countdown sits after the HUD layer, not inside it');
+}
+configGates();
 const PROT = CFG.MATCH.spawnProtect * 1000;
+
+/* v7.4: START MATCH is gated on every player being READY, then runs a real
+   CFG.MATCH.startCountdown before the match begins. Combat phases don't test
+   the lobby, so they use this helper to satisfy the gate honestly rather than
+   the gate being softened for them. */
+function launch(sockets) {
+  sockets.forEach(s => s.emit('setReady', { v: true }));
+  setTimeout(() => sockets[0].emit('startMatch'), 250);
+}
 
 /* ---------------- Phase 1: FFA + protection + loot list ---------------- */
 function phase1(done) {
@@ -31,7 +69,7 @@ function phase1(done) {
       ok(res && res.ok && /^[A-Z2-9]{5}$/.test(res.code), 'createRoom returns 5-char code');
       B.emit('joinRoom', { name: 'Bravo', code: res.code }, (res2) => {
         ok(res2 && res2.ok, 'joinRoom with valid code succeeds');
-        A.emit('startMatch');
+        launch([A, B]);
       });
     });
   });
@@ -88,9 +126,11 @@ function phase1(done) {
       ok(true, 'snapshot relays equipped weapon index (wp=9) for remote weapon models');
     }
   });
-  setTimeout(() => {
+  // Deadline anchored to matchStart, not to phase start: the launch countdown
+  // now sits between them, and a wall-clock deadline would expire pre-match.
+  A.on('matchStart', () => setTimeout(() => {
     if (!wpRelayed) { wpRelayed = true; ok(false, 'snapshot relays equipped weapon index (wp=9) for remote weapon models'); }
-  }, 4500);
+  }, 4500));
   A.on('death', (d) => {
     if (d.victimId !== B.id || bDead) return;
     bDead = true;
@@ -132,7 +172,7 @@ function phase2(done) {
     setTimeout(() => {
       ok(lastLobby.settings.mode === 't5', 'host can switch mode in lobby (t3 -> t5)');
       A.emit('updateSettings', { mode: 't3', killTarget: 5, minutes: 10 });
-      setTimeout(() => A.emit('startMatch'), 200);
+      setTimeout(() => launch([A, B, C]), 200);
     }, 250);
   }
   A.on('matchStart', (d) => { loot = d.pickups; setTimeout(stepFF, PROT + 600); });
@@ -247,7 +287,7 @@ function phase3(done) {
 
   A.on('connect', () => {
     A.emit('createRoom', { name: 'Ax', settings: { killTarget: 5, minutes: 10, airdropSec: 5 } }, (res) => {
-      B.emit('joinRoom', { name: 'Bx', code: res.code }, () => A.emit('startMatch'));
+      B.emit('joinRoom', { name: 'Bx', code: res.code }, () => launch([A, B]));
     });
   });
   B.on('spawn', (d) => {
@@ -302,23 +342,48 @@ function phase4(done) {
     if (d.n === -1) sawCancel = true;
   }));
 
+  /* v7.4 START gate. The old flow auto-started the match the instant everyone
+     readied, which made the host's START MATCH button decorative. Now: all
+     ready -> host clicks -> CFG.MATCH.startCountdown -> match. */
+  let lobbies = [];
+  A.on('lobby', (d) => lobbies.push(d));
+  let earlyStartRefused = false;
   function stepReady() {
+    // 1. Only A readies. Host presses START. Server must refuse.
     A.emit('setReady', { v: true });
-    B.emit('setReady', { v: true });
-    // cancel mid-count, then re-ready — countdown must restart cleanly
-    setTimeout(() => B.emit('setReady', { v: false }), 1400);
     setTimeout(() => {
-      ok(sawCancel, 'unreadying cancels the countdown');
+      const l = lobbies[lobbies.length - 1];
+      ok(l && l.allReady === false && l.notReady === 1,
+        'lobby payload reports the ready gate (notReady=1, allReady=false)');
+      A.emit('startMatch');
+    }, 300);
+    setTimeout(() => {
+      earlyStartRefused = (cds.length === 0);
+      ok(earlyStartRefused, 'host START is refused server-side while a player is unready');
+      // 2. B readies too -> gate opens, but nothing may auto-start.
       B.emit('setReady', { v: true });
-    }, 2000);
+    }, 900);
+    setTimeout(() => {
+      const l = lobbies[lobbies.length - 1];
+      ok(l && l.allReady === true && l.notReady === 0, 'gate opens once every player is ready');
+      ok(cds.length === 0, 'all-ready does NOT auto-start the match (host must launch)');
+      A.emit('startMatch');       // 3. host launches for real
+    }, 1500);
+    setTimeout(() => {
+      ok(cds.indexOf(CFG.MATCH.startCountdown) === 0,
+        'host START opens a ' + CFG.MATCH.startCountdown + 's countdown');
+      const l = lobbies[lobbies.length - 1];
+      ok(l ? l.counting === true : true, 'lobby payload flags an in-flight countdown');
+    }, 2600);
   }
 
   let matchStarted = false;
   A.on('matchStart', () => {
     if (matchStarted) return;
     matchStarted = true;
-    ok(cds.filter(n => n === 5).length >= 1 && cds.indexOf(0) !== -1,
-      'all-ready countdown ran 5..0 and auto-started the match (no host click)');
+    ok(earlyStartRefused, 'match only began after the gate was satisfied');
+    ok(cds.indexOf(0) !== -1, 'countdown reached 0 before the match began');
+    ok(!sawCancel, 'a committed countdown is not cancelled by a late unready');
     setTimeout(stepStance, PROT + 400);
   });
   B.on('spawn', (d) => {
@@ -516,7 +581,7 @@ function phase6() {
       B.once('lobby', (lb) => {
         ok(lb.settings && lb.settings.map === 'rural',
           'lobby carries the selected map to joiners');
-        A.emit('startMatch');
+        launch([A, B]);
       });
       B.emit('joinRoom', { name: 'Bm', code: res.code }, () => {});
     });

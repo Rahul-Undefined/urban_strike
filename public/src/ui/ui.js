@@ -23,8 +23,59 @@ var UI = (function () {
       'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading',
       'announce', 'cook-bar', 'cook-fill', 'att-list',
       'tc-mine', 'tc-molotov', 'countdown', 'btn-ready',
-      'btn-voice', 'voice-ind', 'voice-diag'
+      'btn-voice', 'voice-ind', 'voice-diag',
+      'info-map', 'info-mode', 'info-kills', 'info-time', 'info-slots', 'info-role',
+      'ready-fill', 'ready-text', 'brand-modes', 'stat-maps'
     ].forEach(function (id) { els[id] = $(id); });
+  }
+
+  /* ---------- CFG-driven option lists ----------
+     Every dropdown in the menu is built from CFG here. v7.3 hardcoded these in
+     index.html, which is the sole reason Metro City shipped complete but could
+     never be selected. Adding a map or mode now needs no markup change. */
+  function fillSelect(el, items, selected) {
+    if (!el) return;
+    el.innerHTML = '';
+    items.forEach(function (it) {
+      var o = document.createElement('option');
+      o.value = String(it.v);
+      o.textContent = it.t;
+      if (String(it.v) === String(selected)) o.selected = true;
+      el.appendChild(o);
+    });
+  }
+  function mapItems() {
+    return Object.keys(CFG.MAPS)
+      .filter(function (k) { return CFG.MAPS[k].ready !== false; })
+      .map(function (k) { return { v: k, t: CFG.MAPS[k].label }; });
+  }
+  function modeItems() {
+    return Object.keys(CFG.MODES).map(function (k) {
+      return { v: k, t: CFG.MODES[k].label + ' (' + CFG.MODES[k].maxPlayers + ')' };
+    });
+  }
+  function killItems() {
+    return CFG.MATCH.killOptions.map(function (n) { return { v: n, t: String(n) + ' kills' }; });
+  }
+  function timeItems() {
+    return CFG.MATCH.timeOptions.map(function (n) { return { v: n, t: n + ' min' }; });
+  }
+  function populateSelects() {
+    var M = CFG.MATCH;
+    fillSelect(els['create-mode'], modeItems(), M.defaultMode);
+    fillSelect(els['create-map'], mapItems(), 'urban');
+    fillSelect(els['create-kills'], killItems(), M.defaultKills);
+    fillSelect(els['create-time'], timeItems(), M.defaultMinutes);
+    fillSelect(els['lobby-mode'], modeItems(), M.defaultMode);
+    fillSelect(els['lobby-map'], mapItems(), 'urban');
+    fillSelect(els['lobby-kills'], killItems(), M.defaultKills);
+    fillSelect(els['lobby-time'], timeItems(), M.defaultMinutes);
+    if (els['stat-maps']) els['stat-maps'].textContent = String(mapItems().length);
+    if (els['brand-modes']) {
+      els['brand-modes'].textContent = '2\u201310 player tactical combat \u00b7 ' +
+        Object.keys(CFG.MODES).map(function (k) { return CFG.MODES[k].label; }).join(' \u00b7 ') +
+        ' \u00b7 in your browser';
+    }
   }
 
   // ---------- screens ----------
@@ -72,7 +123,9 @@ var UI = (function () {
       var host = p.id === d.hostId ? ' <em class="host-tag">HOST</em>' : '';
       var you = p.id === myId ? ' <em class="you-tag">YOU</em>' : '';
       var rdy = p.ready ? ' <em class="rdy-tag">READY</em>' : '';
-      li.innerHTML = '<i class="dot" style="background:' + p.color + '"></i><b>' + p.name + '</b>' + host + you + rdy;
+      var vc = p.voice ? ' <em class="voice-tag">MIC</em>' : '';
+      li.className = p.ready ? 'is-ready' : '';
+      li.innerHTML = '<i class="dot" style="background:' + p.color + '"></i><b>' + p.name + '</b>' + host + you + vc + rdy;
       els['lobby-players'].appendChild(li);
     }
     if (mode.teams) {
@@ -94,11 +147,43 @@ var UI = (function () {
       els['btn-ready'].textContent = r ? 'UNREADY' : 'READY UP';
       els['btn-ready'].classList.toggle('is-ready', r);
     }
+    /* ---- START gate (v7.4) ----
+       Every fact below comes from the server payload, never recomputed here, so
+       the greyed button and the server's own refusal can never disagree. */
     var isHost = d.hostId === myId;
+    var total = d.players.length;
+    var notReady = (typeof d.notReady === 'number')
+      ? d.notReady
+      : d.players.filter(function (p) { return !p.ready; }).length;
+    var allReady = (typeof d.allReady === 'boolean') ? d.allReady : (total > 0 && notReady === 0);
+    var counting = !!d.counting;
+
+    if (els['ready-fill']) {
+      var pct = total ? Math.round(((total - notReady) / total) * 100) : 0;
+      els['ready-fill'].style.width = pct + '%';
+      els['ready-fill'].parentNode.classList.toggle('all', allReady);
+    }
+    if (els['ready-text']) {
+      els['ready-text'].textContent = (total - notReady) + ' of ' + total + ' ready';
+    }
+
     els['btn-start'].style.display = isHost ? '' : 'none';
-    els['lobby-hint'].textContent = isHost
-      ? (d.players.length < 2 ? 'You can start solo to explore, or wait for friends.' : 'Ready when you are.')
-      : 'Waiting for host to start\u2026';
+    var canStart = isHost && allReady && !counting;
+    els['btn-start'].disabled = !canStart;
+    els['btn-start'].classList.toggle('is-disabled', !canStart);
+    els['btn-start'].classList.toggle('is-armed', canStart);
+    els['btn-start'].textContent = counting ? 'LAUNCHING\u2026' : 'START MATCH';
+
+    var hint;
+    if (counting) hint = 'Launch sequence started. Standing by\u2026';
+    else if (!isHost) hint = allReady
+      ? 'All operators ready. Waiting for the host to launch.'
+      : 'Waiting for ' + notReady + ' operator' + (notReady === 1 ? '' : 's') + ' to ready up.';
+    else if (allReady) hint = 'All operators ready \u2014 you may launch.';
+    else hint = 'START MATCH is locked: waiting for ' + notReady +
+      ' operator' + (notReady === 1 ? '' : 's') + ' to ready up.';
+    els['lobby-hint'].textContent = hint;
+
     els['lobby-mode'].disabled = !isHost;
     if (els['lobby-map']) els['lobby-map'].disabled = !isHost;
     els['lobby-kills'].disabled = !isHost;
@@ -107,6 +192,15 @@ var UI = (function () {
     if (els['lobby-map']) els['lobby-map'].value = d.settings.map || 'urban';
     els['lobby-kills'].value = String(d.settings.killTarget);
     els['lobby-time'].value = String(d.settings.minutes);
+
+    // ---- LEFT column: room information ----
+    var mapCfg = CFG.MAPS[d.settings.map] || CFG.MAPS.urban;
+    if (els['info-map'])   els['info-map'].textContent   = mapCfg ? mapCfg.label : d.settings.map;
+    if (els['info-mode'])  els['info-mode'].textContent  = mode.label;
+    if (els['info-kills']) els['info-kills'].textContent = d.settings.killTarget + ' kills';
+    if (els['info-time'])  els['info-time'].textContent  = d.settings.minutes + ' min';
+    if (els['info-slots']) els['info-slots'].textContent = total + ' / ' + mode.maxPlayers;
+    if (els['info-role'])  els['info-role'].textContent  = isHost ? 'HOST' : 'OPERATOR';
   }
 
   // ---------- HUD ----------
@@ -451,6 +545,7 @@ var UI = (function () {
 
   function init() {
     cache();
+    populateSelects();
     wireMenus();
     wireSettings();
     wireV43();

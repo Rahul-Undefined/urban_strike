@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v7.3** | CURRENT — METRO CITY COMPLETE. Subway, construction site, tower crane. |
+| **v7.4** | CURRENT — Milestone 8a: menu/lobby overhaul, Metro selectable, host-gated launch. No map geometry touched. |
+| v7.3 | Good — METRO CITY COMPLETE. Subway, construction site, tower crane. |
 | v7.2 | Good — Metro City phase 3 |
 | v7.1 | Good — Metro City phase 2 |
 | v7.0 | Good — Metro City phase 1, but towers had no vertical access |
@@ -31,6 +32,106 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 | v4.3 | Last known-good before the merge system |
 | v4.2 | Good — map expansion + graphics, before the gameplay update |
 | v3.1 | Good — last pre-refactor build |
+
+---
+
+## v7.4 — Milestone 8a: UI, Lobby & Match Settings
+
+**Scope discipline:** this release touches menu markup, CSS, lobby UI, match
+config and the server's lobby domain. **No map geometry, no material, no
+collider, no spawn was modified.** Every map gate should read identically to
+v7.3 — and does.
+
+### Metro City is selectable (root cause found)
+
+Metro was never missing. `CFG.MAPS.metro.ready` was already `true`, `server.js`
+`mapData()` already branched on it, both Metro script tags were already in
+`index.html`, and all five harnesses already loaded it (946 colliders, 566 map
+assertions). The **only** thing missing was the `<option>` element: the map
+picker was hardcoded in markup at two places.
+
+Fix: **every menu dropdown is now built from `CFG` at runtime**
+(`UI.populateSelects`). Maps, modes, kill targets and durations all derive from
+config. Adding map #4 requires no HTML edit. A test assertion now fails the
+build if any of the eight selects regains a hardcoded `<option>`.
+
+### Match settings
+
+| Setting | v7.3 | v7.4 |
+|---|---|---|
+| Modes | ffa, t3, t5 | ffa, **t2 (2v2, 4 players)**, t3, t5 |
+| Kill target | 5/10/15/20/30 | unchanged |
+| Duration | 5/10/15/**No limit** | 5/10/15/**30/60** — No-limit removed |
+
+Removing the zero-duration option means **every match can now end**. A gate
+asserts `timeOptions.every(n => n > 0)`.
+
+### Ready gate + host-triggered launch (behaviour change)
+
+v7.3 had two competing start paths: a `startMatch` handler that never checked
+readiness, and an auto-countdown that launched by itself 5 s after everyone
+readied — which made the START MATCH button decorative.
+
+New flow, server-authoritative:
+1. Every connected player must press READY. Solo hosts are **not** special-cased.
+2. `startMatch` is refused server-side unless `allReady(room)`, with a toast.
+3. Host presses START → `CFG.MATCH.startCountdown` (10 s) → match begins.
+4. A committed countdown runs to completion; a late unready cannot grief-cancel it.
+5. Settings are frozen while a countdown is in flight.
+
+`lobbyPayload` now publishes `notReady`, `allReady` and `counting` so the greyed
+button and the server's own refusal can never disagree. The client recomputes
+nothing.
+
+### Defects found and fixed along the way
+
+| Defect | Effect |
+|---|---|
+| Stray closing tag in the staging markup | `.lobby-grid` closed early; the MATCH RULES panel rendered **outside** the grid. No CSS could have balanced that layout. |
+| `<label>` nested inside `<label>` in Create Room | Broken click targeting and the reported alignment/spacing problem. |
+| `#countdown` lived inside `#hud-layer` | `#hud-layer` is `display:none` during the lobby, so the pre-match countdown was invisible on the only screen that triggers it. Moved to a body-level node. |
+| `pushLobby` called before `cdTimer` was assigned | `counting` published as `false` during an active countdown. Caught by a new assertion, not by eye. |
+
+### Frontend
+
+- **Welcome screen:** layered CSS backdrop — sodium-dusk gradient, inline SVG
+  three-plane skyline with gantry crane and comms mast, blinking hazard lights,
+  drifting haze, 12 dust motes, a slow radar wash, tactical grid, corner
+  brackets. Plus a stat strip, live-status eyebrow and screen-entry transition.
+- **Staging area:** real three-column grid — LEFT room code + room information,
+  CENTER operators with a ready meter and MIC tags, RIGHT match rules + actions.
+- Buttons gained hover sheen, disabled and armed states. The sheen is painted as
+  the button's own background rather than a positioned pseudo-element, which
+  would have painted over every label.
+- Responsive breakpoints at 980 px and 560 px; `prefers-reduced-motion` honoured.
+
+**Performance:** zero image files, zero WebGL, no `filter: blur()` anywhere,
+all animation on transform/opacity only. `#menu-layer` is `display:none` during
+a match, so the entire menu costs nothing while playing.
+
+### Gates
+
+| Gate | v7.3 | v7.4 |
+|---|---|---|
+| Integration | 49 | **80** (+24 config/markup, +7 launch-gate) |
+| Models/loot/voice | 38 | 38 |
+| Map | 566 | 566 |
+| Build chain | PASS | PASS |
+| Ascent | 25/27 | 25/27 (same 2 pre-existing) |
+| Lifts | 98 | 98 |
+| Cover | PASS | PASS |
+| Parse sweep | clean | clean |
+
+Suite runtime rose by ~40 s: every combat phase now satisfies the ready gate and
+waits out a real 10 s countdown rather than starting instantly. The timeout was
+raised to 120 s. The gate was not softened for the tests.
+
+### NOT browser-confirmed
+
+Everything from v4.9 to v7.4 remains machine-verified only. v7.4 specifically
+needs a human to confirm: the welcome screen renders, all three maps appear in
+both pickers, the READY gate greys and ungreys START, and the 10 s countdown is
+visible **on the staging screen**.
 
 ---
 

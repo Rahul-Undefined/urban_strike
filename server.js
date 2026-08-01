@@ -20,24 +20,34 @@ function mapData(room) {
   return { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points };
 }
 
-// lobby auto-start: 5-second countdown once everyone is ready (self-cancelling)
+/* Every connected player must be Ready before the host may launch. Solo hosts
+   are not special-cased: one player, one Ready click. */
+function allReady(room) {
+  return room.players.size > 0 && [...room.players.values()].every(q => q.ready);
+}
+/* HOST-TRIGGERED launch countdown (v7.4). Was an auto-start that fired the
+   instant everyone readied, which made the START MATCH button decorative.
+   Once the host commits, the countdown runs to completion — a late unready
+   must not become a grief-cancel. It aborts only if the room stops being a
+   lobby or empties out. */
 function beginCountdown(room) {
   if (room.cdTimer || room.state !== 'lobby') return;
-  room.cdN = 5;
+  room.cdN = CFG.MATCH.startCountdown;
   io.to(room.code).emit('countdown', { n: room.cdN });
   room.cdTimer = setInterval(() => {
-    const all = room.state === 'lobby' && room.players.size >= 2 &&
-      [...room.players.values()].every(q => q.ready);
-    if (!all) { cancelCountdown(room); return; }
+    if (room.state !== 'lobby' || room.players.size === 0) { cancelCountdown(room); return; }
     room.cdN--;
     io.to(room.code).emit('countdown', { n: room.cdN });
     if (room.cdN <= 0) { cancelCountdown(room, true); startMatch(room); }
   }, 1000);
+  pushLobby(room);   // AFTER cdTimer exists — counting is derived from it
 }
 function cancelCountdown(room, silent) {
+  const was = !!room.cdTimer;
   if (room.cdTimer) { clearInterval(room.cdTimer); room.cdTimer = null; }
   if (!silent && room.cdN > 0) io.to(room.code).emit('countdown', { n: -1 });
   room.cdN = 0;
+  if (was && !silent && room.state === 'lobby') pushLobby(room);
 }
 
 const app = express();
@@ -227,6 +237,7 @@ io.on('connection', (socket) => {
 
   socket.on('updateSettings', (s) => {
     const room = getRoom(socket); if (!room || socket.id !== room.hostId || room.state !== 'lobby') return;
+    if (room.cdTimer) return;                     // no rule changes mid-countdown
     room.settings.killTarget = clampOpt(s && s.killTarget, CFG.MATCH.killOptions, room.settings.killTarget);
     room.settings.minutes = clampOpt(s && s.minutes, CFG.MATCH.timeOptions, room.settings.minutes);
     if (s && s.map && CFG.MAPS[s.map] && CFG.MAPS[s.map].ready !== false) room.settings.map = s.map;
@@ -245,9 +256,7 @@ io.on('connection', (socket) => {
     const room = getRoom(socket); if (!room || room.state !== 'lobby') return;
     const p = room.players.get(socket.id); if (!p) return;
     p.ready = !!(d && d.v);
-    pushLobby(room);
-    const all = room.players.size >= 2 && [...room.players.values()].every(q => q.ready);
-    if (all) beginCountdown(room); else cancelCountdown(room);
+    pushLobby(room);   // the START gate is derived from this payload, client-side
   });
   socket.on('voiceJoin', () => {
     const room = getRoom(socket); if (!room) return;
@@ -282,7 +291,12 @@ io.on('connection', (socket) => {
     const room = getRoom(socket);
     if (!room || socket.id !== room.hostId) return;
     if (room.state === 'playing') return;
-    startMatch(room);
+    if (room.cdTimer) return;                     // already counting down
+    if (!allReady(room)) {                        // authoritative gate, not just a greyed button
+      socket.emit('toast', { msg: 'All operators must be READY before launch.' });
+      return;
+    }
+    beginCountdown(room);
   });
 
   socket.on('returnLobby', () => {

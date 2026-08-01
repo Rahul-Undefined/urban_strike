@@ -13,6 +13,7 @@
 
   var MODES = {
     ffa: { label: 'Free For All', teams: false, maxPlayers: 10 },
+    t2:  { label: '2 vs 2',       teams: true,  maxPlayers: 4 },
     t3:  { label: '3 vs 3',       teams: true,  maxPlayers: 6 },
     t5:  { label: '5 vs 5',       teams: true,  maxPlayers: 10 }
   };

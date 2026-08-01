@@ -83,16 +83,23 @@ function refreshTeamsAndColors(room) {
 }
 
 function lobbyPayload(room) {
+  const list = [...room.players.values()];
+  const notReady = list.filter(p => !p.ready).length;
   return {
     teams: room.teamKills || null,
     code: room.code,
     hostId: room.hostId,
     state: room.state,
     settings: room.settings,
+    // START-gate facts computed ONCE on the server so every client agrees.
+    notReady: notReady,
+    allReady: list.length > 0 && notReady === 0,
+    counting: !!room.cdTimer,
     players: [...room.players.values()].map(p => ({
       id: p.id, name: p.name, color: p.color, team: p.team,
       kills: p.kills, deaths: p.deaths, assists: p.assists,
-      damage: Math.round(p.damage), streak: p.streak, ping: p.ping, ready: !!p.ready
+      damage: Math.round(p.damage), streak: p.streak, ping: p.ping, ready: !!p.ready,
+      voice: !!p.voice
     }))
   };
 }
