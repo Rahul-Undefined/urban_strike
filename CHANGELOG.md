@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v7.5** | CURRENT — Milestone 8b-1: Urban material consolidation. 233 -> 55 draw calls, 10 -> 7 lights. No layout change. |
+| **v7.6** | CURRENT — Railway district rebuilt + two browser-reported bugs fixed (edge-on crater disc, dead countdown). |
+| v7.5 | Good — Milestone 8b-1: Urban material consolidation. 233 -> 55 draw calls, 10 -> 7 lights. |
 | v7.4.1 | Good — Milestone 8a + menu overlap fix, 5s countdown with on-screen ticks. |
 | v7.4 | Superseded — menu footer overlapped the stat strip on short viewports. |
 | v7.3 | Good — METRO CITY COMPLETE. Subway, construction site, tower crane. |
@@ -34,6 +35,121 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 | v4.3 | Last known-good before the merge system |
 | v4.2 | Good — map expansion + graphics, before the gameplay update |
 | v3.1 | Good — last pre-refactor build |
+
+---
+
+## v7.6 — Two browser bugs + Milestone 8b-2: Railway district rebuilt
+
+### The black slab at the crossroads
+
+v7.5 converted the crater scorch disc from `CircleGeometry` to `CylinderGeometry`
+so it would merge. `CircleGeometry` lies in the XY plane and needs rotating flat;
+`CylinderGeometry` is **already** flat in XZ. The old `rotation.x = -PI/2` was
+left in place, which stood the disc on its edge — a 6.2 m black wall at (-1.5,
+-21) and (-18, 2). Every gate passed. This is the project's signature failure and
+it happened again.
+
+Fixed, and gated: `verify-batch.js` now fails if any paper-thin wide cylinder is
+not lying flat. Re-introducing the exact bug makes the gate fail and print the
+two coordinates.
+
+### The countdown nobody could see
+
+`socket.on('countdown')` was registered inside `bindGameplayEvents()`, which only
+runs on `matchStart` — i.e. **after** the countdown has finished. The server was
+emitting 5, 4, 3, 2, 1, 0 and every tick was dropped on the floor. The handler is
+now bound at connect time. Verified end-to-end: a solo host receives all six
+ticks. A test assertion fails the build if the registration moves back.
+
+### Milestone 8b-2 — SECTOR 7 CENTRAL, the railway district
+
+The old district was three mistakes stacked: the station house sat NORTH of the
+tracks with its south wall driven 1.4 m **into** the ballast; the only platform
+sat on the far south side, two tracks away from anything; and the parked train
+was on the north freight road, so it was neither boardable nor next to the
+platform. 30 m of the band was bare ballast with no reason to cross it.
+
+Rebuilt north to south:
+
+| Band | Content |
+|---|---|
+| z -96.0 .. -90.0 | Freight yard: engine shed, maintenance hut, container road, **water tower** |
+| z -90.0 .. -86.4 | Track 2 — freight road |
+| z -86.2 .. -82.6 | **Island platform** (x 26..68) + half canopy |
+| z -82.4 .. -78.8 | Track 1 — passenger road, the express parked on it |
+| z -78.6 .. -75.4 | **Side platform** (x 24..70) |
+| z -75.4 .. -67.0 | **Station hall**, three levels |
+| z -70.9 .. -63.6 | Forecourt, taxi rank, approach lane |
+
+**The train is a route, not a wall.** The middle coach is 4.0 m wide so its body
+meets both platform faces with no gap, its floor is at platform height (1.05),
+and it has two door openings a side. Crossing between platforms *through* the
+coach is a short, blind, brutal fight — and it is the shortest path.
+
+**The station is the gate.** The inner city wall ran unbroken from x 7 to 70.9,
+so the district had no approach. Rather than punch a hole, the hall is set INTO
+the wall line: wall, pier, station, pier, wall. A service gate at x 62.5..67.5
+keeps the hall from being the only way in.
+
+**Vertical, with counterplay at every level.**
+- Concourse 1.05 → upper floor 4.95 → roof 8.25, by two internal flights in
+  opposite lanes with holed slabs.
+- Canopy deck 3.86, reached by a maintenance stair at its east end. Exposed to
+  the footbridge and the hall roof; a 1.6 m hop reaches the coach roof at 3.77.
+- Engine shed roof 4.00 by an external west stair, looking straight back at the
+  hall roof.
+- Footbridge at x 76, deck 4.60, crossing both roads. **Its parapets are
+  gapped** — a bridge you cannot be shot on is a sniper nest, not a route.
+- The hall's north parapet is gapped so the roof cannot camp the platform safely,
+  and the half canopy denies it a clean look at the island platform's north lane.
+
+**Nothing looks climbable and isn't.** The water tower has no ladder geometry
+anywhere, so it never promises access it cannot honour.
+
+**District identity.** Cream stucco over a brick plinth, dark green ironwork,
+maroon rolling stock, blue-steel freight cladding — six new materials, six draw
+calls. Intended callouts: *water tower, the coach, green canopy, shed roof, hall
+roof, footbridge, station gate.*
+
+**Loot: 4 points → 12**, one on every level of the district — concourse, upper
+floor, roof, both platforms, canopy, coach interior, footbridge, shed floor, shed
+roof, maintenance hut, forecourt. Climbing and entering both pay.
+
+### What the gates caught during this work
+
+| Gate | Caught |
+|---|---|
+| Map | 3 stranded loot points and a spawn buried inside the new island platform |
+| Ascent | Station stair had 0.7 m of standing room at its foot — the walker was squeezed against the wall and pushed back out of the hall |
+| Ascent | A shipping container roof sat straight across the footbridge's north flight |
+| Map | Spawn 17 relocated three times before it was clear of the wall, the hall and the slab |
+
+None of these were visible by eye.
+
+### Gates
+
+| Gate | v7.5 | v7.6 |
+|---|---|---|
+| Integration | 84 | **85** |
+| Batching | 21 | **24** (+ edge-on decal check) |
+| Map | 566 | **582** |
+| Ascent | 25/27 | **31/33** (same two pre-existing) |
+| Models/loot/voice | 38 | 38 |
+| Lifts | 98 | 98 |
+| Build chain | PASS | PASS |
+| Cover | 827 pieces, 0.4% dead | **911 pieces, 0.7% dead** |
+| Draw calls (urban) | 55 | **66** |
+| Parse sweep | clean | clean |
+
+Urban is at 66 draw calls against a 95 budget — the railway district cost 11,
+including its six identity materials. Triangles 39.5k → 45.8k.
+
+### NOT browser-confirmed
+
+The railway district has never been rendered. Specifically worth a look: that
+the coach interior is enterable from both platforms, that the canopy stair is
+climbable in practice and not just to the ascent walker, and that the station
+hall reads as a building rather than a box.
 
 ---
 

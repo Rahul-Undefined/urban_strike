@@ -138,12 +138,21 @@ function run(map, cases) {
 run("urban", [
   { name: "garage fire escape -> roof 4.30", x: -17.6, y: 0, z: 42.6, dx: 0, dz: -1, top: 4.30 },
   { name: "warehouse fire escape -> roof 9.15", x: -18.2, y: 0, z: -17.3, dx: -1, dz: 0, top: 9.15, ticks: 340 },
-  // railway zone — never gate-tested before v6.0
-  { name: "station house east stair -> roof 4.60", x: 44.7, y: 0, z: -85.0, dx: 0, dz: -1, top: 4.60, ticks: 400 },
-  { name: "footbridge south stair -> deck 4.30", x: 74, y: 0, z: -74.8, dx: 0, dz: -1, top: 4.30 },
-  { name: "footbridge north stair -> deck 4.30", x: 74, y: 0, z: -97.2, dx: 0, dz: 1, top: 4.30 },
-  { name: "platform west ramp -> platform 1.12", x: 23, y: 0, z: -75.5, dx: 0, dz: -1, top: 1.12 },
-  { name: "platform east ramp -> platform 1.12", x: 63, y: 0, z: -75.5, dx: 0, dz: -1, top: 1.12 },
+  /* RAILWAY DISTRICT — rebuilt v7.6. Every route into and up this district is
+     gated: both platform ramps at both ends, the three station levels, the
+     engine shed roof and both footbridge approaches. */
+  { name: "island platform west ramp -> 1.05", x: 23.0, y: 0, z: -84.4, dx: 1, dz: 0, top: 1.05 },
+  { name: "island platform east ramp -> 1.05", x: 71.0, y: 0, z: -84.4, dx: -1, dz: 0, top: 1.05 },
+  { name: "side platform west ramp -> 1.05", x: 21.0, y: 0, z: -77.0, dx: 1, dz: 0, top: 1.05 },
+  { name: "side platform east ramp -> 1.05", x: 73.0, y: 0, z: -77.0, dx: -1, dz: 0, top: 1.05 },
+  { name: "station forecourt steps -> concourse 1.05", x: 42, y: 0, z: -64.2, dx: 0, dz: -1, top: 1.05 },
+  // start clear of the south wall: the capsule radius reached into it at z -67.4
+  { name: "station concourse -> upper floor 4.95", x: 50.5, y: 1.05, z: -68.0, dx: 0, dz: -1, top: 4.95, ticks: 400 },
+  { name: "station upper floor -> roof 8.25", x: 33.5, y: 4.95, z: -73.2, dx: 0, dz: 1, top: 8.25, ticks: 400 },
+  { name: "platform -> canopy deck 3.86", x: 68.5, y: 1.05, z: -85.2, dx: -1, dz: 0, top: 3.86, ticks: 400 },
+  { name: "engine shed west stair -> roof 4.00", x: 24.95, y: 0, z: -89.9, dx: 0, dz: -1, top: 4.00, ticks: 400 },
+  { name: "footbridge south stair -> deck 4.60", x: 76, y: 0, z: -72.4, dx: 0, dz: -1, top: 4.60, ticks: 400 },
+  { name: "footbridge north stair -> deck 4.60", x: 76, y: 0, z: -97.0, dx: 0, dz: 1, top: 4.60, ticks: 400 },
   // v6.0 districts — every multi-storey building's external flight
   // interior / district stairs — never gate-tested before v6.2
   { name: "warehouse interior -> 3.81", x: -37.4, y: 0, z: -35.95, dx: -1, dz: 0, top: 3.81 },

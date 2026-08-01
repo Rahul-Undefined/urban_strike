@@ -98,6 +98,7 @@ for (const map of ["urban", "rural", "metro"]) {
 
       var merged = 0, loose = [], lights = 0, sprites = 0, tris = 0;
       var dynamicStatics = [], basicMats = [], groupMeshes = [], nonWhitelisted = [];
+      var res = {};
 
       root.traverse(function (o) {
         if (o.isLight) { lights++; return; }
@@ -129,9 +130,36 @@ for (const map of ["urban", "rural", "metro"]) {
           nonWhitelisted.push(g.type + "@" + [o.position.x | 0, o.position.z | 0].join(","));
         }
       });
-      return { merged: merged, loose: loose, lights: lights, sprites: sprites,
-               tris: Math.round(tris), dynamicStatics: dynamicStatics,
-               basicMats: basicMats, groupMeshes: groupMeshes, nonWhitelisted: nonWhitelisted };
+
+      /* Ground-decal orientation. A wide, paper-thin cylinder is a ground decal
+         (crater scorch, light pool, manhole). Standing one on its edge turns it
+         into a several-metre wall — which is exactly what happened when the
+         crater disc was converted from CircleGeometry (needs rotating flat) to
+         CylinderGeometry (already flat) without dropping the old rotation.
+         Every gate passed; the browser showed a 6.2 m black slab. Checked on
+         the PRE-merge scene, where source rotations are still readable. */
+      var edgeOn = [];
+      var sc2 = new THREE.Scene();
+      var keep = CFG.RENDER.mergeStatic;
+      CFG.RENDER.mergeStatic = false;
+      World.reset(); World.buildMap(sc2, __m);
+      CFG.RENDER.mergeStatic = keep;
+      var root2 = sc2;
+      for (var q = 0; q < sc2.children.length; q++) if (sc2.children[q].isGroup) root2 = sc2.children[q];
+      root2.traverse(function (o) {
+        if (!o.isMesh || !o.geometry || o.geometry.type !== "CylinderGeometry") return;
+        var pr = o.geometry.parameters; if (!pr) return;
+        var rad = Math.max(pr.radiusTop || 0, pr.radiusBottom || 0);
+        if (!(pr.height < 0.05 && rad > 0.8)) return;          // only wide, paper-thin discs
+        var upright = Math.abs(Math.cos(o.rotation.x)) * Math.abs(Math.cos(o.rotation.z));
+        if (upright < 0.9) edgeOn.push([o.position.x | 0, o.position.y | 0, o.position.z | 0]);
+      });
+      res.edgeOn = edgeOn;
+      res.merged = merged; res.loose = loose; res.lights = lights; res.sprites = sprites;
+      res.tris = Math.round(tris); res.dynamicStatics = dynamicStatics;
+      res.basicMats = basicMats; res.groupMeshes = groupMeshes;
+      res.nonWhitelisted = nonWhitelisted;
+      return res;
     })();
   `, ctx, { filename: "<batch-" + map + ">" });
 
@@ -160,6 +188,10 @@ for (const map of ["urban", "rural", "metro"]) {
     (r.sprites ? " (" + r.sprites + " found)" : ""));
   ok(r.lights <= LIGHT_BUDGET[map],
     map + ": " + r.lights + " lights within budget of " + LIGHT_BUDGET[map]);
+  ok(r.edgeOn.length === 0,
+    map + ": no thin wide disc is standing on its edge" +
+    (r.edgeOn.length ? " (" + r.edgeOn.length + " found, e.g. " +
+      JSON.stringify(r.edgeOn.slice(0, 3)) + ")" : ""));
 
   if (VERBOSE && r.loose.length) {
     console.log("        remaining loose meshes (each is one unavoidable draw call):");

@@ -133,6 +133,18 @@ var World = (function () {
     M.headlight = E(0xfff2c0);
     M.taillight = E(0xff5040);
 
+    /* ---- DISTRICT palette (v7.6) ---------------------------------------
+       District identity is carried by silhouette first and colour second. Each
+       entry below is one draw call, so a district earns a colour only if it
+       makes the place callable on comms ("the green canopy", "maroon coach").
+       RAILWAY: cream stucco + brick base + dark green ironwork + maroon stock. */
+    M.railGreen = L({ color: 0x24443a });     // canopy, ironwork, station trim
+    M.cream = L({ color: 0xc9b98f });         // station stucco
+    M.maroon = L({ color: 0x6d2f2c });        // passenger coach livery
+    M.steelBlue = L({ color: 0x37536e });     // freight shed cladding
+    M.signalRed = E(0xff3a2a);
+    M.signalGreen = E(0x3ee06a);
+
     /* ---- shared street / prop palette (v7.5) ---------------------------
        Hoisted out of deco.js, where they were minted per call site. */
     M.roadPaint = L({ color: 0xcfd2c4 });
@@ -351,7 +363,10 @@ var World = (function () {
     // Flat cylinder rather than a circle: CylinderGeometry is merge-whitelisted,
     // CircleGeometry is not, and at 8mm thickness they are indistinguishable.
     var disc = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.1, 0.008, 20), M.dark);
-    disc.rotation.x = -Math.PI / 2; disc.position.set(cx, 0.035, cz);
+    // NO rotation. CircleGeometry lies in the XY plane and needed rotating flat;
+    // CylinderGeometry is ALREADY flat in XZ. Keeping the old -90 deg stood the
+    // disc on its edge: a 6.2 m black wall at the crossroads. Gates passed.
+    disc.position.set(cx, 0.035, cz);
     disc.receiveShadow = true; disc.matrixAutoUpdate = false; disc.updateMatrix();
     scene.add(disc);
     for (var i = 0; i < 7; i++) {
@@ -768,7 +783,21 @@ World.build = function (sceneRef) {
   /* ===== PERIMETER + SKYLINE ===== */
   // inner city wall (old perimeter) with road gates at the avenue crossings
   seg(-70.9, -7, 0, 3, -70.9, -70, M.concrete);
-  seg(7, 70.9, 0, 3, -70.9, -70, M.concrete);
+  /* v7.6 STATION FRONTAGE. This wall ran unbroken from x 7 to 70.9, so the
+     rebuilt railway district had no approach at all. Rather than punch a hole
+     in it, the STATION HALL is now set INTO the wall line: wall -> pier ->
+     station -> pier -> wall. Getting to the platforms on this side means going
+     through the booking hall, which is a real chokepoint with real interior
+     combat. A service gate at x 62.5..67.5 keeps it from being the only way
+     in, so the hall is a strong route, not a mandatory one. */
+  seg(7, 29, 0, 3, -70.9, -70, M.concrete);
+  seg(29, 32, 0, 4.4, -71.0, -69.9, M.brick);                     // west pier, butts the hall
+  seg(52, 55, 0, 4.4, -71.0, -69.9, M.brick);                     // east pier
+  seg(55, 62.5, 0, 3, -70.9, -70, M.concrete);
+  seg(67.5, 70.9, 0, 3, -70.9, -70, M.concrete);
+  seg(62.5, 63.4, 0, 3.9, -71.0, -69.9, M.brick);                 // service gate piers
+  seg(66.6, 67.5, 0, 3.9, -71.0, -69.9, M.brick);
+  seg(62.5, 67.5, 3.9, 4.3, -71.0, -69.9, M.railGreen);           // service gate lintel
   seg(-70.9, -7, 0, 3, 70, 70.9, M.concrete);
   seg(7, 70.9, 0, 3, 70, 70.9, M.concrete);
   seg(-70.9, -70, 0, 3, -70, -7, M.concrete);
@@ -801,6 +830,7 @@ World.build = function (sceneRef) {
   if (World._buildPart4) World._buildPart4({
     seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win, emissive: emissiveMat,
     container: container, crates: crates, brokenWall: brokenWall, lamp: lamp, barrel: barrel,
+    bus: bus, sedan: sedan, van: van, jeep: jeep, truck: truck,
     M: M, rnd: rnd, scene: H.sceneRef()
   });
   if (World._buildPart5) World._buildPart5({

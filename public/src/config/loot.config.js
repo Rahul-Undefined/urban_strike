@@ -88,10 +88,22 @@
     [-13.5, 7.45, -85, 'h'],   // control tower
     [-70, 0.55, -80, 'g'],     // apron
     [-40, 0.55, -92, 'g'],     // runway edge
-    [40, 1.67, -78.6, 'h'],    // rail platform
-    [37, 5.4, -92, 'h'],       // station roof
-    [74, 5.1, -86, 's'],       // footbridge deck
-    [64, 1.85, -88.1, 'h'],    // flatcar
+    /* --- RAILWAY DISTRICT (rebuilt v7.6) -------------------------------
+       Loot y is always support-top + 0.55. Every level of the district is
+       rewarded, so climbing and entering both pay: concourse -> upper floor ->
+       roof, platform -> canopy, shed floor -> shed roof. */
+    [46, 1.60, -84.4, 'h'],    // island platform deck
+    [42, 1.65, -80.6, 's'],    // INSIDE the walkable coach — signature spot
+    [36, 4.41, -85.4, 's'],    // canopy deck (drop from the footbridge)
+    [30, 1.60, -77.0, 'h'],    // side platform
+    [36, 1.60, -71.0, 'h'],    // station concourse
+    [46, 5.50, -71.0, 'h'],    // station upper floor
+    [38, 8.80, -71.0, 's'],    // station roof
+    [76, 5.15, -84.0, 'h'],    // footbridge deck
+    [28.5, 1.55, -94.6, 'h'],  // engine shed workbench
+    [36, 4.55, -93.0, 's'],    // engine shed roof
+    [57, 0.55, -93.0, 'h'],    // maintenance hut
+    [61, 0.55, -70.5, 'h'],    // forecourt taxi shelter
     [0, 0.55, -74, 'g'],       // north gate
     [84.5, 5.75, -22, 'h'],    // container 2-stack top
     [78, 3.15, -38, 'h'],      // container 1-stack top

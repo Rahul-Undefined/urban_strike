@@ -51,6 +51,12 @@ var Net = (function () {
   function bind(s) {
     s.on('connect', function () { myIdV = s.id; });
 
+    /* The launch countdown fires in the LOBBY, so its handler must exist from
+       the moment we connect. It used to live in bindGameplayEvents(), which
+       only runs on matchStart — i.e. after the countdown has already finished.
+       Every 5..1 tick was emitted by the server and dropped on the floor. */
+    s.on('countdown', function (d) { UI.setCountdown(d.n); });
+
     s.on('lobby', function (d) {
       roster = d.players;
       roomCode = d.code;
@@ -284,7 +290,6 @@ var Net = (function () {
       FX.shake(0.6);
       AudioSys.explosion(mp);
     });
-    socket.on('countdown', function (d) { UI.setCountdown(d.n); });
     socket.on('voicePeers', function (d) { VoiceChat.onPeerList(d.ids); });
     socket.on('voicePeerJoin', function (d) { VoiceChat.onPeerJoin(d.id); });
     socket.on('voicePeerLeave', function (d) { VoiceChat.onPeerLeave(d.id); });

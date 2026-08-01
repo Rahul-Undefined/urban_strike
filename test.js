@@ -60,6 +60,16 @@ function configGates() {
   ok(!!cd && cd[0].indexOf('cd-num') !== -1, 'setCountdown renders a large tick number');
   ok(CFG.MATCH.startCountdown >= 3 && CFG.MATCH.startCountdown <= 15,
     'launch countdown is a sane length (' + CFG.MATCH.startCountdown + 's)');
+
+  /* The countdown fires in the LOBBY. Its socket handler must be registered at
+     connect time, not inside bindGameplayEvents(), which only runs on
+     matchStart — i.e. after the countdown has already finished. That is where
+     it lived, so every tick was emitted by the server and dropped. */
+  const net = require('fs').readFileSync('./public/src/networking/net.js', 'utf8');
+  const gpStart = net.indexOf('function bindGameplayEvents');
+  const cdAt = net.indexOf("'countdown'");
+  ok(cdAt !== -1 && cdAt < gpStart,
+    'countdown handler is bound at connect, not deferred to matchStart');
 }
 configGates();
 const PROT = CFG.MATCH.spawnProtect * 1000;

@@ -95,7 +95,7 @@
     [2, 44, Math.PI, 'n'], [-2, -44, Math.PI, 'n'],
     // V4.2 districts
     [-70, -80, Math.PI, 'a'], [-86, 6, Math.PI * 0.5, 'a'], [-24, 90, 0, 'a'],
-    [40, -84, Math.PI, 'b'], [88, -16, -Math.PI * 0.5, 'b'], [94.5, 58.5, -Math.PI * 0.5, 'b'],
+    [28, -68, Math.PI, 'b'], [88, -16, -Math.PI * 0.5, 'b'], [94.5, 58.5, -Math.PI * 0.5, 'b'],   // v7.6: was [40,-84], now inside the island platform; moved to the station forecourt
     [0, -92, Math.PI, 'n'], [24, 90, 0, 'n']
   ];
 
