@@ -290,9 +290,28 @@ World._buildPart5 = function (T) {
           || (x > 18 && x < 26 && z > -52 && z < -6) || (x > -52 && x < -6 && z > 14 && z < 22);
     }
 
+    /* v7.7: a shipping container reads as climbable from thirty metres away, so
+       it has to BE climbable. Every scattered container now gets a step stack
+       against one end — pallets and a crate at 1.55 m, which puts the 2.6 m
+       roof one auto-step-plus-hop away. This is not decoration: it turns ~20
+       dead props across the outskirts into short-range verticality and adds a
+       second cover height beside each one. */
+    function containerStep(x, z, rot) {
+      var c = Math.cos(rot || 0), s2 = Math.sin(rot || 0);
+      var ox = 3.6, oz = 0;                                  // just off the end cap
+      var sx = x + ox * c - oz * s2, sz = z + ox * s2 + oz * c;
+      box(sx, 0.4, sz, 1.7, 0.8, 2.0, M.wood, { rotY: rot });
+      box(sx - 0.15 * c, 1.12, sz - 0.15 * s2, 1.4, 0.65, 1.7, M.wood, { rotY: rot });
+      box(sx + 0.2 * c, 1.62, sz + 0.2 * s2, 1.0, 0.35, 1.2, M.rust, { rotY: rot });
+    }
     function container(x, z, rot) {
       box(x, 1.3, z, 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0], { rotY: rot });
-      if (rnd() < 0.35) box(x + 0.3, 3.85, z, 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0], { rotY: rot });
+      if (rnd() < 0.35) {
+        box(x + 0.3, 3.85, z, 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0], { rotY: rot });
+        // a two-high stack needs a mid step as well, or the upper box is a lie
+        box(x - 3.4, 1.75, z, 1.6, 3.5, 2.0, M.rust, { rotY: rot });
+      }
+      containerStep(x, z, rot);
     }
     function barrierRun(x, z, alongX) {
       for (var i = -1; i <= 1; i++) {

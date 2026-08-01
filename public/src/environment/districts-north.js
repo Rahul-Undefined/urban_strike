@@ -163,6 +163,15 @@ World._buildPart4 = function (T) {
     cyl(cx, RAIL.PLAT + 1.28, RAIL.ISL_N + 0.7, 0.14, 2.55, M.railGreen);
   });
   seg(27, 63.7, 3.62, 3.86, RAIL.ISL_N, RAIL.ISL_N + 2.0, M.railGreen);     // canopy deck (walkable)
+  /* Two WIDE bays reach almost to the platform's south edge. They are the only
+     two places you can cross from the canopy onto the train roofs (loco 3.80,
+     coach 3.77) — deliberate, contested crossings rather than a continuous
+     roof-run, and the reason the train roofs are not fake architecture. */
+  seg(27, 33, 3.62, 3.86, RAIL.ISL_N + 2.0, RAIL.ISL_S - 0.2, M.railGreen);
+  seg(44, 52, 3.62, 3.86, RAIL.ISL_N + 2.0, RAIL.ISL_S - 0.2, M.railGreen);
+  [30, 48].forEach(function (cx) {
+    cyl(cx, RAIL.PLAT + 1.28, RAIL.ISL_S - 0.55, 0.14, 2.55, M.railGreen);
+  });
   seg(27, 63.7, 3.86, 4.34, RAIL.ISL_N - 0.06, RAIL.ISL_N + 0.06, M.railGreen, NC); // north fascia
   /* The canopy is a real perch, so it gets a real way up: a maintenance stair
      at its east end, entirely OUTSIDE the canopy footprint so there is no
@@ -231,13 +240,13 @@ World._buildPart4 = function (T) {
     seg(X0, X1, FL + 2.5, FL + 2.72, N, S, M.metal);                   // roof
     bogies(X0, X1);
     // second coach (solid cover, breaks the platform into segments)
-    seg(53, 67, 0.3, FL + 2.5, N, S, M.maroon);
-    seg(53, 67, FL + 2.5, FL + 2.72, N, S, M.metal);
+    seg(50, 67, 0.3, FL + 2.5, N, S, M.maroon);   // butts coach 1 so the roofs connect
+    seg(50, 67, FL + 2.5, FL + 2.72, N, S, M.metal);
     [[54.5, 56.1], [58.2, 59.8], [62.0, 63.6], [65.0, 66.6]].forEach(function (q) {
       seg(q[0], q[1], FL + 1.35, FL + 2.05, N - 0.03, N + 0.05, M.carGlass, NC);
       seg(q[0], q[1], FL + 1.35, FL + 2.05, S - 0.05, S + 0.03, M.carGlass, NC);
     });
-    bogies(53, 67);
+    bogies(53, 67);   // bogies stay under the body, not at the coupling
   })();
 
   /* ---- STATION HALL  x 32..52, z -75.4..-67.0 ---------------------------
@@ -311,6 +320,7 @@ World._buildPart4 = function (T) {
   box(58, 1.35, -70.5, 0.16, 2.7, 0.16, M.trim); box(64, 1.35, -70.5, 0.16, 2.7, 0.16, M.trim);
   seg(57.6, 64.4, 2.7, 2.95, -71.6, -69.4, M.railGreen);                 // taxi shelter roof
   box(61, 0.45, -70.4, 3.4, 0.9, 0.5, M.wood);                           // shelter bench
+  box(56.4, 0.9, -70.5, 1.2, 1.8, 2.2, M.sidewalk);                      // planter: step to the shelter roof
   sedan(56, -73.5, false, 1, false); sedan(66, -72.6, true, 3, false);
   van(26, -71.5, false);
   [[24, -68], [70, -68]].forEach(function (p) { cyl(p[0], 1.6, p[1], 0.13, 3.2, M.trim); });
@@ -362,6 +372,11 @@ World._buildPart4 = function (T) {
   container(72, -94.0, false, M.contGreen, false);
   box(82, 0.45, -94.4, 5.0, 0.9, 1.4, M.wood);                            // sleeper stack
   box(82, 1.15, -94.4, 4.4, 0.5, 1.2, M.wood);
+  // step stacks so the container roofs (2.60) are honestly reachable
+  box(70.4, 0.45, -94.0, 1.6, 0.9, 2.0, M.wood); box(70.3, 1.2, -94.0, 1.3, 0.6, 1.7, M.wood);
+  box(70.4, 1.72, -94.0, 1.0, 0.44, 1.3, M.rust);
+  box(62.6, 0.45, -91.4, 1.6, 0.9, 2.0, M.wood); box(62.7, 1.2, -91.4, 1.3, 0.6, 1.7, M.wood);
+  box(62.6, 1.72, -91.4, 1.0, 0.44, 1.3, M.rust);
   crates(88, -92.4); barrel(86.5, -95, true);
 
   /* Water tower — the district landmark, visible from the whole east half.

@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v7.6** | CURRENT — Railway district rebuilt + two browser-reported bugs fixed (edge-on crater disc, dead countdown). |
+| **v7.7** | CURRENT — Architecture gate + fake-architecture pass. Every railway perch made honestly climbable. |
+| v7.6 | Good — Railway district rebuilt + edge-on crater disc and dead countdown fixed. |
 | v7.5 | Good — Milestone 8b-1: Urban material consolidation. 233 -> 55 draw calls, 10 -> 7 lights. |
 | v7.4.1 | Good — Milestone 8a + menu overlap fix, 5s countdown with on-screen ticks. |
 | v7.4 | Superseded — menu footer overlapped the stat strip on short viewports. |
@@ -35,6 +36,106 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 | v4.3 | Last known-good before the merge system |
 | v4.2 | Good — map expansion + graphics, before the gameplay update |
 | v3.1 | Good — last pre-refactor build |
+
+---
+
+## v7.7 — Milestone 8b-3: architecture audit (`tools/verify-arch.js`)
+
+"Review every building" is not something anyone does reliably across 2,106
+colliders. Every architectural defect this project has shipped — a station wall
+inside the ballast, a building overlapping a tower by 221 m2, forty unclimbable
+staircases, a canopy with no way up — was found by a machine or not at all. So
+the review is a gate.
+
+### The gate
+
+`tools/verify-arch.js` measures the three defects the milestone brief describes:
+
+| Check | What it finds |
+|---|---|
+| **FLOATING** | A solid whose underside is in the air with nothing under it and no wall keying it in |
+| **FAKE ARCHITECTURE** | A standable deck (>6 m2, >1.4 m each way, above 1.2 m) with no stair, lift, or neighbouring surface within a step or a hop |
+| **Edge exclusion** | One narrow, documented exemption: a wall spanning the full width of the world at its very edge. Getting on top of the boundary means leaving the map |
+
+### Finding 1 — nothing floats
+
+**Zero floating solids on all three maps.** The brief's report that buildings
+float does not reproduce structurally.
+
+The first version of the gate claimed eight, and all eight were the gate being
+wrong. Apartment balconies are cantilevers — held by the wall they are built
+into, not by anything beneath — and vehicle bodies sit at 0.67 m on wheels that
+carry no collider. The support test now accepts both. Worth stating plainly
+because the gate was believed for about four minutes before it was checked, and
+that is exactly how the ascent gate was wrong twice.
+
+### Finding 2 — fake architecture is real and measurable
+
+| Map | Standable decks | With no way up |
+|---|---|---|
+| urban | 152 | **46** |
+| rural | 52 | 15 |
+| metro | 131 | 56 |
+
+A shipping container reads as climbable from thirty metres. So do bus roofs,
+shelter roofs and train roofs. This pass fixed the ones this milestone created
+or can reach cheaply:
+
+- **Scattered containers** across the outskirts now each carry a pallet-and-crate
+  step stack at 1.55 m against one end, and a two-high stack gets a mid step as
+  well. That converts dead props into short-range verticality and adds a second
+  cover height beside each one.
+- **Train roofs.** The canopy gained two WIDE bays (x 27..33 and x 44..52)
+  reaching almost to the platform's south edge. They are the only two crossings
+  from canopy to locomotive roof (3.80) and coach roof (3.77) — deliberate,
+  contested, and the reason the train roofs are no longer a lie. The two coaches
+  now butt at x 50 so their roofs connect.
+- **Freight containers** and the **taxi shelter** gained step stacks and a
+  planter respectively.
+
+Urban went from 53 unreachable decks to 46.
+
+### The budget is a ratchet, not a target
+
+`unreachable` is set to the **current measured count** per map, not to zero.
+Zero would mean either failing the build on 100+ pre-existing decks or quietly
+excluding them, and neither is honest. As a ratchet it does the job that
+matters: the number can never go up, and each district pass drives it down.
+
+Remaining urban queue, with coordinates, for the next passes:
+
+| Group | Count | Where |
+|---|---|---|
+| Shop-row and mall roofs at 2.85 | 7 | x 21..45, z -12..11 and x 72..78, z -63..-57 |
+| Cargo-yard container stacks 2.60 / 5.20 | ~10 | x 76..79, z -41..-27 and x -67..-55 |
+| Construction slab decks 1.50 / 4.70 / 7.90 | 13 | x -89..-65, z -18..12 |
+| Assorted crate and cabin tops | ~16 | scattered |
+
+### Gates
+
+| Gate | v7.6 | v7.7 |
+|---|---|---|
+| Integration | 85 | 85 |
+| **Architecture** | — | **6 (new)** |
+| Batching | 24 | 24 |
+| Map | 582 | 582 |
+| Ascent | 31/33 | 31/33 (same two pre-existing) |
+| Models/loot/voice | 38 | 38 |
+| Lifts | 98 | 98 |
+| Build chain | PASS | PASS |
+| Cover | PASS | PASS |
+| Draw calls (urban) | 66 | **66** of 95 |
+| Parse sweep | clean | clean |
+
+The container steps and canopy bays cost 0 draw calls — every one of them reuses
+a material already in the palette. Triangles 45.8k → 46.1k.
+
+### NOT browser-confirmed
+
+Neither the railway district nor any of this pass has been rendered. The step
+stacks in particular are worth a look: the ascent walker proves stairs, but a
+crate-to-container hop is a jump, and jumps are the one movement this project
+has no gate for.
 
 ---
 
