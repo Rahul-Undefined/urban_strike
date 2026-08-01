@@ -25,6 +25,23 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
   // spawn protection (attacking others still allowed; being hit is not)
   if (victim.protUntil > now() && attackerId !== victim.id) return;
 
+  /* Helmet: spends durability to cut the HEADSHOT BONUS only, never the base
+     damage. A head hit for 100 from a 40-base weapon (2.5x) with an H2 helmet
+     (0.55) loses 0.55 of the 60-point bonus, so 67 lands. Body and leg shots
+     are untouched. Point-blank explosives ignore it, same rule as armour. */
+  if (headshot && !pointBlank && victim.helmLvl > 0 && victim.helmDur > 0) {
+    const H = CFG.HELMET[victim.helmLvl];
+    const w = CFG.WEAPONS[weapon];
+    const base = w ? dmg / (w.head || 1) : dmg;
+    const bonus = dmg - base;
+    if (bonus > 0) {
+      const cut = Math.min(bonus * H.absorb, victim.helmDur);
+      dmg -= cut;
+      victim.helmDur = Math.max(0, victim.helmDur - cut);
+      if (victim.helmDur === 0) victim.helmLvl = 0;
+    }
+  }
+
   // tiered armor with durability; point-blank explosives ignore armor entirely
   let soaked = 0;
   if (pointBlank) {

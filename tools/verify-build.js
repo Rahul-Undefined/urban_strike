@@ -48,6 +48,7 @@ const files = [
   "public/src/environment/districts-outer.js",
   "public/src/environment/deco.js",
   "public/src/environment/rural.js",
+  "public/src/environment/metro.js",
   "public/src/environment/access.js"
 ];
 for (const f of files) {
@@ -84,6 +85,13 @@ try {
     })();
   `, ctx, { filename: "<rural-run>" });
   console.log("RURAL BUILD OK: " + JSON.stringify(rural));
+  ctx.__m3 = "metro";
+  const metro = vm.runInContext(`(function(){var sc=new THREE.Scene();World.reset();World.buildMap(sc,__m3);
+    var g=null;for(var i=0;i<sc.children.length;i++)if(sc.children[i].isGroup)g=sc.children[i];
+    var m=0;g.traverse(function(o){if(o.isMesh)m++;});
+    return {map:World.builtMap,meshes:m,colliders:World._colliders().length};})();`, ctx, { filename: "<metro>" });
+  console.log("METRO BUILD OK: " + JSON.stringify(metro));
+  if (metro.map !== "metro" || metro.colliders < 50) { console.log("metro build unhealthy"); process.exit(1); }
   if (rural.map !== "rural" || rural.colliders < 300) { console.log("rural build unhealthy"); process.exit(1); }
 
   /* ---- coplanar-ground gate (added v4.8) -------------------------------
@@ -92,7 +100,7 @@ try {
      shipped this way in v4.7 because _initPart1 laid the Urban ground (top
      y=0) under the rural grass (top y=0). Fail the build if it comes back. */
   ctx.CFG.RENDER.mergeStatic = false;   // keep source meshes addressable
-  for (const map of ["urban", "rural"]) {
+  for (const map of ["urban", "rural", "metro"]) {
     ctx.__m = map;
     const bad = vm.runInContext(`
       (function () {
@@ -117,7 +125,9 @@ try {
           if (Math.abs(p.y - q.y) > 0.004) continue;            // 4mm tolerance
           var ox = Math.min(p.x1, q.x1) - Math.max(p.x0, q.x0);
           var oz = Math.min(p.z1, q.z1) - Math.max(p.z0, q.z0);
-          if (ox > 1 && oz > 1) hits.push("y=" + p.y.toFixed(3) + " overlap " + Math.round(ox * oz) + "m2");
+          if (ox > 1 && oz > 1) hits.push("y=" + p.y.toFixed(3) + " " + Math.round(ox*oz) + "m2 A[" +
+            p.x0.toFixed(0)+","+p.x1.toFixed(0)+"/"+p.z0.toFixed(0)+","+p.z1.toFixed(0) + "] B[" +
+            q.x0.toFixed(0)+","+q.x1.toFixed(0)+"/"+q.z0.toFixed(0)+","+q.z1.toFixed(0) + "]");
         }
         return hits;
       })();

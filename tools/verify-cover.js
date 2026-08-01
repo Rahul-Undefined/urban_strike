@@ -37,7 +37,7 @@ vm.createContext(ctx);
   "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
-  "public/src/environment/deco.js", "public/src/environment/rural.js",
+  "public/src/environment/deco.js", "public/src/environment/rural.js", "public/src/environment/metro.js",
   "public/src/environment/access.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(f, "utf8"), ctx, { filename: f }));
 

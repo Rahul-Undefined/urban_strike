@@ -19,7 +19,8 @@
   // Map registry — rural flips ready:true when its build + data land
   var MAPS = {
     urban: { label: 'Urban', ready: true },
-    rural: { label: 'Rural', ready: true }
+    rural: { label: 'Rural', ready: true },
+    metro: { label: 'Metro City', ready: true }
   };
 
   var MINIMAP = { proximity: 18 };   // meters at which an enemy pings the minimap without firing

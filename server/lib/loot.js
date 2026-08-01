@@ -59,6 +59,14 @@ function tryCollect(room, p) {
       const up = it.lvl > p.armorLvl || (it.lvl === p.armorLvl && p.armorDur < max * 0.5);
       if (!up) continue;
       p.armorLvl = it.lvl; p.armorDur = max;
+    } else if (it.kind === 'helm') {
+      // same upgrade rule as armour: take it if it's a better tier, or the same
+      // tier when the current one is below half durability
+      const hmax = CFG.HELMET[it.l].dur;
+      const hup = it.l > p.helmLvl || (it.l === p.helmLvl && p.helmDur < hmax * 0.5);
+      if (!hup) continue;
+      p.helmLvl = it.l; p.helmDur = hmax;
+      grant = { t: 'helm', l: it.l };
     } else if (it.kind === 'att') {
       if (p.att[CFG.ATTACH[it.a].cat] === it.a) continue; // already equipped
       p.att[CFG.ATTACH[it.a].cat] = it.a;

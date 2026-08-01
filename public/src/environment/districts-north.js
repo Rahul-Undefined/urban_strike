@@ -103,8 +103,8 @@ World._buildPart4 = function (T) {
   box(26, 1.75, -88.1, 6.4, 3.5, 2.8, M.rust);
   box(30.1, 2.3, -88.1, 1.4, 1.0, 2.4, M.dark);
   box(37.5, 1.7, -88.1, 7.4, 3.4, 2.7, M.metal || M.metal);
-  box(47.5, 1.7, -88.1, 7.4, 3.4, 2.7, M.rust);
-  box(57, 0.65, -88.1, 7.2, 1.3, 2.6, M.wood);                                    // flatcar (jump on)
+  box(53.0, 1.7, -88.1, 7.4, 3.4, 2.7, M.rust);                                   // moved clear of the station stair
+  box(64, 0.65, -88.1, 7.2, 1.3, 2.6, M.wood);                                    // flatcar (jump on)
   // station house: tall single hall + roof access via east external stair
   (function () {
     var X0 = 30, X1 = 44, Z0 = -96, Z1 = -88, TT = 0.3;

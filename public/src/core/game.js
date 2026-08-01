@@ -57,6 +57,43 @@ var Game = (function () {
       ShiftLeft: 'sprint', ShiftRight: 'sprint', Space: 'jump',
       KeyC: 'crouch', KeyQ: 'leanL', KeyE: 'leanR'
     };
+    /* Lifts: teleport the player between derived floor stops. Chosen over a
+       moving platform because carrying a capsule on a moving collider is exactly
+       the kind of marginal physics that made the tower stairs unreliable. */
+    var liftPending = false;
+    function rideLift() {
+      if (!PlayerCtl.alive) return;
+      var L = CFG.LIFTS || [], p = PlayerCtl.pos, half = CFG.PLAYER.standH / 2;
+      for (var i = 0; i < L.length; i++) {
+        var s = L[i], dx = p.x - s.x, dz = p.z - s.z;
+        if (s.map && World.builtMap && s.map !== World.builtMap) continue;
+        if (dx * dx + dz * dz > s.r * s.r) continue;
+        var foot = p.y - half, best = 0, bd = 1e9;
+        for (var k = 0; k < s.stops.length; k++) {
+          var d = Math.abs(s.stops[k] - foot);
+          if (d < bd) { bd = d; best = k; }
+        }
+        if (bd > 1.2) return;                       // not standing on a stop
+        if (liftPending) return;                    // already riding
+        var next = (best + 1) % s.stops.length;     // wraps to the ground floor
+        /* 2s exposure before the move. Implemented as a delay rather than a
+           lerped ride because the controller owns pos.y every frame — fighting
+           it for 120 frames is precisely the marginal physics that broke the
+           stairs. You stand in the shaft, visible and shootable, and if you
+           walk out or die the ride is cancelled. */
+        liftPending = true;
+        UI.toast('Lift called \u2014 hold position (2s)');
+        setTimeout(function () {
+          liftPending = false;
+          if (!PlayerCtl.alive) return;
+          var q = PlayerCtl.pos, ex = q.x - s.x, ez = q.z - s.z;
+          if (ex * ex + ez * ez > s.r * s.r) { UI.toast('Lift cancelled'); return; }
+          PlayerCtl.pos.set(s.x, s.stops[next] + half + 0.05, s.z);
+          UI.toast('Floor ' + next + (next === 0 ? ' (ground)' : ''));
+        }, 2000);
+        return;
+      }
+    }
     document.addEventListener('keydown', function (e) {
       if (e.repeat) return;
       var playing = Net.getPhase() === 'playing';
@@ -76,6 +113,7 @@ var Game = (function () {
       // PTT is registered once, at document level, in ui.js wireV43() — it must
       // work in the lobby too, so it does NOT live here. The old duplicate also
       // shadowed the smoke grenade, which had been unbindable ever since.
+      if (e.code === 'KeyZ') { rideLift(); return; }
       if (e.code === 'KeyB') { Weapons.throwGrenade('smoke'); return; }
       if (e.code === 'KeyF') { Weapons.throwGrenade('flash'); return; }
       if (e.code.indexOf('Digit') === 0) {

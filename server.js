@@ -14,7 +14,9 @@ const now = () => Date.now();
 
 // per-map data resolution (urban keeps the legacy top-level keys)
 function mapData(room) {
-  if (room.settings && room.settings.map === 'rural' && CFG.MAPS_RURAL) return CFG.MAPS_RURAL;
+  var m = room.settings && room.settings.map;
+  if (m === 'rural' && CFG.MAPS_RURAL) return CFG.MAPS_RURAL;
+  if (m === 'metro' && CFG.MAPS_METRO) return CFG.MAPS_METRO;
   return { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points };
 }
 

@@ -56,7 +56,7 @@ function addPlayer(room, socket, name) {
     team: null,
     joinOrder: joinCounter++,
     kills: 0, deaths: 0, assists: 0, damage: 0, streak: 0, ping: 0, ready: false,
-    hp: CFG.PLAYER.hp, armorLvl: 0, armorDur: 0, alive: false,
+    hp: CFG.PLAYER.hp, armorLvl: 0, armorDur: 0, helmLvl: 0, helmDur: 0, alive: false,
     protUntil: 0, att: { sight: null, muzzle: null, mag: null }, exW: {}, rd: {},
     pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0, mv: 0, wp: 0, ln: 0,
     lastShotAt: {}, history: [], respawnAt: 0

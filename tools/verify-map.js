@@ -69,7 +69,7 @@ function runMap(mapName, data, wallDefault) {
   };
   vm.createContext(ctx);
   ["environment/world.js", "environment/districts-south.js", "environment/districts-north.js",
-   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/access.js"].forEach(f => {
+   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/metro.js", "environment/access.js"].forEach(f => {
     const p = path.join(ROOT, "public/src", f);
     if (fs.existsSync(p)) vm.runInContext(fs.readFileSync(p, "utf8"), ctx, { filename: f });
   });
@@ -124,6 +124,7 @@ function runMap(mapName, data, wallDefault) {
 
 runMap("urban", { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points }, 100);
 runMap("rural", CFG.MAPS_RURAL, 100);
+runMap("metro", { LOOT_POINTS: CFG.MAPS_METRO.LOOT_POINTS, SPAWNS: CFG.MAPS_METRO.SPAWNS, AIRDROP_POINTS: CFG.MAPS_METRO.AIRDROPS }, 100);
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

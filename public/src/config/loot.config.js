@@ -22,6 +22,9 @@
     att_quick:  { kind: 'att', a: 'quick', rar: 'r' },
     att_comp:   { kind: 'att', a: 'comp', rar: 'r' },
     att_supp:   { kind: 'att', a: 'supp', rar: 'r' },
+    helm_1:     { kind: 'helm', l: 1, rar: 'c' },
+    helm_2:     { kind: 'helm', l: 2, rar: 'r' },
+    helm_3:     { kind: 'helm', l: 3, rar: 'l' },
     att_x3:     { kind: 'att', a: 'x3', rar: 'r' },
     att_x4:     { kind: 'att', a: 'x4', rar: 'l' },
     att_x6:     { kind: 'att', a: 'x6', rar: 'l' },
@@ -88,7 +91,7 @@
     [40, 1.67, -78.6, 'h'],    // rail platform
     [37, 5.4, -92, 'h'],       // station roof
     [74, 5.1, -86, 's'],       // footbridge deck
-    [57, 1.85, -88.1, 'h'],    // flatcar
+    [64, 1.85, -88.1, 'h'],    // flatcar
     [0, 0.55, -74, 'g'],       // north gate
     [84.5, 5.75, -22, 'h'],    // container 2-stack top
     [78, 3.15, -38, 'h'],      // container 1-stack top
@@ -106,11 +109,11 @@
     [2, 0.55, 74, 'g'],        // south gate
     // v6.0 district rooftops — the payoff for the climb (validator-proven)
     [61, 18.80, 64, "s"],
-    [83, 21.80, 60, "s"],
+    [84, 18.80, 64, "s"],
     [67, 18.80, 85, "h"],
     [69, 6.80, -33, "h"],
     [-83, 6.80, -86, "h"],
-    [-54, 9.80, 63, "s"],
+    [-54, 13.20, 63, "s"],
     // v4.7 accessibility roofs (validator-proven)
     [-12, 4.85, 38, "h"],
     [-32, 9.7, -28, "s"],

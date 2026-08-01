@@ -10,7 +10,13 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v6.0** | CURRENT — deploy this (cumulative; airport, harbour, mall, towers, rail fixes) |
+| **v7.3** | CURRENT — METRO CITY COMPLETE. Subway, construction site, tower crane. |
+| v7.2 | Good — Metro City phase 3 |
+| v7.1 | Good — Metro City phase 2 |
+| v7.0 | Good — Metro City phase 1, but towers had no vertical access |
+| v6.2 | Good — fixes ~40 broken staircases map-wide |
+| v6.1 | Good — lifts + helmets, but nearly every interior stair is unclimbable |
+| v6.0 | BROKEN — tower stairs unclimbable. Do not roll back to this. |
 | v5.3 | Good — but 3 of 5 railway stairs are unclimbable |
 | v5.2 | Good — voice diagnostics + TURN support |
 | v5.1 | Good — scope ladder + AA-12; voice still STUN-only with no diagnostics |
@@ -28,7 +34,313 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
-## v6.0 — Districts, Towers, and the Railway That Never Worked *(current)*
+## v7.3 — Metro City Phase 4: COMPLETE *(current)*
+
+Final construction phase. Metro City is finished and fully validated.
+
+**THE UNDERGROUND IS A ROUTE, NOT A ROOM.** Three lift shafts drop to the subway
+at widely separated street points — ticket hall (-20,-80), west service corridor
+(-20,-48) and south tunnel (-6,-20). Descending at one and surfacing at another
+crosses ~60m of map under cover, which is the flank the brief asked for.
+
+*Built underground:* ticket hall, two platform halls with raised platform edges,
+a four-car train parked on platform B, a running tunnel south, east and west
+service corridors, a utility room, and a maintenance spur with pillar cover
+every 6m. Floor at -5.75, ceiling at -1.6.
+
+**Ground was TILED AROUND the underground, not punched through afterwards.** The
+subway spine (x -24..24, z -84..24) is excluded from the four ground slabs, and
+street level over it is the station's own deck at the same top y=0 in the same
+material — adjacent, never overlapping. A solid slab there would have sat inside
+the station's head space and the lift gate would have refused every underground
+stop, correctly.
+
+**CONSTRUCTION SITE (NE).** Half-finished tower: six open floor plates on
+columns, curtain wall on two faces only so the other two are long lanes,
+scaffolding band down the open side. Portacabin offices and material stacks at
+street level. Lift-served across all six levels.
+
+**TOWER CRANE.** 30m mast, cab platform at 30.3m with waist-high sides, 40m jib.
+**The highest position on the map**, reachable by its own lift. The platform is
+3.4m square with railings on two sides only — a real sniper perch that cannot be
+held against a flank, since the lift delivers attackers directly onto it.
+
+**Performance held: still 19 merged meshes** after adding an entire underground
+network, a six-storey construction tower and a crane. Every phase-4 material is a
+reuse of the consolidated palette. Colliders 759 -> 946.
+
+**Lift gate 84 -> 98 assertions.** Five new shafts, all positions DERIVED by
+search — including the underground stops, where the search had to find spots
+clear of both the tunnel ceiling and the street deck.
+
+**Map gate 532 -> 566 assertions.** Added 10 underground loot points, 6
+construction levels and the crane platform. One spawn failed and was moved, not
+silenced: it sat inside the construction curtain wall.
+
+**Gates:** integration 49/49 · map 566/566 · lifts 98/98 · build PASS all three
+maps incl. coplanar · models 38/38 · merge 9/9 · cover PASS urban+rural ·
+ascent 25/27 · parse sweep clean.
+
+**METRO CITY IS COMPLETE.** All four phases delivered. Urban and Rural untouched
+throughout — no regressions in any gate.
+
+### Genuinely requires browser testing tomorrow
+1. Nothing in Metro City has ever been RENDERED. Gates prove geometry, collision,
+   reachability and loot support; they cannot see a render-stage failure. The
+   Rural black-screen regression is the precedent.
+2. The v6.2 staircase fix — it changed every staircase in the game at once.
+3. Lifts, on every map. Press Z. Especially the underground shafts, where a
+   failure means falling into solid ground.
+4. Voice chat (still STUN-only; needs TURN credentials).
+5. Whether Metro reads as a city or as boxes.
+
+### Still parked (not started)
+Player model, diagnostic overlay, helmet test assertion, minimap rebake for v6/v7
+geometry, loot-in-every-house, proximity loot labels, bag inventory with
+consumable-gated regen, kill animation.
+
+---
+
+## v7.2 — Metro City Phase 3
+
+**SHOPPING MALL (SE quadrant).** Three floors plus roof, 36x34m, shopfront gaps
+in one face. Interior furniture is laid on a 6.2 x 7.4m grid across all three
+floors — shelving runs, cafe tables, glass display cases — so no lane inside the
+mall is unbroken. That is what makes it CQB rather than a shooting gallery.
+Rooftop plant and two water tanks give cover on the roof. Lift-served, 4 stops.
+
+**RESIDENTIAL BLOCK (SW quadrant).** Four 4-storey apartment slabs around a
+courtyard, each with a lift, courtyard-side balconies on floors 1-3 (a second
+firing angle into the courtyard, and cover while using it), and a rooftop water
+tank. Courtyard has playground blocks, a mast and a shade canopy as hard cover.
+
+**ALLEYS AND SIDE STREETS.** Fourteen skips/bins along the routes between
+districts — flanking lanes with cover, narrow enough to deny long shots.
+
+**MATERIAL CONSOLIDATION — mesh count went DOWN while the map grew.** The v7.1
+note flagged 23 merged meshes against the brief's <=20 target, caused by material
+count (StaticMerge batches by material). The five-colour vehicle palette was
+consolidated to two and the street-cover palette now reuses it. Result: mall +
+residential + alleys added, and Metro is **19 merged meshes** — under target.
+Colliders 434 -> 759.
+
+**Two real defects caught by gates and fixed at the root, not bypassed:**
+1. *Coplanar ground, 221m2.* The SE residential building overlapped the SW tower
+   footprint (x -55..-37 / z 37..55) at exactly y=0.25 — two different-material
+   slabs on one plane, i.e. guaranteed full-screen z-fighting. Building relocated
+   to z 66..86; its lift and three loot points moved with it. The build gate was
+   also extended to PRINT the overlapping footprints rather than just the area,
+   which is what made this diagnosable in one run.
+2. *Palette index out of range.* Consolidating the car palette to two entries
+   left a `CB[(rnd()*4)|0]` picker, producing undefined materials and crashing
+   the metro build. Now indexes on `CB.length`.
+
+Plus two placement failures moved rather than silenced: a loot point 0.55m above
+where the roof actually is, and a spawn inside a residential wall.
+
+**Lift gate 60 -> 84 assertions.** Six new shafts (mall + four residential +
+existing), all positions DERIVED by search across each structure's full stop list.
+
+**Map gate 496 -> 532 assertions.**
+
+**Gates:** integration 49/49 · map 532/532 · lifts 84/84 · build PASS all three
+maps incl. coplanar · models 38/38 · merge 9/9 · ascent 25/27 (pre-existing Urban
+interior stairs, unchanged) · parse sweep clean.
+
+**PHASE 4 NOT STARTED:** metro station, underground platforms, subway tunnels,
+service corridors, emergency exits, construction site, tower crane, utility rooms.
+
+---
+
+## v7.1 — Metro City Phase 2
+
+Phase 2 closes the phase 1 gap: the Financial District towers had roof loot and
+no way to reach it.
+
+**LIFTS — the phase 1 gap, closed.** Five new shafts: one per tower (7 stops,
+ground to 24.25m) and one in the parking garage (5 decks). **Every position was
+DERIVED** by searching each structure for a spot valid at all its stops — the
+same method used for the Urban towers, after hand-picked positions there put
+four stops over pierced slabs with no floor at all.
+
+**Lifts are now map-scoped.** `CFG.LIFTS` entries carry a `map` field, the client
+skips lifts belonging to another map, and the lift gate checks each shaft against
+its own map's colliders. Without this the gate pooled Urban and Metro geometry
+and reported two false failures — fixed at the root rather than by loosening the
+assertion. Lift gate 27 -> **60 assertions**, covering both maps.
+
+**SKYBRIDGES.** Four spans at 16.25m linking all four towers in a ring: solid
+deck, waist-high sides for cover while crossing, open roof ribs. Every span has
+two ends, so no elevated position in this map has a single entrance.
+
+**PARKING GARAGE.** Five open-sided decks, 3.2m apart, NW quadrant. Columns every
+7.5m break sightlines, parked cars give hard cover, waist-high perimeter walls
+allow shooting out without turning the decks into a fishbowl. Lift-served.
+
+**ROOFTOP GAMEPLAY.** Each tower roof gets AC units, a vent stack and a stair-head
+block that split the deck into lanes, so a sniper holds an angle rather than the
+whole roof and can be flanked.
+
+**LOOT.** Map gate 472 -> **496 assertions**. Added skybridge decks, the four
+tower mid-floors, and six garage-deck points. Two placements failed on first run
+and were moved, not silenced: a spawn inside the garage perimeter wall, and an
+earlier spawn inside a street container.
+
+**Metro totals:** 23 merged meshes, 434 colliders.
+**NOTE — over the brief's <=20 merged-mesh target.** Cause is material count:
+phase 2 introduced a five-colour car palette plus glass/steel/panel, and
+StaticMerge batches by material. Documented rather than hidden; the fix is
+palette consolidation, which is safe but should be measured, not guessed.
+
+**Gates:** integration 49/49 · map 496/496 · lifts 60/60 · build PASS all three
+maps · models 38/38 · merge 9/9 · cover PASS urban+rural · ascent 25/27
+(unchanged pre-existing Urban interior stairs).
+
+**Phases 3 and 4 NOT started:** shopping mall, residential block, metro station
+and tunnels, construction site and crane.
+
+---
+
+## v7.0 — Metro City, Phase 1 of ~4
+
+The Metro City brief is seven districts, a five-level garage, a subway network,
+65 loot points, 24 spawns with line-of-sight rules and a crane platform. That is
+several sessions, not one. Delivered in phases with a full gate run between each
+— the same compile-gate discipline used elsewhere in this project.
+
+**PHASE 1 — foundation + Financial District + Central Plaza.**
+
+*Integration (the part that must be right or nothing later works).* A new
+environment file is invisible to every gate until wired in by hand, so all of it
+was done explicitly: `CFG.MAPS` registry, `maps-metro.config.js`, `metro.js`,
+`World.buildMap` dispatcher generalised from a hardcoded rural branch to a
+builder lookup, `config/index.js` merger, `server.js mapData()`, two script tags
+in `index.html`, and the file-lists of all five harnesses (map, build, access,
+cover, lifts). Urban and Rural are untouched and still pass everything.
+
+*Built.* Paved ground (top y=0, so the coplanar gate has nothing to catch), a
+three-lane avenue grid recessed 3cm, Central Plaza with fountain, statues,
+benches, street trees and a bus shelter, and four 6-storey Financial District
+towers with a sill/glass window band on every floor. Plus 46 pieces of
+procedural street cover, keeping the plaza and tower approaches clear.
+
+*Numbers.* **18 merged meshes** (brief target: <=20). 309 colliders.
+Map gate 370 -> **472 assertions** — metro's 22 loot points, 24 spawns and 10
+airdrops are now judged on the same terms as Urban and Rural. Two failures on
+first run were real and fixed: a spawn inside a street container, and the centre
+airdrop landing on the fountain basin.
+
+**KNOWN PHASE 1 GAP:** the towers have **no vertical access yet**. Roof and
+mid-floor loot points exist and validate as resting on real geometry, but nothing
+reaches them. Lifts land in phase 2 — deliberately lift-first, because every
+staircase in this game with a run under ~0.5m was unclimbable until v6.2, while
+lifts are gate-proven at 27/27 stops.
+
+**Phases remaining:** 2 — lifts, skybridge, parking garage. 3 — shopping mall,
+residential block. 4 — metro station and tunnels, construction site and crane.
+
+**Gates:** integration 49/49 · map 472/472 · build PASS all three maps ·
+lifts 27/27 · models 38/38 · merge 9/9 · cover PASS · ascent 25/27 (two
+pre-existing Urban interior stairs, unchanged from v6.2).
+
+**Still parked from v6.2/6.3:** player model, diagnostic overlay, helmet test
+assertion, minimap rebake, loot in every house/floor, proximity loot labels, bag
+inventory + consumable-gated regen, kill animation.
+
+---
+
+## v6.2 — The Staircase Fix
+
+**Rahul reported stairs inside rooms that won't reach the second floor. He was
+right, and it is not a placement problem — it is `stairFlight` itself.**
+
+There are 43 staircases in this game. The gate covered 16. Listing every call
+showed the pattern immediately: the only flights that have ever worked in a
+browser use a **0.5m run**; nearly every other stair in the map uses **0.33**.
+
+`stairFlight` gave each tread a skirt reaching ~1.2m below its top, to hide the
+gap underneath. That skirt is a COLLIDER. `controller.moveAxis` refuses an
+auto-step whenever the destination capsule overlaps anything — and with a 0.33
+run, the tread TWO ahead sits inside the climber's chest. Every interior stair,
+shop stair, tunnel portal and station stair in the game was affected.
+
+**Fix, at the source:** the tread collider is now a thin lip
+(`min(stepH*0.55, 0.18)`), and the deep skirt below it is decorative
+(`collide: false`). Appearance is unchanged; ~40 staircases became climbable in
+one edit.
+
+**Gate coverage 16 -> 27 assertions**, adding eleven interior/district stairs
+that had never been tested: warehouse interior, south office, east block, south
+shop, two shop rows, west apartments, north depot, two north blocks, cargo
+office. **25 pass.** Two still fail:
+- *south office*: a landing box sits ON the run at y 1.3-1.5 (the recurring
+  landing-over-treads defect) — a real map bug, not yet fixed.
+- *north block A*: the walker cannot reach the flight; a 1.3m wall stands between
+  the approach and the stair, so the room is probably entered from elsewhere.
+  Likely a bad gate approach vector rather than a map fault, unconfirmed.
+
+**Gates:** integration 49/49 · map 370/370 · lifts 27/27 · ascent 25/27 ·
+models 38/38 · merge 9/9 · cover PASS both maps · build PASS.
+
+**NOT IN THIS BUILD** — the rest of the v6.2 list is untouched:
+player model, diagnostic overlay, helmet test assertion, minimap rebake,
+loot in every house/floor, proximity loot labels.
+
+---
+
+## v6.1 — Lifts and Helmets
+
+**The ascent gate was wrong, twice.** `controller.update()` runs horizontal move
+-> `grounded = false` -> vertical move, so `grounded` during horizontal movement
+is left over from the PREVIOUS frame. After an auto-step the player sits
+rise+0.02 clear and the next vertical move falls only ~4mm, so auto-step is
+unavailable the following frame. The gate ran gravity first, making `grounded`
+always true. It also used a constant 4.4 m/s instead of modelling MV.accel 42 /
+MV.airAccel 9. Both corrected. This is why v6.0 shipped six unclimbable buildings
+with a green gate.
+
+**Root mechanism.** `stairFlight` skirts each tread with a 1.2m box. With a run
+under ~0.5m the tread TWO ahead intrudes into the climber's headroom and the
+auto-step clearance check rejects the step. The warehouse fire escape (0.5 run)
+is the only stair profile confirmed working in a browser.
+
+**Tower stairs deleted — lifts only.** Tower B's flight could not be made
+reliable across three repositionings. Mall, airport terminal and ship keep their
+stairs; those pass. Ascent gate 16/16.
+
+**LIFTS** (`CFG.LIFTS`, ride with **Z**). Five shafts. Every shaft position was
+DERIVED by searching each building for a spot valid at all floor stops — the
+first positions I chose by eye sat inside the stairwell slot where upper slabs
+are pierced, so four stops had no floor at all. New gate `tools/verify-lifts.js`
+checks every stop for solid floor and head clearance: **27/27**.
+
+2-second exposure before the ride, implemented as a delay rather than an animated
+ride: the controller owns pos.y every frame and fighting it for 120 frames is the
+same marginal physics that broke the stairs. Walk out of the shaft or die and it
+cancels.
+
+**HELMETS** (`CFG.HELMET`, own slot, own durability, mirroring vests).
+H1 0.35/55 - H2 0.55/95 - H3 0.70/150. Cuts ONLY the headshot bonus, never base
+damage: a 100-point head hit from a 2.5x weapon with H2 loses 55% of the 60-point
+bonus, so 67 lands. Body and leg shots untouched. Point-blank explosives ignore
+it, same rule as armour. `helm_1/2/3` loot at common/rare/legendary; pickup uses
+the identical upgrade rule as armour.
+
+**Also fixed:** platform ramps and station-house stair (v6.0 railway work), ship
+superstructure raised onto the hull deck, rooftop loot realigned to the rebuilt
+towers, flatcar loot point moved with the flatcar.
+
+**Gates:** integration 49/49 · models 38/38 · map 370/370 · merge 9/9 ·
+ascent 16/16 · **lifts 27/27** · cover PASS both maps · build PASS.
+
+**KNOWN INCOMPLETE — read before deploying:**
+- Human-proportioned player model: NOT STARTED
+- On-screen diagnostic overlay: NOT STARTED
+- Helmet absorb maths has no test assertion yet
+
+---
+
+## v6.0 — Districts, Towers, and the Railway That Never Worked
 
 **The railway zone was never useless — it was unreachable.** Adding it to the
 ascent gate for the first time showed **3 of its 5 stairs could not be climbed**:

@@ -41,7 +41,7 @@ vm.createContext(ctx);
   "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
-  "public/src/environment/deco.js", "public/src/environment/rural.js",
+  "public/src/environment/deco.js", "public/src/environment/rural.js", "public/src/environment/metro.js",
   "public/src/environment/access.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(f, "utf8"), ctx, { filename: f }));
 
@@ -51,6 +51,7 @@ const R = P.radius, HY = P.standH / 2, STEP = MV.step;
 /* --- faithful port of controller.moveAxis (standing stance, no crouch) --- */
 function climber(cols) {
   let pos = { x: 0, y: 0, z: 0 }, grounded = false;
+  const blockers = new Map();
   function overlapAny(cx, cy, cz) {
     for (const c of cols)
       if (cx - R < c[3] && cx + R > c[0] && cy - HY < c[4] && cy + HY > c[1] && cz - R < c[5] && cz + R > c[2]) return true;
@@ -71,6 +72,7 @@ function climber(cols) {
           const ny = v[1] + rise + 0.02;
           if (!overlapAny(v[0], ny, v[2])) { v[1] = ny; continue; }
         }
+        blockers.set(c.join(','), (blockers.get(c.join(',')) || 0) + 1);
         if (delta > 0) v[axis] = c[axis] - R - 0.001;
         else v[axis] = c[axis + 3] + R + 0.001;
       }
@@ -78,17 +80,38 @@ function climber(cols) {
     pos = { x: v[0], y: v[1], z: v[2] };
   }
   return {
+    /* Faithful replay of controller.update()'s ORDER, which matters enormously:
+         moveAxis(0/2, horizontal)   <- uses LAST frame's `grounded`
+         grounded = false
+         moveAxis(1, vel.y * dt)     <- sets `grounded` for the NEXT frame
+       The first version of this gate ran gravity FIRST, so `grounded` was always
+       true when moving horizontally and auto-step always fired. The real player
+       is airborne for a frame or more after each step-up (auto-step lifts them
+       rise+0.02 clear, and the next vertical move only falls gravity*dt), so
+       auto-step is NOT available every frame. That made this gate pass six
+       staircases the real game cannot climb. */
     walk(sx, sy, sz, dx, dz, ticks) {
-      pos = { x: sx, y: sy, z: sz }; grounded = false;
-      let peak = sy;
+      pos = { x: sx, y: sy, z: sz }; grounded = false; blockers.clear();
+      let peak = sy, velY = 0, velH = 0;
+      const dt = 1 / 60, speed = 4.4;            // MV.walk
       for (let i = 0; i < ticks; i++) {
+        // MV.accel 42 grounded / MV.airAccel 9 airborne. On a stair `grounded`
+        // flickers, so a real player accelerates far slower than a constant
+        // walk speed — the second reason the first gate over-reported success.
+        const acc = (grounded ? 42 : 9) * dt;
+        velH += Math.max(-acc, Math.min(acc, speed - velH));
+        velY -= 15.5 * dt;                       // MV.gravity
+        if (velY < -30) velY = -30;
+        moveAxis(0, dx * velH * dt);
+        moveAxis(2, dz * velH * dt);
         grounded = false;
-        moveAxis(1, -0.30);              // gravity settle onto whatever is underfoot
-        moveAxis(0, dx * 0.10);
-        moveAxis(2, dz * 0.10);
+        moveAxis(1, velY * dt);
+        if (grounded) velY = 0;
         if (pos.y > peak) peak = pos.y;
       }
-      return { y: pos.y - HY, peak: peak - HY, x: pos.x, z: pos.z };  // report FOOT height
+      const top3 = [...blockers.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2)
+        .map(e => '[' + e[0].split(',').map(n => (+n).toFixed(1)).join(' ') + ']x' + e[1]);
+      return { y: pos.y - HY, peak: peak - HY, x: pos.x, z: pos.z, blockers: top3 };
     }
   };
 }
@@ -105,8 +128,10 @@ function run(map, cases) {
   console.log(`\n--- [${map}] stair ascent (${cols.length} colliders) ---`);
   for (const t of cases) {
     const r = C.walk(t.x, t.y + HY + 0.05, t.z, t.dx, t.dz, t.ticks || 220);
-    ok(r.peak >= t.top - 0.12,
-      `${t.name}: foot reached ${r.peak.toFixed(2)}m (need >= ${t.top.toFixed(2)}m)`);
+    const good = r.peak >= t.top - 0.12;
+    ok(good, `${t.name}: foot reached ${r.peak.toFixed(2)}m (need >= ${t.top.toFixed(2)}m)`);
+    if (!good) console.log('        stopped at x=' + r.x.toFixed(1) + ' z=' + r.z.toFixed(1)
+      + '  blocked by: ' + (r.blockers.join(' ') || 'nothing (never reached a stair)'));
   }
 }
 
@@ -114,18 +139,28 @@ run("urban", [
   { name: "garage fire escape -> roof 4.30", x: -17.6, y: 0, z: 42.6, dx: 0, dz: -1, top: 4.30 },
   { name: "warehouse fire escape -> roof 9.15", x: -18.2, y: 0, z: -17.3, dx: -1, dz: 0, top: 9.15, ticks: 340 },
   // railway zone — never gate-tested before v6.0
-  { name: "station house east stair -> roof 4.60", x: 44.7, y: 0, z: -87.4, dx: 0, dz: -1, top: 4.60 },
+  { name: "station house east stair -> roof 4.60", x: 44.7, y: 0, z: -85.0, dx: 0, dz: -1, top: 4.60, ticks: 400 },
   { name: "footbridge south stair -> deck 4.30", x: 74, y: 0, z: -74.8, dx: 0, dz: -1, top: 4.30 },
   { name: "footbridge north stair -> deck 4.30", x: 74, y: 0, z: -97.2, dx: 0, dz: 1, top: 4.30 },
   { name: "platform west ramp -> platform 1.12", x: 23, y: 0, z: -75.5, dx: 0, dz: -1, top: 1.12 },
   { name: "platform east ramp -> platform 1.12", x: 63, y: 0, z: -75.5, dx: 0, dz: -1, top: 1.12 },
   // v6.0 districts — every multi-storey building's external flight
-  { name: "tower A (6f) -> roof 18.0", x: 52.4, y: 0, z: 55.0, dx: 1, dz: 0, top: 18.0, ticks: 900 },
-  { name: "tower B (7f) -> roof 21.0", x: 74.4, y: 0, z: 51.0, dx: 1, dz: 0, top: 21.0, ticks: 1000 },
-  { name: "tower C (6f) -> roof 18.0", x: 58.4, y: 0, z: 77.0, dx: 1, dz: 0, top: 18.0, ticks: 900 },
+  // interior / district stairs — never gate-tested before v6.2
+  { name: "warehouse interior -> 3.81", x: -37.4, y: 0, z: -35.95, dx: -1, dz: 0, top: 3.81 },
+  { name: "south office -> 3.20", x: -35.95, y: 0, z: 30.2, dx: 0, dz: -1, top: 3.20 },
+  { name: "east block -> 5.72", x: 40, y: 0, z: 32.0, dx: 0, dz: 1, top: 5.72, ticks: 400 },
+  { name: "south shop -> 3.20", x: 13.7, y: 0, z: -55.5, dx: 0, dz: -1, top: 3.20 },
+  { name: "shop row A -> 4.00", x: 53, y: 0, z: 1.9, dx: 0, dz: -1, top: 4.00 },
+  { name: "shop row B -> 5.10", x: 52.1, y: 0, z: 16.9, dx: 1, dz: 0, top: 5.10, ticks: 400 },
+  { name: "west apartments -> 3.41", x: -37.7, y: 0, z: 31.0, dx: 0, dz: -1, top: 3.41 },
+  { name: "north depot -> 4.50", x: -60.2, y: 0, z: -80.6, dx: 0, dz: -1, top: 4.50 },
+  { name: "north block A -> 3.60", x: -20.9, y: 0, z: -79.4, dx: 0, dz: -1, top: 3.60 },
+  { name: "north block B -> 3.48", x: -13.55, y: 0, z: -74.9, dx: 0, dz: -1, top: 3.48 },
+  { name: "cargo office -> 3.90", x: -79.1, y: 0, z: -1.5, dx: 0, dz: -1, top: 3.90 },
   { name: "mall (2f) -> roof 6.0", x: 50.4, y: 0, z: -45.0, dx: 1, dz: 0, top: 6.0, ticks: 400 },
   { name: "airport terminal (2f) -> roof 6.0", x: -91.6, y: 0, z: -93.0, dx: 1, dz: 0, top: 6.0, ticks: 400 },
-  { name: "ship bridge (3f) -> roof 9.0", x: -57.6, y: 0, z: 57.0, dx: 1, dz: 0, top: 9.0, ticks: 500 }
+  { name: "quay -> ship deck 3.40", x: -64.4, y: 0.6, z: 62.0, dx: 1, dz: 0, top: 3.40, ticks: 400 },
+  { name: "ship bridge (3f) -> roof 12.4", x: -58.4, y: 3.4, z: 57.0, dx: 1, dz: 0, top: 12.4, ticks: 700 }
 ]);
 
 run("rural", [

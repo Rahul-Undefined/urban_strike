@@ -31,6 +31,48 @@
      Put TURN credentials in `turn` (array, one entry per URL) to fix that.
      Free tiers exist (e.g. Metered Open Relay, Twilio, Xirsys); self-hosting
      coturn also works. `debug: true` shows the live per-peer diagnostics panel. */
+  /* LIFTS (v6.1). Vertical access without auto-step. Each entry is a shaft:
+     stand inside radius r of (x,z) at any listed floor height and press Z to
+     ride to the next stop, wrapping to the ground at the top. Movement is
+     already client-authoritative, so this needs no server support and cannot
+     desync anything the server cares about. Stops are DERIVED from the building
+     floor heights, never hand-typed. */
+  /* HELMET (v6.1) — own slot, own durability, mirroring ARMOR. Applies ONLY to
+     head damage: absorb is the fraction of the headshot bonus removed, and each
+     hit spends durability. A helmet does nothing against body or leg shots. */
+  var HELMET = {
+    1: { label: 'H1', absorb: 0.35, dur: 55,  color: '#8a949e' },
+    2: { label: 'H2', absorb: 0.55, dur: 95,  color: '#4fa3e0' },
+    3: { label: 'H3', absorb: 0.70, dur: 150, color: '#f0c040' }
+  };
+
+  var LIFTS = [
+    { map: 'urban', x: 54.0, z: 58.0, r: 1.6, stops: [0.25, 3.25, 6.25, 9.25, 12.25, 15.25, 18.25] },  // tower A
+    { map: 'urban', x: 78.0, z: 60.0, r: 1.6, stops: [0.25, 3.25, 6.25, 9.25, 12.25, 15.25, 18.25] },  // tower B
+    { map: 'urban', x: 60.0, z: 80.0, r: 1.6, stops: [0.25, 3.25, 6.25, 9.25, 12.25, 15.25, 18.25] },  // tower C
+    { map: 'urban', x: 84.2, z: -25.5, r: 1.6, stops: [0.25, 3.25, 6.25] },                            // mall
+    { map: 'urban', x: -76.2, z: -81.9, r: 1.6, stops: [0.25, 3.25, 6.25] },                           // airport terminal
+    // --- Metro City (v7.1). Every shaft position DERIVED by searching each
+    // structure for a spot valid at all stops, never chosen by eye. ---
+    { map: 'metro', x: -53, z: -53, r: 1.6, stops: [0.25, 4.25, 8.25, 12.25, 16.25, 20.25, 24.25] },  // NW tower
+    { map: 'metro', x: 39, z: -53, r: 1.6, stops: [0.25, 4.25, 8.25, 12.25, 16.25, 20.25, 24.25] },   // NE tower
+    { map: 'metro', x: -53, z: 39, r: 1.6, stops: [0.25, 4.25, 8.25, 12.25, 16.25, 20.25, 24.25] },   // SW tower
+    { map: 'metro', x: 39, z: 39, r: 1.6, stops: [0.25, 4.25, 8.25, 12.25, 16.25, 20.25, 24.25] },    // SE tower
+    { map: 'metro', x: -89, z: -17, r: 1.6, stops: [0.3, 3.5, 6.7, 9.9, 13.1] },                       // parking garage
+    { map: 'metro', x: 60, z: 14, r: 1.6, stops: [0.25, 4.25, 8.25, 12.25] },                          // shopping mall
+    { map: 'metro', x: -92, z: 16.5, r: 1.6, stops: [0.25, 3.45, 6.65, 9.85, 13.05] },                 // residential NW
+    { map: 'metro', x: -92, z: 44, r: 1.6, stops: [0.25, 3.45, 6.65, 9.85, 13.05] },                   // residential SW
+    { map: 'metro', x: -60, z: 16, r: 1.6, stops: [0.25, 3.45, 6.65, 9.85, 13.05] },                   // residential NE
+    { map: 'metro', x: -60, z: 69, r: 1.6, stops: [0.25, 3.45, 6.65, 9.85, 13.05] },                   // residential SE
+    // --- phase 4: three widely separated street<->subway shafts, so descending
+    // at one and surfacing at another is a genuine map-crossing flank ---
+    { map: 'metro', x: -20, z: -80, r: 1.6, stops: [0, -5.75] },                                       // ticket hall exit
+    { map: 'metro', x: -20, z: -48, r: 1.6, stops: [0, -5.75] },                                       // west service exit
+    { map: 'metro', x: -6, z: -20, r: 1.6, stops: [0, -5.75] },                                        // south tunnel exit
+    { map: 'metro', x: 60, z: -86, r: 1.6, stops: [0.3, 4.5, 8.7, 12.9, 17.1, 21.3] },                 // construction tower
+    { map: 'metro', x: 89, z: -54.5, r: 1.6, stops: [0, 30.3] }                                        // tower crane
+  ];
+
   var VOICE = {
     turn: [],            // e.g. { urls: 'turn:host:80', username: 'u', credential: 'p' }
     debug: true,
@@ -79,5 +121,5 @@
     assistMinDmg: 25
   };
 
-  return { VOICE: VOICE, RECOIL: RECOIL, REGEN: REGEN, PLAYER: PLAYER, ARMOR: ARMOR, MOVE: MOVE, SPAWNS: SPAWNS, NET: NET, MATCH: MATCH };
+  return { HELMET: HELMET, LIFTS: LIFTS, VOICE: VOICE, RECOIL: RECOIL, REGEN: REGEN, PLAYER: PLAYER, ARMOR: ARMOR, MOVE: MOVE, SPAWNS: SPAWNS, NET: NET, MATCH: MATCH };
 });

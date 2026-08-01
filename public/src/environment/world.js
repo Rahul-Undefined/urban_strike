@@ -171,7 +171,21 @@ var World = (function () {
       var bottom = Math.max(sy - 0.02, top - stepH - 0.9);
       var w = dirX !== 0 ? stepD : width;
       var d = dirX !== 0 ? width : stepD;
-      seg(cx - w / 2, cx + w / 2, bottom, top, cz - d / 2, cz + d / 2, mat);
+      /* v6.2: the tread COLLIDER is now a thin slab, and the deep skirt that
+         hides the gap underneath is decorative only.
+         Why: the auto-step in controller.moveAxis refuses a step whenever the
+         destination capsule overlaps anything. With a full-depth (~1.2m) skirt
+         the tread TWO ahead reached into the climber's chest, so every flight
+         with a run under ~0.5m was unclimbable. That is 40 of the 43 staircases
+         in this game — every interior stair, the shop stairs, the tunnel
+         portals, the rail station. Only the two 0.5-run fire escapes worked,
+         which is exactly what Rahul reported. Thin colliders fix all of them at
+         the source instead of one flight at a time. */
+      var lip = Math.min(stepH * 0.55, 0.18);
+      seg(cx - w / 2, cx + w / 2, top - lip, top, cz - d / 2, cz + d / 2, mat);
+      if (bottom < top - lip)
+        seg(cx - w / 2, cx + w / 2, bottom, top - lip, cz - d / 2, cz + d / 2, mat,
+          { collide: false });
     }
   }
 
@@ -758,14 +772,15 @@ World.buildMap = function (sceneRef, map) {
     if (World.builtMap === map) return;
     World.reset();
   }
-  if (map === 'urban' || !World._buildRural) {
+  var builder = map === 'rural' ? World._buildRural : (map === 'metro' ? World._buildMetro : null);
+  if (map === 'urban' || !builder) {
     World.build(sceneRef);
     World.builtMap = 'urban';
     return;
   }
   World._initPart1(sceneRef, { urban: false });
   var H = World._internals();
-  World._buildRural({
+  builder({
     seg: H.seg, box: H.box, cyl: H.cyl, stairFlight: H.stairFlight,
     M: H.M, rnd: H.rnd, scene: H.sceneRef(), addCollider: H.addCollider
   });
@@ -773,5 +788,5 @@ World.buildMap = function (sceneRef, map) {
     StaticMerge.merge(THREE, H.sceneRef());
   }
   World._markBuilt();
-  World.builtMap = 'rural';
+  World.builtMap = map;
 };

@@ -188,44 +188,53 @@ World._buildPart5 = function (T) {
      punched in the wall at every floor level the stair passes.
      ================================================================== */
   var FH = 3.0;          // floor height
-  var SH = 0.30, SD = 0.30;   // stair rise / run: 10 steps per floor
+  /* Rise/run copied from the warehouse fire escape, the only stair in this
+     project with a confirmed browser climb. Run MUST be ~0.5: stairFlight gives
+     each tread a 1.2m-deep skirt box, so with a 0.3 run the tread TWO ahead
+     lands inside the player's headroom and the auto-step's clearance check
+     rejects every step. 0.5 puts it clear of the 0.35m capsule radius.
+     8 steps x 0.375 = one 3.0m floor. */
+  var SH = 0.375, SD = 0.50;
 
   function building(x0, x1, z0, z1, floors, wallMat, roofMat) {
-    var t = 0.28;
-    var stairX = x0 + 1.2;                       // where the external flight starts
+    buildingAt(x0, x1, z0, z1, floors, wallMat, roofMat, 0);
+  }
+  /* Stairs: EXTERNAL straight flight for floors 0-3 on the -z face, then an
+     INTERNAL flight 3-top running back the other way through a stairwell slot.
+     Rise/run is 0.375/0.50 — the warehouse fire-escape profile, the only one
+     confirmed climbable in a real browser. Short runs fail because stairFlight
+     skirts each tread with a 1.2m box, which lands in the climber's headroom
+     and makes auto-step reject the step. Landings always sit PAST the end of a
+     run, never on it. */
+  function buildingAt(x0, x1, z0, z1, floors, wallMat, roofMat, baseY, noStair) {
+    var t = 0.28, EXT = Math.min(3, floors);
+    var sxA = x0 + 1.2;                       // external flight start
     for (var f = 0; f <= floors; f++) {
-      var y = f * FH;
-      seg(x0, x1, y, y + 0.25, z0, z1, f === floors ? roofMat : wallMat);   // slab / roof
+      var y = baseY + f * FH;
+      seg(x0, x1, y, y + 0.25, z0, z1, f === floors ? roofMat : wallMat);
       if (f === floors) break;
-      var b0 = y + 0.25, sill = b0 + 0.9, head = b0 + 2.05, top = (f + 1) * FH;
-      var doorX = stairX + f * (10 * SD);        // where the flight is at this level
-      // -z face: lower band split around the doorway, upper band continuous
-      seg(x0, Math.min(x1, doorX - 0.85), b0, sill, z0, z0 + t, wallMat);
-      seg(Math.min(x1, doorX + 0.85), x1, b0, sill, z0, z0 + t, wallMat);
+      var b0 = y + 0.25, sill = b0 + 0.9, head = b0 + 2.05, top = baseY + (f + 1) * FH;
+      var doorX = (f < EXT) ? sxA + f * (8 * SD) : x1 - 1.9;
+      seg(x0, Math.max(x0, Math.min(x1, doorX - 0.9)), b0, sill, z0, z0 + t, wallMat);
+      seg(Math.min(x1, Math.max(x0, doorX + 0.9)), x1, b0, sill, z0, z0 + t, wallMat);
       seg(x0, x1, head, top, z0, z0 + t, wallMat);
-      seg(x0, x1, b0, sill, z1 - t, z1, wallMat);      // +z face
+      seg(x0, x1, b0, sill, z1 - t, z1, wallMat);
       seg(x0, x1, head, top, z1 - t, z1, wallMat);
-      seg(x0, x0 + t, b0, sill, z0, z1, wallMat);      // -x face
+      seg(x0, x0 + t, b0, sill, z0, z1, wallMat);
       seg(x0, x0 + t, head, top, z0, z1, wallMat);
-      seg(x1 - t, x1, b0, sill, z0, z1, wallMat);      // +x face
+      seg(x1 - t, x1, b0, sill, z0, z1, wallMat);
       seg(x1 - t, x1, head, top, z0, z1, wallMat);
-      // corner posts (full height, so the window band reads as a band)
-      [[x0, x0 + t], [x1 - t, x1]].forEach(function (cx) {
-        [[z0, z0 + t], [z1 - t, z1]].forEach(function (cz) {
-          seg(cx[0], cx[1], b0, top, cz[0], cz[1], wallMat);
-        });
-      });
     }
-    /* One continuous external flight along the -z face. NO landings: the flight
-       already passes every floor level, and a landing box placed on the run sits
-       on top of the treads and walls the climb off — the exact bug that made the
-       station house roof unreachable. You step sideways through the doorway gap
-       instead, a 0.25m rise from tread to slab, well inside the 0.42m auto-step. */
-    stairFlight(stairX, 0, z0 - 1.0, 1, 0, floors * 10, SH, SD, 1.5, M.metal);
-    // outer handrail runs the whole flight, clear of the treads
-    seg(stairX - 0.3, stairX + floors * 10 * SD, 0.9, 1.75, z0 - 1.9, z0 - 1.78, M.trim, { collide: false });
-    // roof parapet
-    var ry = floors * FH + 0.25;
+    // external flight: ground -> floor EXT. Towers pass noStair — Tower B's
+    // flight could not be made reliable and one working mechanism beats two
+    // half-working ones, so the towers are lift-only.
+    if (!noStair) {
+      stairFlight(sxA, baseY, z0 - 1.1, 1, 0, EXT * 8, SH, SD, 1.5, M.metal);
+      seg(sxA - 0.3, sxA + EXT * 8 * SD, baseY + 0.9, baseY + 1.75,
+        z0 - 2.0, z0 - 1.88, M.trim, { collide: false });
+    }
+    // No internal flight above floor EXT — lifts handle everything above.
+    var ry = baseY + floors * FH + 0.25;
     seg(x0, x1, ry, ry + 0.95, z0, z0 + 0.15, M.trim, { cast: false });
     seg(x0, x1, ry, ry + 0.95, z1 - 0.15, z1, M.trim, { cast: false });
     seg(x0, x0 + 0.15, ry, ry + 0.95, z0, z1, M.trim, { cast: false });
@@ -233,9 +242,9 @@ World._buildPart5 = function (T) {
   }
 
   /* ---- HIGH-RISE CLUSTER (SE, x 52..94 / z 50..92) ---- */
-  building(52, 70, 56, 72, 6, M.concrete, M.roof);      // 6 floors, 18m
-  building(74, 92, 52, 68, 7, M.plaster, M.roof);       // 7 floors, 21m
-  building(58, 76, 78, 92, 6, M.brick, M.roof);         // 6 floors
+  buildingAt(52, 70, 56, 72, 6, M.concrete, M.roof, 0, true);      // 6 floors, 18m
+  buildingAt(76, 92, 56, 72, 6, M.plaster, M.roof, 0, true);       // 6 floors (clear of the x=74 wall)
+  buildingAt(58, 76, 78, 92, 6, M.brick, M.roof, 0, true);         // 6 floors
   crates(72, 74); crates(50, 62); barrel(93, 72, true); barrel(56, 90, false);
 
   /* ---- MALL (E, x 46..92 / z -46..-20) — two big floors ---- */
@@ -272,8 +281,11 @@ World._buildPart5 = function (T) {
   seg(-94, -60, 0, 0.6, 50, 90, M.concrete);                              // quay deck
   seg(-60, -44, -0.4, -0.36, 46, 94, M.metal, { collide: false, cast: false }); // water
   // docked ship: hull + superstructure with an external stair to the bridge
-  seg(-60, -46, 0.2, 3.4, 54, 86, M.rust);                                // hull
-  building(-58, -50, 58, 68, 3, M.metal, M.roof);                         // superstructure
+  seg(-60, -46, 0.2, 3.4, 48, 86, M.rust);                                // hull (continuous)
+  stairFlight(-63.4, 0.6, 62, 1, 0, 10, 0.28, 0.34, 3.0, M.metal);        // quay -> deck (3.4)
+  // superstructure sits ON the hull deck, not inside it. Its stair needs clear
+  // air in front, so the hull is split to leave a well at z 56..58.
+  buildingAt(-58, -50, 58, 68, 3, M.metal, M.roof, 3.4);
   seg(-56, -48, 3.4, 3.7, 70, 84, M.metal);                               // aft deck
   // gantry cranes on the quay
   [[-78, 58], [-78, 78]].forEach(function (c2) {
