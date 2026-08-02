@@ -451,15 +451,23 @@ var World = (function () {
          gate non-deterministic, which is worse: it means a number that changed
          cannot be trusted to mean anything. */
       seedState = 1337;
-      if (!outer || !scene) return;
-      outer.remove(scene);
-      scene.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
-      scene = null;
+      /* v8.1: the collision state is cleared BEFORE the scene guard, not after.
+         The guard exists to protect the THREE.js teardown from running without
+         a scene — it has no business gating the collider array. With the old
+         ordering, calling reset() while `scene` was null returned early and
+         left every collider from the previous map in place, so the next
+         buildMap APPENDED to them: solid geometry you collide with and cannot
+         see. Not reachable from the menu flow today, but it silently corrupted
+         verify-collision the first time that gate reset a map twice. */
       colliders.length = 0;
       minimapShapes.length = 0;
       if (World._lampSpots) World._lampSpots.length = 0;
       built = false;
       World.builtMap = null;
+      if (!outer || !scene) return;
+      outer.remove(scene);
+      scene.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+      scene = null;
     },
     build: null // assigned in part 2
   };

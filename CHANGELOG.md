@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.0** | CURRENT — Container Yard rebuilt, mall/yard footprint collision fixed, minimap made legible. |
+| **v8.1** | CURRENT — collision resolver rewritten, `verify-collision` gate added, `World.reset()` collider leak fixed. Movement-only build. |
+| v8.0 | Good — Container Yard rebuilt, mall/yard footprint collision fixed, minimap made legible. |
 | v7.9 | Good — operator rig + animation pass, Warehouse district, frame-cost metrics. |
 | v7.8 | Good — Milestone 9 pt1: Residential, Apartment, Shopping districts. PRNG determinism fix. |
 | v7.7 | Good — Architecture gate + fake-architecture pass. |
@@ -41,6 +42,138 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 | v3.1 | Good — last pre-refactor build |
 
 ---
+
+
+---
+
+## v8.1 — Collision resolver rewrite (Phase 0 of the Urban quality milestone)
+
+**Movement only. No geometry changed on any map.** Shipped alone, deliberately:
+the resolver changes how every surface in the game feels underfoot, and if it
+lands in the same zip as rebuilt staircases a bad result cannot be attributed to
+either one.
+
+### What was wrong
+
+Rahul filmed a player ending up underneath the world at 3:28. `moveAxis` walked
+the collider array and snapped the player out of each overlap **in array order**.
+Three defects fell out of that, all reachable in a normal match:
+
+1. **Order dependence.** Pushed out of box A into box B, then out of B back into
+   A — final position inside A. In a corner that squeezes the player through the
+   seam between two boxes.
+2. **The auto-step skipped resolution.** `continue` after raising the player left
+   the horizontal move unresolved, so a step-up could finish inside the very box
+   it had just stepped over.
+3. **A rising move snapped the player to a box's underside** with no check that
+   they had ever been below it. Urban has eleven collider slabs of 3x3 m or
+   larger whose bottom face sits at y = 0.00 — the ground line — so resolving
+   upward against one placed the player at **y = -0.90. Under the map.**
+
+And the net that should have caught it could not: the failsafe was `pos.y < -8`.
+Being parked at -0.90 is nowhere near -8, so the player simply stayed there.
+
+### What changed
+
+- `moveAxis` is now built on `sweepAxis`, which scans **every** overlapping box
+  and returns the single most restrictive correction. A single-axis move can
+  only ever be corrected against the direction of travel, so taking the extreme
+  instead of the first makes the result independent of array order.
+- Vertical resolution requires the player to have been on the correct side of
+  the box **before** the move: you can only land on a top you were above, and
+  only be stopped by an underside you were below.
+- A rising move is clamped so it can never finish below where it started. That
+  one line is what makes falling through the world impossible.
+- Auto-step is tested against the whole collider set and, when it succeeds, the
+  horizontal move stands — nothing is skipped.
+- New `unstick()` recovery pass pushes out of geometry along the axis of least
+  penetration. **Downward is deliberately not an option:** ending on top of a box
+  is a visible, recoverable glitch; ending underneath one is the bug this whole
+  rewrite exists to kill.
+- The void plane is derived from the loaded map's lowest collider instead of a
+  hard-coded -8, so it adapts to Metro's subway without a per-map constant.
+  Recovery returns the player to their last safe footing, not to map centre.
+- `spawnAt` resets half-height (stale after a crouched death) and runs the
+  unstick pass. Spawn tables disagree about what `y` means — Urban stores the box
+  centre, Metro and Rural store the floor — which buried the player half a body
+  deep for one frame on two maps. Fixed in code rather than migrating three data
+  tables.
+
+### A second bug, found by the new gate
+
+`World.reset()` cleared the collider array **after** an early return guarded on
+`scene` being null. That guard exists to protect the THREE.js teardown; it has no
+business gating collision state. Calling `reset()` with no scene left every
+collider from the previous map in place and the next `buildMap` appended to them:
+solid geometry you collide with and cannot see. Not reachable from the menu flow
+today, but it silently corrupted `verify-collision` the first time that gate
+reset a map twice — which is exactly how it was found. Clearing now happens
+before the guard.
+
+### New gate: `tools/verify-collision.js` — 19 assertions
+
+Every other gate in this project checks the map. This one checks the code that
+moves the player through it, because that is where the v8.0 report came from and
+no existing gate could have caught it.
+
+- **A. Synthetic scenarios**, one per named defect above, against hand-built
+  collider sets. Including the exact filmed case: a slab whose bottom face is the
+  ground line.
+- **B. Real maps.** Every ground-crossing slab is driven with the motion that
+  used to break (urban 94, rural 39, metro 22). Plus a seeded random walk from
+  every spawn — 5,720 frames on urban — asserting no frame ends inside geometry.
+- **C. A deterministic perimeter probe** on 48 bearings.
+
+The perimeter probe replaced a fuzz-based version, and the reason is worth
+recording: the fuzz found two world-edge escapes on Metro, then an unrelated
+spawn fix nudged the walk by half a metre and the count dropped to zero **while
+the hole was still there.** A gate that passes because the fuzz stopped finding
+the bug is worse than no gate.
+
+### Known open defect — not fixed here
+
+**All three maps leak at the world edge.** Walkable ground simply stops on some
+bearings and nothing walls it off: urban 8/48, rural 6/48, metro 8/48. Recorded
+as a ratchet in `ESCAPE_BUDGET` — it may fall, never rise.
+
+This is a **second, independent route** to "player ends up under the world",
+separate from the resolver defect. I cannot tell from the 3:28 footage which of
+the two Rahul actually hit. Both are now survivable — the failsafe returns the
+player to their last safe footing instead of stranding them — but survivable is
+not sealed. Sealing Urban is the first item of the map-flow pass, where perimeter
+geometry can be added and re-validated against verify-arch, verify-cover and the
+triangle budget together.
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| Integration | 85 passed, 0 failed |
+| **Collision (new)** | **19 passed, 0 failed** |
+| Map | 664 passed, 0 failed |
+| Build chain | PASS (3 maps, reset path, coplanar ground) |
+| Ascent | 49/51 (two pre-existing, unchanged) |
+| Lifts | 98 passed, 0 failed |
+| Cover | PASS (urban 0.6% dead ground) |
+| Batching | 36 passed, 0 failed |
+| Architecture | 3/6 red by design — urban 10, rural 7, metro 25 |
+| Avatar / Models / Merge | 23 / 38 / 9, 0 failed |
+| Parse sweep | clean |
+
+**Performance: unchanged.** No geometry was added or removed. Urban remains
+72.1k triangles, 85 draw calls, 56 shadow casters.
+
+### Requires browser verification
+
+Nothing in this build is confirmed. Specifically unverified:
+
+- Movement feel across stairs, curbs, rubble and crate stacks (auto-step path).
+- Corners and doorways — the order-dependence fix changes behaviour there most.
+- Landing, jump-into-ceiling, crouch-under-obstacle.
+- That the 3:28 under-world event no longer reproduces.
+- Respawn placement after a fall (should be last safe footing, not map centre).
+
+Ten minutes of movement testing is the whole point of this build.
 
 ## v8.0 — Eastgate Yard, a building inside a building, and a legible minimap
 
