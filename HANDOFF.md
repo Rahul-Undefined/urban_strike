@@ -1,6 +1,6 @@
-# Urban Strike — Project Handoff (v8.10)
+# Urban Strike — Project Handoff (v8.11)
 
-**Upload this file plus `urban-strike-v8.10.zip` into a new chat. Read this file
+**Upload this file plus `urban-strike-v8.11.zip` into a new chat. Read this file
 completely before touching anything.**
 
 ---
@@ -87,7 +87,7 @@ copy of this handoff.
 
 ## 2. Current state
 
-**Shipped:** `urban-strike-v8.10.zip` — cumulative, contains everything.
+**Shipped:** `urban-strike-v8.11.zip` — cumulative, contains everything.
 
 **v8.9 changed no map geometry.** It corrected five gates that were building an
 incomplete world, and added the F3 diagnostic overlay. Read the v8.9 CHANGELOG
@@ -161,6 +161,7 @@ move every frame — so the only levers are part count, material sharing and LOD
 | **Z-fighting** | `node tools/verify-zfight.js` | **2** | surfaces sharing a plane that will flicker |
 | **Props** | `node tools/verify-props.js` | **2** | props buried in structure; props standing on nothing |
 | Merge | `node tools/verify-merge.js` | 9 | StaticMerge geometry math |
+| **Climb** | `node tools/verify-climb.js` | **RED BY DESIGN — urban 20, rural 1** | walks a capsule up EVERY registered flight, not a hand-written route list. Budget 0. Drive it down, never raise it |
 | **DevHUD** | `node tools/verify-devhud.js` | **13** | the F3 overlay is inert when hidden, and its HEAD / arrival verdicts agree with `verify-stairs-quality` |
 | Parse sweep | `node --check` every .js | clean | syntax only |
 
