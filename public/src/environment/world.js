@@ -7,6 +7,7 @@ var World = (function () {
      Reconstructing flights from raw colliders is guesswork; recording them at
      the point of construction is exact. */
   var stairs = [];
+  var boxLog = null;
   var flickers = [];
   var scene = null, sun = null;
   var built = false;
@@ -57,6 +58,17 @@ var World = (function () {
     }) });
     M.dirt = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#3a352c', 0.45, 1400); }) });
     M.concrete = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#5b5f63', 0.35, 1200); }) });
+    /* v8.5 STAIR MATERIAL. Every generic flight in the game was M.concrete, the
+       same blue-grey as the walls they climb, so a staircase read as part of the
+       wall rather than as something you could use. This is a warm sandstone that
+       separates from the cool building palette at a glance, which is the point:
+       stairs are a traversal affordance and should announce themselves.
+
+       Deliberately a distinct material rather than a reuse of M.ochre, so the
+       stair tone can be retuned later without moving anything else. It shares
+       concrete's footstep surface (surfOf returns 0 for anything that is not
+       wood, metal or rust), so this changes nothing you can hear. */
+    M.stair = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#a8895e', 0.32, 1200); }) });
     M.sidewalk = L({ map: canvasTex(256, function (g, s) {
       noise(g, s, '#6a6e72', 0.3, 900);
       g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 2;
@@ -222,6 +234,20 @@ var World = (function () {
   }
 
   function box(cx, cy, cz, w, h, d, mat, opts) {
+    /* Test-only introspection, same idea as _colliders() and _stairs(). Every
+       surface in this game is a box, and z-fighting is two boxes sharing a
+       plane — but by the time the scene exists they have been merged into ~90
+       batches and the individual faces are gone. Recording them here is the
+       only place the question can still be asked. Off unless a gate turns it on. */
+    if (boxLog) boxLog.push([cx - w / 2, cy - h / 2, cz - d / 2, cx + w / 2, cy + h / 2, cz + d / 2,
+      /* Material IDENTITY, not colour. Almost every material here is
+         L({ map: canvasTex(...) }) with no explicit colour, so concrete, brick,
+         metal, sidewalk, plaster and asphalt ALL report #ffffff. A gate that
+         compares hex strings therefore treats them as the same surface and
+         skips the pair — which is precisely what verify-zfight was doing to
+         most of the map before v8.5. uuid is exact. */
+      (mat && mat.uuid) ? mat.uuid : "?",
+      (mat && mat.color && mat.color.getHexString) ? mat.color.getHexString() : "?"]);
     opts = opts || {};
     var geo = new THREE.BoxGeometry(w, h, d);
     if (mat.map) uvScale(geo, w, h, d);
@@ -303,6 +329,13 @@ var World = (function () {
      opt.stringers === false — open steel flight, no side plates. */
   function stairFlight(sx, sy, sz, dirX, dirZ, steps, stepH, stepD, width, mat, opt) {
     opt = opt || {};
+    /* One stair colour across Urban, applied here rather than at 60 call sites.
+       Only the GENERIC flights are re-tinted. Steel fire escapes stay M.metal
+       and timber stays M.wood on purpose: surfOf() derives the footstep sound
+       from the material, so turning a steel fire escape to stone would make it
+       sound like concrete underfoot. Material identity that carries audio is
+       not decoration. */
+    if (mat === M.concrete || mat === M.dirt || mat === M.sidewalk) mat = M.stair;
     var baseY = (opt.baseY === undefined) ? sy - 0.02 : opt.baseY;
     stairs.push({
       sx: sx, sy: sy, sz: sz, dirX: dirX, dirZ: dirZ,
@@ -329,16 +362,29 @@ var World = (function () {
 
       if (opt.stringers === false || top - lip <= baseY) continue;
 
-      // Stepped side plates, flanking the tread so they never narrow it.
+      /* v8.4: stringers sit INSIDE the tread width, not outside it.
+
+         v8.2 hung them on the outer faces at +/-(width/2 + SP). That is fine
+         for a free-standing flight and wrong for every staircase built flush
+         against a wall — the plate landed inside the wall. Rahul reported both
+         halves of it from the browser: "stairs and walls are completely merged"
+         and "stairs are flickering if inside the room watching from outside".
+         An A/B build confirmed the stringers added 6 coplanar surface pairs,
+         all of them above roof height.
+
+         Inset, the plate can never reach further out than the tread it belongs
+         to, so it cannot enter geometry the staircase was not already touching.
+         Its outer face is now coplanar with the tread's — same material, same
+         colour, so nothing to see and nothing for verify-zfight to flag. */
       if (dirX !== 0) {
         seg(cx - stepD / 2, cx + stepD / 2, baseY, top - lip,
-          cz - width / 2 - SP, cz - width / 2, mat, { collide: false });
+          cz - width / 2, cz - width / 2 + SP, mat, { collide: false });
         seg(cx - stepD / 2, cx + stepD / 2, baseY, top - lip,
-          cz + width / 2, cz + width / 2 + SP, mat, { collide: false });
+          cz + width / 2 - SP, cz + width / 2, mat, { collide: false });
       } else {
-        seg(cx - width / 2 - SP, cx - width / 2, baseY, top - lip,
+        seg(cx - width / 2, cx - width / 2 + SP, baseY, top - lip,
           cz - stepD / 2, cz + stepD / 2, mat, { collide: false });
-        seg(cx + width / 2, cx + width / 2 + SP, baseY, top - lip,
+        seg(cx + width / 2 - SP, cx + width / 2, baseY, top - lip,
           cz - stepD / 2, cz + stepD / 2, mat, { collide: false });
       }
     }
@@ -473,6 +519,8 @@ var World = (function () {
     BOUND: 100, // playable half-extent (V4.2)
     _colliders: function () { return colliders; }, // test-only introspection
     _stairs: function () { return stairs; },       // test-only introspection
+    _recordBoxes: function (on) { boxLog = on ? [] : null; return boxLog; },
+    _boxes: function () { return boxLog || []; },
     /* opts.urban === false  ->  build shared setup only (materials, sky, fog,
        hemi/ambient/sun) and SKIP groundAndRoads(). groundAndRoads() lays the
        Urban dirt ground with its top face at exactly y=0, plus the asphalt
@@ -891,38 +939,34 @@ World.build = function (sceneRef) {
   lamp(8.5, -18, 'w'); lamp(-8.5, 14, 'e'); lamp(8.5, 30, 'w');
   lamp(-8.5, -34, 'e'); lamp(24, 8.5, 'n'); lamp(-24, -8.5, 's');
 
-  /* ===== PERIMETER + SKYLINE ===== */
-  // inner city wall (old perimeter) with road gates at the avenue crossings
-  seg(-70.9, -7, 0, 3, -70.9, -70, M.concrete);
-  /* v7.6 STATION FRONTAGE. This wall ran unbroken from x 7 to 70.9, so the
-     rebuilt railway district had no approach at all. Rather than punch a hole
-     in it, the STATION HALL is now set INTO the wall line: wall -> pier ->
-     station -> pier -> wall. Getting to the platforms on this side means going
-     through the booking hall, which is a real chokepoint with real interior
-     combat. A service gate at x 62.5..67.5 keeps it from being the only way
-     in, so the hall is a strong route, not a mandatory one. */
-  seg(7, 29, 0, 3, -70.9, -70, M.concrete);
-  seg(29, 32, 0, 4.4, -71.0, -69.9, M.brick);                     // west pier, butts the hall
-  seg(52, 55, 0, 4.4, -71.0, -69.9, M.brick);                     // east pier
-  seg(55, 62.5, 0, 3, -70.9, -70, M.concrete);
-  seg(67.5, 70.9, 0, 3, -70.9, -70, M.concrete);
+  /* ===== PERIMETER + SKYLINE =====
+
+     v8.3: THE INNER CITY WALL IS GONE.
+
+     This ring at +/-70 was the map's perimeter back when the map ended there.
+     v4.2 extended the world to +/-100 and built a new outer perimeter, but the
+     old one was left standing in the middle of the city. Everything since has
+     treated it as deliberate structure and worked around it — v7.6 set the
+     station hall into it because it left the railway district with no approach,
+     v7.8 set the mall into it because it drove a 3 m wall through the shop
+     floor. Two releases spent punching holes in a wall that should not have
+     been there, which is what Rahul spotted in images 6, 7 and 19.
+
+     Measured before removal: 3,523 of 33,454 walkable cells in Urban (10.5%)
+     could not be reached from a spawn at all, and this ring was the single
+     biggest contributor.
+
+     The brick PIERS survive. With the wall gone they read as gateposts on the
+     old city line — they still mark where one district ends and the next
+     begins, which is what district callouts need, and they are cover in the
+     open ground the wall used to occupy. */
+  seg(29, 32, 0, 4.4, -71.0, -69.9, M.brick);                     // old south gate, west post
+  seg(52, 55, 0, 4.4, -71.0, -69.9, M.brick);                     // old south gate, east post
   seg(62.5, 63.4, 0, 3.9, -71.0, -69.9, M.brick);                 // service gate piers
   seg(66.6, 67.5, 0, 3.9, -71.0, -69.9, M.brick);
   seg(62.5, 67.5, 3.9, 4.3, -71.0, -69.9, M.railGreen);           // service gate lintel
-  seg(-70.9, -7, 0, 3, 70, 70.9, M.concrete);
-  seg(7, 70.9, 0, 3, 70, 70.9, M.concrete);
-  seg(-70.9, -70, 0, 3, -70, -7, M.concrete);
-  seg(-70.9, -70, 0, 3, 7, 70, M.concrete);
-  /* v7.8 MARKET CROSS GATE. This segment ran unbroken from z -70 to -7 and
-     drove a 3 m wall straight through the middle of the mall floor plate
-     (x 50..88, z -44..-22) — the same defect as the station wall in the
-     railway ballast. The mall is now set INTO the wall line, so crossing here
-     means crossing the shop floor. */
-  seg(70, 70.9, 0, 3, -70, -44.4, M.concrete);
-  seg(70, 70.9, 0, 3, -21.6, -7, M.concrete);
   seg(69.6, 71.3, 0, 4.6, -44.8, -44.4, M.brick);     // piers either side of the mall
   seg(69.6, 71.3, 0, 4.6, -21.6, -21.2, M.brick);
-  seg(70, 70.9, 0, 3, 7, 70, M.concrete);
   // V4.2 outer perimeter
   seg(-100.9, 100.9, 0, 3.2, -100.9, -100, M.concrete);
   seg(-100.9, 100.9, 0, 3.2, 100, 100.9, M.concrete);

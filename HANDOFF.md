@@ -1,6 +1,6 @@
-# Urban Strike — Project Handoff (v8.2)
+# Urban Strike — Project Handoff (v8.5)
 
-**Upload this file plus `urban-strike-v8.2.zip` into a new chat. Read this file
+**Upload this file plus `urban-strike-v8.5.zip` into a new chat. Read this file
 completely before touching anything.**
 
 ---
@@ -151,6 +151,9 @@ move every frame — so the only levers are part count, material sharing and LOD
 | **Avatar** | `node verify-avatar.js` | **23** | player rig: parts, material sharing, joints, stance, strafe, turn, reload, LOD, lobby cost |
 | **Collision** | `node tools/verify-collision.js` | **19** | the resolver itself: order independence, auto-step, no downward resolve, void plane, world-edge probe |
 | **Stair quality** | `node tools/verify-stairs-quality.js` | **15** | support, rise, width, headroom, landing — per flight, from a build-time registry |
+| **Map flow** | `node tools/verify-flow.js` | **3** | walkable ground reachable from spawn; enumerates sealed pockets |
+| **Z-fighting** | `node tools/verify-zfight.js` | **2** | surfaces sharing a plane that will flicker |
+| **Props** | `node tools/verify-props.js` | **2** | props buried in structure; props standing on nothing |
 | Merge | `node tools/verify-merge.js` | 9 | StaticMerge geometry math |
 | Parse sweep | `node --check` every .js | clean | syntax only |
 
@@ -212,7 +215,7 @@ A new environment file is invisible to every gate until wired by hand:
 2. `World.build` → the `World._buildPartN({...})` call with the helper bundle
 3. File lists in **all six** harnesses: verify-map, verify-build, verify-access,
    verify-cover, verify-lifts, verify-batch, verify-arch, verify-collision,
-   verify-stairs-quality
+   verify-stairs-quality, verify-flow, verify-zfight, verify-props
 Adding a district to an EXISTING file avoids all of this. v7.6 put the rebuilt
 railway inside `districts-north.js` for exactly that reason.
 

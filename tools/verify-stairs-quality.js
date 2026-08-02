@@ -91,10 +91,24 @@ const PR = CFG.PLAYER.radius;
    build, which makes the result depend on district build ORDER — the exact
    class of non-determinism the v7.8 PRNG fix existed to remove. */
 const BUDGET = {
-  urban: { floating: 9, rise: 0, narrow: 6, headroom: 5, landing: 5 },
-  rural: { floating: 0, rise: 0, narrow: 2, headroom: 1, landing: 2 },
-  metro: { floating: 0, rise: 0, narrow: 4, headroom: 3, landing: 6 }
+  urban: { floating: 9, rise: 0, narrow: 6, headroom: 5, arrival: 6 },
+  rural: { floating: 0, rise: 0, narrow: 2, headroom: 1, arrival: 0 },
+  metro: { floating: 0, rise: 0, narrow: 4, headroom: 3, arrival: 0 }
 };
+
+/* ARRIVAL replaced LANDING in v8.4 and the numbers are not comparable.
+
+   The old check asked "is there something to stand on near the top", which the
+   flight's own last tread satisfied — so it passed everywhere while Rahul was
+   reporting staircases that reach a roof and stop short of it. The new check
+   demands a real destination: a surface of 1 m2 or more that is NOT part of
+   this flight, within a step of the top, or the foot of another flight.
+
+   Setting the threshold honestly took two attempts. At a 4 m2 deck minimum it
+   reported 23 urban failures; most of those flights arrive at a switchback
+   landing of about 1.4 m2, so 17 of the 23 were the gate's fault, not the map's.
+   Dropping the minimum to 1 m2 and excluding the flight's own footprint leaves
+   6, and those 6 are real. */
 
 function build(map) {
   ctx.__m = map;
@@ -140,8 +154,12 @@ function standable(cols, x, z, y) {
 
 for (const map of ["urban", "rural", "metro"]) {
   const { c: cols, s: flights } = build(map);
+  /* Real decks: top faces big enough to be a floor, roof or landing. A tread is
+     never one of these, which is what makes the arrival test meaningful. */
+  const decks = cols.filter(c => (c[3] - c[0]) * (c[5] - c[2]) >= 1.0)
+    .map(c => ({ x0: c[0], x1: c[3], z0: c[2], z1: c[5], y: c[4] }));
   console.log(`\n--- [${map}] ${flights.length} flights ---`);
-  const bad = { floating: [], rise: [], narrow: [], headroom: [], landing: [] };
+  const bad = { floating: [], rise: [], narrow: [], headroom: [], arrival: [] };
 
   for (const f of flights) {
     const midX = f.sx + f.dirX * f.steps * f.stepD * 0.5;
@@ -180,26 +198,57 @@ for (const map of ["urban", "rural", "metro"]) {
     }
     if (low) bad.headroom.push(f);
 
-    /* LANDING — somewhere to stand at the top. Checked as a ring around the
-       top tread rather than straight ahead: a switchback turns 90 degrees at
-       the landing, so "directly forward" is a wall by design. */
-    let land = false;
-    for (let a = 0; a < 8 && !land; a++) {
-      const th = (a / 8) * Math.PI * 2;
-      const lx = f.endX + Math.cos(th) * (PR + 0.5);
-      const lz = f.endZ + Math.sin(th) * (PR + 0.5);
-      if (standable(cols, lx, lz, f.topY)) land = true;
+    /* ARRIVAL — does this flight actually GET you anywhere?
+
+       The v8.3 version asked only "is there something to stand on near the
+       top", which the flight's own last tread satisfied, so it passed
+       everywhere while Rahul was reporting stairs that reach a roof and stop
+       short of it. Two separate failures were hiding behind that:
+
+         - the flight ends near a deck but not close enough to step across
+           (his items 2 and 4: "gap between the stairs and the wall which
+           doesn't let the player go to the roof")
+         - the flight ends where the NEXT flight should begin, and doesn't
+           (his item 6: the construction-site gap between first and second)
+
+       So a flight must arrive at either a real deck — a surface of 4 m2 or
+       more that is not part of this flight — or at the foot of another
+       flight. Anything else is a staircase to nowhere. */
+    let arrived = false, nearMiss = null;
+    // this flight's own swept footprint — its treads must not count as arrival
+    const fx0 = Math.min(f.sx, f.endX) - f.width / 2 - 0.05, fx1 = Math.max(f.sx, f.endX) + f.width / 2 + 0.05;
+    const fz0 = Math.min(f.sz, f.endZ) - f.width / 2 - 0.05, fz1 = Math.max(f.sz, f.endZ) + f.width / 2 + 0.05;
+    for (const d of decks) {
+      const dcx = (d.x0 + d.x1) / 2, dcz = (d.z0 + d.z1) / 2;
+      if (dcx > fx0 && dcx < fx1 && dcz > fz0 && dcz < fz1 &&
+          d.y > f.baseY - 0.1 && d.y < f.topY + 0.1) continue;   // part of this flight
+      const dx = Math.max(d.x0 - f.endX, 0, f.endX - d.x1);
+      const dz = Math.max(d.z0 - f.endZ, 0, f.endZ - d.z1);
+      const gap = Math.hypot(dx, dz), rise = d.y - f.topY;
+      if (gap > 3.0 || rise < -1.2 || rise > 3.0) continue;
+      if (gap <= PR + 0.6 && rise <= STEP + 0.02 && rise > -1.2) { arrived = true; break; }
+      if (!nearMiss || gap < nearMiss.gap) nearMiss = { gap: gap, rise: rise, y: d.y };
     }
-    if (!land) bad.landing.push(f);
+    if (!arrived) {
+      for (const g of flights) {
+        if (g === f) continue;
+        const gap = Math.hypot(g.sx - f.endX, g.sz - f.endZ), rise = g.sy - f.topY;
+        if (gap <= 2.0 && Math.abs(rise) <= STEP + 0.02) { arrived = true; break; }
+        if (gap <= 3.0 && Math.abs(rise) <= 3.0 && (!nearMiss || gap < nearMiss.gap))
+          nearMiss = { gap: gap, rise: rise, y: g.sy };
+      }
+    }
+    if (!arrived) { f._miss = nearMiss; bad.arrival.push(f); }
   }
 
   const B = BUDGET[map];
-  for (const k of ["floating", "rise", "narrow", "headroom", "landing"]) {
+  for (const k of ["floating", "rise", "narrow", "headroom", "arrival"]) {
     ok(bad[k].length <= B[k], `${map}: ${bad[k].length} flights fail ${k} (budget ${B[k]})`);
     if (VERBOSE || bad[k].length > B[k]) {
-      bad[k].slice(0, 6).forEach(f => console.log(
+      bad[k].slice(0, 8).forEach(f => console.log(
         `        ${k}  start (${f.sx.toFixed(1)}, ${f.sy.toFixed(2)}, ${f.sz.toFixed(1)}) ` +
-        `-> top ${f.topY.toFixed(2)}  ${f.steps} steps  rise ${f.stepH.toFixed(3)} run ${f.stepD.toFixed(2)} w ${f.width}`));
+        `-> top (${f.endX.toFixed(1)}, ${f.topY.toFixed(2)}, ${f.endZ.toFixed(1)})  ${f.steps} steps` +
+        (f._miss ? `  nearest deck ${f._miss.gap.toFixed(2)}m away, ${f._miss.rise >= 0 ? "+" : ""}${f._miss.rise.toFixed(2)}m up` : "")));
     }
   }
 }

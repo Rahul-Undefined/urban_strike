@@ -10,7 +10,10 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.2** | CURRENT — stair stringers (floating flights fixed map-wide), `verify-stairs-quality` gate. |
+| **v8.5** | CURRENT — map-wide stair colour, `verify-props` gate, material-identity fix across gates. |
+| v8.4 | Good — v8.2 stringer regression fixed, arrival check rewritten. |
+| v8.3 | Good — legacy inner perimeter removed, `verify-flow` + `verify-zfight` gates. |
+| v8.2 | Good — stair stringers (floating flights fixed map-wide), `verify-stairs-quality` gate. |
 | v8.1 | Good — collision resolver rewritten, `verify-collision` gate added, `World.reset()` collider leak fixed. |
 | v8.0 | Good — Container Yard rebuilt, mall/yard footprint collision fixed, minimap made legible. |
 | v7.9 | Good — operator rig + animation pass, Warehouse district, frame-cost metrics. |
@@ -49,6 +52,346 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 
 ---
+
+
+---
+
+
+---
+
+
+---
+
+## v8.5 — Stair colour, a props gate, and a gate that had been lying
+
+### Boundary wall: confirmed removed
+
+Direct answer to a direct question. A scan of the built Urban colliders for long
+wall-like geometry on the old +/-70 line returns **zero segments**. All four
+outer perimeter walls at +/-100 are present. The inner city wall is gone and has
+been since v8.3.
+
+### One stair colour for the whole map
+
+Every generic flight was `M.concrete` — the same blue-grey as the walls it
+climbs, so a staircase read as part of the wall instead of as something you
+could use. New `M.stair`, a warm sandstone, applied inside `stairFlight` rather
+than at sixty call sites.
+
+**Steel fire escapes stay steel and timber stays timber, on purpose.**
+`surfOf()` derives the footstep sound from the material, so re-tinting a steel
+fire escape to stone would make it sound like concrete underfoot. Material
+identity that carries audio is not decoration.
+
+Cost: one new material, 85 -> 86 draw calls, +12 triangles.
+
+This is a uniform colour, which is what was asked for, but it is worth saying
+plainly that it does not deliver the original goal. District-coloured stairs
+were meant to help callouts. A single new colour makes stairs legible as stairs;
+it does not tell you which district you are in.
+
+### New gate: `tools/verify-props.js`
+
+Two shapes that keep coming back from browser passes and have never had a gate:
+
+**EMBEDDED** — a tree growing out of a paved path, a street light inside a room,
+a truck parked inside a building, furniture fused to a truck. Flagged when two
+boxes share more than 55% of the smaller one's volume. Architecture here is
+built from overlapping boxes on purpose, so a lintel sitting 5 cm into a pier is
+fine; a tree half inside a pavement is not.
+
+**FLOATING** — crates in mid-air, a support rod that does not reach what it
+supports. Flagged when a prop-sized box has nothing under it and nothing
+touching it.
+
+**Urban: 133 embedded pairs, 15 floating props.** Worst offenders by volume:
+(-20.4, 0.6, -17.3) 69% buried, 5.6 m3 · (70.4, 0.5, -94.0) **100% buried** ·
+four at 73% along z -80.6.
+
+### The gate that had been lying
+
+While building the props gate it became obvious that **`verify-zfight` had been
+blind to most of the map.** It compared material COLOUR, and nearly every
+material here is `L({ map: canvasTex(...) })` with no explicit colour — so
+concrete, brick, metal, sidewalk, plaster and asphalt all report `#ffffff`.
+Every coplanar pair between two textured surfaces was being skipped as "same
+colour".
+
+Comparing material **identity** instead:
+
+| Measurement | Colour comparison | Identity comparison |
+|---|---|---|
+| coplanar pairs | 92 | **110** |
+| above roof height | 40 | **46** |
+
+Budgets raised to match. That is not a regression; it is the gate finally seeing
+what was always there. **A budget is only as honest as the measurement under it.**
+
+The v8.2 stringer regression was re-tested under the corrected comparison and
+still nets **zero** added pairs, so that fix stands.
+
+### Tried, measured, reverted: the yard fence
+
+The 56 m unbroken fence at z -50 was verify-flow's second-biggest blocker — 102
+walkable cells sealed behind it when measured against v8.2. Cutting two vehicle
+gates into it looked like an easy win. Built, measured:
+
+- it unlocked **13 cells, not 102** — removing the +/-70 ring in v8.3 had already
+  opened another route into that yard
+- one fence became three, three fence tops became three standable decks, and
+  verify-arch's broken promises on urban went **10 -> 11**
+
+Thirteen cells for a roof nobody can reach is a worse map. Reverted and recorded.
+**A blocker measured on an old build is a blocker measured on the wrong map.**
+
+### Not attempted, and why
+
+Construction site, district redesigns, interiors and vehicle geometry are not in
+this build. Every one of them is many blind geometry edits with no gate that can
+tell me whether the result is right, and the last time several unrelated changes
+shipped together the stringer regression took a browser pass and an A/B build to
+attribute. Each needs its own build.
+
+The 133 embedded pairs and 15 floating props are now enumerated with coordinates,
+which is what those redesigns need to start from.
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| Integration | 85 / 0 |
+| Collision · Stairs · Flow | 19 / 0 · 15 / 0 · 3 / 0 |
+| **Props (new)** · Z-fighting | **2 / 0** · 2 / 0 (budgets corrected to 46/110) |
+| Map · Build · Lifts | 664 / 0 · PASS · 98 / 0 |
+| Ascent | 49/51 (unchanged) |
+| Cover · Batch · Avatar · Models · Merge | PASS · 36 · 23 · 38 · 9 |
+| Architecture | urban **10** broken promises — back to baseline after the revert |
+| Parse sweep | clean |
+
+Urban: 81,164 triangles of 120k, 86 draw calls, 56 shadow casters, 3,177 colliders.
+
+### Requires browser verification
+
+- The stair colour. This is a pure appearance change and only eyes can judge it.
+- Nothing else in this build touches geometry — the fence experiment was reverted.
+
+## v8.4 — Fixing what v8.2 broke, and a stair gate that finally asks the right question
+
+### I caused one of the reported defects. Here is the evidence.
+
+Rahul's browser pass on v8.3 reported "stairs and walls are completely merged"
+and "stairs are flickering if inside the room watching it from outside". Both
+are the v8.2 stringers.
+
+Those plates hung on the OUTSIDE of each tread, at +/-(width/2 + 0.09). Fine for
+a free-standing flight. Wrong for every staircase built flush against a wall,
+where the plate landed inside the wall.
+
+An A/B build with stringers disabled isolated it exactly:
+
+| Build | Surfaces | Coplanar pairs | Above roof height |
+|---|---|---|---|
+| stringers ON | 4,987 | 98 | 46 |
+| stringers OFF | 3,457 | 92 | 40 |
+| **attributable to stringers** | 1,530 | **6** | **6** |
+
+Insetting the plates so they sit within the tread width removes all six. Urban's
+coplanar total drops 98 -> 92, roof-height 46 -> 40, and `verify-zfight`'s
+ratchets come down with it.
+
+**Why the gate did not catch it:** verify-zfight was written in v8.3, after the
+stringers already existed, and its budgets were set to what the map measured
+that day. The regression was baked in as normal before anything could compare
+against a clean baseline. A ratchet set from a build that already contains the
+bug cannot see the bug. When a gate is added AFTER a change, the honest move is
+to A/B against the change disabled — that is now the first thing this changelog
+entry does.
+
+### `verify-stairs-quality`: LANDING replaced by ARRIVAL
+
+The v8.3 check asked "is there something to stand on near the top of this
+flight". The flight's own last tread satisfies that, so it passed on every
+staircase in the game while Rahul was reporting stairs that climb to a roof and
+stop short of it.
+
+ARRIVAL demands a real destination: a surface of 1 m2 or more that is **not part
+of this flight**, within one auto-step of the top — or the foot of another
+flight.
+
+Setting the threshold honestly took two attempts, and the first was wrong in the
+expensive direction. At a 4 m2 deck minimum the gate reported **23** urban
+failures. Most of those flights arrive at a switchback landing of about 1.4 m2,
+so 17 of the 23 were the gate's fault. Dropping the minimum to 1 m2 and
+excluding the flight's own footprint leaves **6**, and those 6 are real. Had the
+budget been set at 23, seventeen sound staircases would have been "fixed".
+
+### The six staircases that lead nowhere
+
+| Flight start | Tops out at | Shortfall |
+|---|---|---|
+| (-23.6, 6.60, 77.9) | (-20.3, **10.15**, 77.9) | deck touching, **0.85 m ABOVE** — auto-step is 0.42 m |
+| (20.4, 6.60, 77.9) | (23.7, **10.15**, 77.9) | same, mirrored pair |
+| (51.2, 0, -45.1) | (59.2, 6.00, -45.1) | deck 1.10 m away, level |
+| (-90.8, 0, -93.1) | (-82.8, 6.00, -93.1) | deck 1.10 m away, level |
+| (24.9, 0, -90.6) | (24.9, 4.00, -95.0) | deck 1.05 m away, 0.30 m down |
+| (-56.8, 3.40, 56.9) | (-44.8, 12.40, 56.9) | 24 steps, **no deck within 3 m at all** |
+
+The first pair is Rahul's item 2 measured: the flight ends 0.85 m below the roof
+it appears to serve, and the auto-step limit is 0.42 m, so the climb is
+physically impossible however it looks. Not fixed here — each needs geometry
+moved in its district file, and they are now specified precisely enough to do
+that without guessing.
+
+### Not done, and why
+
+**Item 8, stair colour per district.** There is no district registry in this
+codebase — no named regions, no coordinate bounds, nothing that maps a position
+to a district. Tinting "by district" would mean inventing boundaries from
+guesswork, and getting one wrong splits a single district across two palettes,
+which reads worse than uniform grey. The right order is to define district
+regions FIRST — which is also what callouts need, and what Rahul asked for in
+the original brief — then drive both the palette and the minimap from it.
+
+Materials are not the constraint: brick, sidewalk, plaster, cream, terracotta,
+ochre and steelBlue all already exist, all batch into existing draw calls, and
+all share concrete's footstep surface, so a re-tint costs nothing once there is
+something principled to key it on.
+
+**Item 7, oversized steps.** Unchanged and unchangeable at the generator level —
+see the v8.2 entry for why subdivision makes stairs less climbable, not more.
+This needs longer flights, which means moving where they land.
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| Integration | 85 / 0 |
+| Collision · Stair quality · Flow | 19 / 0 · 15 / 0 · 3 / 0 |
+| Z-fighting | 2 / 0 — budgets tightened 46/98 -> **40/92** |
+| Map · Build · Lifts | 664 / 0 · PASS · 98 / 0 |
+| Ascent | 49/51 (unchanged) |
+| Cover · Batch · Avatar · Models · Merge | PASS · 36 · 23 · 38 · 9 |
+| Architecture | urban 10 broken promises (unchanged) |
+| Parse sweep | clean |
+
+Urban: 81,164 triangles of 120k, 85 draw calls, 56 shadow casters, 3,177 colliders.
+
+### Requires browser verification
+
+- Are the stairs still merging into walls, and is the flicker gone? Those are the
+  two things this build changed.
+- Everything else on the v8.3 list is still open.
+
+## v8.3 — The legacy city wall, map flow, z-fighting detection
+
+**`stairFlight` and the stringer code are untouched in this release.** Rahul is
+browser-testing v8.2's stairs while this was built; changing stairs now would
+make his verdict worthless. Everything below is elsewhere in the map.
+
+### Removed — the inner city wall at +/-70
+
+Images 6, 7 and 19 all pointed at walls that block without earning it. Rahul's
+guess was that map extension had left old boundary walls stranded inland. The
+source agreed, in its own words:
+
+    // inner city wall (old perimeter) with road gates at the avenue crossings
+
+This ring was the map's edge when the map ended at +/-70. **v4.2 extended the
+world to +/-100 and built a new outer perimeter, but left the old one standing
+in the middle of the city.** Two releases since have worked around it rather
+than questioning it — v7.6 set the station hall into it because the railway
+district had no approach otherwise, v7.8 set the mall into it because it drove
+a 3 m wall through the shop floor. Eleven wall runs, gone.
+
+The brick PIERS are kept. With the wall gone they read as gateposts on the old
+city line: they still mark where one district ends and the next begins, which is
+what callouts need, and they are cover in the ground the wall used to occupy.
+
+**Honest measurement — the gain was smaller than expected.** Reachable ground
+went from 29,931 to 30,302 cells: **+371, not the flood I predicted.** The ring
+already had openings at all four avenue crossings plus the station hall, the
+service gate and the mall, so it was never really sealing the map. It was
+costing detour, sightline and visual segmentation, not access. Cost of removal:
+dead ground unchanged at 0.6%, cover pieces 1546 -> 1541, colliders 3188 -> 3177,
+triangles 81,296 -> 81,164.
+
+### New gate: `tools/verify-flow.js` — 3 assertions
+
+Rasterises Urban's walkable ground at 1 m, floods from a spawn, reports what
+cannot be reached, and enumerates every isolated pocket with coordinates.
+
+**3,542 of 33,844 walkable cells (10.5%) cannot be reached from a spawn.**
+188 pockets, 14 of them 40 cells or larger:
+
+| Size | Centre | Height |
+|---|---|---|
+| **1,232 cells** | (-77, 70) | y 0.6 |
+| 404 cells | (44, -78) | y 1.1 |
+| 218 cells | (70, -27) | y 0.3 |
+| 203 cells | (69, -39) | y 0.3 |
+| 189 cells | (84, 64) | y 0.3 |
+| 161 cells | (-83, -86) | y 0.3 |
+
+That first one is over 1,200 m2 of ground-level Urban a player can see and
+cannot enter. Some of the remainder is legitimate — rooftops reached by lift,
+ledges reached by a jump a 1 m grid cannot model — which is why the budget is
+11% rather than zero. It should fall every district pass.
+
+**What this gate does NOT measure:** whether a wall that lets you through is
+still a bad wall. Connectivity is the objective floor of map flow, not the whole
+of it. A green here does not mean the map flows well.
+
+### New gate: `tools/verify-zfight.js` — 2 assertions
+
+Image 14 reports orange/grey flicker on a roof. Flicker is two surfaces at
+identical depth with the GPU picking a different winner each frame, and no
+existing gate could see it.
+
+Everything visible in this game is a box, but by the time a scene exists those
+boxes are merged into ~90 batches and the individual faces are gone. A new
+opt-in `World._recordBoxes()` hook captures them at emit time — same idea as
+`_colliders()` and `_stairs()`.
+
+Urban emits **4,987 surfaces**. The gate flags pairs sharing a face plane within
+12 mm, overlapping by more than 0.8 m2, in **different colours** (same-coloured
+surfaces can fight freely; nobody sees it).
+
+**98 coplanar pairs, 46 of them above roof height.** The worst are at exactly
+**0.0000 m separation** — a facade and its trim occupying the identical plane:
+
+| Where | Plane | Colours | Area |
+|---|---|---|---|
+| (81.5, -34.4) y 5.5-5.9 | z -34.5 / -34.3 | `#35586b` vs `#2b313b` | 1.2 m2 |
+| (86.2, -31.6) y 5.5-5.9 | z -31.7 / -31.5 | `#35586b` vs `#2b313b` | 1.2 m2 |
+| x 14.35 / 14.44, y 3.5-6.7 | west+east faces | `#ffffff` vs `#2b313b` | 1.1 m2 |
+
+**Deliberately NOT fixed in this release.** Separating geometry is a rendering
+change whose only real proof is a browser, and shipping a rendering change
+validated by headless gates alone is precisely what produced the all-black Rural
+in v7.5. These go out as a build where the nudge is the ONLY change, so if
+something renders wrong there is exactly one suspect.
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| Integration | 85 / 0 |
+| Collision · Stair quality | 19 / 0 · 15 / 0 |
+| **Flow (new)** · **Z-fight (new)** | **3 / 0** · **2 / 0** |
+| Map · Build · Lifts | 664 / 0 · PASS · 98 / 0 |
+| Ascent | 49/51 (unchanged) |
+| Cover · Batch · Avatar · Models · Merge | PASS · 36 · 23 · 38 · 9 |
+| Architecture | urban 10 broken promises (unchanged) |
+| Parse sweep | clean |
+
+Urban: **81,164 triangles** of 120k, 85 draw calls, 56 shadow casters, 3,177 colliders.
+
+### Requires browser verification
+
+- The city with the inner wall gone: does it read as connected, or does the open
+  ground now feel empty where the wall used to give it edges?
+- The surviving brick piers — gateposts, or orphaned stubs?
+- Stairs are unchanged from v8.2 and still need that verdict.
 
 ## v8.2 — Stair stringers + stair quality gate
 
