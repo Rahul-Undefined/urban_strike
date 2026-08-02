@@ -374,14 +374,27 @@ var Net = (function () {
       // floating health bar — smooth lerp; allies always, enemies only while recently hurt
       var ally = !!(myTeam && r.team === myTeam);
       r.dispHp += (r.hp - r.dispHp) * Math.min(1, dt * 9);
-      var showBar = ally || (r.hp < CFG.PLAYER.hp && (performance.now() - r.lastDamagedAt) < 5000);
-      r.av.hb.sprite.visible = showBar;
-      /* v4.9: name tags are ALLY-ONLY. The sprite is built with depthTest:false,
-         so an enemy tag rendered through walls and terrain at unlimited range —
-         a free wallhack that made long-range spotting trivial. Enemy awareness
-         now comes only from the minimap, which already reveals a foe who fired
-         within 3.5s or is inside 18m. */
-      r.av.tag.visible = ally;
+      /* v8.17: bar is ALWAYS up. Rahul: "name and health bar is not showing,
+         only when getting a hit it shows a bar and then it hides again." */
+      var showBar = true;
+      r.av.hb.sprite.visible = true;
+      /* v8.17: ENEMY TAGS ARE BACK, BUT OCCLUDED.
+
+         v4.9 hid them entirely, and the reasoning in that commit was sound:
+         the sprite is built with depthTest:false, so an enemy tag rendered
+         THROUGH walls at unlimited range — a free wallhack.
+
+         Hiding the tag was not the only way to close that. Turning depth
+         testing back ON for enemies means a wall occludes their tag exactly
+         like it occludes their body, so you can read a name you can actually
+         see and nothing more. Allies keep depthTest:false so you can still
+         track a teammate through cover, which is the tactical part.
+
+         Enemy tags also fade out past 55 m, where the name is unreadable
+         anyway and the only thing it would add is a spotting aid. */
+      r.av.tag.material.depthTest = !ally;
+      r.av.hb.sprite.material.depthTest = !ally;
+      r.av.tag.visible = ally || r.renderPos.distanceTo(_camPos) < 55;
       if (showBar && Math.abs(r.dispHp - r.hbDrawn) > 0.6) { Avatars.drawHpBar(r, ally); r.hbDrawn = r.dispHp; }
 
       // footstep audio still keys off distance travelled, not the animation

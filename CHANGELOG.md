@@ -78,6 +78,89 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+## v8.17 — the kill model, and the reason it could not work before
+
+### A vest was covering the head
+
+`server/lib/combat.js` applied body-armour absorption to EVERY hit, headshots
+included, on top of the helmet cut. Stacked, the two made a headshot kill
+arithmetically impossible against a kitted player: landing 100 damage through
+an H3 helmet and an L3 vest needed a raw figure above **330**, which no sane
+multiplier reaches. A first attempt to satisfy "sniper headshot = 100% kill"
+by raising the multiplier was chasing a number that does not exist.
+
+That is a modelling error, not a balance choice. Every major shooter separates
+the two: helmet mitigates head hits, vest mitigates body and limb hits.
+Splitting them is what makes the rest of this table possible. Explosives are
+unchanged — a blast is not aimed at a hit location, so the vest still soaks it.
+
+### The table
+
+Stated unarmoured, which is the standard way to quote damage:
+
+| Class | Body | Head | Shots to kill (body / head) |
+|---|---|---|---|
+| Sniper (AWM-S 80, AWM .338 85) | 80 | **kill** | 2 / 1 |
+| Marksman (MK-14) | 55 | 88 | 2 / 2 |
+| Assault + LMG (AK, M4, SCAR, M249) | 50 | 80 | 2 / 2 |
+| SMG + pistol (UZI, P90, P92) | 30 | 50 | 4 / 2 |
+
+Sniper head multipliers are sized so the shot still kills **through an H3
+helmet**, which absorbs 70% of the headshot bonus:
+
+```
+weapon   body  head  |  head vs H1 / H2 / H3
+sniper     80   160  |  132 / 116 / 104
+awm        85   170  |  140 / 123 / 111
+ak47       50    80  |   70 /  64 /  59
+uzi        30    50  |   43 /  39 /  36
+```
+
+The sniper kills through the best helmet; nothing else does. That is the AWM's
+defining property in the genre and it is deliberate.
+
+### Throwables
+
+**Frag 100 at 7.0 m** — centre is a guaranteed kill and the client falloff
+carries it to roughly half at the rim, which is the brief.
+
+**Molotov 95 at 4.6 m plus 12 dps for 5 s.** Area denial, not a delete button:
+it kills anyone who stands in it and kills instantly anyone already scratched.
+A flat 100 also removes the victim before the next integration phase can test
+anything on them, which is exactly how the v8.16 attempt broke.
+
+### Vibrant uniforms
+
+Shirt and trousers now wear the player's identity accent instead of
+`0x4c5344` olive, which Rahul could not pick out against asphalt and foliage.
+No new materials — the accent is already cached per colour, so ten players on
+two team colours still cost two accents.
+
+### Name tags and HP bars are always up
+
+Both were gated. `net.js` showed tags to allies only and the HP bar only for
+5 s after damage.
+
+v4.9 hid enemy tags for a good reason: the sprite is built `depthTest:false`,
+so an enemy tag rendered THROUGH walls at unlimited range — a free wallhack.
+Hiding it was not the only fix. Enemy tags are back with **depth testing on**,
+so a wall occludes a tag exactly as it occludes the body, and they fade past
+55 m. Allies keep see-through tags, which is the tactical part.
+
+### A note on the last three sessions of noise
+
+`fuser` does not exist in the build container, so every `fuser -k 3000/tcp`
+returned 127 and stale servers accumulated on port 3000. The integration suite
+was connecting to old processes running old config, which is why its score
+drifted 85 -> 84 -> 83 -> 82 **while changes were being reverted**. None of
+those failures were real. Use:
+
+```
+ps aux | grep "[n]ode server.js" | awk '{print $2}' | xargs -r kill -9
+```
+
+---
+
 ## v8.16 — bigger operators, a nameplate that stays upright, sniper at spawn
 
 ### The nameplate was not missing, it was lying on the floor

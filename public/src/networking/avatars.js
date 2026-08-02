@@ -108,7 +108,14 @@ var Avatars = (function () {
      ====================================================================== */
   var AVM = {
     skin:    new THREE.MeshLambertMaterial({ color: 0x9c8468 }),
-    fatigue: new THREE.MeshLambertMaterial({ color: 0x4c5344 }),   // shirt + trousers
+    /* v8.17: was 0x4c5344, a realistic olive that Rahul could not pick out
+       against asphalt, dirt and the green foliage — see his screenshot of six
+       operators standing in the open that read as scenery. The rig now wears
+       the player's IDENTITY ACCENT on shirt and trousers instead (see
+       buildAvatar), so this is only the fallback for anything unaccented.
+       Kept bright rather than realistic: readability beats camouflage in a
+       4-player arena where you are supposed to find each other. */
+    fatigue: new THREE.MeshLambertMaterial({ color: 0xd8dee8 }),   // fallback only
     webbing: new THREE.MeshLambertMaterial({ color: 0x2a2e26 }),   // boots, gloves, straps
     vest:    new THREE.MeshLambertMaterial({ color: 0x3a3f34 }),
     helmet:  new THREE.MeshLambertMaterial({ color: 0x33382e }),
@@ -172,9 +179,9 @@ var Avatars = (function () {
     var hipL = joint(g, -0.115, -0.02, 0);
     var hipR = joint(g, 0.115, -0.02, 0);
     [hipL, hipR].forEach(function (hip) {
-      part(hip, 0, -0.21, 0, 0.155, 0.42, 0.175, AVM.fatigue);          // thigh
+      part(hip, 0, -0.21, 0, 0.155, 0.42, 0.175, accent);          // thigh
       var knee = joint(hip, 0, -0.42, 0);
-      part(knee, 0, -0.20, 0, 0.135, 0.40, 0.155, AVM.fatigue);         // shin
+      part(knee, 0, -0.20, 0, 0.135, 0.40, 0.155, accent);         // shin
       var boot = part(knee, 0, -0.43, 0.025, 0.155, 0.14, 0.245, AVM.webbing);
       detail.push(boot);
       hip.knee = knee;
@@ -182,8 +189,8 @@ var Avatars = (function () {
 
     /* ---- torso ---- */
     var spine = joint(g, 0, 0.02, 0);
-    part(spine, 0, 0.12, 0, 0.34, 0.24, 0.22, AVM.fatigue);             // abdomen
-    var chest = part(spine, 0, 0.40, 0, 0.42, 0.32, 0.25, AVM.fatigue);
+    part(spine, 0, 0.12, 0, 0.34, 0.24, 0.22, accent);             // abdomen
+    var chest = part(spine, 0, 0.40, 0, 0.42, 0.32, 0.25, accent);
     /* Identity colour lives on the SLEEVES, not on separate patch meshes. Two
        fewer parts per player, and a coloured upper arm reads at twice the
        distance a shoulder patch does. */

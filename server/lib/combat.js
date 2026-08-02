@@ -42,12 +42,31 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     }
   }
 
-  // tiered armor with durability; point-blank explosives ignore armor entirely
+  /* tiered armor with durability; point-blank explosives ignore armor entirely
+
+     v8.17: A VEST DOES NOT COVER THE HEAD.
+
+     Until now `soaked` was applied to every hit including headshots, so a
+     level-3 vest absorbed 70% of a round that went through the victim's skull
+     — on top of the helmet, which had already taken its cut of the headshot
+     bonus. Stacked, the two made a headshot kill arithmetically impossible:
+     landing 100 damage on a fully-kitted player needed a raw figure above 330,
+     which no sane multiplier reaches.
+
+     That is not a balance choice, it is a modelling error. Every major shooter
+     separates the two: the helmet mitigates head hits, the vest mitigates body
+     and limb hits. Splitting them is what lets "a sniper headshot is a kill"
+     be true at all, and it is why the sniper head multipliers below are sized
+     against the HELMET only.
+
+     Explosives are unchanged — a blast is not aimed at a hit location, so the
+     vest still soaks it wherever the victim was looking. */
   let soaked = 0;
+  const vestCovers = !headshot;
   if (pointBlank) {
     victim.armorLvl = 0; victim.armorDur = 0;
     victim.hp = 0;
-  } else if (victim.armorLvl > 0) {
+  } else if (victim.armorLvl > 0 && vestCovers) {
     const rate = CFG.ARMOR[victim.armorLvl].absorb;
     soaked = Math.min(victim.armorDur, dmg * rate);
     victim.armorDur -= soaked;
