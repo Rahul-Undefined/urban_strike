@@ -1,6 +1,6 @@
-# Urban Strike — Project Handoff (v8.8)
+# Urban Strike — Project Handoff (v8.9)
 
-**Upload this file plus `urban-strike-v8.8.zip` into a new chat. Read this file
+**Upload this file plus `urban-strike-v8.9.zip` into a new chat. Read this file
 completely before touching anything.**
 
 ---
@@ -87,7 +87,13 @@ copy of this handoff.
 
 ## 2. Current state
 
-**Shipped:** `urban-strike-v8.0.zip` — cumulative, contains everything.
+**Shipped:** `urban-strike-v8.9.zip` — cumulative, contains everything.
+
+**v8.9 changed no map geometry.** It corrected five gates that were building an
+incomplete world, and added the F3 diagnostic overlay. Read the v8.9 CHANGELOG
+entry before planning any map work: the numbers those gates were reporting for
+rural, and for every loot/spawn/airdrop assertion, were measured on a world
+that does not ship.
 
 **Every deployment is browser-tested by Rahul.** Verification is tracked per
 FEATURE in section 8, not per version — see that ledger for what is confirmed,
@@ -114,18 +120,18 @@ v4.4 and the FIRST v4.5 build are BROKEN — never roll back to those.
 ### Three maps
 | Map | Theme | Colliders | Draw calls | Lights | Tris |
 |---|---|---|---|---|---|
-| urban | 6 rebuilt districts + airport, harbour, towers, construction | 3188 | **85** | 7 | 72.1k |
+| urban | 6 rebuilt districts + airport, harbour, towers, construction | **3208** | **98** | 7 | **81.7k** |
 | rural | forest, rivers, village, farm, watchtowers | 525 | 17 | 3 | 21.9k |
 | metro | downtown, skyscrapers, mall, subway, construction | 946 | 19 | 3 | 12.7k |
 
 **Budget the frame, not the draw call.** A shadow-casting batch is submitted
-TWICE per frame — shadow map, then main pass. Urban's "84 draw calls" is really
-140 geometry submissions with 58.9k of its 68.6k triangles rasterised twice.
+TWICE per frame — shadow map, then main pass. Urban's "98 draw calls" is really
+155 geometry submissions with 71.1k of its 81.7k triangles rasterised twice.
 `verify-batch` budgets all three:
 
 | Map | draws / budget | shadow casters / budget | tris / budget |
 |---|---|---|---|
-| urban | 85 / 115 | 56 / 62 | 72.1k / 95k |
+| urban | 98 / 115 | 57 / 62 | 81.7k / 120k |
 | rural | 17 / 40 | 13 / 20 | 21.9k / 30k |
 | metro | 19 / 45 | 14 / 22 | 12.7k / 26k |
 
@@ -141,9 +147,9 @@ move every frame — so the only levers are part count, material sharing and LOD
 |---|---|---|---|
 | Integration | `node server.js & sleep 3; node test.js` | 85 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
 | Models+loot+voice | `node verify-models.js` | 38 | viewmodels, grants, loot exclusivity, scope ladder, voice wiring |
-| Map | `node tools/verify-map.js` | 978 | loot support / spawn clearance / airdrop landing, all 3 maps |
+| Map | `node tools/verify-map.js` | **992** | loot support / spawn clearance / airdrop landing, all 3 maps |
 | Build chain | `node tools/verify-build.js` | PASS | real-three vm build of all 3 maps + reset + coplanar-ground gate |
-| Ascent | `node tools/verify-access.js` | 49/51 | walks a capsule up every staircase |
+| Ascent | `node tools/verify-access.js` | 49/51 *(2 known, see below)* | walks a capsule up every staircase |
 | Lifts | `node tools/verify-lifts.js` | 98 | every lift stop has floor + head clearance |
 | Cover | `node tools/verify-cover.js` | PASS | dead-ground budget (<6%); `--report` prints an ASCII map |
 | **Batching** | `node tools/verify-batch.js` | 36 | draw-call budget + the four batching invariants + edge-on decals |
@@ -155,6 +161,7 @@ move every frame — so the only levers are part count, material sharing and LOD
 | **Z-fighting** | `node tools/verify-zfight.js` | **2** | surfaces sharing a plane that will flicker |
 | **Props** | `node tools/verify-props.js` | **2** | props buried in structure; props standing on nothing |
 | Merge | `node tools/verify-merge.js` | 9 | StaticMerge geometry math |
+| **DevHUD** | `node tools/verify-devhud.js` | **13** | the F3 overlay is inert when hidden, and its HEAD / arrival verdicts agree with `verify-stairs-quality` |
 | Parse sweep | `node --check` every .js | clean | syntax only |
 
 **`verify-arch` is deliberately red.** Its `broken` budget is 0 and there are 10
@@ -162,8 +169,48 @@ broken promises on urban, 7 on rural, 25 on metro — all in districts not yet
 rebuilt. Each district pass drives the number down. That is the acceptance
 criterion for Milestone 9, not a bug. Do not raise the budget to make it green.
 
-**Two ascent failures are known and pre-existing** (urban south office has a
-landing box on the run; north block A the walker cannot reach). Not regressions.
+**Two ascent failures are known and pre-existing:**
+
+| Test | Needs | Foot reached |
+|---|---|---|
+| `south office -> 3.20` | 3.20 m | 1.18 m — landing box on the run |
+| `north block A -> 3.60` | 3.60 m | **0.05 m — the walker never leaves the ground** |
+
+Not regressions, but do NOT describe these as "garage fire escape 4.30" and
+"warehouse fire escape 9.15". Those two **pass** (4.47 m and 9.32 m) and have
+for several versions. The session-start prompt carried the wrong pair until
+v8.9. `north block A` reaching 0.05 m is a different defect class from a
+connector gap and belongs in Milestone A.
+
+### A GATE MUST LOAD WHAT `index.html` LOADS (v8.9)
+
+The single highest-value bug found in v8.9 was not in the map. It was five
+gates building a different world from the one that ships, and going green
+against it.
+
+`public/index.html` loads **eight** config files before any environment
+module: weapons, gameplay, loot, world, maps-rural, maps-metro, districts,
+index. Any gate whose file list is a subset builds a different world.
+
+Two concrete failures, both silent for multiple versions:
+
+- **`verify-map` never loaded `districts.config.js`.** `districtSigns()` opens
+  `if (typeof DISTRICTS === 'undefined') return;` and emitted nothing.
+  24 sign-post colliders missing; 978 assertions validated on a map with no
+  signs in it.
+- **Four gates omitted `maps-rural` and `maps-metro`.** Rural built with
+  `CFG.MAPS_RURAL` undefined: 510 colliders instead of 525.
+
+And the trap underneath the obvious fix: **`window` must BE the sandbox
+global.** Config files publish onto `window`; `world.js` reads bare globals.
+A `window: {}` literal makes those two different objects, so adding the file
+to the load list is not enough — the gate stays broken while looking fixed.
+Every sandbox now does `ctx.self = ctx.window = ctx.globalThis = ctx`.
+
+**Checklist when you add or touch a gate:** diff its file list against
+`index.html`, then assert the collider count matches `verify-build`. If two
+gates disagree about how many colliders a map has, at least one of them is
+inspecting a world nobody plays.
 
 ### Rule: never weaken a validator
 If a gate fails, fix the implementation. Every time a gate has been believed
@@ -407,11 +454,11 @@ Blocked: Rahul is still reviewing Rural and will supply direction.
 | Item | Detail |
 |---|---|
 | **Metro City never rendered** | Built headlessly across four versions. The Rural black-screen regression is the precedent for why this matters |
-| Broken-promise roofs | urban **12**, rural 7, metro 25. All in districts not yet rebuilt. Coordinates printed by `verify-arch` |
-| Frame headroom | urban 85/115 draws, **56/62 shadow casters**, 72.1k/95k tris with **three districts left**. Shadow casters are by far the tightest — design remaining districts with non-casting geometry |
+| Broken-promise roofs | urban **10**, rural 7, metro 25. All in districts not yet rebuilt. Coordinates printed by `verify-arch` |
+| Frame headroom | urban 98/115 draws, **57/62 shadow casters**, 81.7k/120k tris with **three districts left**. Remaining headroom is 17 draws, 5 casters, 38.3k tris — and casters are counted PER MESH AFTER MERGE, so geometry reusing an existing material costs zero. Every NEW material family costs a draw call and may cost a caster. Shadow casters are by far the tightest — design remaining districts with non-casting geometry |
 | Player cost is untested in a browser | Ten kitted operators = 180 draw calls on top of the map. That number has never been rendered |
 | Minimaps stale | Urban and Rural do not reflect v6/v7 geometry at all |
-| Two ascent failures | urban south office, north block A. Pre-existing |
+| Two ascent failures | urban `south office` (reaches 1.18 of 3.20) and `north block A` (reaches **0.05** of 3.60). Pre-existing. The garage and warehouse fire escapes PASS — do not quote those |
 | No jump gate | Ascent proves stairs. Crate-to-container hops and canopy-to-coach crossings are unverified by anything |
 | Helmet absorb | No assertion covers the maths |
 | Anti-cheat | Movement, ammo and fire rate are fully client-trusted. The Render URL is public. Social boundary, not a technical one. Raise once if the audience widens; don't nag |

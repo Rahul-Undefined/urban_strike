@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.8** | CURRENT — signs rebuilt to reference design + auto-placed clear of geometry; 157 interior loot points. |
+| **v8.9** | CURRENT — gate-fidelity correction (5 gates were building an incomplete world) + F3 diagnostic overlay. No map geometry changed. |
+| v8.8 | Good — signs rebuilt to reference design + auto-placed clear of geometry; 157 interior loot points. |
 | v8.7 | Good — sign text fixed, stair arrival measurement corrected, automatic top landings. |
 | v8.6 | Good — district registry + on-map signboards; every gate now reports district names. |
 | v8.5 | Good — map-wide stair colour, `verify-props` gate, material-identity fix across gates. |
@@ -71,6 +72,196 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+
+---
+
+## v8.9 — Five gates were validating a world that does not exist; F3 diagnostic overlay
+
+**No map geometry changed in this release.** Colliders, triangles, draw calls,
+shadow casters and lights are byte-identical to v8.8 on all three maps. Every
+change is either a validator that was inspecting the wrong world, or a DOM
+overlay. That is deliberate: this build exists to make the NEXT one provable.
+
+### The core defect: gates were not loading what the browser loads
+
+`public/index.html` loads eight config files before any environment module.
+Five gates loaded a subset. Each one therefore built a different world from the
+one that ships, and reported green against it.
+
+**`tools/verify-map.js` — the worst case.** It never loaded
+`districts.config.js`. `world.js` `districtSigns()` opens with
+`if (typeof DISTRICTS === 'undefined') return;`, so the function emitted
+nothing at all. Twelve districts, two posts each, **24 colliders absent from
+every check in the file**. The arithmetic is exact:
+
+```
+verify-build  urban  3208 colliders
+verify-map    urban  3184 colliders
+delta                  24  =  12 districts x 2 sign posts
+```
+
+All 978 loot-support, spawn-clearance and airdrop-landing assertions were
+validated against a map with no signboards in it. A spawn could have been
+inside a post and the gate would have passed.
+
+There was a second layer underneath, and it would have defeated a naive fix.
+The sandbox declared `window: {}`. `districts.config.js` publishes onto
+`window`; `world.js` reads a **bare global** `DISTRICTS`. In a browser those
+are the same object. In a `vm` context with a separate `window` literal they
+are not. Adding the file to the load list alone would have set
+`ctx.window.DISTRICTS`, left the bare global undefined, and the gate would
+have gone on emitting nothing while looking fixed. `verify-build` already
+modelled this correctly (`ctx.self = ctx.window = ctx.globalThis = ctx`);
+`verify-map` now matches it.
+
+**Four more gates omitted `maps-rural.config.js` and `maps-metro.config.js`:**
+`verify-build`, `verify-access`, `verify-cover`, `verify-lifts`. Rural
+therefore built with `CFG.MAPS_RURAL` undefined and produced **510 colliders
+where the browser produces 525** — fifteen objects short. `verify-build`'s
+entire stated purpose is "any runtime crash here is the same crash a browser
+hits at the BUILDING SECTOR 7 loading step". It was not loading what the
+browser loads, so a crash inside a `CFG.MAPS_RURAL` field could never have
+surfaced there.
+
+This also retires a wrong theory. The 525/510 split looked like a
+`World.reset()` leak. It is not: reset was A/B tested on rural and metro and
+is clean both ways. It was the missing config the whole time.
+
+### verify-map now asserts world completeness
+
+Fourteen new assertions, so this class of blindness cannot return silently:
+
+- `DISTRICTS` is visible to the builder at all
+- every district actually placed a signboard (`signClear()` can decline)
+- for each placed sign, **its two posts are present in the collider set**
+
+978 -> 992 passing. No budget moved.
+
+Measured while checking the new assertions are not vacuous: the closest sign
+to a spawn is OLD TOWN TERRACE at **2.79 m**, and three anchors are already
+being relocated by the existing ring search (MARKET CROSS 8.5 m, CONSTRUCTION
+SITE 4.0 m, DEPOT B 2.0 m). That 2.79 m is the margin the signboard
+relocation work will be spending.
+
+### New: `public/src/ui/devhud.js` — F3 diagnostic overlay
+
+A permanent developer tool. **F3** toggles, **F4** copies the readout to the
+clipboard so coordinates get pasted into a report instead of re-typed off a
+screenshot.
+
+Cost: one absolutely-positioned `<div>`. No WebGL, no geometry, no draw calls,
+no triangles, no shadow casters, no colliders. Hidden, `update()` returns on
+its first line. Visible, it recomputes at 6 Hz — not per frame — and one
+recompute is a single linear pass over `World.colliders`.
+
+Readout: `XYZ` · `DIST` (the same string every gate prints) · `DECK` ·
+`FLOOR` · `COLUMN` · `HEAD` · `STAIR` · `GND`.
+
+`FLOOR` and `COLUMN` are **derived from the collider column, not authored**.
+There is no building registry in this codebase, so the panel reports what is
+measurable rather than inventing a building name. `HEAD` and the `STAIR` top
+arrival verdict answer the same questions `verify-stairs-quality` answers,
+which makes the panel a live read-out for the Milestone A defect classes:
+slab-over-stair, blocked stair exit, and staircase-to-nowhere.
+
+### Three bugs written into the overlay, and the gate that caught them
+
+`tools/verify-devhud.js` (13 assertions) exists because an overlay that lies
+is worse than no overlay — it sends map work to coordinates that were never
+broken. It caught all three of these before they shipped:
+
+1. **The gate itself measured stale text.** `toggle()` seeds its throttle from
+   `performance.now()`; the test clock counted from 0, so every `update()` was
+   throttled away and three assertions "passed" against the readout from
+   position (0,0,0). This is trap #1 in HANDOFF section 6 — a budget or gate
+   written after the thing it inspects — committed while writing the gate
+   meant to catch it. The test clock is now monotonic from `Date.now()`.
+
+2. **The arrival check reproduced the v8.3 bug verbatim.** It scanned raw
+   colliders for anything standable near the flight top, which the flight's
+   OWN last tread satisfies. The panel reported `ok` while standing on the one
+   flight in urban that `verify-stairs-quality` flags as arriving nowhere.
+   Rewritten to the gate's definition: real decks only (top face >= 1.0 m2),
+   the flight's own footprint and landing excluded, measured rectangle to
+   rectangle from the standing area at the top.
+
+3. **Headroom was measured from the head, not the deck.** A slab 1.6 m above a
+   deck is exactly the defect being hunted, and it sits BELOW a 1.8 m player's
+   head — so a head-relative filter discarded precisely what it was looking
+   for and reported open sky at a spot the stair gate flags. Now measured from
+   the surface underfoot against the gate's own `HEAD = 1.9`.
+
+`verify-devhud` pins the panel and `verify-stairs-quality` to the same verdict
+on a known headroom defect, a known arrival defect, and a known-good flight.
+If either drifts, that gate reports the disagreement.
+
+### Correction to a number that has been quoted for several versions
+
+The session-start prompt describes the two known ascent failures as
+*"garage fire escape -> roof 4.30, warehouse fire escape -> roof 9.15"*.
+Both of those **PASS**, and have for some time (4.47 m and 9.32 m reached).
+The two real failures, identical before and after this release:
+
+| Test | Needs | Foot reached |
+|---|---|---|
+| `south office -> 3.20` | 3.20 m | **1.18 m** |
+| `north block A -> 3.60` | 3.60 m | **0.05 m** |
+
+`0.05 m` is not a near-miss — the walker never leaves the ground. HANDOFF
+section 3 already described these two correctly; the session-start prompt did
+not, which is the more damaging place for a wrong number to live because it
+seeds every new chat. Corrected in HANDOFF section 9.
+
+Also corrected: `verify-flow` reports **33,840** walkable cells on urban, not
+33,844.
+
+### Files touched
+
+```
+tools/verify-map.js       districts.config.js loaded; window === global;
+                          14 world-completeness assertions
+tools/verify-build.js     + maps-rural.config.js, maps-metro.config.js
+tools/verify-access.js    + maps-rural.config.js, maps-metro.config.js
+tools/verify-cover.js     + maps-rural.config.js, maps-metro.config.js
+tools/verify-lifts.js     + maps-rural.config.js, maps-metro.config.js
+tools/verify-devhud.js    NEW - 13 assertions
+public/src/ui/devhud.js   NEW - the overlay
+public/index.html         + one script tag
+public/src/core/game.js   F3 / F4 handlers, one call in loop()
+```
+
+Only the last three are served to the browser. **The five gate files cannot
+affect the game.** If anything renders wrong in this build, the overlay is the
+only suspect.
+
+### Validation from the extracted zip
+
+| Gate | v8.8 | v8.9 |
+|---|---|---|
+| Integration | 85 / 0 | 85 / 0 |
+| Map | 978 / 0 | **992 / 0** |
+| Build chain | PASS (rural 510) | **PASS (rural 525)** |
+| Ascent | 49 / 51 | 49 / 51 (same two) |
+| Lifts | 98 / 0 | 98 / 0 |
+| Cover | urban 0.6%, rural 1.5% | urban 0.6%, **rural 1.6%** |
+| Batching | 36 / 0 | 36 / 0 |
+| Architecture | 3 / 6 (urban 10 BP) | 3 / 6 (urban 10 BP) |
+| Avatar | 23 / 0 | 23 / 0 |
+| Models | 38 / 0 | 38 / 0 |
+| Merge | 9 / 0 | 9 / 0 |
+| Collision | 19 / 0 | 19 / 0 |
+| Stair quality | 15 / 0 | 15 / 0 |
+| Map flow | 3 / 0 | 3 / 0 |
+| Z-fighting | 2 / 0 | 2 / 0 |
+| Props | 2 / 0 | 2 / 0 |
+| **DevHUD** | — | **13 / 0** |
+| Parse sweep | clean | clean |
+
+Rural cover moved 1.5% -> 1.6% and 392 -> 407 cover pieces because rural is
+now the real rural. No budget was raised and no validator was weakened.
+
+Urban performance unchanged: **98 draw calls / 81,680 tris / 57 shadow casters
+/ 7 lights / 3,208 colliders.**
 
 ---
 
