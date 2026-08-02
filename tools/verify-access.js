@@ -38,7 +38,13 @@ vm.createContext(ctx);
 [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/index.js", "public/src/environment/merge.js",
+  /* v8.9: maps-rural + maps-metro were MISSING here. index.html loads both
+     (lines 286-287); this gate did not. rural therefore built with
+     CFG.MAPS_RURAL undefined and produced 510 colliders where the browser
+     produces 525 -- 15 objects short, on the gate whose entire job is to
+     reproduce the browser build. Keep this list identical to index.html. */
+  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+  "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
   "public/src/environment/deco.js", "public/src/environment/rural.js", "public/src/environment/metro.js",

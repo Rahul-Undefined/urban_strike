@@ -139,8 +139,15 @@ console.log("        crouch: hip " + standHip.toFixed(2) + " -> " + av.hipL.rota
   ", knee " + av.hipL.knee.rotation.x.toFixed(2) + ", scale.y " + av.group.scale.y.toFixed(2));
 ok(av.hipL.rotation.x > standHip + 0.5, "crouch bends the hips");
 ok(av.hipL.knee.rotation.x < -0.8, "crouch bends the knees");
-ok(Math.abs(av.group.scale.y - 1) < 0.001 && Math.abs(standScale - 1) < 0.001,
-  "crouch never squashes the model with scale.y");
+/* v8.16: this compared scale.y to 1, which was right while the rig had no
+   scale of its own. The rig now carries a deliberate, CONSTANT silhouette
+   scale (RIG in avatars.js) so remote players are resolvable at range. The
+   assertion's real intent — crouch must be a POSE, never a squash — is
+   preserved and made stricter: scale.y must not move between standing and
+   crouching, whatever its resting value is. Do not relax this to a range. */
+ok(Math.abs(av.group.scale.y - standScale) < 0.001 && standScale > 0.5,
+  "crouch never squashes the model with scale.y (constant at " +
+  standScale.toFixed(2) + ")");
 
 /* Walking must be driven by distance moved, not by the wall clock: a stopped
    player has to stop moving their legs. */

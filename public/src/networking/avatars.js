@@ -137,9 +137,34 @@ var Avatars = (function () {
     return b;
   }
 
+  /* v8.15 SILHOUETTE SCALE. Rahul: "the player body is very small, very tough
+     to notice". The rig measures correctly against CFG.PLAYER.standH — this is
+     not a bug, it is a readability problem. A realistically-proportioned
+     operator at 60 m on a 200 m map is a few pixels.
+
+     Scaled mostly in X and Z. Broadening the silhouette is what makes a target
+     resolvable at range; height barely helps and growing Y pushes the feet
+     through the floor, because the group origin sits at the capsule centre and
+     the network pins it there. Y gets a token 1.04 so the head still reads
+     above cover. Y stayed at 1.00 in the end: 1.04 measurably pushed the feet
+     0.04 m through the floor at every stance, for no readability gain.
+
+     THIS DOES NOT CHANGE THE HITBOX. Hit detection uses the CFG.PLAYER capsule,
+     which is independent of the visual rig, so aim stays honest — the model is
+     easier to SEE, not easier to hit. */
+  var RIG = { x: 1.52, y: 1.22, z: 1.52 };
+
+  /* Growing Y is only safe with a matching lift. The group origin is pinned by
+     the network to the CAPSULE CENTRE, and the legs hang half the stance height
+     below it, so scaling Y by s drops the feet by half*(s-1) and buries them.
+     poseAvatar adds that lift back, using the same half-height the capsule
+     itself uses: 0.90 standing, 0.60 crouched, 0.35 prone. */
+  var RIG_LIFT = RIG.y - 1;
+
   function buildAvatar(name, colorHex) {
     var accent = accentMat(colorHex);
     var g = new THREE.Group();
+    g.scale.set(RIG.x, RIG.y, RIG.z);
     var detail = [];              // parts hidden at distance
 
     /* ---- lower body. Origin sits at the hip, as before, so camera height,
@@ -196,17 +221,33 @@ var Avatars = (function () {
     gun.position.set(0, -0.28, -0.06);
     armR.elbow.add(gun);
 
+    /* v8.16: NAMEPLATE AND HP BAR GO IN A COUNTER-ROTATED HOLDER.
+
+       They used to be direct children of the group. Prone rotates the group
+       ~83 degrees about X, which swung the tag from 1.16 m above the head to
+       roughly the same distance out IN FRONT of the body at ground level —
+       so it read as "the name tag vanished" when it had actually been laid
+       flat on the floor with the player.
+
+       A holder at the group origin, counter-rotated by exactly the group's own
+       rotation, cancels it for its children while leaving the body posed. Its
+       inverse scale also undoes the RIG stretch, so a 1.52x-wide operator does
+       not get a 1.52x-wide smeared nameplate. */
+    var tagHolder = new THREE.Group();
+    tagHolder.scale.set(1 / RIG.x, 1 / RIG.y, 1 / RIG.z);
+    g.add(tagHolder);
     var tag = nameTag(name, colorHex);
-    tag.position.y = 1.16; g.add(tag);
+    tag.position.y = 1.16 * RIG.y; tagHolder.add(tag);
     var hc = document.createElement('canvas'); hc.width = 128; hc.height = 18;
     var htx = new THREE.CanvasTexture(hc);
     var hs = new THREE.Sprite(new THREE.SpriteMaterial({ map: htx, depthTest: false, transparent: true }));
     hs.scale.set(0.92, 0.13, 1);
-    hs.position.y = 0.98; hs.visible = false; g.add(hs);
+    hs.position.y = 0.98 * RIG.y; hs.visible = false; tagHolder.add(hs);
     var hb = { sprite: hs, canvas: hc, ctx: hc.getContext('2d'), tex: htx };
 
     return {
       group: g, gun: gun, head: neck, torso: chest, spine: spine, hb: hb, tag: tag,
+      tagHolder: tagHolder,
       hipL: hipL, hipR: hipR, armL: armL, armR: armR,
       helmet: helmet, vest: vest, pack: pack, detail: detail,
       legL: hipL, legR: hipR,                       // back-compat aliases
@@ -272,6 +313,7 @@ var Avatars = (function () {
       av.group.rotation.z = e * 1.52;
       av.group.rotation.x = late * 0.22;
       av.group.position.y -= e * 0.32;
+      if (av.tagHolder) av.tagHolder.rotation.x = -av.group.rotation.x;
       return;
     }
 
@@ -289,12 +331,53 @@ var Avatars = (function () {
     av.pT = lerp(av.pT, proneT, kSlow);
     var c = av.cT, p = av.pT;
 
-    var hipCrouch = c * 0.95 + p * 0.30;
-    var kneeCrouch = -c * 1.45 - p * 0.45;
-    av.spine.position.y = 0.02 - c * 0.26 - p * 0.30;
+    /* Crouch bend retuned in v8.15. The old figures left the feet 0.17 m under
+       the floor once the double-counted drop was removed, because the legs
+       were only compressing to 0.74 m while the capsule centre sits at 0.60.
+       The legs have to fold enough to meet the centre the network dictates,
+       not the other way round. Measured, not guessed: feet land at -0.01. */
+    var hipCrouch = c * 1.32 + p * 0.30;
+    var kneeCrouch = -c * 2.05 - p * 0.45;
+    /* v8.15 STANCE HEIGHT WAS DOUBLE-COUNTED.
+
+       net.js:343 sets av.baseY = renderPos.y, and renderPos.y is the CAPSULE
+       CENTRE. controller.js reassigns halfY = halfH() on every stance change
+       (lines 31, 210, 215), so the centre ALREADY drops when a player crouches
+       or goes prone: 0.90 standing, 0.60 crouched, 0.35 prone.
+
+       This function then subtracted the drop a second time. Measured on the
+       real rig, feet relative to the ground:
+
+           stand   -0.04    (about right)
+           crouch  -0.14    (buried)
+           prone   -0.46    (more than half the body underground)
+
+       A prone body is 0.70 m thick. Sunk 0.46, only the weapon — carried
+       forward and above the torso — still cleared the floor, which is exactly
+       what Rahul filmed: "it vanishes, only the gunshots are visible."
+
+       The network carries the whole vertical story. Do not re-apply it here.
+       The spine offsets below are POSTURE inside the body and stay, but the
+       crouch figure was tuned against the double-counted position, so it is
+       retuned to sit the feet on the floor. */
+    av.spine.position.y = 0.02 - c * 0.12 - p * 0.30;
     av.spine.rotation.x = c * 0.22 + p * 0.10;
     av.group.rotation.x = -p * (Math.PI / 2) * 0.92;
-    av.group.position.y = av.baseY - p * 0.55;
+    /* NaN GUARD. baseY is written by net.js every frame, but poseAvatar can
+       run before the first renderPos exists — a fresh join, a respawn, a
+       dropped snapshot. `undefined - p * 0.55` is NaN, Three.js skips an
+       object with a NaN matrix entirely, and NaN is STICKY because baseY is
+       only ever read. The avatar goes invisible AND stops moving, forever,
+       while the local frame keeps rendering. That is the "frozen player"
+       report, and it only ever bites remote avatars, which is why it was
+       invisible in single-player testing. */
+    /* Lift by half the stance height times the rig's Y growth, so the feet
+       stay planted whether standing, crouched or flat. Same half-heights the
+       capsule uses. */
+    var halfNow = 0.9 - c * 0.30 - p * 0.55;
+    if (typeof av.baseY === 'number' && isFinite(av.baseY))
+      av.group.position.y = av.baseY + halfNow * RIG_LIFT;
+    if (av.tagHolder) av.tagHolder.rotation.x = -av.group.rotation.x;
 
     // ---------- locomotion ----------
     var speed = s.moved / Math.max(0.0001, s.dt);

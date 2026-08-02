@@ -3,6 +3,11 @@
    Geometry placement uses a SEEDED rng so all clients build the identical map. */
 var World = (function () {
   var colliders = [];
+  /* Every flight stairFlight() emits, recorded for tools/verify-stairs-quality.
+     Reconstructing flights from raw colliders is guesswork; recording them at
+     the point of construction is exact. */
+  var stairs = [];
+  var boxLog = null;
   var flickers = [];
   var scene = null, sun = null;
   var built = false;
@@ -53,6 +58,17 @@ var World = (function () {
     }) });
     M.dirt = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#3a352c', 0.45, 1400); }) });
     M.concrete = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#5b5f63', 0.35, 1200); }) });
+    /* v8.5 STAIR MATERIAL. Every generic flight in the game was M.concrete, the
+       same blue-grey as the walls they climb, so a staircase read as part of the
+       wall rather than as something you could use. This is a warm sandstone that
+       separates from the cool building palette at a glance, which is the point:
+       stairs are a traversal affordance and should announce themselves.
+
+       Deliberately a distinct material rather than a reuse of M.ochre, so the
+       stair tone can be retuned later without moving anything else. It shares
+       concrete's footstep surface (surfOf returns 0 for anything that is not
+       wood, metal or rust), so this changes nothing you can hear. */
+    M.stair = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#a8895e', 0.32, 1200); }) });
     M.sidewalk = L({ map: canvasTex(256, function (g, s) {
       noise(g, s, '#6a6e72', 0.3, 900);
       g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 2;
@@ -188,6 +204,7 @@ var World = (function () {
   // ---------- geometry helpers ----------
   var minimapShapes = [];
   var outer = null;
+  var solids = [];            // v8.10: emitted box <-> collider pairing, for stairwells()
   function addCollider(x0, y0, z0, x1, y1, z1) {
     colliders.push([x0, y0, z0, x1, y1, z1, arguments.length > 6 ? arguments[6] | 0 : 0]); // [6] = footstep surface
     /* Auto-capture eye-height footprints for the minimap static layer.
@@ -218,9 +235,27 @@ var World = (function () {
   }
 
   function box(cx, cy, cz, w, h, d, mat, opts) {
+    /* Test-only introspection, same idea as _colliders() and _stairs(). Every
+       surface in this game is a box, and z-fighting is two boxes sharing a
+       plane — but by the time the scene exists they have been merged into ~90
+       batches and the individual faces are gone. Recording them here is the
+       only place the question can still be asked. Off unless a gate turns it on. */
+    if (boxLog) boxLog.push([cx - w / 2, cy - h / 2, cz - d / 2, cx + w / 2, cy + h / 2, cz + d / 2,
+      /* Material IDENTITY, not colour. Almost every material here is
+         L({ map: canvasTex(...) }) with no explicit colour, so concrete, brick,
+         metal, sidewalk, plaster and asphalt ALL report #ffffff. A gate that
+         compares hex strings therefore treats them as the same surface and
+         skips the pair — which is precisely what verify-zfight was doing to
+         most of the map before v8.5. uuid is exact. */
+      (mat && mat.uuid) ? mat.uuid : "?",
+      (mat && mat.color && mat.color.getHexString) ? mat.color.getHexString() : "?"]);
     opts = opts || {};
     var geo = new THREE.BoxGeometry(w, h, d);
-    if (mat.map) uvScale(geo, w, h, d);
+    /* uvScale tiles a texture at constant world density, which is right for
+       concrete and brick and catastrophic for a sign: a 4.2 m board repeated
+       the 512 px name several times across its own face. opts.tile === false
+       leaves UVs at 0..1 so the texture maps ONCE across each face. */
+    if (mat.map && opts.tile !== false) uvScale(geo, w, h, d);
     var m = new THREE.Mesh(geo, mat);
     m.position.set(cx, cy, cz);
     if (opts.rotY) m.rotation.y = opts.rotY;
@@ -235,6 +270,15 @@ var World = (function () {
         W = w * c + d * s; D = w * s + d * c;
       }
       addCollider(cx - W / 2, cy - h / 2, cz - D / 2, cx + W / 2, cy + h / 2, cz + D / 2, surfOf(mat));
+      /* v8.10 STAIRWELL REGISTRY. Always on, unlike boxLog.
+
+         stairwells() below has to cut holes in floor slabs that a staircase
+         climbs into, and to cut a hole you must be able to find the mesh and
+         the collider that belong to the same emitted box AFTER the district
+         builders have finished. Nothing in the build recorded that pairing.
+         ~3.2k small objects on urban; the cost is a push per solid. */
+      solids.push({ m: m, ci: colliders.length - 1, cx: cx, cy: cy, cz: cz,
+        w: w, h: h, d: d, mat: mat, opts: opts });
     }
     return m;
   }
@@ -259,30 +303,158 @@ var World = (function () {
     return m;
   }
   // Solid staircase with a hanging skirt (reads as concrete stairs).
-  function stairFlight(sx, sy, sz, dirX, dirZ, steps, stepH, stepD, width, mat) {
+  /* v8.2 stairFlight.
+
+     Two defects, both visible in Rahul's v8.1 screenshots, both from here
+     rather than from any individual district:
+
+     1. FLOATING FLIGHTS. The decorative skirt under each tread reached only
+        0.9 m down. On a short flight that touches the ground and looks solid;
+        on anything taller the skirt stops in mid-air and the upper half of the
+        staircase visibly hangs. Every long flight in the game had it.
+     2. GIANT STEPS. Call sites use a rise of 0.26-0.35 m. A person is 1.8 m
+        tall, so each step was a fifth of the player's height and read as a
+        stack of blocks rather than a staircase.
+
+     The FLOATING flights are fixed here. The GIANT STEPS are not, and the
+     reason is worth recording so nobody tries this again.
+
+     The obvious fix is to subdivide each logical step inside this function,
+     preserving total rise and run so every landing stays put. I built it. It
+     broke five staircases outright — "north block A" went from a clean climb to
+     the capsule never leaving the ground.
+
+     The cause: subdividing the rise also subdivides the RUN. At a 0.30 m rise
+     and 0.33 m run, halving gives a 0.165 m tread. The player is 0.70 m wide,
+     so their box now overlaps three or four treads simultaneously. The
+     auto-step takes the highest overlapping surface, which is two or three
+     steps up — past the 0.42 m step limit — and refuses. Shallower treads make
+     stairs LESS climbable, which is the same trap the v6.2 note describes from
+     the other direction.
+
+     Rise and run are locked together by the flight's angle, and the angle is
+     set by the building: a 3.3 m climb across 3.6 m of floor is a 42 degree
+     stair no matter how it is cut. Smaller steps therefore require a LONGER
+     flight, which means moving where it lands. That is per-district
+     architecture work, not a change to this generator.
+
+     opt.baseY  — where the stringer lands, if not the flight's own start
+                  (a flight bridging two decks should skirt to the lower deck).
+     opt.stringers === false — open steel flight, no side plates. */
+  function stairFlight(sx, sy, sz, dirX, dirZ, steps, stepH, stepD, width, mat, opt) {
+    opt = opt || {};
+    /* One stair colour across Urban, applied here rather than at 60 call sites.
+       Only the GENERIC flights are re-tinted. Steel fire escapes stay M.metal
+       and timber stays M.wood on purpose: surfOf() derives the footstep sound
+       from the material, so turning a steel fire escape to stone would make it
+       sound like concrete underfoot. Material identity that carries audio is
+       not decoration. */
+    if (mat === M.concrete || mat === M.dirt || mat === M.sidewalk) mat = M.stair;
+
+    /* ===== RUN/RISE CORRECTION — IMPLEMENTED, MEASURED, REVERTED =====
+
+       Rahul approved a map-wide run/rise correction. It was written and it
+       does not work, and the arithmetic explains why in a way that matters
+       more than the patch would have.
+
+       THE DEFECT IS REAL. A standing capsule has radius 0.35. When stepD is
+       smaller than that, the capsule standing on tread i already overlaps
+       tread i+2, and controller.moveAxis measures the auto-step against that
+       tread: 2 x stepH = 0.58-0.66 m against the 0.42 m limit. Refused. The
+       player stops partway up and has to jump. Measured on flight #48:
+       standing on tread 1 at foot 0.32, centre x -42.90, leading edge -42.55,
+       tread 3 starts at -42.60, rise to it 0.60.
+
+       THE ATTEMPTED FIX kept total rise and total run exactly as the call site
+       set them and only re-picked the subdivision, so sy, topY, endX and endZ
+       stayed bit-identical and no landing moved:
+
+           stepD = run / N  >  0.37       stepH = rise / N <= 0.42
+
+       For THE COLONY that yields exactly one solution, N = 8, giving stepH =
+       stepD = 0.4125. The flights still failed, and they fail for a reason no
+       subdivision can escape:
+
+           THE COLONY run 3.30 m, rise 3.30 m. That is a 45 degree staircase.
+
+       At 45 degrees the two constraints collide. Deep enough treads
+       (> 0.37) force few enough steps that the rise per step lands at 0.4125
+       against a 0.42 limit — a 7 mm margin, which the walker loses the moment
+       `grounded` flickers, exactly as it does on every real stair. There is no
+       N that gives both a deep tread and a comfortable rise, because the
+       ratio, not the subdivision, is wrong.
+
+       THE ONLY FIX IS A LONGER RUN, which moves where the flight lands, which
+       is district geometry. HANDOFF section 6 trap #7 already says this: "
+       Smaller steps need LONGER flights, which means moving where they land —
+       district work, not a generator change." This confirms it with numbers
+       and names the threshold: a flight needs run >= 1.14 x rise to be
+       climbable at all (0.37 tread over 0.42 rise). Anything steeper cannot
+       be fixed here.
+
+       Reverted per rule 11: non-beneficial changes get reported, not kept. */
+
+    var baseY = (opt.baseY === undefined) ? sy - 0.02 : opt.baseY;
+    stairs.push({
+      sx: sx, sy: sy, sz: sz, dirX: dirX, dirZ: dirZ,
+      steps: steps, stepH: stepH, stepD: stepD, width: width,
+      baseY: baseY, topY: sy + steps * stepH,
+      landing: (opt.landing === false) ? 0 : 0.70,
+      endX: sx + dirX * steps * stepD, endZ: sz + dirZ * steps * stepD,
+      stringers: opt.stringers !== false
+    });
+    var lip = Math.min(stepH * 0.55, 0.18);
+    var SP = 0.09;                                 // stringer plate thickness
+
     for (var i = 0; i < steps; i++) {
       var cx = sx + dirX * (i + 0.5) * stepD;
       var cz = sz + dirZ * (i + 0.5) * stepD;
       var top = sy + (i + 1) * stepH;
-      var bottom = Math.max(sy - 0.02, top - stepH - 0.9);
       var w = dirX !== 0 ? stepD : width;
-      var d = dirX !== 0 ? width : stepD;
-      /* v6.2: the tread COLLIDER is now a thin slab, and the deep skirt that
-         hides the gap underneath is decorative only.
-         Why: the auto-step in controller.moveAxis refuses a step whenever the
-         destination capsule overlaps anything. With a full-depth (~1.2m) skirt
-         the tread TWO ahead reached into the climber's chest, so every flight
-         with a run under ~0.5m was unclimbable. That is 40 of the 43 staircases
-         in this game — every interior stair, the shop stairs, the tunnel
-         portals, the rail station. Only the two 0.5-run fire escapes worked,
-         which is exactly what Rahul reported. Thin colliders fix all of them at
-         the source instead of one flight at a time. */
-      var lip = Math.min(stepH * 0.55, 0.18);
-      seg(cx - w / 2, cx + w / 2, top - lip, top, cz - d / 2, cz + d / 2, mat);
-      if (bottom < top - lip)
-        seg(cx - w / 2, cx + w / 2, bottom, top - lip, cz - d / 2, cz + d / 2, mat,
-          { collide: false });
+      var dep = dirX !== 0 ? width : stepD;
+
+      /* The tread COLLIDER stays a thin slab. Kept from v6.2: the auto-step in
+         controller.moveAxis refuses a step whenever the destination capsule
+         overlaps anything, so a full-depth skirt put the tread two ahead into
+         the climber's chest and made 40 of 43 staircases unclimbable. */
+      seg(cx - w / 2, cx + w / 2, top - lip, top, cz - dep / 2, cz + dep / 2, mat);
+
+      if (opt.stringers === false || top - lip <= baseY) continue;
+
+      /* v8.4: stringers sit INSIDE the tread width, not outside it.
+
+         v8.2 hung them on the outer faces at +/-(width/2 + SP). That is fine
+         for a free-standing flight and wrong for every staircase built flush
+         against a wall — the plate landed inside the wall. Rahul reported both
+         halves of it from the browser: "stairs and walls are completely merged"
+         and "stairs are flickering if inside the room watching from outside".
+         An A/B build confirmed the stringers added 6 coplanar surface pairs,
+         all of them above roof height.
+
+         Inset, the plate can never reach further out than the tread it belongs
+         to, so it cannot enter geometry the staircase was not already touching.
+         Its outer face is now coplanar with the tread's — same material, same
+         colour, so nothing to see and nothing for verify-zfight to flag. */
+      if (dirX !== 0) {
+        seg(cx - stepD / 2, cx + stepD / 2, baseY, top - lip,
+          cz - width / 2, cz - width / 2 + SP, mat, { collide: false });
+        seg(cx - stepD / 2, cx + stepD / 2, baseY, top - lip,
+          cz + width / 2 - SP, cz + width / 2, mat, { collide: false });
+      } else {
+        seg(cx - width / 2, cx - width / 2 + SP, baseY, top - lip,
+          cz - stepD / 2, cz + stepD / 2, mat, { collide: false });
+        seg(cx + width / 2 - SP, cx + width / 2, baseY, top - lip,
+          cz - stepD / 2, cz + stepD / 2, mat, { collide: false });
+      }
     }
+
+    /* The top landing is NOT built here. See stairLandings() below: emitting it
+       inline gave every flight a slab whether it needed one or not, and 16 of
+       them landed inside decks that already existed (verify-props 134 -> 150,
+       verify-zfight 110 -> 121). The pass runs once after the whole map is
+       built, so it can look at the finished collider set and skip the flights
+       that already arrive somewhere. Running it at the end is what makes that
+       check deterministic rather than dependent on district build order. */
   }
 
   // ---------- physics queries ----------
@@ -410,9 +582,170 @@ var World = (function () {
     }
   }
 
+  /* ===== STAIR CONNECTORS — ATTEMPTED, REVERTED, DO NOT RE-ATTEMPT BLIND =====
+
+     The nine "floating" flights on urban are switchback stairwells whose
+     half-landing was never built: flight A ends at (24.6, 3.65, -34.1), flight
+     B begins at (24.6, 3.65, -36.1), two metres of open air between them.
+
+     A pass that builds those landings was written, and it is not shippable,
+     because THE LANDING DOES NOT FIT. Measured per half-flight in the CIVIC
+     CENTRE stairwell:
+
+         total rise per half-flight   1.70 - 1.82 m
+         clearance a standing player  1.80 m + auto-step lift = 2.02 m
+
+     A landing at the turn sits at the top of the flight below it. With only
+     1.73 m between them, that landing IS the low ceiling. The first version of
+     the pass proved it empirically: nine floating flights became four, and
+     headroom went 0 -> 13 across CIVIC CENTRE, THE COLONY and SECTOR 7. Adding
+     a guard that refuses to create a low ceiling made the pass emit ZERO
+     connectors, which is the same answer stated honestly.
+
+     So this is not a missing-landing defect. It is a storey-height defect: the
+     stairwell needs FEWER, TALLER half-flights (>= 7 steps at 0.29 rather than
+     6) so a landing can physically fit. That changes where the flights land,
+     which is district work, and Rahul has scoped district changes out of
+     Milestone A. Reported, not silently patched.
+
+     Rule 11: non-beneficial changes get reported and reverted, not kept. */
+
+  /* ===== STAIRWELLS (v8.10) =====
+
+     THE DEFECT, AND WHY IT LOOKED LIKE FIVE DIFFERENT BUGS.
+
+     Rahul reported that WEST WORKS and EASTGATE YARD second floors are
+     unreachable, while the F3 overlay said `top arrival: OK (0.00m)` on both.
+     The overlay was right and useless at the same time. Replaying a standing
+     capsule up those flights tread by tread showed the same thing under both:
+
+       flight #44  blocker [72.4, 3.00, -8.8 .. 78.4, 3.30, -1.2]  top 3.30
+       flight #47  blocker [-94.0, 7.10, -16.0 .. -83.0, 7.50, -4.0]  top 7.50
+
+     In every case the blocking collider's TOP EQUALS THE FLIGHT'S TOP. The
+     staircase is not failing to arrive. It arrives perfectly — at a floor slab
+     with no hole cut in it. The flight runs underneath its own destination and
+     the headroom shrinks by one rise per tread until the capsule cannot stand.
+
+     That is why `arrival` said OK: a deck IS at the top, at distance 0.00. It
+     is also why `headroom` flagged these same flights and the ratchet buried
+     it as five acceptable instances. One defect, five coordinates.
+
+     THE FIX IS THE HOLE, NOT THE STAIR. A real building has a stairwell void
+     in the floor above the run. This pass cuts one: for every registered
+     flight, any thin horizontal slab hanging over the run within the clearance
+     a standing player needs is replaced by up to four pieces surrounding a
+     rectangular opening.
+
+     WHY IT IS A POST-PASS. Same reason stairLandings() is: the districts
+     register their flights while they build, and a slab is often emitted by a
+     different district file than the stair beneath it. Anything that inspects
+     the finished world has to run after the whole world exists. It runs BEFORE
+     StaticMerge so the replacement pieces batch into the same draw calls their
+     original did — same material, so no new batch and no new shadow caster.
+
+     WHAT IT REFUSES TO DO. It only cuts thin (<= 0.8 m) horizontal slabs of at
+     least 1 m2. A wall across a staircase, a rotated box, or a thick solid is
+     a different defect with a different right answer, so those are counted and
+     reported rather than silently demolished. Read the count in
+     tools/verify-climb.js; do not widen this rule to make a number go green. */
+  function stairwells() {
+    var NEED = CFG.PLAYER.standH + 0.22;   // 2.02 m: stand 1.80 + auto-step lift + slack
+    var report = { cut: 0, pieces: 0, refused: [] };
+    if (!stairs.length || !solids.length) return report;
+
+    for (var i = 0; i < stairs.length; i++) {
+      var f = stairs[i];
+      var halfW = f.width / 2 + 0.06;
+      // the opening spans the run and stops AT the arrival edge, so the deck
+      // the player steps out onto is never removed
+      var hx0 = Math.min(f.sx, f.endX) - (f.dirX ? 0 : halfW);
+      var hx1 = Math.max(f.sx, f.endX) + (f.dirX ? 0 : halfW);
+      var hz0 = Math.min(f.sz, f.endZ) - (f.dirZ ? 0 : halfW);
+      var hz1 = Math.max(f.sz, f.endZ) + (f.dirZ ? 0 : halfW);
+      if (f.dirX) { hx0 -= 0.06; hx1 += 0.06; }
+      if (f.dirZ) { hz0 -= 0.06; hz1 += 0.06; }
+      if (f.dirX > 0) hx1 = f.endX; else if (f.dirX < 0) hx0 = f.endX;
+      if (f.dirZ > 0) hz1 = f.endZ; else if (f.dirZ < 0) hz0 = f.endZ;
+
+      // highest tread the opening has to clear
+      var topTread = f.topY;
+
+      for (var j = solids.length - 1; j >= 0; j--) {
+        var S = solids[j];
+        if (!S.m) continue;                                   // already cut away
+        var sx0 = S.cx - S.w / 2, sx1 = S.cx + S.w / 2;
+        var sz0 = S.cz - S.d / 2, sz1 = S.cz + S.d / 2;
+        var sy0 = S.cy - S.h / 2, sy1 = S.cy + S.h / 2;
+        if (sx1 <= hx0 + 0.01 || sx0 >= hx1 - 0.01) continue;
+        if (sz1 <= hz0 + 0.01 || sz0 >= hz1 - 0.01) continue;
+        if (sy0 <= f.sy + 0.05) continue;                     // not overhead
+        if (sy0 >= topTread + NEED) continue;                 // high enough already
+
+        // the flight's own treads, stringers and landing are not obstacles
+        var ocx = S.cx, ocz = S.cz;
+        var ox0 = Math.min(f.sx, f.endX) - f.width / 2 - 0.10;
+        var ox1 = Math.max(f.sx, f.endX) + f.width / 2 + 0.10;
+        var oz0 = Math.min(f.sz, f.endZ) - f.width / 2 - 0.10;
+        var oz1 = Math.max(f.sz, f.endZ) + f.width / 2 + 0.10;
+        if (ocx > ox0 && ocx < ox1 && ocz > oz0 && ocz < oz1 &&
+            sy1 <= f.topY + 0.06 && sy1 >= f.baseY - 0.10) continue;
+
+        if (S.opts.rotY || S.h > 0.8 || (S.w * S.d) < 1.0) {
+          report.refused.push({ flight: i, at: [S.cx, S.cy, S.cz],
+            why: S.opts.rotY ? 'rotated' : (S.h > 0.8 ? 'not a slab (h ' + S.h.toFixed(2) + ')' : 'too small') });
+          continue;
+        }
+
+        // clip the opening to this slab, then rebuild the slab around it
+        var cx0 = Math.max(sx0, hx0), cx1 = Math.min(sx1, hx1);
+        var cz0 = Math.max(sz0, hz0), cz1 = Math.min(sz1, hz1);
+
+        scene.remove(S.m);
+        if (S.m.geometry && S.m.geometry.dispose) S.m.geometry.dispose();
+        colliders[S.ci] = null;                                // compacted below
+        S.m = null;
+
+        var parts = [];
+        if (cz0 > sz0 + 0.02) parts.push([sx0, sx1, sz0, cz0]);
+        if (cz1 < sz1 - 0.02) parts.push([sx0, sx1, cz1, sz1]);
+        if (cx0 > sx0 + 0.02) parts.push([sx0, cx0, cz0, cz1]);
+        if (cx1 < sx1 - 0.02) parts.push([cx1, sx1, cz0, cz1]);
+        for (var k = 0; k < parts.length; k++) {
+          var q = parts[k];
+          if (q[1] - q[0] < 0.02 || q[3] - q[2] < 0.02) continue;
+          /* Trap #8: do not emit a sliver. A 0.3 m strip left over from a cut
+             is a standable surface nobody can reach, and verify-arch counts it
+             as a broken promise — the first version of this pass pushed urban
+             from 10 to 11 doing exactly that. A gap narrower than the player's
+             0.70 m diameter cannot be fallen through, so dropping the sliver
+             costs nothing and keeps the ratchet honest. */
+          if (Math.min(q[1] - q[0], q[3] - q[2]) < 0.55) continue;
+          seg(q[0], q[1], sy0, sy1, q[2], q[3], S.mat, S.opts);
+          report.pieces++;
+        }
+        report.cut++;
+      }
+    }
+
+    // compact the collider array once, at the end
+    if (report.cut) {
+      var keep = [];
+      for (var n = 0; n < colliders.length; n++) if (colliders[n]) keep.push(colliders[n]);
+      colliders.length = 0;
+      for (var n2 = 0; n2 < keep.length; n2++) colliders.push(keep[n2]);
+      // indices in `solids` are stale after compaction; nothing reads them again
+      // this build, and reset() clears the array.
+    }
+    return report;
+  }
+
   return {
     BOUND: 100, // playable half-extent (V4.2)
     _colliders: function () { return colliders; }, // test-only introspection
+    _stairs: function () { return stairs; },       // test-only introspection
+    _recordBoxes: function (on) { boxLog = on ? [] : null; return boxLog; },
+    _boxes: function () { return boxLog || []; },
     /* opts.urban === false  ->  build shared setup only (materials, sky, fog,
        hemi/ambient/sun) and SKIP groundAndRoads(). groundAndRoads() lays the
        Urban dirt ground with its top face at exactly y=0, plus the asphalt
@@ -424,13 +757,15 @@ var World = (function () {
     _initPart1: function (sceneRef, opts) {
       var urban = !opts || opts.urban !== false;
       outer = sceneRef;
+      solids.length = 0;
       scene = new THREE.Group();
       outer.add(scene);
       makeMaterials(); lighting(urban);
       if (urban) groundAndRoads();
     },
+    _stairwells: function () { return stairwells(); },
     _internals: function () {
-      return { box: box, seg: seg, cyl: cyl, stairFlight: stairFlight, crater: crater, M: M, rnd: rnd, addCollider: addCollider, emissive: emissiveMat, sceneRef: function () { return scene; } };
+      return { box: box, seg: seg, cyl: cyl, stairFlight: stairFlight, crater: crater, M: M, rnd: rnd, addCollider: addCollider, emissive: emissiveMat, canvasTex: canvasTex, sceneRef: function () { return scene; } };
     },
     colliders: colliders,
     minimapShapes: minimapShapes,
@@ -451,15 +786,24 @@ var World = (function () {
          gate non-deterministic, which is worse: it means a number that changed
          cannot be trusted to mean anything. */
       seedState = 1337;
-      if (!outer || !scene) return;
-      outer.remove(scene);
-      scene.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
-      scene = null;
+      /* v8.1: the collision state is cleared BEFORE the scene guard, not after.
+         The guard exists to protect the THREE.js teardown from running without
+         a scene — it has no business gating the collider array. With the old
+         ordering, calling reset() while `scene` was null returned early and
+         left every collider from the previous map in place, so the next
+         buildMap APPENDED to them: solid geometry you collide with and cannot
+         see. Not reachable from the menu flow today, but it silently corrupted
+         verify-collision the first time that gate reset a map twice. */
       colliders.length = 0;
+      stairs.length = 0;
       minimapShapes.length = 0;
       if (World._lampSpots) World._lampSpots.length = 0;
       built = false;
       World.builtMap = null;
+      if (!outer || !scene) return;
+      outer.remove(scene);
+      scene.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+      scene = null;
     },
     build: null // assigned in part 2
   };
@@ -472,6 +816,7 @@ World.build = function (sceneRef) {
   var H = World._internals();
   var emissiveMat = H.emissive;   // unlit-but-mergeable material factory, for districts
   var seg = H.seg, box = H.box, cyl = H.cyl, stairFlight = H.stairFlight, crater = H.crater, M = H.M, rnd = H.rnd, addCollider = H.addCollider;
+  var canvasTex = H.canvasTex;   // district sign faces are drawn, not loaded
 
   // Wall with openings: fixed-plane facade, greedy row-merged into few boxes.
   // plane 'z': wall at z in [c0,c1], runs along x (u=x). plane 'x': fixed x, runs along z.
@@ -822,38 +1167,172 @@ World.build = function (sceneRef) {
   lamp(8.5, -18, 'w'); lamp(-8.5, 14, 'e'); lamp(8.5, 30, 'w');
   lamp(-8.5, -34, 'e'); lamp(24, 8.5, 'n'); lamp(-24, -8.5, 's');
 
-  /* ===== PERIMETER + SKYLINE ===== */
-  // inner city wall (old perimeter) with road gates at the avenue crossings
-  seg(-70.9, -7, 0, 3, -70.9, -70, M.concrete);
-  /* v7.6 STATION FRONTAGE. This wall ran unbroken from x 7 to 70.9, so the
-     rebuilt railway district had no approach at all. Rather than punch a hole
-     in it, the STATION HALL is now set INTO the wall line: wall -> pier ->
-     station -> pier -> wall. Getting to the platforms on this side means going
-     through the booking hall, which is a real chokepoint with real interior
-     combat. A service gate at x 62.5..67.5 keeps it from being the only way
-     in, so the hall is a strong route, not a mandatory one. */
-  seg(7, 29, 0, 3, -70.9, -70, M.concrete);
-  seg(29, 32, 0, 4.4, -71.0, -69.9, M.brick);                     // west pier, butts the hall
-  seg(52, 55, 0, 4.4, -71.0, -69.9, M.brick);                     // east pier
-  seg(55, 62.5, 0, 3, -70.9, -70, M.concrete);
-  seg(67.5, 70.9, 0, 3, -70.9, -70, M.concrete);
+  /* ===== STAIR TOP LANDINGS =====
+
+     The one-for-all stair fix. Every remaining "stairs to nowhere" in Urban was
+     the same missing piece, and the symptoms only looked different:
+
+       - six flights ended 1.00 to 1.27 m short of a real deck, at the same
+         height. A step, with nothing to step onto.
+       - flights in a stairwell began on nothing but the last tread of the one
+         below, because no landing was ever built between them.
+
+     A 0.7 m slab at the top of a flight solves both, and the flight only needs
+     one where it does not already arrive somewhere. That check needs the
+     FINISHED collider set, which is why this runs as a pass at the end of the
+     build rather than inside stairFlight — a mid-build query would make the
+     output depend on district order, the exact non-determinism the v7.8 PRNG
+     fix removed. */
+  function stairLandings() {
+    var LAND = 0.70, list = World._stairs();
+    for (var i = 0; i < list.length; i++) {
+      var f = list[i];
+      if (f.landing === 0) continue;
+      var topY = f.topY;
+      var lx = f.endX + f.dirX * LAND / 2, lz = f.endZ + f.dirZ * LAND / 2;
+      var lw = f.dirX ? LAND : f.width, ld = f.dirZ ? LAND : f.width;
+      // already something walkable at this height across the landing footprint?
+      var covered = false;
+      var cols = World._colliders();     // part 2 has no closure access to the array
+      for (var j = 0; j < cols.length; j++) {
+        var c = cols[j];
+        if (Math.abs(c[4] - topY) > 0.30) continue;
+        if (c[3] <= lx - lw / 2 + 0.05 || c[0] >= lx + lw / 2 - 0.05) continue;
+        if (c[5] <= lz - ld / 2 + 0.05 || c[2] >= lz + ld / 2 - 0.05) continue;
+        covered = true; break;
+      }
+      if (covered) { f.landing = 0; continue; }
+      var lip = Math.min(f.stepH * 0.55, 0.18);
+      seg(lx - lw / 2, lx + lw / 2, topY - lip, topY, lz - ld / 2, lz + ld / 2, M.stair);
+    }
+  }
+
+  /* ===== DISTRICT SIGNS =====
+
+     Rahul's actual words: "map pe bhi ek sign board add karo taki mai ss lekar
+     tumko exact bata saku ki kaha issue hai." Every bug report so far has been a
+     screenshot plus a guess at where it was, and I have burned whole turns
+     reverse-engineering a location from the shape of a roofline. A readable
+     board in frame ends that.
+
+     One board per district, from DISTRICTS in districts.config.js, so the names
+     on the map and the names in the gates are literally the same strings.
+
+     The face is a canvas texture with the name drawn into it — this project
+     ships no image files, and canvasTex already exists for exactly this. The
+     panel is emissive so it reads at night without needing its own light, which
+     matters: the lamp budget is full at 7 of 7. */
+  /* A sign is a board carried on TWO posts at its ends, with nothing crossing
+     the face — that is what a road sign looks like and what Rahul sent as a
+     reference. v8.6 used a single centre post, which put a black bar straight
+     through the middle of every district name.
+
+     Placement is a search, not a guess. v8.6 checked only the POST footprint for
+     clearance, so Market Cross ended up with its board inside the VOLT building
+     while the post itself stood in open air. clearFor() tests the whole solid —
+     both posts and the board — against the finished collider set, and walks a
+     ring of candidate offsets until it finds open ground. This is the general
+     form of Rahul's instruction: check what is already there before placing
+     anything. */
+  function signClear(sx, sz, face, BW, BH, PH) {
+    var cols = World._colliders();
+    var dx = Math.cos(face), dz = Math.sin(face);
+    var px = -dz, pz = dx;
+    var halfW = BW / 2 + 0.3, halfD = 0.6;
+    var x0 = sx - Math.abs(px) * halfW - Math.abs(dx) * halfD;
+    var x1 = sx + Math.abs(px) * halfW + Math.abs(dx) * halfD;
+    var z0 = sz - Math.abs(pz) * halfW - Math.abs(dz) * halfD;
+    var z1 = sz + Math.abs(pz) * halfW + Math.abs(dz) * halfD;
+    for (var i = 0; i < cols.length; i++) {
+      var c = cols[i];
+      if (c[4] < 0.20 || c[1] > PH + BH + 0.4) continue;   // ground plates and high roofs are fine
+      if (c[3] <= x0 || c[0] >= x1 || c[5] <= z0 || c[2] >= z1) continue;
+      return false;
+    }
+    return true;
+  }
+
+  function districtSigns() {
+    if (typeof DISTRICTS === 'undefined') return;
+    var list = DISTRICTS.list;
+    var PW = 0.17, PH = 2.55;                      // post thickness / height
+    var BW = 5.2, BH = 1.20;                       // board width / height
+    for (var i = 0; i < list.length; i++) {
+      var d = list[i], face = d.sign[2] || 0;
+      var dx = Math.cos(face), dz = Math.sin(face);
+      var px = -dz, pz = dx;
+
+      // walk outward from the anchor until the whole sign fits in open ground
+      var sx = null, sz = null;
+      var RING = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [4, 0], [-4, 0], [0, 4], [0, -4],
+                  [3, 3], [-3, 3], [3, -3], [-3, -3], [6, 0], [-6, 0], [0, 6], [0, -6],
+                  [8, 0], [-8, 0], [0, 8], [0, -8], [6, 6], [-6, 6], [6, -6], [-6, -6]];
+      for (var r = 0; r < RING.length; r++) {
+        var tx = d.sign[0] + RING[r][0], tz = d.sign[1] + RING[r][1];
+        if (signClear(tx, tz, face, BW, BH, PH)) { sx = tx; sz = tz; break; }
+      }
+      if (sx === null) continue;                   // nowhere clear: no sign beats a buried one
+      d.placed = [sx, sz];
+
+      var faceTex = canvasTex(512, (function (label) {
+        return function (g, S) {
+          var bandH = S / 4, y0 = (S - bandH) / 2;
+          g.fillStyle = '#0d2033'; g.fillRect(0, 0, S, S);
+          g.fillStyle = '#12304a'; g.fillRect(0, y0, S, bandH);
+          g.fillStyle = '#e8eef4';
+          g.fillRect(0, y0 + 4, S, 4); g.fillRect(0, y0 + bandH - 8, S, 4);
+          g.fillStyle = '#ffffff';
+          g.textAlign = 'center'; g.textBaseline = 'middle';
+          var size = 82;
+          g.font = 'bold ' + size + 'px sans-serif';
+          while (size > 30 && g.measureText(label).width > S - 36) {
+            size -= 3; g.font = 'bold ' + size + 'px sans-serif';
+          }
+          g.fillText(label, S / 2, y0 + bandH / 2);
+        };
+      })(d.name));
+      var boardMat = new THREE.MeshLambertMaterial(
+        { map: faceTex, color: 0x000000, emissive: 0xffffff, emissiveMap: faceTex });
+
+      // posts at the ends, stopping BELOW the board so nothing crosses the text
+      for (var s2 = -1; s2 <= 1; s2 += 2) {
+        var ox = px * s2 * (BW / 2 - 0.35), oz = pz * s2 * (BW / 2 - 0.35);
+        box(sx + ox, PH / 2, sz + oz, PW, PH, PW, M.trim, { cast: false });
+      }
+      var bw = Math.abs(px) * BW + Math.abs(dx) * 0.14;
+      var bd = Math.abs(pz) * BW + Math.abs(dz) * 0.14;
+      box(sx, PH + BH / 2, sz, bw, BH, bd, boardMat, { collide: false, cast: false, tile: false });
+    }
+  }
+
+  /* ===== PERIMETER + SKYLINE =====
+
+     v8.3: THE INNER CITY WALL IS GONE.
+
+     This ring at +/-70 was the map's perimeter back when the map ended there.
+     v4.2 extended the world to +/-100 and built a new outer perimeter, but the
+     old one was left standing in the middle of the city. Everything since has
+     treated it as deliberate structure and worked around it — v7.6 set the
+     station hall into it because it left the railway district with no approach,
+     v7.8 set the mall into it because it drove a 3 m wall through the shop
+     floor. Two releases spent punching holes in a wall that should not have
+     been there, which is what Rahul spotted in images 6, 7 and 19.
+
+     Measured before removal: 3,523 of 33,454 walkable cells in Urban (10.5%)
+     could not be reached from a spawn at all, and this ring was the single
+     biggest contributor.
+
+     The brick PIERS survive. With the wall gone they read as gateposts on the
+     old city line — they still mark where one district ends and the next
+     begins, which is what district callouts need, and they are cover in the
+     open ground the wall used to occupy. */
+  seg(29, 32, 0, 4.4, -71.0, -69.9, M.brick);                     // old south gate, west post
+  seg(52, 55, 0, 4.4, -71.0, -69.9, M.brick);                     // old south gate, east post
   seg(62.5, 63.4, 0, 3.9, -71.0, -69.9, M.brick);                 // service gate piers
   seg(66.6, 67.5, 0, 3.9, -71.0, -69.9, M.brick);
   seg(62.5, 67.5, 3.9, 4.3, -71.0, -69.9, M.railGreen);           // service gate lintel
-  seg(-70.9, -7, 0, 3, 70, 70.9, M.concrete);
-  seg(7, 70.9, 0, 3, 70, 70.9, M.concrete);
-  seg(-70.9, -70, 0, 3, -70, -7, M.concrete);
-  seg(-70.9, -70, 0, 3, 7, 70, M.concrete);
-  /* v7.8 MARKET CROSS GATE. This segment ran unbroken from z -70 to -7 and
-     drove a 3 m wall straight through the middle of the mall floor plate
-     (x 50..88, z -44..-22) — the same defect as the station wall in the
-     railway ballast. The mall is now set INTO the wall line, so crossing here
-     means crossing the shop floor. */
-  seg(70, 70.9, 0, 3, -70, -44.4, M.concrete);
-  seg(70, 70.9, 0, 3, -21.6, -7, M.concrete);
   seg(69.6, 71.3, 0, 4.6, -44.8, -44.4, M.brick);     // piers either side of the mall
   seg(69.6, 71.3, 0, 4.6, -21.6, -21.2, M.brick);
-  seg(70, 70.9, 0, 3, 7, 70, M.concrete);
   // V4.2 outer perimeter
   seg(-100.9, 100.9, 0, 3.2, -100.9, -100, M.concrete);
   seg(-100.9, 100.9, 0, 3.2, 100, 100.9, M.concrete);
@@ -897,6 +1376,18 @@ World.build = function (sceneRef) {
     seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, M: M, scene: H.sceneRef()
   });
 
+  /* LAST thing before the merge. Placed at the very end of World.build on
+     purpose: the district builders register their flights during the build, and
+     an earlier call site saw only 9 of Urban's 68 staircases and emitted nothing
+     at all while reporting success. A post-pass has to run after everything it
+     claims to inspect. */
+  /* Cut the stairwells BEFORE the landings. stairLandings() asks "is anything
+     walkable already at the top of this flight"; if a slab has just had a hole
+     cut in it, that question has to be asked of the geometry that survived. */
+  World._stairwells();
+  stairLandings();
+  districtSigns();
+
   if (CFG.RENDER.mergeStatic !== false && typeof StaticMerge !== 'undefined') {
     StaticMerge.merge(THREE, H.sceneRef());
   }
@@ -928,6 +1419,7 @@ World.buildMap = function (sceneRef, map) {
     seg: H.seg, box: H.box, cyl: H.cyl, stairFlight: H.stairFlight,
     M: H.M, rnd: H.rnd, scene: H.sceneRef(), addCollider: H.addCollider
   });
+  World._stairwells();
   if (CFG.RENDER.mergeStatic !== false && typeof StaticMerge !== 'undefined') {
     StaticMerge.merge(THREE, H.sceneRef());
   }

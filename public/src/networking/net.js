@@ -340,7 +340,10 @@ var Net = (function () {
       var g = r.av.group;
       g.position.copy(r.renderPos);
       g.rotation.y = -r.ry;
-      r.av.baseY = r.renderPos.y;
+      /* v8.15: guard at the source too. A NaN reaching baseY makes the avatar
+         invisible and permanently stationary, and nothing downstream repairs
+         it. Belt and braces with the isFinite check in poseAvatar. */
+      if (isFinite(r.renderPos.y)) r.av.baseY = r.renderPos.y;
 
       /* Equipment visibility straight off the snapshot. setGear only touches
          .visible when a tier actually changes, so this is free per frame. */
