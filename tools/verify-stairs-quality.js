@@ -95,7 +95,7 @@ const PR = CFG.PLAYER.radius;
    build, which makes the result depend on district build ORDER — the exact
    class of non-determinism the v7.8 PRNG fix existed to remove. */
 const BUDGET = {
-  urban: { floating: 9, rise: 0, narrow: 6, headroom: 5, arrival: 6 },
+  urban: { floating: 9, rise: 0, narrow: 6, headroom: 5, arrival: 1 },
   rural: { floating: 0, rise: 0, narrow: 2, headroom: 1, arrival: 0 },
   metro: { floating: 0, rise: 0, narrow: 4, headroom: 3, arrival: 0 }
 };
@@ -218,26 +218,50 @@ for (const map of ["urban", "rural", "metro"]) {
        So a flight must arrive at either a real deck — a surface of 4 m2 or
        more that is not part of this flight — or at the foot of another
        flight. Anything else is a staircase to nowhere. */
+    /* ARRIVAL is measured from the area the player can actually STAND on at the
+       top of the flight — the last tread plus the 1.3 m landing v8.7 adds — as a
+       rectangle, not from a point.
+
+       Two earlier attempts got this wrong in opposite directions. Measuring from
+       the last tread ignored the landing entirely and reported a deck 1.10 m
+       away that a player can now simply step onto. Advancing the measuring POINT
+       by the landing depth then made decks BESIDE or BEHIND the flight look
+       1.3 m further than they are, and the count went up while the map got
+       better. A rectangle has neither failure. */
+    const ax = f.endX - f.dirX * f.stepD, bx = f.endX + f.dirX * (f.landing || 0);
+    const az = f.endZ - f.dirZ * f.stepD, bz = f.endZ + f.dirZ * (f.landing || 0);
+    const halfX = f.dirX ? 0 : f.width / 2, halfZ = f.dirZ ? 0 : f.width / 2;
+    const rx0 = Math.min(ax, bx) - halfX, rx1 = Math.max(ax, bx) + halfX;
+    const rz0 = Math.min(az, bz) - halfZ, rz1 = Math.max(az, bz) + halfZ;
+
     let arrived = false, nearMiss = null;
-    // this flight's own swept footprint — its treads must not count as arrival
-    const fx0 = Math.min(f.sx, f.endX) - f.width / 2 - 0.05, fx1 = Math.max(f.sx, f.endX) + f.width / 2 + 0.05;
-    const fz0 = Math.min(f.sz, f.endZ) - f.width / 2 - 0.05, fz1 = Math.max(f.sz, f.endZ) + f.width / 2 + 0.05;
+    const own = function (cx, cz) {
+      const tx0 = Math.min(f.sx, f.endX) - f.width / 2 - 0.05, tx1 = Math.max(f.sx, f.endX) + f.width / 2 + 0.05;
+      const tz0 = Math.min(f.sz, f.endZ) - f.width / 2 - 0.05, tz1 = Math.max(f.sz, f.endZ) + f.width / 2 + 0.05;
+      if (cx > tx0 && cx < tx1 && cz > tz0 && cz < tz1) return true;
+      if (!f.landing) return false;
+      const lcx = f.endX + f.dirX * f.landing / 2, lcz = f.endZ + f.dirZ * f.landing / 2;
+      const lhx = (f.dirX ? f.landing : f.width) / 2 + 0.05;
+      const lhz = (f.dirZ ? f.landing : f.width) / 2 + 0.05;
+      return Math.abs(cx - lcx) < lhx && Math.abs(cz - lcz) < lhz;
+    };
     for (const d of decks) {
       const dcx = (d.x0 + d.x1) / 2, dcz = (d.z0 + d.z1) / 2;
-      if (dcx > fx0 && dcx < fx1 && dcz > fz0 && dcz < fz1 &&
-          d.y > f.baseY - 0.1 && d.y < f.topY + 0.1) continue;   // part of this flight
-      const dx = Math.max(d.x0 - f.endX, 0, f.endX - d.x1);
-      const dz = Math.max(d.z0 - f.endZ, 0, f.endZ - d.z1);
+      if (own(dcx, dcz) && d.y > f.baseY - 0.1 && d.y < f.topY + 0.1) continue;
+      const dx = Math.max(d.x0 - rx1, 0, rx0 - d.x1);
+      const dz = Math.max(d.z0 - rz1, 0, rz0 - d.z1);
       const gap = Math.hypot(dx, dz), rise = d.y - f.topY;
       if (gap > 3.0 || rise < -1.2 || rise > 3.0) continue;
-      if (gap <= PR + 0.6 && rise <= STEP + 0.02 && rise > -1.2) { arrived = true; break; }
+      if (gap <= PR + 0.6 && rise <= STEP + 0.02) { arrived = true; break; }
       if (!nearMiss || gap < nearMiss.gap) nearMiss = { gap: gap, rise: rise, y: d.y };
     }
     if (!arrived) {
       for (const g of flights) {
         if (g === f) continue;
-        const gap = Math.hypot(g.sx - f.endX, g.sz - f.endZ), rise = g.sy - f.topY;
-        if (gap <= 2.0 && Math.abs(rise) <= STEP + 0.02) { arrived = true; break; }
+        const gx = Math.max(g.sx - rx1, 0, rx0 - g.sx);
+        const gz = Math.max(g.sz - rz1, 0, rz0 - g.sz);
+        const gap = Math.hypot(gx, gz), rise = g.sy - f.topY;
+        if (gap <= 1.2 && Math.abs(rise) <= STEP + 0.02) { arrived = true; break; }
         if (gap <= 3.0 && Math.abs(rise) <= 3.0 && (!nearMiss || gap < nearMiss.gap))
           nearMiss = { gap: gap, rise: rise, y: g.sy };
       }

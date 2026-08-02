@@ -250,7 +250,11 @@ var World = (function () {
       (mat && mat.color && mat.color.getHexString) ? mat.color.getHexString() : "?"]);
     opts = opts || {};
     var geo = new THREE.BoxGeometry(w, h, d);
-    if (mat.map) uvScale(geo, w, h, d);
+    /* uvScale tiles a texture at constant world density, which is right for
+       concrete and brick and catastrophic for a sign: a 4.2 m board repeated
+       the 512 px name several times across its own face. opts.tile === false
+       leaves UVs at 0..1 so the texture maps ONCE across each face. */
+    if (mat.map && opts.tile !== false) uvScale(geo, w, h, d);
     var m = new THREE.Mesh(geo, mat);
     m.position.set(cx, cy, cz);
     if (opts.rotY) m.rotation.y = opts.rotY;
@@ -341,6 +345,7 @@ var World = (function () {
       sx: sx, sy: sy, sz: sz, dirX: dirX, dirZ: dirZ,
       steps: steps, stepH: stepH, stepD: stepD, width: width,
       baseY: baseY, topY: sy + steps * stepH,
+      landing: (opt.landing === false) ? 0 : 0.70,
       endX: sx + dirX * steps * stepD, endZ: sz + dirZ * steps * stepD,
       stringers: opt.stringers !== false
     });
@@ -388,6 +393,14 @@ var World = (function () {
           cz - stepD / 2, cz + stepD / 2, mat, { collide: false });
       }
     }
+
+    /* The top landing is NOT built here. See stairLandings() below: emitting it
+       inline gave every flight a slab whether it needed one or not, and 16 of
+       them landed inside decks that already existed (verify-props 134 -> 150,
+       verify-zfight 110 -> 121). The pass runs once after the whole map is
+       built, so it can look at the finished collider set and skip the flights
+       that already arrive somewhere. Running it at the end is what makes that
+       check deterministic rather than dependent on district build order. */
   }
 
   // ---------- physics queries ----------
@@ -940,6 +953,46 @@ World.build = function (sceneRef) {
   lamp(8.5, -18, 'w'); lamp(-8.5, 14, 'e'); lamp(8.5, 30, 'w');
   lamp(-8.5, -34, 'e'); lamp(24, 8.5, 'n'); lamp(-24, -8.5, 's');
 
+  /* ===== STAIR TOP LANDINGS =====
+
+     The one-for-all stair fix. Every remaining "stairs to nowhere" in Urban was
+     the same missing piece, and the symptoms only looked different:
+
+       - six flights ended 1.00 to 1.27 m short of a real deck, at the same
+         height. A step, with nothing to step onto.
+       - flights in a stairwell began on nothing but the last tread of the one
+         below, because no landing was ever built between them.
+
+     A 0.7 m slab at the top of a flight solves both, and the flight only needs
+     one where it does not already arrive somewhere. That check needs the
+     FINISHED collider set, which is why this runs as a pass at the end of the
+     build rather than inside stairFlight — a mid-build query would make the
+     output depend on district order, the exact non-determinism the v7.8 PRNG
+     fix removed. */
+  function stairLandings() {
+    var LAND = 0.70, list = World._stairs();
+    for (var i = 0; i < list.length; i++) {
+      var f = list[i];
+      if (f.landing === 0) continue;
+      var topY = f.topY;
+      var lx = f.endX + f.dirX * LAND / 2, lz = f.endZ + f.dirZ * LAND / 2;
+      var lw = f.dirX ? LAND : f.width, ld = f.dirZ ? LAND : f.width;
+      // already something walkable at this height across the landing footprint?
+      var covered = false;
+      var cols = World._colliders();     // part 2 has no closure access to the array
+      for (var j = 0; j < cols.length; j++) {
+        var c = cols[j];
+        if (Math.abs(c[4] - topY) > 0.30) continue;
+        if (c[3] <= lx - lw / 2 + 0.05 || c[0] >= lx + lw / 2 - 0.05) continue;
+        if (c[5] <= lz - ld / 2 + 0.05 || c[2] >= lz + ld / 2 - 0.05) continue;
+        covered = true; break;
+      }
+      if (covered) { f.landing = 0; continue; }
+      var lip = Math.min(f.stepH * 0.55, 0.18);
+      seg(lx - lw / 2, lx + lw / 2, topY - lip, topY, lz - ld / 2, lz + ld / 2, M.stair);
+    }
+  }
+
   /* ===== DISTRICT SIGNS =====
 
      Rahul's actual words: "map pe bhi ek sign board add karo taki mai ss lekar
@@ -964,17 +1017,24 @@ World.build = function (sceneRef) {
       var BW = 4.2, BH = 1.05;                       // board width / height
       var yB = PH - BH / 2 - 0.05;
 
+      /* The canvas is square but the board is 4:1, so text drawn at the canvas
+         centre gets stretched four times wider than it was measured. Draw into a
+         4:1 band in the middle of the square and the stretch cancels out. */
       var faceTex = canvasTex(512, (function (label) {
         return function (g, S) {
-          g.fillStyle = '#12304a'; g.fillRect(0, 0, S, S);
+          var bandH = S / 4, y0 = (S - bandH) / 2;
+          g.fillStyle = '#0d2033'; g.fillRect(0, 0, S, S);
+          g.fillStyle = '#12304a'; g.fillRect(0, y0, S, bandH);
           g.fillStyle = '#e8eef4';
-          g.fillRect(6, 6, S - 12, 5); g.fillRect(6, S - 11, S - 12, 5);
-          g.fillRect(6, 6, 5, S - 12); g.fillRect(S - 11, 6, 5, S - 12);
+          g.fillRect(0, y0 + 3, S, 3); g.fillRect(0, y0 + bandH - 6, S, 3);
           g.fillStyle = '#ffffff';
           g.textAlign = 'center'; g.textBaseline = 'middle';
-          var size = label.length > 14 ? 52 : 68;
+          var size = 74;
           g.font = 'bold ' + size + 'px sans-serif';
-          g.fillText(label, S / 2, S / 2);
+          while (size > 26 && g.measureText(label).width > S - 30) {
+            size -= 3; g.font = 'bold ' + size + 'px sans-serif';
+          }
+          g.fillText(label, S / 2, y0 + bandH / 2);
         };
       })(d.name));
       var boardMat = new THREE.MeshLambertMaterial(
@@ -996,7 +1056,7 @@ World.build = function (sceneRef) {
          cast — that took shadow casters from 56 to 69 against a budget of 62
          Rahul asked to hold. A signboard casting a shadow is worth nothing and
          costs a whole shadow pass entry. */
-      box(sx, yB, sz, bw, BH, bd, boardMat, { collide: false, cast: false });
+      box(sx, yB, sz, bw, BH, bd, boardMat, { collide: false, cast: false, tile: false });
     }
   }
 
@@ -1072,6 +1132,13 @@ World.build = function (sceneRef) {
   if (World._buildAccess) World._buildAccess({
     seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, M: M, scene: H.sceneRef()
   });
+
+  /* LAST thing before the merge. Placed at the very end of World.build on
+     purpose: the district builders register their flights during the build, and
+     an earlier call site saw only 9 of Urban's 68 staircases and emitted nothing
+     at all while reporting success. A post-pass has to run after everything it
+     claims to inspect. */
+  stairLandings();
 
   if (CFG.RENDER.mergeStatic !== false && typeof StaticMerge !== 'undefined') {
     StaticMerge.merge(THREE, H.sceneRef());

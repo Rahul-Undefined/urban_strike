@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.6** | CURRENT — district registry + on-map signboards; every gate now reports district names. |
+| **v8.7** | CURRENT — sign text fixed, stair arrival measurement corrected, automatic top landings. |
+| v8.6 | Good — district registry + on-map signboards; every gate now reports district names. |
 | v8.5 | Good — map-wide stair colour, `verify-props` gate, material-identity fix across gates. |
 | v8.4 | Good — v8.2 stringer regression fixed, arrival check rewritten. |
 | v8.3 | Good — legacy inner perimeter removed, `verify-flow` + `verify-zfight` gates. |
@@ -65,6 +66,109 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 
 ---
+
+
+---
+
+## v8.7 — The sign text bug was mine, and the "six broken staircases" were mostly my gate's
+
+### Signboards: the text was tiling, not overflowing
+
+Rahul's screenshots showed "SECTOR 7 CENTRALSECTOR 7 CENTRALSE" across every
+board. Not a font problem — `box()` calls `uvScale(geo, w, h, d)` on any
+material carrying a texture, which tiles it at constant WORLD density. That is
+right for concrete and brick and catastrophic for a sign: a 4.2 m board repeats
+a 512 px name several times across its own face.
+
+Two fixes:
+
+- `opts.tile === false` leaves UVs at 0..1 so a texture maps ONCE per face.
+- The canvas is square and the board is 4:1, so text drawn at the canvas centre
+  was also being stretched four times wider than it was measured. The name is
+  now drawn into a 4:1 band in the middle of the square, and the font shrinks
+  until it fits — the stretch cancels out.
+
+### The stair arrival number was mostly a measurement artifact
+
+This is the uncomfortable half of the release.
+
+`verify-stairs-quality` reported **6 flights that "lead nowhere"** and I have
+been quoting that number for three releases. It measured the distance from a
+single POINT — the centre of the flight's far end — to the nearest deck. A
+player does not stand on a point. They stand on a tread that is 1.2 to 1.4 m
+wide, and they have reach.
+
+Measured properly, as a rectangle-to-rectangle distance from the whole standing
+area at the top of the flight, Urban has **one** flight that leads nowhere:
+
+    [NEAR OLD TOWN TERRACE] start (-56.8, 3.40, 56.9) -> top (-44.8, 12.40, 56.9)
+    24 steps, no deck within 3 m
+
+Getting there took two wrong turns worth recording. Measuring from a point
+advanced by the landing depth made decks BESIDE or BEHIND a flight look 1.3 m
+further away and pushed the count UP from 6 to 8 while the map got better.
+Extending the exclusion zone by the same amount then swallowed neighbouring
+decks and left it at 7. Distance and exclusion are two different questions and
+need two different boxes.
+
+**Five of the six staircases I have been describing as broken were not broken.**
+
+### Automatic top landings — real, but smaller than advertised
+
+`stairLandings()` runs once at the end of the build, checks the finished
+collider set, and gives a 0.7 m landing to any flight that does not already
+arrive somewhere.
+
+**7 of Urban's 68 flights needed one.** +7 colliders, +84 triangles.
+
+Two things went wrong before that number was trustworthy:
+
+1. **Built inline in `stairFlight`, it gave a slab to every flight whether it
+   needed one or not.** 68 slabs, 16 of them inside decks that already existed:
+   verify-props 134 -> 150, verify-zfight 110 -> 121. Three budgets would have
+   had to move for a change that mostly duplicated existing geometry.
+2. **Moved to a post-pass, the first call site ran too early.** It sat before
+   the district builders had registered their flights, saw 9 of 68 staircases,
+   emitted nothing, and reported success — the collider count was byte-identical
+   to v8.6 and the gate still went green. A post-pass has to run after
+   everything it claims to inspect, and the only reason this was caught is that
+   an A/B on collider count showed a delta of exactly zero.
+
+**And with the landings disabled, the arrival count is still 1.** The measurement
+correction did all of the work; the 7 landings did not move that gate at all.
+They are still worth keeping — Rahul's report was that some stair tops have
+nowhere to stand, and 7 of them now do — but they are not the reason the number
+fell, and saying otherwise would be claiming a fix I did not make.
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| Integration | 85 / 0 |
+| Stairs | 15 / 0 — **arrival budget ratcheted 6 -> 1** |
+| Collision · Flow · Props · Z-fight | 19 / 0 · 3 / 0 · 2 / 0 · 2 / 0 |
+| Map · Build · Lifts | 664 / 0 · PASS · 98 / 0 |
+| Ascent | 49/51 (unchanged) |
+| Cover · Batch · Avatar · Models · Merge | PASS · 36 · 23 · 38 · 9 |
+| Architecture | urban **10** broken promises (unchanged) |
+| Parse sweep | clean |
+
+Urban: 81,380 triangles of 120k, 98 draw calls of 115, 57 shadow casters of 62,
+3,188 colliders.
+
+### Still open
+
+Railway room stairs with no standing space (headroom, 5 flights tracked) · the
+three tall buildings: spacing, stairs per floor, loot density · loot points
+map-wide · construction site · district interiors · vehicle geometry.
+
+### Requires browser verification
+
+- **Are the twelve signboards readable now?** One name per board, no repeats.
+- Do any of the 7 new landings poke through a wall? They were placed only where
+  the collider set said nothing existed, but "nothing collides there" and "it
+  looks right there" are different claims and only one of them is machine
+  checkable.
 
 ## v8.6 — Districts become data, and the map tells you where you are
 

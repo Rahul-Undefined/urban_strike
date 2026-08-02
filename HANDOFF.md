@@ -1,6 +1,6 @@
-# Urban Strike — Project Handoff (v8.6)
+# Urban Strike — Project Handoff (v8.7)
 
-**Upload this file plus `urban-strike-v8.6.zip` into a new chat. Read this file
+**Upload this file plus `urban-strike-v8.7.zip` into a new chat. Read this file
 completely before touching anything.**
 
 ---
