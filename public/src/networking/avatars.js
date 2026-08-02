@@ -464,6 +464,7 @@ var Avatars = (function () {
   }
 
   return {
+    RIG: RIG,                      // v8.19: hit detection must use these too
     buildAvatar: buildAvatar,
     setRemoteGun: setRemoteGun,
     drawHpBar: drawHpBar,

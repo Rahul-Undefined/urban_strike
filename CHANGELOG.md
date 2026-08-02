@@ -78,6 +78,62 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+## v8.19 — headshots: the hitbox was lying about where the head is
+
+Rahul: "headshots are not working." They were not. This is a v8.16 regression
+and the changelog entry that introduced it said the opposite.
+
+### What v8.16 claimed
+
+> "THIS DOES NOT CHANGE THE HITBOX. Hit detection uses the CFG.PLAYER capsule,
+> which is independent of the visual rig, so aim stays honest — the model is
+> easier to SEE, not easier to hit."
+
+Technically accurate and completely wrong in effect. The hitbox being
+independent of the rig is exactly the problem once the rig moves.
+
+### The arithmetic
+
+`public/src/weapons/system.js` builds the head box at
+`eyeStand + 0.04 = 0.76` above the capsule centre with a half-extent of
+**0.19**. v8.16 scaled the model **1.22x** in Y, which put the RENDERED head
+centre at **0.93**.
+
+```
+rendered head centre   0.93
+hitbox head centre     0.76
+offset                 0.17   against a half-extent of 0.19
+```
+
+Aiming at the middle of a head you can see landed on the very top edge of the
+box it was meant to hit; a few pixels high missed entirely and fell through to
+the body box. Width was worse — the model is 1.52x wide, so shots at visible
+shoulders passed outside a 0.35 half-width box on a 0.53-wide silhouette.
+
+### The fix
+
+`Avatars.RIG` is now exported, and `castRay` applies the same factors the
+renderer does:
+
+| | before | after |
+|---|---|---|
+| head box centre | 0.76 | **0.93** (matches the rendered head) |
+| head half-extent | 0.19 | 0.232 |
+| body half-width | 0.35 | 0.532 |
+
+**Movement collision is untouched.** `CFG.PLAYER.radius` still drives the
+capsule in `controller.js`, so nobody's ability to fit through a door changed.
+Only what a bullet can strike.
+
+### The lesson worth keeping
+
+A hitbox that disagrees with the model is a lie told to the player. Any future
+change to `RIG` must go through `castRay` in the same commit — they are one
+number expressed in two files, and there is no gate that checks they agree.
+Adding one would be a good idea.
+
+---
+
 ## v8.18 — Metro City: the load error, and why no gate caught it
 
 ### One wrong key name

@@ -223,10 +223,33 @@ var Weapons = (function () {
     Net.eachRemote(function (id, r) {
       if (!r.alive) return;
       var c = r.renderPos;
-      var halfH = r.prone ? P.proneH / 2 : r.crouch ? P.crouchH / 2 : P.standH / 2;
-      var eyeY = c.y + (r.prone ? P.eyeProne : r.crouch ? P.eyeCrouch : P.eyeStand);
-      var tHead = rayBox(o, d, c.x, eyeY + 0.04, c.z, P.headR, P.headR, P.headR);
-      var tBody = rayBox(o, d, c.x, c.y, c.z, P.radius, halfH, P.radius);
+      /* v8.19 HIT BOXES FOLLOW THE RENDERED RIG.
+
+         v8.16 scaled the avatar 1.52x wide and 1.22x tall so remote players
+         were findable at range, and the changelog claimed "the hitbox does not
+         change... the model is easier to SEE, not easier to hit". That was
+         wrong, and it broke headshots outright.
+
+         The head box is centred on eyeStand + 0.04 = 0.76 above the capsule
+         centre with a half-extent of 0.19. Scaling the model 1.22x put the
+         RENDERED head centre at 0.93 — an offset of 0.17, which is almost the
+         entire half-extent. Aiming at the middle of a head you can see landed
+         on the very top edge of the box it was supposed to hit, and a few
+         pixels high missed it completely and fell through to the body. Width
+         was worse: shots at visible shoulders passed outside a 0.35 box on a
+         0.53-wide model.
+
+         A hitbox that disagrees with the model is a lie told to the player, so
+         the boxes now carry the same RIG factors the renderer does. MOVEMENT
+         collision is untouched — CFG.PLAYER.radius still drives the capsule in
+         controller.js, so nobody's ability to fit through a door changed. Only
+         what a bullet can strike. */
+      var RG = (typeof Avatars !== 'undefined' && Avatars.RIG) ? Avatars.RIG : { x: 1, y: 1, z: 1 };
+      var halfH = (r.prone ? P.proneH / 2 : r.crouch ? P.crouchH / 2 : P.standH / 2) * RG.y;
+      var eyeY = c.y + (r.prone ? P.eyeProne : r.crouch ? P.eyeCrouch : P.eyeStand) * RG.y;
+      var tHead = rayBox(o, d, c.x, eyeY + 0.04 * RG.y, c.z,
+        P.headR * RG.x, P.headR * RG.y, P.headR * RG.z);
+      var tBody = rayBox(o, d, c.x, c.y, c.z, P.radius * RG.x, halfH, P.radius * RG.z);
       var part = null, t = -1;
       if (tHead >= 0 && (tBody < 0 || tHead <= tBody)) { t = tHead; part = 'head'; }
       else if (tBody >= 0) {
