@@ -3,6 +3,10 @@
    Geometry placement uses a SEEDED rng so all clients build the identical map. */
 var World = (function () {
   var colliders = [];
+  /* Every flight stairFlight() emits, recorded for tools/verify-stairs-quality.
+     Reconstructing flights from raw colliders is guesswork; recording them at
+     the point of construction is exact. */
+  var stairs = [];
   var flickers = [];
   var scene = null, sun = null;
   var built = false;
@@ -259,29 +263,84 @@ var World = (function () {
     return m;
   }
   // Solid staircase with a hanging skirt (reads as concrete stairs).
-  function stairFlight(sx, sy, sz, dirX, dirZ, steps, stepH, stepD, width, mat) {
+  /* v8.2 stairFlight.
+
+     Two defects, both visible in Rahul's v8.1 screenshots, both from here
+     rather than from any individual district:
+
+     1. FLOATING FLIGHTS. The decorative skirt under each tread reached only
+        0.9 m down. On a short flight that touches the ground and looks solid;
+        on anything taller the skirt stops in mid-air and the upper half of the
+        staircase visibly hangs. Every long flight in the game had it.
+     2. GIANT STEPS. Call sites use a rise of 0.26-0.35 m. A person is 1.8 m
+        tall, so each step was a fifth of the player's height and read as a
+        stack of blocks rather than a staircase.
+
+     The FLOATING flights are fixed here. The GIANT STEPS are not, and the
+     reason is worth recording so nobody tries this again.
+
+     The obvious fix is to subdivide each logical step inside this function,
+     preserving total rise and run so every landing stays put. I built it. It
+     broke five staircases outright — "north block A" went from a clean climb to
+     the capsule never leaving the ground.
+
+     The cause: subdividing the rise also subdivides the RUN. At a 0.30 m rise
+     and 0.33 m run, halving gives a 0.165 m tread. The player is 0.70 m wide,
+     so their box now overlaps three or four treads simultaneously. The
+     auto-step takes the highest overlapping surface, which is two or three
+     steps up — past the 0.42 m step limit — and refuses. Shallower treads make
+     stairs LESS climbable, which is the same trap the v6.2 note describes from
+     the other direction.
+
+     Rise and run are locked together by the flight's angle, and the angle is
+     set by the building: a 3.3 m climb across 3.6 m of floor is a 42 degree
+     stair no matter how it is cut. Smaller steps therefore require a LONGER
+     flight, which means moving where it lands. That is per-district
+     architecture work, not a change to this generator.
+
+     opt.baseY  — where the stringer lands, if not the flight's own start
+                  (a flight bridging two decks should skirt to the lower deck).
+     opt.stringers === false — open steel flight, no side plates. */
+  function stairFlight(sx, sy, sz, dirX, dirZ, steps, stepH, stepD, width, mat, opt) {
+    opt = opt || {};
+    var baseY = (opt.baseY === undefined) ? sy - 0.02 : opt.baseY;
+    stairs.push({
+      sx: sx, sy: sy, sz: sz, dirX: dirX, dirZ: dirZ,
+      steps: steps, stepH: stepH, stepD: stepD, width: width,
+      baseY: baseY, topY: sy + steps * stepH,
+      endX: sx + dirX * steps * stepD, endZ: sz + dirZ * steps * stepD,
+      stringers: opt.stringers !== false
+    });
+    var lip = Math.min(stepH * 0.55, 0.18);
+    var SP = 0.09;                                 // stringer plate thickness
+
     for (var i = 0; i < steps; i++) {
       var cx = sx + dirX * (i + 0.5) * stepD;
       var cz = sz + dirZ * (i + 0.5) * stepD;
       var top = sy + (i + 1) * stepH;
-      var bottom = Math.max(sy - 0.02, top - stepH - 0.9);
       var w = dirX !== 0 ? stepD : width;
-      var d = dirX !== 0 ? width : stepD;
-      /* v6.2: the tread COLLIDER is now a thin slab, and the deep skirt that
-         hides the gap underneath is decorative only.
-         Why: the auto-step in controller.moveAxis refuses a step whenever the
-         destination capsule overlaps anything. With a full-depth (~1.2m) skirt
-         the tread TWO ahead reached into the climber's chest, so every flight
-         with a run under ~0.5m was unclimbable. That is 40 of the 43 staircases
-         in this game — every interior stair, the shop stairs, the tunnel
-         portals, the rail station. Only the two 0.5-run fire escapes worked,
-         which is exactly what Rahul reported. Thin colliders fix all of them at
-         the source instead of one flight at a time. */
-      var lip = Math.min(stepH * 0.55, 0.18);
-      seg(cx - w / 2, cx + w / 2, top - lip, top, cz - d / 2, cz + d / 2, mat);
-      if (bottom < top - lip)
-        seg(cx - w / 2, cx + w / 2, bottom, top - lip, cz - d / 2, cz + d / 2, mat,
-          { collide: false });
+      var dep = dirX !== 0 ? width : stepD;
+
+      /* The tread COLLIDER stays a thin slab. Kept from v6.2: the auto-step in
+         controller.moveAxis refuses a step whenever the destination capsule
+         overlaps anything, so a full-depth skirt put the tread two ahead into
+         the climber's chest and made 40 of 43 staircases unclimbable. */
+      seg(cx - w / 2, cx + w / 2, top - lip, top, cz - dep / 2, cz + dep / 2, mat);
+
+      if (opt.stringers === false || top - lip <= baseY) continue;
+
+      // Stepped side plates, flanking the tread so they never narrow it.
+      if (dirX !== 0) {
+        seg(cx - stepD / 2, cx + stepD / 2, baseY, top - lip,
+          cz - width / 2 - SP, cz - width / 2, mat, { collide: false });
+        seg(cx - stepD / 2, cx + stepD / 2, baseY, top - lip,
+          cz + width / 2, cz + width / 2 + SP, mat, { collide: false });
+      } else {
+        seg(cx - width / 2 - SP, cx - width / 2, baseY, top - lip,
+          cz - stepD / 2, cz + stepD / 2, mat, { collide: false });
+        seg(cx + width / 2, cx + width / 2 + SP, baseY, top - lip,
+          cz - stepD / 2, cz + stepD / 2, mat, { collide: false });
+      }
     }
   }
 
@@ -413,6 +472,7 @@ var World = (function () {
   return {
     BOUND: 100, // playable half-extent (V4.2)
     _colliders: function () { return colliders; }, // test-only introspection
+    _stairs: function () { return stairs; },       // test-only introspection
     /* opts.urban === false  ->  build shared setup only (materials, sky, fog,
        hemi/ambient/sun) and SKIP groundAndRoads(). groundAndRoads() lays the
        Urban dirt ground with its top face at exactly y=0, plus the asphalt
@@ -460,6 +520,7 @@ var World = (function () {
          see. Not reachable from the menu flow today, but it silently corrupted
          verify-collision the first time that gate reset a map twice. */
       colliders.length = 0;
+      stairs.length = 0;
       minimapShapes.length = 0;
       if (World._lampSpots) World._lampSpots.length = 0;
       built = false;

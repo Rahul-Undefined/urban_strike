@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.1** | CURRENT — collision resolver rewritten, `verify-collision` gate added, `World.reset()` collider leak fixed. Movement-only build. |
+| **v8.2** | CURRENT — stair stringers (floating flights fixed map-wide), `verify-stairs-quality` gate. |
+| v8.1 | Good — collision resolver rewritten, `verify-collision` gate added, `World.reset()` collider leak fixed. |
 | v8.0 | Good — Container Yard rebuilt, mall/yard footprint collision fixed, minimap made legible. |
 | v7.9 | Good — operator rig + animation pass, Warehouse district, frame-cost metrics. |
 | v7.8 | Good — Milestone 9 pt1: Residential, Apartment, Shopping districts. PRNG determinism fix. |
@@ -45,6 +46,111 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 
 ---
+
+
+---
+
+## v8.2 — Stair stringers + stair quality gate
+
+Response to twenty gameplay screenshots from v8.1. Those twenty images are not
+twenty bugs: images 3, 4, 10, 11, 13, 16 and 20 all trace to one generator,
+`stairFlight`, and images 6, 7 and 19 all trace to legacy boundary walls. This
+release fixes the generator. The rest is enumerated, not guessed at.
+
+### Fixed — floating staircases, map-wide
+
+`stairFlight` hid the gap under each tread with a decorative skirt that reached
+only **0.9 m** down. On a short flight that touches the ground and looks solid.
+On anything taller the skirt stopped in mid-air and the upper half of the
+staircase visibly hung — which is what images 4, 10 and 13 show, and it was on
+every long flight in the game.
+
+Replaced with proper **stringers**: stepped side plates flanking each flight,
+running from the flight's base up to the underside of every tread. Decorative
+exactly as the old skirt was, so this changes how a staircase looks and never
+what it collides with — it cannot introduce a new blockage.
+
+Cost: **72.1k -> 81.3k triangles**. Draw calls unchanged at 85, shadow casters
+unchanged at 56, colliders unchanged at 3188.
+
+### NOT fixed — oversized steps. Here is why, so nobody retries it.
+
+Call sites use a rise of 0.26-0.35 m. A player is 1.8 m tall, so each step is
+about a fifth of their height and reads as stacked blocks (images 3, 11).
+
+The obvious fix is to subdivide each step inside `stairFlight`, preserving total
+rise and run so every landing stays put. **That was built and reverted.** It
+broke five staircases outright — "north block A" went from a clean climb to the
+capsule never leaving the ground, and verify-access fell from 49/51 to 46/51.
+
+Cause: subdividing the rise also subdivides the RUN. At 0.30 m rise and 0.33 m
+run, halving gives a 0.165 m tread. The player is 0.70 m wide, so their box
+overlaps three or four treads at once, the auto-step takes the highest
+overlapping surface — two or three steps up, past the 0.42 m limit — and
+refuses. **Shallower treads make stairs less climbable.**
+
+Rise and run are locked together by the flight's angle, and the angle is set by
+the building: a 3.3 m climb across 3.6 m of floor is a 42-degree stair however
+it is cut. Smaller steps need a LONGER flight, which means moving where it
+lands. That is per-district architecture work.
+
+### New gate: `tools/verify-stairs-quality.js` — 15 assertions
+
+`verify-access` reports 49/51 while the screenshots show bad staircases. The
+gate was never lying — it only ever asked *can a capsule get to the top*. This
+one asks the rest, per flight, from a registry `world.js` fills at construction
+time (`World._stairs()`), because reconstructing flights from raw colliders is
+guesswork:
+
+**support** (does the flight begin on anything) · **rise** (within the auto-step
+limit) · **width** · **headroom** along the run · **landing** at the top.
+
+Urban has **68 flights**, rural 9, metro 0.
+
+Two detector false-positive classes were found and fixed before the budgets were
+set, both from switchback stairwells: sampling support at a flight's midpoint
+(legitimately over open air — 10 false hits) and testing the landing straight
+ahead (a switchback turns 90 degrees by design — 18 false hits). Budgets set
+against a noisy detector would have baked the noise in permanently.
+
+### Enumerated, not fixed — with coordinates
+
+| Defect | Count | Where |
+|---|---|---|
+| Stairwell flights with no landing between them | 9 (urban) | x 24.6/26.8, z -34.1/-36.1 stack; plus (13.7, 3.50, -62.2) |
+| Low headroom over a flight | 5 (urban) | (-37.7, 3.62, 24.4) · (77.2, 0, -1.5) · (75.4, 0, 58.7) · (-92.9, 3.90, -5.4) · (-17.6, 0, 41.5) |
+| Narrow flights (< 1.0 m) | 6 (urban) | ratcheted |
+
+The 9 floating flights are **real, not noise**: one multi-storey stairwell where
+flights stack directly on each other with no landing slab. The stringers stop it
+reading as hanging in mid-air, but the stairwell still has no landings.
+`stairFlight` cannot invent one safely — doing so means querying colliders during
+the build, which makes output depend on district build ORDER, the exact
+non-determinism the v7.8 PRNG fix removed.
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| Integration | 85 / 0 |
+| Collision | 19 / 0 |
+| **Stair quality (new)** | **15 / 0** |
+| Map · Build · Lifts | 664 / 0 · PASS · 98 / 0 |
+| Ascent | 49/51 (unchanged) |
+| Cover · Batch · Avatar · Models · Merge | PASS · 36 · 23 · 38 · 9 |
+| Architecture | urban 10 / rural 7 / metro 25 broken promises (unchanged) |
+| Parse sweep | clean |
+
+Triangle budget raised 95k -> 120k per Rahul's approval. Urban now uses **81.3k**;
+the remaining ~39k is earmarked for the architecture pass, not for casual spend.
+
+### Requires browser verification
+
+- Do staircases still read as floating anywhere? The stringers are the whole point.
+- Does anything now look like a solid wedge you can walk through? Stringers are
+  9 cm edge plates with no collider — the mismatch should be invisible, but that
+  is a claim about pixels and only a browser can check it.
+- Climbing feel is unchanged by design; confirm nothing regressed.
 
 ## v8.1 — Collision resolver rewrite (Phase 0 of the Urban quality milestone)
 

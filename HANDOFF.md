@@ -1,6 +1,6 @@
-# Urban Strike — Project Handoff (v8.1)
+# Urban Strike — Project Handoff (v8.2)
 
-**Upload this file plus `urban-strike-v8.1.zip` into a new chat. Read this file
+**Upload this file plus `urban-strike-v8.2.zip` into a new chat. Read this file
 completely before touching anything.**
 
 ---
@@ -150,6 +150,7 @@ move every frame — so the only levers are part count, material sharing and LOD
 | **Architecture** | `node tools/verify-arch.js` | **3/6 — RED BY DESIGN** | floating geometry (0 everywhere) + broken-promise roofs |
 | **Avatar** | `node verify-avatar.js` | **23** | player rig: parts, material sharing, joints, stance, strafe, turn, reload, LOD, lobby cost |
 | **Collision** | `node tools/verify-collision.js` | **19** | the resolver itself: order independence, auto-step, no downward resolve, void plane, world-edge probe |
+| **Stair quality** | `node tools/verify-stairs-quality.js` | **15** | support, rise, width, headroom, landing — per flight, from a build-time registry |
 | Merge | `node tools/verify-merge.js` | 9 | StaticMerge geometry math |
 | Parse sweep | `node --check` every .js | clean | syntax only |
 
@@ -210,7 +211,8 @@ A new environment file is invisible to every gate until wired by hand:
 1. `public/index.html` script tag, in load order
 2. `World.build` → the `World._buildPartN({...})` call with the helper bundle
 3. File lists in **all six** harnesses: verify-map, verify-build, verify-access,
-   verify-cover, verify-lifts, verify-batch, verify-arch, verify-collision
+   verify-cover, verify-lifts, verify-batch, verify-arch, verify-collision,
+   verify-stairs-quality
 Adding a district to an EXISTING file avoids all of this. v7.6 put the rebuilt
 railway inside `districts-north.js` for exactly that reason.
 
