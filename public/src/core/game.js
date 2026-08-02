@@ -97,12 +97,6 @@ var Game = (function () {
     document.addEventListener('keydown', function (e) {
       if (e.repeat) return;
       var playing = Net.getPhase() === 'playing';
-      /* v8.9 dev overlay. Registered BEFORE the pointer-lock guard below on
-         purpose: the panel has to be readable while paused, which is exactly
-         when a bug gets examined. F4 copies the readout so coordinates are
-         pasted into a report, not re-typed off a screenshot. */
-      if (e.code === 'F3') { e.preventDefault(); DevHUD.toggle(); return; }
-      if (e.code === 'F4') { e.preventDefault(); DevHUD.copy(); return; }
       if (e.code === 'Tab' && playing) {
         e.preventDefault();
         UI.updateScoreboard(Net.getRoster(), Net.myId(), Net.getRoomCode(), Net.getPing());
@@ -281,7 +275,6 @@ var Game = (function () {
   var fwdV = new THREE.Vector3(), upV = new THREE.Vector3(0, 1, 0);
   function loop(t) {
     requestAnimationFrame(loop);
-    DevHUD.update(t);            // no-ops on its first line while hidden
     var dt = Math.min(0.05, Math.max(0.0001, (t - lastT) / 1000));
     lastT = t;
 

@@ -667,20 +667,6 @@ World._buildPart5 = function (T) {
       });
     })();
     crates(-58, -46.8); barrel(-30.6, -45.4, true); barrel(-31.8, -46.2, false);
-    /* v8.5: THE YARD FENCE STAYS WHOLE. Reported, not kept.
-
-       This 56 m unbroken run was the second-biggest blocker verify-flow found —
-       102 walkable cells sealed behind it when measured against v8.2. Cutting
-       two vehicle gates into it looked like an easy win, so it was built and
-       measured: it unlocked THIRTEEN cells, not 102. Removing the +/-70 inner
-       perimeter in v8.3 had already opened another route into that yard, so the
-       fence was barely blocking anything by the time it was cut.
-
-       And the cut was not free. One fence became three, three fence tops became
-       three standable decks, and verify-arch's broken-promise count on urban
-       went 10 -> 11. Thirteen cells for a roof nobody can reach is a worse map,
-       so the change is reverted and recorded instead. A blocker measured on an
-       old build is a blocker measured on the wrong map. */
     seg(-72, -16, 0, 2.3, -50.2, -49.8, M.metal);                             // yard fence
     [-60, -40, -24].forEach(function (fx) { cyl(fx, 1.2, -50.0, 0.12, 2.4, M.trim); });
     lamp(-46, -44, 'n');

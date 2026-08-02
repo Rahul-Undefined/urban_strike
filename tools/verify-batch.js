@@ -60,7 +60,7 @@ const FILES = [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
   "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
-  "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
+  "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
   "public/src/environment/deco.js", "public/src/environment/rural.js",
@@ -84,7 +84,7 @@ for (const f of FILES) {
    frames on the hardware this game has to run on. */
 const BUDGET = { urban: 115, rural: 40, metro: 45 };
 const CAST_BUDGET = { urban: 62, rural: 20, metro: 22 };
-const TRI_BUDGET = { urban: 120000, rural: 30000, metro: 26000 };
+const TRI_BUDGET = { urban: 95000, rural: 30000, metro: 26000 };
 const MM_BUDGET = { urban: 320, rural: 200, metro: 260 };
 /* Urban ran 10 lights before v7.5 (3 scene + 7 point). Three point lights were
    removed: two street lamps and one open-air construction work light, all

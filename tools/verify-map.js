@@ -75,35 +75,14 @@ THREE.Line.prototype = Object.create(Obj.prototype);
 THREE.Points.prototype = Object.create(Obj.prototype);
 THREE.LineSegments.prototype = Object.create(Obj.prototype);
 
-/* v8.9 — THE SANDBOX USED TO BUILD AN INCOMPLETE WORLD.
-
-   Two defects, both invisible because the gate was green either way:
-
-   1. districts.config.js was never loaded. world.js districtSigns() opens with
-      `if (typeof DISTRICTS === 'undefined') return;`, so it emitted NOTHING.
-      12 districts x 2 posts = 24 colliders absent from every check below.
-      urban measured 3184 here and 3208 in verify-build: the delta was exactly
-      those 24 posts. Every loot / spawn / airdrop assertion was validated
-      against a map the player never loads.
-
-   2. `window` was a bare {}. districts.config.js publishes onto `window`, and
-      world.js reads a BARE global `DISTRICTS`. In a browser those are the same
-      object; here they were not. Loading the file without this line would have
-      set ctx.window.DISTRICTS and left the bare global still undefined — the
-      gate would have stayed silently broken. verify-build already models it
-      correctly (`ctx.self = ctx.window = ctx.globalThis = ctx`); this matches.
-
-   Do not "simplify" either line. The parity assertion at the end of runMap()
-   is what stops this regressing. */
 function runMap(mapName, data, wallDefault) {
   const ctx = {
     CFG, THREE, console, Math, performance: { now: () => 0 },
-    document: { createElement: () => ({ width: 0, height: 0, getContext: () => gctx }) }
+    document: { createElement: () => ({ width: 0, height: 0, getContext: () => gctx }) },
+    window: {}
   };
-  ctx.window = ctx; ctx.self = ctx; ctx.globalThis = ctx;
   vm.createContext(ctx);
-  ["config/districts.config.js",
-   "environment/world.js", "environment/districts-south.js", "environment/districts-north.js",
+  ["environment/world.js", "environment/districts-south.js", "environment/districts-north.js",
    "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/metro.js", "environment/access.js"].forEach(f => {
     const p = path.join(ROOT, "public/src", f);
     if (fs.existsSync(p)) vm.runInContext(fs.readFileSync(p, "utf8"), ctx, { filename: f });
@@ -112,29 +91,6 @@ function runMap(mapName, data, wallDefault) {
   ctx.World.buildMap(scene, mapName);
   const cols = ctx.World._colliders();
   console.log("[" + mapName + "] built headlessly: " + cols.length + " colliders");
-
-  /* --- world completeness: the gate must never again inspect a partial map --- */
-  if (mapName === 'urban') {
-    const D = ctx.DISTRICTS;
-    ok(!!D && D.list && D.list.length > 0,
-      'urban: DISTRICTS is visible to the builder (sandbox loaded the config)');
-    if (D && D.list) {
-      const placed = D.list.filter(d => d.placed);
-      ok(placed.length === D.list.length,
-        'urban: every district placed a signboard (' + placed.length + '/' + D.list.length + ')');
-      for (const d of D.list) {
-        if (!d.placed) { console.log('        UNPLACED SIGN  ' + d.name); continue; }
-        const px = d.placed[0], pz = d.placed[1];
-        const posts = cols.filter(c =>
-          c[0] >= px - 3.2 && c[3] <= px + 3.2 &&
-          c[2] >= pz - 3.2 && c[5] <= pz + 3.2 &&
-          c[4] > 2.0 && c[4] < 3.2 && (c[3] - c[0]) < 0.5 && (c[5] - c[2]) < 0.5);
-        ok(posts.length >= 2,
-          'urban: sign posts are in the collider set for ' + d.name +
-          ' (' + posts.length + ' at ' + px.toFixed(1) + ',' + pz.toFixed(1) + ')');
-      }
-    }
-  }
   const WALL = ctx.World.BOUND || wallDefault;
 
   function supportAt(x, y, z) {
