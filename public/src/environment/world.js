@@ -204,6 +204,7 @@ var World = (function () {
   // ---------- geometry helpers ----------
   var minimapShapes = [];
   var outer = null;
+  var solids = [];            // v8.10: emitted box <-> collider pairing, for stairwells()
   function addCollider(x0, y0, z0, x1, y1, z1) {
     colliders.push([x0, y0, z0, x1, y1, z1, arguments.length > 6 ? arguments[6] | 0 : 0]); // [6] = footstep surface
     /* Auto-capture eye-height footprints for the minimap static layer.
@@ -269,6 +270,15 @@ var World = (function () {
         W = w * c + d * s; D = w * s + d * c;
       }
       addCollider(cx - W / 2, cy - h / 2, cz - D / 2, cx + W / 2, cy + h / 2, cz + D / 2, surfOf(mat));
+      /* v8.10 STAIRWELL REGISTRY. Always on, unlike boxLog.
+
+         stairwells() below has to cut holes in floor slabs that a staircase
+         climbs into, and to cut a hole you must be able to find the mesh and
+         the collider that belong to the same emitted box AFTER the district
+         builders have finished. Nothing in the build recorded that pairing.
+         ~3.2k small objects on urban; the cost is a push per solid. */
+      solids.push({ m: m, ci: colliders.length - 1, cx: cx, cy: cy, cz: cz,
+        w: w, h: h, d: d, mat: mat, opts: opts });
     }
     return m;
   }
@@ -528,6 +538,164 @@ var World = (function () {
     }
   }
 
+  /* ===== STAIR CONNECTORS — ATTEMPTED, REVERTED, DO NOT RE-ATTEMPT BLIND =====
+
+     The nine "floating" flights on urban are switchback stairwells whose
+     half-landing was never built: flight A ends at (24.6, 3.65, -34.1), flight
+     B begins at (24.6, 3.65, -36.1), two metres of open air between them.
+
+     A pass that builds those landings was written, and it is not shippable,
+     because THE LANDING DOES NOT FIT. Measured per half-flight in the CIVIC
+     CENTRE stairwell:
+
+         total rise per half-flight   1.70 - 1.82 m
+         clearance a standing player  1.80 m + auto-step lift = 2.02 m
+
+     A landing at the turn sits at the top of the flight below it. With only
+     1.73 m between them, that landing IS the low ceiling. The first version of
+     the pass proved it empirically: nine floating flights became four, and
+     headroom went 0 -> 13 across CIVIC CENTRE, THE COLONY and SECTOR 7. Adding
+     a guard that refuses to create a low ceiling made the pass emit ZERO
+     connectors, which is the same answer stated honestly.
+
+     So this is not a missing-landing defect. It is a storey-height defect: the
+     stairwell needs FEWER, TALLER half-flights (>= 7 steps at 0.29 rather than
+     6) so a landing can physically fit. That changes where the flights land,
+     which is district work, and Rahul has scoped district changes out of
+     Milestone A. Reported, not silently patched.
+
+     Rule 11: non-beneficial changes get reported and reverted, not kept. */
+
+  /* ===== STAIRWELLS (v8.10) =====
+
+     THE DEFECT, AND WHY IT LOOKED LIKE FIVE DIFFERENT BUGS.
+
+     Rahul reported that WEST WORKS and EASTGATE YARD second floors are
+     unreachable, while the F3 overlay said `top arrival: OK (0.00m)` on both.
+     The overlay was right and useless at the same time. Replaying a standing
+     capsule up those flights tread by tread showed the same thing under both:
+
+       flight #44  blocker [72.4, 3.00, -8.8 .. 78.4, 3.30, -1.2]  top 3.30
+       flight #47  blocker [-94.0, 7.10, -16.0 .. -83.0, 7.50, -4.0]  top 7.50
+
+     In every case the blocking collider's TOP EQUALS THE FLIGHT'S TOP. The
+     staircase is not failing to arrive. It arrives perfectly — at a floor slab
+     with no hole cut in it. The flight runs underneath its own destination and
+     the headroom shrinks by one rise per tread until the capsule cannot stand.
+
+     That is why `arrival` said OK: a deck IS at the top, at distance 0.00. It
+     is also why `headroom` flagged these same flights and the ratchet buried
+     it as five acceptable instances. One defect, five coordinates.
+
+     THE FIX IS THE HOLE, NOT THE STAIR. A real building has a stairwell void
+     in the floor above the run. This pass cuts one: for every registered
+     flight, any thin horizontal slab hanging over the run within the clearance
+     a standing player needs is replaced by up to four pieces surrounding a
+     rectangular opening.
+
+     WHY IT IS A POST-PASS. Same reason stairLandings() is: the districts
+     register their flights while they build, and a slab is often emitted by a
+     different district file than the stair beneath it. Anything that inspects
+     the finished world has to run after the whole world exists. It runs BEFORE
+     StaticMerge so the replacement pieces batch into the same draw calls their
+     original did — same material, so no new batch and no new shadow caster.
+
+     WHAT IT REFUSES TO DO. It only cuts thin (<= 0.8 m) horizontal slabs of at
+     least 1 m2. A wall across a staircase, a rotated box, or a thick solid is
+     a different defect with a different right answer, so those are counted and
+     reported rather than silently demolished. Read the count in
+     tools/verify-climb.js; do not widen this rule to make a number go green. */
+  function stairwells() {
+    var NEED = CFG.PLAYER.standH + 0.22;   // 2.02 m: stand 1.80 + auto-step lift + slack
+    var report = { cut: 0, pieces: 0, refused: [] };
+    if (!stairs.length || !solids.length) return report;
+
+    for (var i = 0; i < stairs.length; i++) {
+      var f = stairs[i];
+      var halfW = f.width / 2 + 0.06;
+      // the opening spans the run and stops AT the arrival edge, so the deck
+      // the player steps out onto is never removed
+      var hx0 = Math.min(f.sx, f.endX) - (f.dirX ? 0 : halfW);
+      var hx1 = Math.max(f.sx, f.endX) + (f.dirX ? 0 : halfW);
+      var hz0 = Math.min(f.sz, f.endZ) - (f.dirZ ? 0 : halfW);
+      var hz1 = Math.max(f.sz, f.endZ) + (f.dirZ ? 0 : halfW);
+      if (f.dirX) { hx0 -= 0.06; hx1 += 0.06; }
+      if (f.dirZ) { hz0 -= 0.06; hz1 += 0.06; }
+      if (f.dirX > 0) hx1 = f.endX; else if (f.dirX < 0) hx0 = f.endX;
+      if (f.dirZ > 0) hz1 = f.endZ; else if (f.dirZ < 0) hz0 = f.endZ;
+
+      // highest tread the opening has to clear
+      var topTread = f.topY;
+
+      for (var j = solids.length - 1; j >= 0; j--) {
+        var S = solids[j];
+        if (!S.m) continue;                                   // already cut away
+        var sx0 = S.cx - S.w / 2, sx1 = S.cx + S.w / 2;
+        var sz0 = S.cz - S.d / 2, sz1 = S.cz + S.d / 2;
+        var sy0 = S.cy - S.h / 2, sy1 = S.cy + S.h / 2;
+        if (sx1 <= hx0 + 0.01 || sx0 >= hx1 - 0.01) continue;
+        if (sz1 <= hz0 + 0.01 || sz0 >= hz1 - 0.01) continue;
+        if (sy0 <= f.sy + 0.05) continue;                     // not overhead
+        if (sy0 >= topTread + NEED) continue;                 // high enough already
+
+        // the flight's own treads, stringers and landing are not obstacles
+        var ocx = S.cx, ocz = S.cz;
+        var ox0 = Math.min(f.sx, f.endX) - f.width / 2 - 0.10;
+        var ox1 = Math.max(f.sx, f.endX) + f.width / 2 + 0.10;
+        var oz0 = Math.min(f.sz, f.endZ) - f.width / 2 - 0.10;
+        var oz1 = Math.max(f.sz, f.endZ) + f.width / 2 + 0.10;
+        if (ocx > ox0 && ocx < ox1 && ocz > oz0 && ocz < oz1 &&
+            sy1 <= f.topY + 0.06 && sy1 >= f.baseY - 0.10) continue;
+
+        if (S.opts.rotY || S.h > 0.8 || (S.w * S.d) < 1.0) {
+          report.refused.push({ flight: i, at: [S.cx, S.cy, S.cz],
+            why: S.opts.rotY ? 'rotated' : (S.h > 0.8 ? 'not a slab (h ' + S.h.toFixed(2) + ')' : 'too small') });
+          continue;
+        }
+
+        // clip the opening to this slab, then rebuild the slab around it
+        var cx0 = Math.max(sx0, hx0), cx1 = Math.min(sx1, hx1);
+        var cz0 = Math.max(sz0, hz0), cz1 = Math.min(sz1, hz1);
+
+        scene.remove(S.m);
+        if (S.m.geometry && S.m.geometry.dispose) S.m.geometry.dispose();
+        colliders[S.ci] = null;                                // compacted below
+        S.m = null;
+
+        var parts = [];
+        if (cz0 > sz0 + 0.02) parts.push([sx0, sx1, sz0, cz0]);
+        if (cz1 < sz1 - 0.02) parts.push([sx0, sx1, cz1, sz1]);
+        if (cx0 > sx0 + 0.02) parts.push([sx0, cx0, cz0, cz1]);
+        if (cx1 < sx1 - 0.02) parts.push([cx1, sx1, cz0, cz1]);
+        for (var k = 0; k < parts.length; k++) {
+          var q = parts[k];
+          if (q[1] - q[0] < 0.02 || q[3] - q[2] < 0.02) continue;
+          /* Trap #8: do not emit a sliver. A 0.3 m strip left over from a cut
+             is a standable surface nobody can reach, and verify-arch counts it
+             as a broken promise — the first version of this pass pushed urban
+             from 10 to 11 doing exactly that. A gap narrower than the player's
+             0.70 m diameter cannot be fallen through, so dropping the sliver
+             costs nothing and keeps the ratchet honest. */
+          if (Math.min(q[1] - q[0], q[3] - q[2]) < 0.55) continue;
+          seg(q[0], q[1], sy0, sy1, q[2], q[3], S.mat, S.opts);
+          report.pieces++;
+        }
+        report.cut++;
+      }
+    }
+
+    // compact the collider array once, at the end
+    if (report.cut) {
+      var keep = [];
+      for (var n = 0; n < colliders.length; n++) if (colliders[n]) keep.push(colliders[n]);
+      colliders.length = 0;
+      for (var n2 = 0; n2 < keep.length; n2++) colliders.push(keep[n2]);
+      // indices in `solids` are stale after compaction; nothing reads them again
+      // this build, and reset() clears the array.
+    }
+    return report;
+  }
+
   return {
     BOUND: 100, // playable half-extent (V4.2)
     _colliders: function () { return colliders; }, // test-only introspection
@@ -545,11 +713,13 @@ var World = (function () {
     _initPart1: function (sceneRef, opts) {
       var urban = !opts || opts.urban !== false;
       outer = sceneRef;
+      solids.length = 0;
       scene = new THREE.Group();
       outer.add(scene);
       makeMaterials(); lighting(urban);
       if (urban) groundAndRoads();
     },
+    _stairwells: function () { return stairwells(); },
     _internals: function () {
       return { box: box, seg: seg, cyl: cyl, stairFlight: stairFlight, crater: crater, M: M, rnd: rnd, addCollider: addCollider, emissive: emissiveMat, canvasTex: canvasTex, sceneRef: function () { return scene; } };
     },
@@ -1167,6 +1337,10 @@ World.build = function (sceneRef) {
      an earlier call site saw only 9 of Urban's 68 staircases and emitted nothing
      at all while reporting success. A post-pass has to run after everything it
      claims to inspect. */
+  /* Cut the stairwells BEFORE the landings. stairLandings() asks "is anything
+     walkable already at the top of this flight"; if a slab has just had a hole
+     cut in it, that question has to be asked of the geometry that survived. */
+  World._stairwells();
   stairLandings();
   districtSigns();
 
@@ -1201,6 +1375,7 @@ World.buildMap = function (sceneRef, map) {
     seg: H.seg, box: H.box, cyl: H.cyl, stairFlight: H.stairFlight,
     M: H.M, rnd: H.rnd, scene: H.sceneRef(), addCollider: H.addCollider
   });
+  World._stairwells();
   if (CFG.RENDER.mergeStatic !== false && typeof StaticMerge !== 'undefined') {
     StaticMerge.merge(THREE, H.sceneRef());
   }

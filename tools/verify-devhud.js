@@ -126,19 +126,21 @@ ok((field(t, "DIST") || "").length > 0 && field(t, "DIST") !== "OUTSKIRTS",
 ok((field(t, "HEAD") || "").length > 0 && !/LOW/.test(field(t, "HEAD")),
   "spawn#0 headroom is reported and not flagged low (" + field(t, "HEAD") + ")");
 
-/* Known headroom defect, tools/verify-stairs-quality.js: flight starting
-   (-37.7, 3.62, 24.35), 10 steps of 0.308 running in -z at 0.33 per tread.
-   The gate samples ABOVE EACH TREAD, so the violation is somewhere along the
-   run, not at the foot. The panel must find the same low ceiling when the
-   player is standing where the gate says it is low. Walk the flight. */
+/* v8.10: this used to assert the panel FINDS a low ceiling on the flight
+   starting (-37.7, 3.62, 24.35). World stairwells() has since cut the
+   stairwell opening above that run, so the defect is gone and the assertion
+   is inverted: the panel must now agree with verify-stairs-quality that the
+   flight is CLEAR the whole way up. Walk it and require no LOW anywhere.
+   Keeping the old assertion would have meant preserving a bug to keep a gate
+   green, which is the exact inversion this project must never make. */
 let sawBlocked = null;
 for (let i = 0; i < 10 && !sawBlocked; i++) {
   const z = 24.35 - (i + 0.5) * 0.33, fy = 3.62 + (i + 1) * 0.308;
   const line = field(at(-37.7, fy, z), "HEAD");
   if (line && /LOW/.test(line)) sawBlocked = "step " + i + ": " + line;
 }
-ok(!!sawBlocked, "known headroom flight reads LOW somewhere along its run (" +
-  (sawBlocked || "never blocked") + ")");
+ok(!sawBlocked, "the stairwell-cut flight at (-37.7, 3.62, 24.35) is now clear all the way up (" +
+  (sawBlocked || "no low ceiling on any tread") + ")");
 
 /* Known arrival defect, handoff 5b: flight (-56.8, 3.40, 56.9) -> (-44.8, 12.40).
    verify-stairs-quality says no deck within 3 m of its top. The panel must

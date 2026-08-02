@@ -94,10 +94,15 @@ const PR = CFG.PLAYER.radius;
    Auto-generating a landing here would mean querying colliders during the
    build, which makes the result depend on district build ORDER — the exact
    class of non-determinism the v7.8 PRNG fix existed to remove. */
+/* v8.10 RATCHET. headroom and narrow driven to 0 on all three maps by
+   World stairwells() — the post-pass that cuts a stairwell opening in any
+   floor slab a flight climbs into. These may never rise again. floating 9 and
+   arrival 1 are unchanged and diagnosed: see the STAIR CONNECTORS comment in
+   world.js for why the CIVIC CENTRE switchback cannot be landing-fixed. */
 const BUDGET = {
-  urban: { floating: 9, rise: 0, narrow: 6, headroom: 5, arrival: 1 },
-  rural: { floating: 0, rise: 0, narrow: 2, headroom: 1, arrival: 0 },
-  metro: { floating: 0, rise: 0, narrow: 4, headroom: 3, arrival: 0 }
+  urban: { floating: 9, rise: 0, narrow: 0, headroom: 0, arrival: 1 },
+  rural: { floating: 0, rise: 0, narrow: 0, headroom: 0, arrival: 0 },
+  metro: { floating: 0, rise: 0, narrow: 0, headroom: 0, arrival: 0 }
 };
 
 /* ARRIVAL replaced LANDING in v8.4 and the numbers are not comparable.

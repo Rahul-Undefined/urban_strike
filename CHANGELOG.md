@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.9** | CURRENT — gate-fidelity correction (5 gates were building an incomplete world) + F3 diagnostic overlay. No map geometry changed. |
+| **v8.10** | CURRENT — Milestone A pt1: stairwell openings cut map-wide. headroom + narrow classes driven to 0 on all three maps. |
+| v8.9 | Good — gate-fidelity correction (5 gates were building an incomplete world) + F3 diagnostic overlay. No map geometry changed. |
 | v8.8 | Good — signs rebuilt to reference design + auto-placed clear of geometry; 157 interior loot points. |
 | v8.7 | Good — sign text fixed, stair arrival measurement corrected, automatic top landings. |
 | v8.6 | Good — district registry + on-map signboards; every gate now reports district names. |
@@ -72,6 +73,131 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+
+---
+
+## v8.10 — Milestone A pt1: the stairs were climbing into solid floors
+
+### One defect, five coordinates
+
+Rahul reported WEST WORKS and EASTGATE YARD second floors unreachable while
+the F3 overlay said `top arrival: OK (0.00m)`. The overlay was right. Replaying
+a standing capsule tread by tread up both flights found the same shape:
+
+```
+flight #44 EASTGATE YARD  blocker [72.4, 3.00, -8.8 .. 78.4, 3.30, -1.2]  top 3.30
+flight #47 WEST WORKS     blocker [-94.0, 7.10, -16.0 .. -83.0, 7.50, -4.0] top 7.50
+```
+
+**In every case the blocking collider's TOP EQUALS THE FLIGHT'S TOP.** The
+staircase is not failing to arrive. It arrives at a floor slab with no hole cut
+in it, runs underneath its own destination, and the headroom shrinks by one
+rise per tread until a 1.8 m capsule cannot stand. Clearance at EASTGATE YARD:
+2.70, 2.40, 2.10, **1.80, 1.50, 1.20, 0.90, 0.60, 0.30**.
+
+That is also why `arrival` said OK — a deck IS at the top, distance 0.00 — and
+why `headroom` flagged these same flights while the ratchet of 5 buried it as
+acceptable. The validator was not wrong. It was reporting one defect under two
+names and neither name said "the floor has no stairwell in it".
+
+### The fix: `World.stairwells()`
+
+A post-build pass, next to `stairLandings()` and for the same reason: a slab is
+often emitted by a different district file than the stair beneath it, so only
+something running after the whole world exists can see the pairing. It runs
+before `StaticMerge`, so replacement pieces batch into the same draw call the
+original used.
+
+For every registered flight it cuts a rectangular opening in any thin
+horizontal slab hanging over the run within 2.02 m (stand 1.80 + auto-step
+0.02 + slack). The opening stops AT the arrival edge so the deck the player
+steps out onto is never removed.
+
+**26 slabs cut into 61 pieces. 35 intrusions refused** — rotated boxes, solids
+thicker than 0.8 m, footprints under 1 m2. A wall across a staircase is a
+different defect with a different right answer, so those are counted and
+reported rather than demolished.
+
+This required a new always-on registry in `box()` pairing each emitted mesh
+with its collider index. Nothing in the build recorded that before.
+
+### Results
+
+| Class | v8.9 | v8.10 |
+|---|---|---|
+| urban headroom | 5 | **0** |
+| urban narrow | 6 | **0** |
+| rural headroom | 1 | **0** |
+| metro headroom / narrow | 3 / 4 | **0 / 0** |
+| Ascent failures | 2 | **1** (`south office` fixed) |
+
+**Budgets ratcheted down, never up:** headroom and narrow are now 0 on all
+three maps. They may never rise again.
+
+### Stair connectors: written, measured, reverted
+
+The nine "floating" flights are switchback stairwells missing their
+half-landing — flight A ends at (24.6, 3.65, -34.1), flight B begins at
+(24.6, 3.65, -36.1), two metres of open air between. A pass to build those
+landings was written and is not shippable, because **the landing does not
+fit**:
+
+```
+CIVIC CENTRE rise per half-flight   1.70 - 1.82 m
+standing player needs               2.02 m
+```
+
+The landing at a switchback turn sits at the top of the flight below it. With
+1.73 m between them, that landing IS the low ceiling. The unguarded version
+proved it: floating 9 -> 4, headroom **0 -> 13** across CIVIC CENTRE, THE
+COLONY and SECTOR 7. Adding a guard that refuses to create a low ceiling made
+the pass emit **zero** connectors.
+
+So this is not a missing-landing defect, it is a storey-height defect: the
+stairwell needs fewer, taller half-flights (>= 7 steps at 0.29, not 6) so a
+landing can physically fit. That moves where flights land — district work,
+which Rahul scoped out of Milestone A. Reverted per rule 11, with the
+arithmetic recorded in `world.js` so nobody re-attempts it blind.
+
+### Two self-inflicted regressions, both caught before shipping
+
+1. **Slivers became broken promises.** The first cut emitted every leftover
+   piece, including 0.3 m strips — standable surfaces nobody can reach, which
+   `verify-arch` counts. Pieces whose short side is under 0.55 m are now
+   dropped; a gap narrower than the player's 0.70 m diameter cannot be fallen
+   through, so it costs nothing.
+2. **A devhud assertion was preserving the bug.** `verify-devhud` asserted the
+   panel FINDS a low ceiling on the flight at (-37.7, 3.62, 24.35). That
+   defect is now cut open, so the assertion failed. It has been inverted to
+   require the flight is clear all the way up. Keeping it would have meant
+   preserving a bug to keep a gate green.
+
+### The one number that got worse
+
+`verify-arch` urban broken promises **10 -> 11**. One 40 m2 promise at
+x[30,36] z[-12.3,-5.7] was fixed by the cuts; a **134 m2 deck at top 6.90,
+x[-13,13] z[-62.1,-57.0]** — the CONSTRUCTION SITE second floor — is newly
+visible as unreachable. It was always unreachable: its only access is flight
+#6, one of the nine floating switchback flights above. The cut did not break
+it, it stopped hiding it. Flagged rather than papered over.
+
+### Not done in this build
+
+Signboard relocation and a per-flight climbability gate (`verify-climb`) were
+in scope and are not here. `verify-access` still covers 51 hand-listed routes
+against 77 flights, so 26 flights have no ascent coverage at all.
+
+### Performance
+
+| | v8.9 | v8.10 | Budget |
+|---|---|---|---|
+| Draw calls | 98 | **98** | 115 |
+| Triangles | 81,680 | **82,100** | 120,000 |
+| Shadow casters | 57 | **57** | 62 |
+| Colliders | 3,208 | 3,215 | — |
+
+Replacement pieces reuse the original material, so no new batch and no new
+shadow caster.
 
 ---
 

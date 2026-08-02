@@ -1,6 +1,6 @@
-# Urban Strike — Project Handoff (v8.9)
+# Urban Strike — Project Handoff (v8.10)
 
-**Upload this file plus `urban-strike-v8.9.zip` into a new chat. Read this file
+**Upload this file plus `urban-strike-v8.10.zip` into a new chat. Read this file
 completely before touching anything.**
 
 ---
@@ -87,7 +87,7 @@ copy of this handoff.
 
 ## 2. Current state
 
-**Shipped:** `urban-strike-v8.9.zip` — cumulative, contains everything.
+**Shipped:** `urban-strike-v8.10.zip` — cumulative, contains everything.
 
 **v8.9 changed no map geometry.** It corrected five gates that were building an
 incomplete world, and added the F3 diagnostic overlay. Read the v8.9 CHANGELOG
@@ -149,7 +149,7 @@ move every frame — so the only levers are part count, material sharing and LOD
 | Models+loot+voice | `node verify-models.js` | 38 | viewmodels, grants, loot exclusivity, scope ladder, voice wiring |
 | Map | `node tools/verify-map.js` | **992** | loot support / spawn clearance / airdrop landing, all 3 maps |
 | Build chain | `node tools/verify-build.js` | PASS | real-three vm build of all 3 maps + reset + coplanar-ground gate |
-| Ascent | `node tools/verify-access.js` | 49/51 *(2 known, see below)* | walks a capsule up every staircase |
+| Ascent | `node tools/verify-access.js` | **50/51** *(1 known, see below)* | walks a capsule up every staircase |
 | Lifts | `node tools/verify-lifts.js` | 98 | every lift stop has floor + head clearance |
 | Cover | `node tools/verify-cover.js` | PASS | dead-ground budget (<6%); `--report` prints an ASCII map |
 | **Batching** | `node tools/verify-batch.js` | 36 | draw-call budget + the four batching invariants + edge-on decals |
@@ -173,8 +173,8 @@ criterion for Milestone 9, not a bug. Do not raise the budget to make it green.
 
 | Test | Needs | Foot reached |
 |---|---|---|
-| `south office -> 3.20` | 3.20 m | 1.18 m — landing box on the run |
-| `north block A -> 3.60` | 3.60 m | **0.05 m — the walker never leaves the ground** |
+| `south office -> 3.20` | 3.20 m | **FIXED in v8.10** by the stairwell cut |
+| `north block A -> 3.60` | 3.60 m | **0.05 m — the walker never leaves the ground.** Still open |
 
 Not regressions, but do NOT describe these as "garage fire escape 4.30" and
 "warehouse fire escape 9.15". Those two **pass** (4.47 m and 9.32 m) and have
@@ -454,7 +454,7 @@ Blocked: Rahul is still reviewing Rural and will supply direction.
 | Item | Detail |
 |---|---|
 | **Metro City never rendered** | Built headlessly across four versions. The Rural black-screen regression is the precedent for why this matters |
-| Broken-promise roofs | urban **10**, rural 7, metro 25. All in districts not yet rebuilt. Coordinates printed by `verify-arch` |
+| Broken-promise roofs | urban **11** (was 10; the v8.10 stairwell cuts fixed one and exposed the CONSTRUCTION SITE 6.90 deck, reachable only via a floating flight), rural 7, metro 25. All in districts not yet rebuilt. Coordinates printed by `verify-arch` |
 | Frame headroom | urban 98/115 draws, **57/62 shadow casters**, 81.7k/120k tris with **three districts left**. Remaining headroom is 17 draws, 5 casters, 38.3k tris — and casters are counted PER MESH AFTER MERGE, so geometry reusing an existing material costs zero. Every NEW material family costs a draw call and may cost a caster. Shadow casters are by far the tightest — design remaining districts with non-casting geometry |
 | Player cost is untested in a browser | Ten kitted operators = 180 draw calls on top of the map. That number has never been rendered |
 | Minimaps stale | Urban and Rural do not reflect v6/v7 geometry at all |
