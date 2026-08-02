@@ -78,6 +78,69 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+## v8.18 — Metro City: the load error, and why no gate caught it
+
+### One wrong key name
+
+`maps-metro.config.js` exported its airdrop list as **`AIRDROPS`**. Every
+consumer reads **`AIRDROP_POINTS`** — rural uses it, the urban fallback in
+`server.js:20` builds it, and `server/lib/loot.js:117` does
+
+```js
+const pts = mapData(room).AIRDROP_POINTS;
+```
+
+On Metro that was `undefined`, and the first airdrop tick took the match down.
+That is the "load error" every time Metro City was picked.
+
+### The gate was hiding it
+
+`tools/verify-map.js` did not read the config the way the game does. It
+remapped the key **on the way in**:
+
+```js
+runMap("metro", { ..., AIRDROP_POINTS: CFG.MAPS_METRO.AIRDROPS }, 100);
+```
+
+So the gate validated ten metro airdrop points through a key the game could
+never see, and reported green while the map was unplayable. Rural is fed its
+config object directly; metro was special-cased. That line is gone — metro now
+goes through `runMap("metro", CFG.MAPS_METRO, 100)` exactly like rural, so a
+map shipping the wrong key name fails here first.
+
+Third time this session a gate has been found reshaping its input until the
+world matched the test. Worth stating as a rule: **a gate must consume config
+the same way the runtime does, with no adapter in between.**
+
+`server/lib/loot.js` also got a guard — a missing key should degrade to "no
+airdrops on this map", not throw inside a timer.
+
+### Metro is a night map
+
+`RENDER` was global, so every map inherited Urban's dusk and there was no way
+to express "night" at all. A map may now carry a `render` object which
+`lighting()` shallow-merges over `CFG.RENDER`; omit a key and the global value
+stands, so Urban and Rural cannot be affected by this existing.
+
+Metro gets `NIGHT`: near-black sky, fog density nearly doubled to 0.0075 for
+close-quarters murk, hemisphere and ambient dropped and cooled, and the
+directional light recoloured to moonlight at 0.38 intensity instead of a
+1.28 sun.
+
+**Colours and intensities only — never the light count.** Metro still renders
+3 lights against a budget of 6. Doing it this way rather than by scattering
+street lamps is what keeps `verify-batch` untouched.
+
+### Not done
+
+The layout is unchanged: four 16 m towers with lift-only vertical access, zero
+staircases, 25 broken promises. Rahul asked for a small two-storey deathmatch
+map, and that is a rewrite of `metro.js`, not a parameter change. It needs its
+own pass with browser verification, and it should come after Metro has been
+loaded by a human at least once — which, until this build, had never happened.
+
+---
+
 ## v8.17 — the kill model, and the reason it could not work before
 
 ### A vest was covering the head

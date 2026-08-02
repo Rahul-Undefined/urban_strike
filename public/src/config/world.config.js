@@ -18,10 +18,30 @@
     t5:  { label: '5 vs 5',       teams: true,  maxPlayers: 10 }
   };
   // Map registry — rural flips ready:true when its build + data land
+  /* v8.18 PER-MAP LIGHTING.
+
+     RENDER was global, so every map inherited Urban's dusk. Metro City is
+     specified as a NIGHT map and there was no mechanism to express that at
+     all — lighting() read CFG.RENDER directly and nothing per-map could reach
+     it.
+
+     A map may now carry a `render` object; lighting() shallow-merges it over
+     CFG.RENDER. Omit a key and the global value stands, so this cannot break
+     Urban or Rural by existing. IMPORTANT: this changes light COLOURS and
+     INTENSITIES only, never the light COUNT — the 7-light budget in
+     verify-batch is untouched, which is the whole reason it is done this way
+     rather than by adding street lamps. */
+  var NIGHT = {
+    sky: 0x0a0f1c, fogColor: 0x0a0f1c, fogDensity: 0.0075,
+    hemiSky: 0x3a4a68, hemiGround: 0x101720, hemiIntensity: 0.55,
+    ambColor: 0x2a3550, ambIntensity: 0.42,
+    sunColor: 0x9fc0ff, sunIntensity: 0.38          // moonlight, not sun
+  };
+
   var MAPS = {
     urban: { label: 'Urban', ready: true },
     rural: { label: 'Rural', ready: true },
-    metro: { label: 'Metro City', ready: true }
+    metro: { label: 'Metro City', ready: true, render: NIGHT },
   };
 
   var MINIMAP = { proximity: 18 };   // meters at which an enemy pings the minimap without firing

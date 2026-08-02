@@ -114,7 +114,11 @@ function clearAirdrop(room) {
 }
 function dropCrate(room) {
   if (room.state !== 'playing') return;
-  const pts = mapData(room).AIRDROP_POINTS;
+  /* v8.18: guard. A map shipping the wrong key name should degrade to "no
+     airdrops on this map", not throw inside a timer and take the match with
+     it. metro did exactly that until the config key was fixed. */
+  const pts = mapData(room).AIRDROP_POINTS || [];
+  if (!pts.length) return;
   const pt = pts[Math.floor(Math.random() * pts.length)];
   io.to(room.code).emit('airdrop', { x: pt[0], z: pt[1], landAt: now() + CFG.AIRDROP.fallSec * 1000 });
   room.dropFall = setTimeout(() => {

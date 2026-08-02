@@ -504,17 +504,23 @@ var World = (function () {
 
   // ---------- lighting, sky, ground, roads ----------
   function lighting(urban) {
-    outer.background = new THREE.Color(CFG.RENDER.sky);
-    outer.fog = new THREE.FogExp2(CFG.RENDER.fogColor, CFG.RENDER.fogDensity);
+    /* v8.18: R is CFG.RENDER with the current map's `render` overrides merged
+       over it, so Metro can be night without a second lighting path and
+       without adding a single light. See world.config.js NIGHT. */
+    var R = CFG.RENDER, ov = (CFG.MAPS[World.builtMap || 'urban'] || {}).render;
+    if (ov) { R = {}; for (var k in CFG.RENDER) R[k] = CFG.RENDER[k]; for (var k2 in ov) R[k2] = ov[k2]; }
 
-    var hemi = new THREE.HemisphereLight(CFG.RENDER.hemiSky, CFG.RENDER.hemiGround, CFG.RENDER.hemiIntensity);
+    outer.background = new THREE.Color(R.sky);
+    outer.fog = new THREE.FogExp2(R.fogColor, R.fogDensity);
+
+    var hemi = new THREE.HemisphereLight(R.hemiSky, R.hemiGround, R.hemiIntensity);
     scene.add(hemi);
 
-    var amb = new THREE.AmbientLight(CFG.RENDER.ambColor, CFG.RENDER.ambIntensity);
+    var amb = new THREE.AmbientLight(R.ambColor, R.ambIntensity);
     scene.add(amb);
 
-    sun = new THREE.DirectionalLight(CFG.RENDER.sunColor, CFG.RENDER.sunIntensity);
-    sun.position.set(CFG.RENDER.sunPos[0], CFG.RENDER.sunPos[1], CFG.RENDER.sunPos[2]);
+    sun = new THREE.DirectionalLight(R.sunColor, R.sunIntensity);
+    sun.position.set(R.sunPos[0], R.sunPos[1], R.sunPos[2]);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.left = -95; sun.shadow.camera.right = 95;

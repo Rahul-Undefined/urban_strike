@@ -182,7 +182,12 @@ function runMap(mapName, data, wallDefault) {
 
 runMap("urban", { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points }, 100);
 runMap("rural", CFG.MAPS_RURAL, 100);
-runMap("metro", { LOOT_POINTS: CFG.MAPS_METRO.LOOT_POINTS, SPAWNS: CFG.MAPS_METRO.SPAWNS, AIRDROP_POINTS: CFG.MAPS_METRO.AIRDROPS }, 100);
+/* v8.18: this used to remap CFG.MAPS_METRO.AIRDROPS onto AIRDROP_POINTS right
+   here, which meant the gate validated metro airdrops through a key the GAME
+   never reads. The config was broken for months and this line kept it green.
+   Feed the config object directly, exactly as rural does — if a map ships the
+   wrong key name, this gate must be the thing that says so. */
+runMap("metro", CFG.MAPS_METRO, 100);
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

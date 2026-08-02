@@ -61,7 +61,12 @@
       [86, 0, 3.14, "b"], [70, -20, 2.7, "b"], [70, 20, -2.7, "b"],
       [-20, 86, -1.57, "b"], [20, 86, -1.57, "b"], [0, 86, -1.57, "b"]
     ],
-    AIRDROPS: [
+    /* v8.18: WAS `AIRDROPS`. Every consumer reads AIRDROP_POINTS — rural uses
+       it, the urban fallback in server.js builds it, and server/lib/loot.js:117
+       does `const pts = mapData(room).AIRDROP_POINTS`. On metro that was
+       undefined and the first airdrop tick killed the match, which is the
+       "load error" Rahul hit every time he picked Metro City. */
+    AIRDROP_POINTS: [
       [0, 22], [-46, -46], [46, -46], [-46, 46], [46, 46],
       [0, -60], [0, 60], [-60, 0], [60, 0], [26, 26]
     ]
