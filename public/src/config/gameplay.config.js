@@ -52,12 +52,21 @@
     { map: 'urban', x: 60.0, z: 80.0, r: 1.6, stops: [0.25, 3.25, 6.25, 9.25, 12.25, 15.25, 18.25] },  // tower C
     { map: 'urban', x: 84.2, z: -25.5, r: 1.6, stops: [0.25, 3.25, 6.25] },                            // mall
     { map: 'urban', x: -76.2, z: -81.9, r: 1.6, stops: [0.25, 3.25, 6.25] },                           // airport terminal
-    // --- Metro City (v7.1). Every shaft position DERIVED by searching each
-    // structure for a spot valid at all stops, never chosen by eye. ---
-    { map: 'metro', x: -53, z: -53, r: 1.6, stops: [0.25, 4.25, 8.25, 12.25, 16.25, 20.25, 24.25] },  // NW tower
-    { map: 'metro', x: 39, z: -53, r: 1.6, stops: [0.25, 4.25, 8.25, 12.25, 16.25, 20.25, 24.25] },   // NE tower
-    { map: 'metro', x: -53, z: 39, r: 1.6, stops: [0.25, 4.25, 8.25, 12.25, 16.25, 20.25, 24.25] },   // SW tower
-    { map: 'metro', x: 39, z: 39, r: 1.6, stops: [0.25, 4.25, 8.25, 12.25, 16.25, 20.25, 24.25] },    // SE tower
+    /* --- Metro City. Shaft positions DERIVED by searching each structure for
+       a spot valid at all stops, never chosen by eye.
+
+       v8.20: the four Financial District towers dropped from six 4 m floors to
+       two 3.4 m storeys, so their shafts were still calling at 12.25, 16.25,
+       20.25 and 24.25 — stops in open sky above a 7.05 m roof. verify-lifts
+       went 98/0 to 74/24 the moment the towers shrank, which is the gate doing
+       exactly its job. Stops now match the floors that exist: ground, floor 1,
+       roof. The stair is the primary route in these blocks; the lift stays as
+       a second way up, because a two-storey building with one route is a
+       camping spot rather than a fight. --- */
+    { map: 'metro', x: -53, z: -53, r: 1.6, stops: [0.25, 3.65, 7.05] },  // NW tower
+    { map: 'metro', x: 39, z: -53, r: 1.6, stops: [0.25, 3.65, 7.05] },   // NE tower
+    { map: 'metro', x: -53, z: 39, r: 1.6, stops: [0.25, 3.65, 7.05] },   // SW tower
+    { map: 'metro', x: 39, z: 39, r: 1.6, stops: [0.25, 3.65, 7.05] },    // SE tower
     { map: 'metro', x: -89, z: -17, r: 1.6, stops: [0.3, 3.5, 6.7, 9.9, 13.1] },                       // parking garage
     { map: 'metro', x: 60, z: 14, r: 1.6, stops: [0.25, 4.25, 8.25, 12.25] },                          // shopping mall
     { map: 'metro', x: -92, z: 16.5, r: 1.6, stops: [0.25, 3.45, 6.65, 9.85, 13.05] },                 // residential NW

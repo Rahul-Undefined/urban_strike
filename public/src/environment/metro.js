@@ -16,7 +16,7 @@
   if (typeof World === 'undefined') return;
 
   World._buildMetro = function (T) {
-    var seg = T.seg, box = T.box, cyl = T.cyl, M = T.M, rnd = T.rnd;
+    var seg = T.seg, box = T.box, cyl = T.cyl, M = T.M, rnd = T.rnd, stairFlight = T.stairFlight;
 
     // ---- palette: reuse existing materials, vary by colour only -------------
     function L(c) { return new THREE.MeshLambertMaterial({ color: c }); }
@@ -68,48 +68,124 @@
        perimeter is a sill band + header band leaving a continuous window band to
        fight from — the same profile as the v6.0 towers, which the cover and
        build gates already accept. */
-    var FH = 4.0, FLOORS = 6;                                    // 24m + roof
+    /* ===== v8.20 TWO-STOREY BLOCKS (was: four 24 m lift towers) =====
+
+       Rahul, after finally being able to load this map: "Metro map is dull,
+       building is of no use." Both true, and the generator said why.
+
+       The old tower() emitted six 4 m floor slabs and a perimeter of sill and
+       glass bands. That is all it emitted. No door, no stair, no interior —
+       four sealed 24 m glass boxes at the map corners whose only way in was a
+       lift, connected by skybridges 16 m up. You could not enter them, so they
+       were scenery you had to walk around.
+
+       Rebuilt to the brief: two storeys, enterable, stair-served, roof
+       reachable, sized for short high-contact deathmatch rounds.
+
+       STAIR GEOMETRY IS NOT ARBITRARY. It obeys the rule this project paid for
+       in v8.13: a tread shallower than the player's 0.35 m radius means the
+       capsule permanently straddles the tread TWO ahead, whose rise exceeds
+       the 0.42 m auto-step limit, and the stair becomes unclimbable. So:
+
+           rise  3.40 / 10 = 0.340   (<= 0.42 auto-step)
+           run   4.00 / 10 = 0.400   (>  0.35 player radius)
+
+       Both flights are inside the footprint, offset to opposite walls so the
+       climb is a real traverse of the room rather than a ladder, and each one
+       is open on its approach side. */
+    var FH = 3.4, FLOORS = 2;                                    // 6.8m + roof
+    var DOOR_W = 2.6;
+
+    /* stairFlight() rather than raw box() calls. The first cut of this built
+       the treads by hand, which meant World._stairs() never saw them and
+       verify-climb reported "metro: 0 flights" on a map that now has eight.
+       A staircase no gate can see is how Urban accumulated twenty-one
+       unclimbable flights. Register everything. */
     function tower(cx, cz, hw, hd, wallMat) {
       var x0 = cx - hw, x1 = cx + hw, z0 = cz - hd, z1 = cz + hd, t = 0.3;
       for (var f = 0; f <= FLOORS; f++) {
         var y = f * FH;
-        seg(x0, x1, y, y + 0.25, z0, z1, f === FLOORS ? M.roof : PANEL);
-        if (f === FLOORS) break;
-        var b0 = y + 0.25, sill = b0 + 1.0, head = b0 + 2.6, top = (f + 1) * FH;
+        /* Floor slabs are cut around the stairwell so a flight is not climbing
+           into the underside of the floor above — the defect that made five
+           Urban staircases unreachable in v8.10. The void runs along the west
+           wall on floor 1 and the east wall on floor 2. */
+        if (f === 0) {
+          seg(x0, x1, y, y + 0.25, z0, z1, PANEL);
+        } else if (f === FLOORS) {
+          /* Same treatment for the roof: flight two climbs z1-2.6 -> z1-6.6
+             along the east side, so the roof slab is cut over that run or the
+             player walks up into it. */
+          seg(x0, x1 - 7.4, y, y + 0.25, z0, z1, M.roof);
+          seg(x1 - 5.4, x1, y, y + 0.25, z0, z1, M.roof);
+          seg(x1 - 7.4, x1 - 5.4, y, y + 0.25, z0, z1 - 7.8, M.roof);
+          break;
+        } else {
+          /* The void must cover the whole RUN of the flight beneath it, not
+             just its middle. verify-climb caught the first cut at 1.79 m of
+             headroom on tread 3 against the 1.82 m a standing capsule needs —
+             the slab was still solid over the bottom third of the stair. Flight
+             one climbs z0+1.4 -> z0+5.4 plus a landing, so the opening runs
+             z0 -> z0+6.6. */
+          seg(x0, x0 + 5.4, y, y + 0.25, z0, z1, PANEL);          // west of the void
+          seg(x0 + 7.4, x1, y, y + 0.25, z0, z1, PANEL);          // east of the void
+          seg(x0 + 5.4, x0 + 7.4, y, y + 0.25, z0 + 8.0, z1, PANEL);
+        }
+        var b0 = y + 0.25, sill = b0 + 1.0, head = b0 + 2.4, top = (f + 1) * FH;
+        var dz0 = cz - DOOR_W / 2, dz1 = cz + DOOR_W / 2;
         [[x0, x1, z0, z0 + t], [x0, x1, z1 - t, z1],
-         [x0, x0 + t, z0, z1], [x1 - t, x1, z0, z1]].forEach(function (w) {
-          seg(w[0], w[1], b0, sill, w[2], w[3], wallMat);
-          seg(w[0], w[1], head, top, w[2], w[3], GLASS);
+         [x0, x0 + t, z0, z1], [x1 - t, x1, z0, z1]].forEach(function (w, wi) {
+          /* Ground floor: the two long walls get a doorway punched through so
+             the block can be entered from either side. Every building on this
+             map is enterable from at least two approaches — a room with one
+             door is a death trap, not a fight. */
+          if (f === 0 && wi >= 2) {
+            seg(w[0], w[1], b0, top, w[2], dz0, wallMat);
+            seg(w[0], w[1], b0, top, dz1, w[3], wallMat);
+          } else {
+            seg(w[0], w[1], b0, sill, w[2], w[3], wallMat);
+            seg(w[0], w[1], head, top, w[2], w[3], GLASS);
+          }
         });
       }
+
+      /* rise 3.40/10 = 0.340 (<= 0.42 auto-step) · run 4.00/10 = 0.400
+         (> 0.35 player radius). See the v8.13 note in world.js for why the
+         run must clear the radius. */
+      // ground -> floor 1, running north along the west side
+      stairFlight(x0 + 6.4, 0.25, z0 + 2.8, 0, 1, 10, FH / 10, 0.40, 1.6, M.stair);
+      // floor 1 -> roof, running south along the east side
+      stairFlight(x1 - 6.4, FH + 0.25, z1 - 2.6, 0, -1, 10, FH / 10, 0.40, 1.6, M.stair);
+
       var ry = FLOORS * FH + 0.25;
       [[x0, x1, z0, z0 + 0.2], [x0, x1, z1 - 0.2, z1],
        [x0, x0 + 0.2, z0, z1], [x1 - 0.2, x1, z0, z1]].forEach(function (w) {
-        seg(w[0], w[1], ry, ry + 1.0, w[2], w[3], M.trim, { cast: false });
+        seg(w[0], w[1], ry, ry + 0.95, w[2], w[3], M.trim, { cast: false });
       });
-      box(cx, ry + 1.2, cz, 3.0, 2.0, 3.0, STEEL);               // rooftop plant
-      box(cx + hw - 1.2, 6.0, cz, 0.3, 3.0, 6.0, NEON, { collide: false }); // signage
+      box(cx - hw + 3.0, ry + 1.0, cz, 2.4, 1.6, 2.4, STEEL);    // rooftop plant
+      box(cx + hw - 1.2, 4.2, cz, 0.3, 2.2, 5.0, NEON, { collide: false });
     }
     tower(-46, -46, 9, 9, PANEL);
     tower(46, -46, 9, 9, STEEL);
     tower(-46, 46, 9, 9, PANEL);
     tower(46, 46, 9, 9, STEEL);
 
-    // ---- SKYBRIDGE: north pair <-> south pair at floor 4 (16.25) ----------
-    /* Two spans, each with a solid deck, waist-high sides and a roofless middle
-       so it reads as a bridge and gives cover while crossing. Every elevated
-       position in this map is reachable two ways: both ends of each span. */
+    /* ---- SKYBRIDGES, now at ROOF height ----------------------------------
+       They used to span at 16.25 m, which was floor 4 of a 24 m tower. With
+       the blocks at 6.8 m those decks would have been floating in open air
+       with nothing reaching them — floating geometry and four more broken
+       promises. Dropped to roof level so they connect what actually exists. */
+    var BR = FLOORS * FH + 0.25;
     function span(x0, x1, z0, z1, y) {
       seg(x0, x1, y, y + 0.25, z0, z1, STEEL);                      // deck
       seg(x0, x1, y + 0.25, y + 1.15, z0, z0 + 0.25, M.trim);       // sides
       seg(x0, x1, y + 0.25, y + 1.15, z1 - 0.25, z1, M.trim);
-      for (var b2 = x0 + 2; b2 < x1 - 1; b2 += 6)                   // roof ribs
+      for (var b2 = x0 + 2; b2 < x1 - 1; b2 += 6)
         seg(b2, b2 + 0.3, y + 2.4, y + 2.6, z0, z1, STEEL, { collide: false });
     }
-    span(-37, 37, -48.5, -43.5, 16.25);      // north towers
-    span(-37, 37, 43.5, 48.5, 16.25);        // south towers
-    span(-48.5, -43.5, -37, 37, 16.25);      // west towers (N<->S)
-    span(43.5, 48.5, -37, 37, 16.25);        // east towers
+    span(-37, 37, -48.5, -43.5, BR);
+    span(-37, 37, 43.5, 48.5, BR);
+    span(-48.5, -43.5, -37, 37, BR);
+    span(43.5, 48.5, -37, 37, BR);
 
     // ---- PARKING GARAGE (NW quadrant, five decks) --------------------------
     /* Open-sided decks on columns: hard cover from the columns and parked cars,

@@ -78,6 +78,82 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+## v8.20 — Metro: the buildings you could not enter
+
+Rahul, after loading Metro for the first time: "Metro map is dull, building is
+of no use." The generator said exactly why.
+
+### What tower() actually built
+
+Six 4 m floor slabs and a perimeter of sill and glass bands. **That is all it
+emitted.** No door. No stair. No interior. Four sealed 24 m glass boxes at the
+map corners whose only way in was a lift, joined by skybridges 16 m up. You
+could not enter them, so they were scenery you walked around.
+
+The file header had said it out loud since v7.1 — *"Vertical access is LIFTS,
+not stairs"* — and nobody had ever seen the result in a browser to notice what
+that cost.
+
+### Rebuilt to the brief
+
+**Two storeys** (2 x 3.4 m + roof, was 6 x 4.0 m), **doorways punched through
+both long walls** on the ground floor, **stairs to floor 1 and to the roof**,
+and floor slabs **cut around each stairwell** so a flight is not climbing into
+the underside of the floor above — the v8.10 Urban defect, avoided by
+construction this time rather than repaired afterwards.
+
+Stair geometry is not arbitrary. It obeys the rule v8.13 paid for:
+
+```
+rise  3.40 / 10 = 0.340    <= 0.42 auto-step limit
+run   4.00 / 10 = 0.400    >  0.35 player radius
+```
+
+A tread shallower than the player's radius means the capsule permanently
+straddles the tread two ahead, whose rise exceeds auto-step, and the stair
+becomes unclimbable. That is what broke twenty-one flights on Urban.
+
+Skybridges dropped from 16.25 m to roof height. At 6.8 m towers they would
+have been decks floating in open air with nothing reaching them.
+
+### Every fix here was found by a gate, in order
+
+The first cut used raw `box()` calls for the treads, so `World._stairs()` never
+saw them and `verify-climb` reported **"metro: 0 flights"** on a map that now
+had eight. Switched to `stairFlight()`. A staircase no gate can see is how
+Urban accumulated twenty-one unclimbable ones.
+
+Then, in sequence:
+
+- **8 of 8 unclimbable** — tread 3 had 1.79 m headroom against 1.82 needed.
+  The stairwell void covered the middle of the run, not the bottom third.
+- **4 of 8** — the roof flights cleared; the ground flights started 1.4 m from
+  a wall the approaching capsule could not get around.
+- **0 of 8.** metro now passes `verify-climb` outright.
+- **verify-lifts 98 -> 74/24.** The four tower shafts were still calling at
+  12.25, 16.25, 20.25 and 24.25 — stops in open sky above a 7.05 m roof.
+  Retuned to ground / floor 1 / roof. Back to 82/0.
+- **verify-map 992 -> 980/12.** Twelve loot points left at old tower heights.
+  Remapped to the decks that now exist. Back to 992/0.
+
+Lifts were kept alongside the stairs. A two-storey building with one route up
+is a camping spot, not a fight.
+
+### Numbers
+
+| | before | after |
+|---|---|---|
+| metro colliders | 946 | 898 |
+| metro flights | 0 | **8, all climbable** |
+| broken promises | 25 | **13** |
+| draw calls | 19 | 20 (budget 40) |
+| lights | 3 | 3 (budget 6) |
+
+Thirteen broken promises remain — garage, mall and residential blocks still
+carry the old lift-only pattern. Same treatment, next pass.
+
+---
+
 ## v8.19 — headshots: the hitbox was lying about where the head is
 
 Rahul: "headshots are not working." They were not. This is a v8.16 regression
