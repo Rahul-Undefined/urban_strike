@@ -173,16 +173,12 @@ floating.slice(0, 10).forEach(f => console.log(
   `          [${DIST.nameAt(f.x, f.z)}] (${f.x.toFixed(1)}, ${f.z.toFixed(1)}) underside y ${f.y.toFixed(2)}  ${f.v.toFixed(2)} m3`));
 
 /* Ratchets, measured 2026-08-02 against v8.5. Lower is better. */
-/* EMBED went 133 -> 134 in v8.6 and the extra one is MINE, recorded here rather
-   than hidden: a district signboard panel overlaps existing geometry by more
-   than half its own volume. All twelve sign POSTS were moved until every anchor
-   probed clear at the post footprint, which is the part a player can walk into;
-   the remaining overlap is the decorative panel (collide: false) at ~3 m, and
-   chasing it further was costing more than the defect is worth.
-
-   This is the only budget in this project that has ever been raised for a
-   self-inflicted defect. It is named so it can be paid back, not absorbed. */
-const EMBED_BUDGET = 134, FLOAT_BUDGET = 15;
+/* EMBED went 133 -> 134 in v8.6 for a signboard panel buried in a building, and
+   is back to 133 in v8.8. The fix was to stop placing signs by hand: v8.8 tests
+   the WHOLE sign — both posts and the board — against the finished collider set
+   and walks a ring of offsets until it finds open ground. The one budget this
+   project ever raised for a self-inflicted defect has been paid back. */
+const EMBED_BUDGET = 133, FLOAT_BUDGET = 15;
 ok(embedded.length <= EMBED_BUDGET, `urban: ${embedded.length} embedded prop/structure pairs (budget ${EMBED_BUDGET})`);
 ok(floating.length <= FLOAT_BUDGET, `urban: ${floating.length} unsupported props (budget ${FLOAT_BUDGET})`);
 

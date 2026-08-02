@@ -1,6 +1,6 @@
-# Urban Strike — Project Handoff (v8.7)
+# Urban Strike — Project Handoff (v8.8)
 
-**Upload this file plus `urban-strike-v8.7.zip` into a new chat. Read this file
+**Upload this file plus `urban-strike-v8.8.zip` into a new chat. Read this file
 completely before touching anything.**
 
 ---
@@ -141,7 +141,7 @@ move every frame — so the only levers are part count, material sharing and LOD
 |---|---|---|---|
 | Integration | `node server.js & sleep 3; node test.js` | 85 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
 | Models+loot+voice | `node verify-models.js` | 38 | viewmodels, grants, loot exclusivity, scope ladder, voice wiring |
-| Map | `node tools/verify-map.js` | 664 | loot support / spawn clearance / airdrop landing, all 3 maps |
+| Map | `node tools/verify-map.js` | 978 | loot support / spawn clearance / airdrop landing, all 3 maps |
 | Build chain | `node tools/verify-build.js` | PASS | real-three vm build of all 3 maps + reset + coplanar-ground gate |
 | Ascent | `node tools/verify-access.js` | 49/51 | walks a capsule up every staircase |
 | Lifts | `node tools/verify-lifts.js` | 98 | every lift stop has floor + head clearance |

@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.7** | CURRENT — sign text fixed, stair arrival measurement corrected, automatic top landings. |
+| **v8.8** | CURRENT — signs rebuilt to reference design + auto-placed clear of geometry; 157 interior loot points. |
+| v8.7 | Good — sign text fixed, stair arrival measurement corrected, automatic top landings. |
 | v8.6 | Good — district registry + on-map signboards; every gate now reports district names. |
 | v8.5 | Good — map-wide stair colour, `verify-props` gate, material-identity fix across gates. |
 | v8.4 | Good — v8.2 stringer regression fixed, arrival check rewritten. |
@@ -69,6 +70,112 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 
 ---
+
+
+---
+
+## v8.8 — Signs built like real signs, placed by search; 157 interior loot points
+
+### The signboards: two mistakes, both visible in the reference Rahul sent
+
+**A post through the text.** v8.6 used a single centre post, deliberately — two
+posts kept landing inside kerbs and the anchor was the only point being checked.
+Solving a placement problem by moving the post into the middle of the sign face
+is not a solution, it is a different bug. Rebuilt the way a road sign is built:
+two posts at the ENDS, stopping below the board, nothing crossing the name.
+
+**Market Cross ended up inside the VOLT building.** v8.6 checked clearance for
+the POST footprint only, so the post stood in open air while the 5 m board hung
+inside a shop.
+
+Placement is now a search. `signClear()` tests the whole solid — both posts and
+the board — against the finished collider set, and `districtSigns()` walks a
+ring of offsets until it finds open ground:
+
+| District | Result |
+|---|---|
+| MARKET CROSS | **moved 8.5 m** — out of the VOLT building |
+| CONSTRUCTION SITE | moved 4.0 m |
+| DEPOT B · OLD TOWN TERRACE | moved 2.0 m |
+| the other eight | placed at anchor |
+
+All twelve placed. If nothing within 8 m is clear the sign is skipped entirely —
+no sign beats a buried one.
+
+This is the general form of Rahul's instruction: *check what is already there
+before placing anything.* `districtSigns()` now runs at the very end of the
+build alongside `stairLandings()`, because a placement check is only as good as
+the collider set it can see.
+
+### The one budget I ever raised for my own defect is paid back
+
+`verify-props` EMBED went 133 -> 134 in v8.6 for a signboard buried in a
+building. It is back to **133**. The fix was not to widen anything; it was to
+stop placing signs by hand.
+
+### 157 interior loot points
+
+130 hand-placed points across a 200 m map with nine districts, most of them
+outdoors, made going inside a building unrewarding.
+
+`tools/gen-loot.js` walks the finished collider set and proposes points that
+satisfy verify-map's own support rule **by construction** — a collider top
+between y-0.85 and y-0.30, so every point sits at surface + 0.55, exactly the
+convention the hand-placed points use. Nothing is guessed, so nothing floats.
+
+**Indoors is the part that matters.** A surface only qualifies if something
+covers it between 2 and 6 m above. A loot point on an open roof is a sniper
+nest, not a room — and having to go inside is what makes the loot worth taking.
+
+Capped at **22 per district**. Uncapped it produced 244, and 101 of those were in
+a single multi-floor block in the south-east, which would have made one building
+the only place worth looting.
+
+**Urban: 130 -> 287 loot points. verify-map: 664 -> 978 assertions, 0 failed.**
+Every new point is support-validated by the same gate that would have caught it
+floating.
+
+Regenerate any time with `node tools/gen-loot.js`.
+
+### A JavaScript trap worth recording
+
+The last hand-placed loot entry had no trailing comma. Appending after it
+produced `[-24, 9.7, -24, "h"]` immediately followed by `[x, y, z, 'h']`, which
+is not two array elements — it is an INDEX EXPRESSION. `node --check` passed,
+the file loaded, and the array came back one element short with a hole at index
+129 that crashed verify-map on a property read. Syntax-valid and semantically
+wrong is the worst combination; the parse sweep cannot catch it and only a gate
+that actually reads every element will.
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| Integration | 85 / 0 |
+| **Map** | **978 / 0** (was 664 — the new loot points are all validated) |
+| Stairs · Collision · Flow · Props · Z-fight | 15 / 0 · 19 / 0 · 3 / 0 · 2 / 0 · 2 / 0 |
+| Build · Lifts | PASS · 98 / 0 |
+| Ascent | 49/51 (unchanged) |
+| Cover · Batch · Avatar · Models · Merge | PASS · 36 · 23 · 38 · 9 |
+| Architecture | urban **10** broken promises (unchanged) |
+| Parse sweep | clean |
+
+Urban: 81,680 triangles of 120k, 98 draw calls of 115, 57 shadow casters of 62,
+3,208 colliders.
+
+### Still open — not touched in this build
+
+Construction site second-floor slab (needs lengthening) · the railway room stair
+with no standing space · the three tall buildings: spacing, per-floor stairs ·
+district interiors · vehicle geometry.
+
+### Requires browser verification
+
+- **Signs:** name fully readable, no post across the text, no board inside a
+  building. Three of the twelve were moved by the search and none of those
+  positions has been looked at by a human.
+- **Loot:** 157 new points are machine-proven to sit on a real surface. Whether
+  they are in places worth walking to is a judgement no gate makes.
 
 ## v8.7 — The sign text bug was mine, and the "six broken staircases" were mostly my gate's
 

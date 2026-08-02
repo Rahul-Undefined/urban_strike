@@ -1008,30 +1008,70 @@ World.build = function (sceneRef) {
      ships no image files, and canvasTex already exists for exactly this. The
      panel is emissive so it reads at night without needing its own light, which
      matters: the lamp budget is full at 7 of 7. */
+  /* A sign is a board carried on TWO posts at its ends, with nothing crossing
+     the face — that is what a road sign looks like and what Rahul sent as a
+     reference. v8.6 used a single centre post, which put a black bar straight
+     through the middle of every district name.
+
+     Placement is a search, not a guess. v8.6 checked only the POST footprint for
+     clearance, so Market Cross ended up with its board inside the VOLT building
+     while the post itself stood in open air. clearFor() tests the whole solid —
+     both posts and the board — against the finished collider set, and walks a
+     ring of candidate offsets until it finds open ground. This is the general
+     form of Rahul's instruction: check what is already there before placing
+     anything. */
+  function signClear(sx, sz, face, BW, BH, PH) {
+    var cols = World._colliders();
+    var dx = Math.cos(face), dz = Math.sin(face);
+    var px = -dz, pz = dx;
+    var halfW = BW / 2 + 0.3, halfD = 0.6;
+    var x0 = sx - Math.abs(px) * halfW - Math.abs(dx) * halfD;
+    var x1 = sx + Math.abs(px) * halfW + Math.abs(dx) * halfD;
+    var z0 = sz - Math.abs(pz) * halfW - Math.abs(dz) * halfD;
+    var z1 = sz + Math.abs(pz) * halfW + Math.abs(dz) * halfD;
+    for (var i = 0; i < cols.length; i++) {
+      var c = cols[i];
+      if (c[4] < 0.20 || c[1] > PH + BH + 0.4) continue;   // ground plates and high roofs are fine
+      if (c[3] <= x0 || c[0] >= x1 || c[5] <= z0 || c[2] >= z1) continue;
+      return false;
+    }
+    return true;
+  }
+
   function districtSigns() {
     if (typeof DISTRICTS === 'undefined') return;
     var list = DISTRICTS.list;
+    var PW = 0.17, PH = 2.55;                      // post thickness / height
+    var BW = 5.2, BH = 1.20;                       // board width / height
     for (var i = 0; i < list.length; i++) {
-      var d = list[i], sx = d.sign[0], sz = d.sign[1], face = d.sign[2] || 0;
-      var PH = 3.2, PW = 0.16;                       // post height / thickness
-      var BW = 4.2, BH = 1.05;                       // board width / height
-      var yB = PH - BH / 2 - 0.05;
+      var d = list[i], face = d.sign[2] || 0;
+      var dx = Math.cos(face), dz = Math.sin(face);
+      var px = -dz, pz = dx;
 
-      /* The canvas is square but the board is 4:1, so text drawn at the canvas
-         centre gets stretched four times wider than it was measured. Draw into a
-         4:1 band in the middle of the square and the stretch cancels out. */
+      // walk outward from the anchor until the whole sign fits in open ground
+      var sx = null, sz = null;
+      var RING = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [4, 0], [-4, 0], [0, 4], [0, -4],
+                  [3, 3], [-3, 3], [3, -3], [-3, -3], [6, 0], [-6, 0], [0, 6], [0, -6],
+                  [8, 0], [-8, 0], [0, 8], [0, -8], [6, 6], [-6, 6], [6, -6], [-6, -6]];
+      for (var r = 0; r < RING.length; r++) {
+        var tx = d.sign[0] + RING[r][0], tz = d.sign[1] + RING[r][1];
+        if (signClear(tx, tz, face, BW, BH, PH)) { sx = tx; sz = tz; break; }
+      }
+      if (sx === null) continue;                   // nowhere clear: no sign beats a buried one
+      d.placed = [sx, sz];
+
       var faceTex = canvasTex(512, (function (label) {
         return function (g, S) {
           var bandH = S / 4, y0 = (S - bandH) / 2;
           g.fillStyle = '#0d2033'; g.fillRect(0, 0, S, S);
           g.fillStyle = '#12304a'; g.fillRect(0, y0, S, bandH);
           g.fillStyle = '#e8eef4';
-          g.fillRect(0, y0 + 3, S, 3); g.fillRect(0, y0 + bandH - 6, S, 3);
+          g.fillRect(0, y0 + 4, S, 4); g.fillRect(0, y0 + bandH - 8, S, 4);
           g.fillStyle = '#ffffff';
           g.textAlign = 'center'; g.textBaseline = 'middle';
-          var size = 74;
+          var size = 82;
           g.font = 'bold ' + size + 'px sans-serif';
-          while (size > 26 && g.measureText(label).width > S - 30) {
+          while (size > 30 && g.measureText(label).width > S - 36) {
             size -= 3; g.font = 'bold ' + size + 'px sans-serif';
           }
           g.fillText(label, S / 2, y0 + bandH / 2);
@@ -1040,23 +1080,14 @@ World.build = function (sceneRef) {
       var boardMat = new THREE.MeshLambertMaterial(
         { map: faceTex, color: 0x000000, emissive: 0xffffff, emissiveMap: faceTex });
 
-      var dx = Math.cos(face), dz = Math.sin(face);
-      var px = -dz, pz = dx;                          // along the board's width
-      /* ONE centre post, not two set in from the ends. The two-post version put
-         uprights 2.1 m either side of the anchor, and the anchor is the only
-         point actually checked for clearance — so posts kept landing inside
-         kerbs and wall stubs and verify-props went 133 -> 135. A single post at
-         the anchor is also what a real road sign looks like. */
-      box(sx, PH / 2, sz, PW * 1.6, PH, PW * 1.6, M.trim, { cast: false });
-      // board: thin along the facing axis, wide across it
-      var bw = Math.abs(px) * BW + Math.abs(dx) * 0.12;
-      var bd = Math.abs(pz) * BW + Math.abs(dz) * 0.12;
-      /* cast:false on both post and board. Twelve unique sign faces cannot
-         merge into an existing batch, so each is a loose mesh, and loose meshes
-         cast — that took shadow casters from 56 to 69 against a budget of 62
-         Rahul asked to hold. A signboard casting a shadow is worth nothing and
-         costs a whole shadow pass entry. */
-      box(sx, yB, sz, bw, BH, bd, boardMat, { collide: false, cast: false, tile: false });
+      // posts at the ends, stopping BELOW the board so nothing crosses the text
+      for (var s2 = -1; s2 <= 1; s2 += 2) {
+        var ox = px * s2 * (BW / 2 - 0.35), oz = pz * s2 * (BW / 2 - 0.35);
+        box(sx + ox, PH / 2, sz + oz, PW, PH, PW, M.trim, { cast: false });
+      }
+      var bw = Math.abs(px) * BW + Math.abs(dx) * 0.14;
+      var bd = Math.abs(pz) * BW + Math.abs(dz) * 0.14;
+      box(sx, PH + BH / 2, sz, bw, BH, bd, boardMat, { collide: false, cast: false, tile: false });
     }
   }
 
@@ -1088,8 +1119,6 @@ World.build = function (sceneRef) {
   seg(62.5, 67.5, 3.9, 4.3, -71.0, -69.9, M.railGreen);           // service gate lintel
   seg(69.6, 71.3, 0, 4.6, -44.8, -44.4, M.brick);     // piers either side of the mall
   seg(69.6, 71.3, 0, 4.6, -21.6, -21.2, M.brick);
-  districtSigns();
-
   // V4.2 outer perimeter
   seg(-100.9, 100.9, 0, 3.2, -100.9, -100, M.concrete);
   seg(-100.9, 100.9, 0, 3.2, 100, 100.9, M.concrete);
@@ -1139,6 +1168,7 @@ World.build = function (sceneRef) {
      at all while reporting success. A post-pass has to run after everything it
      claims to inspect. */
   stairLandings();
+  districtSigns();
 
   if (CFG.RENDER.mergeStatic !== false && typeof StaticMerge !== 'undefined') {
     StaticMerge.merge(THREE, H.sceneRef());
