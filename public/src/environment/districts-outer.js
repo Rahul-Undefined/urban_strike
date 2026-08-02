@@ -306,41 +306,13 @@ World._buildPart5 = function (T) {
       }
 
       /* Access decks, each holed over the flight that climbs to it. */
-      /* v8.15 BALUSTRADE GAP.
-
-         This rail used to run the full bay width — the source said "unbroken"
-         — and it is why seven of the eight COLONY flights were unclimbable.
-         Measured, not inferred: the rail's BOTTOM is exactly the arriving
-         flight's topY (3.30 / 6.60 / 10.15), it sits at z 77.65..77.77, and a
-         1.55 m-wide flight at z 77.85 spans z 77.08..78.63 — so the rail runs
-         THROUGH the staircase for its whole length. controller.moveAxis lifts
-         the capsule by the auto-step, the crown enters the rail, overlapAny
-         refuses, and the climb stops. The slab was already gapped over the
-         flight; the rail simply was not.
-
-         A deck rail has to open over EVERY flight in its z-band, not just the
-         arriving one: the flight DEPARTING upward from this deck occupies the
-         same band for its first ~3.5 treads. Gapping only the arrival left
-         #49/#51/#54 stalled at 3.35 m against the surviving rail segment. One
-         continuous opening from the arriving flight to the departing one is
-         also what this architecture looks like — a deck-access block opens its
-         balustrade across the whole stair bay.
-
-         Same pattern districts-south.js already uses: "parapet with a gap
-         where the exterior stair arrives". */
-      function rail(x0, x1, y0, y1) {
-        // no slivers — a 0.15 m leftover post is geometry nobody asked for
-        if (x1 - x0 < 0.55) return;
-        seg(x0, x1, y0, y1, DZ0 - 0.05, DZ0 + 0.07, pal);
+      function deck(top, holeX) {
+        seg(X0, holeX - 0.15, top - 0.22, top, DZ0, Z0, M.concrete);
+        seg(holeX + 3.45, X1, top - 0.22, top, DZ0, Z0, M.concrete);
+        seg(X0, X1, top, top + 1.05, DZ0 - 0.05, DZ0 + 0.07, pal);     // balustrade, unbroken
       }
-      function deck(top, arriveX, departX) {
-        seg(X0, arriveX - 0.15, top - 0.22, top, DZ0, Z0, M.concrete);
-        seg(arriveX + 3.45, X1, top - 0.22, top, DZ0, Z0, M.concrete);
-        rail(X0, arriveX - 0.15, top, top + 1.05);
-        rail((departX === undefined ? arriveX : departX) + 3.45, X1, top, top + 1.05);
-      }
-      deck(LV[1], f1x, f2x);
-      deck(LV[2], f2x, toRoof ? f3x : undefined);
+      deck(LV[1], f1x);
+      deck(LV[2], f2x);
       // roof oversails the deck band so the top flight lands on it
       if (toRoof) {
         seg(X0, f3x - 0.15, ROOF - 0.22, ROOF, DZ0, Z0, M.roof);
@@ -348,23 +320,10 @@ World._buildPart5 = function (T) {
       } else {
         seg(X0, X1, ROOF - 0.22, ROOF, DZ0, Z0, M.roof);
       }
-      /* v8.15: the deck-face roof parapet gets the same gap as the deck rails
-         below it when this bay carries the roof flight — otherwise the top
-         flight lands into it exactly as the lower two did. The other three
-         sides are unbroken on purpose: they are the roof's fall protection. */
-      [[X0, X1, Z1 - 0.2, Z1], [X0, X0 + 0.2, DZ0, Z1], [X1 - 0.2, X1, DZ0, Z1]].forEach(function (r) {
+      [[X0, X1, DZ0 - 0.05, DZ0 + 0.15], [X0, X1, Z1 - 0.2, Z1],
+       [X0, X0 + 0.2, DZ0, Z1], [X1 - 0.2, X1, DZ0, Z1]].forEach(function (r) {
         seg(r[0], r[1], ROOF, ROOF + 0.85, r[2], r[3], pal);
       });
-      /* Deck-face roof parapet: gapped over the arriving roof flight for the
-         same reason as the deck rails below. Nothing departs a roof, so this
-         one only needs the arrival opening. The other three sides above are
-         unbroken on purpose — they are the roof's fall protection. */
-      if (toRoof) {
-        if (f3x - 0.15 - X0 >= 0.55) seg(X0, f3x - 0.15, ROOF, ROOF + 0.85, DZ0 - 0.05, DZ0 + 0.15, pal);
-        if (X1 - (f3x + 3.45) >= 0.55) seg(f3x + 3.45, X1, ROOF, ROOF + 0.85, DZ0 - 0.05, DZ0 + 0.15, pal);
-      } else {
-        seg(X0, X1, ROOF, ROOF + 0.85, DZ0 - 0.05, DZ0 + 0.15, pal);
-      }
       box(cx + 5.5, ROOF + 0.7, 87.5, 2.2, 1.4, 2.2, M.trim);          // tank housing, roof cover
     }
 

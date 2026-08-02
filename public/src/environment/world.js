@@ -350,50 +350,6 @@ var World = (function () {
        sound like concrete underfoot. Material identity that carries audio is
        not decoration. */
     if (mat === M.concrete || mat === M.dirt || mat === M.sidewalk) mat = M.stair;
-
-    /* ===== RUN/RISE CORRECTION — IMPLEMENTED, MEASURED, REVERTED =====
-
-       Rahul approved a map-wide run/rise correction. It was written and it
-       does not work, and the arithmetic explains why in a way that matters
-       more than the patch would have.
-
-       THE DEFECT IS REAL. A standing capsule has radius 0.35. When stepD is
-       smaller than that, the capsule standing on tread i already overlaps
-       tread i+2, and controller.moveAxis measures the auto-step against that
-       tread: 2 x stepH = 0.58-0.66 m against the 0.42 m limit. Refused. The
-       player stops partway up and has to jump. Measured on flight #48:
-       standing on tread 1 at foot 0.32, centre x -42.90, leading edge -42.55,
-       tread 3 starts at -42.60, rise to it 0.60.
-
-       THE ATTEMPTED FIX kept total rise and total run exactly as the call site
-       set them and only re-picked the subdivision, so sy, topY, endX and endZ
-       stayed bit-identical and no landing moved:
-
-           stepD = run / N  >  0.37       stepH = rise / N <= 0.42
-
-       For THE COLONY that yields exactly one solution, N = 8, giving stepH =
-       stepD = 0.4125. The flights still failed, and they fail for a reason no
-       subdivision can escape:
-
-           THE COLONY run 3.30 m, rise 3.30 m. That is a 45 degree staircase.
-
-       At 45 degrees the two constraints collide. Deep enough treads
-       (> 0.37) force few enough steps that the rise per step lands at 0.4125
-       against a 0.42 limit — a 7 mm margin, which the walker loses the moment
-       `grounded` flickers, exactly as it does on every real stair. There is no
-       N that gives both a deep tread and a comfortable rise, because the
-       ratio, not the subdivision, is wrong.
-
-       THE ONLY FIX IS A LONGER RUN, which moves where the flight lands, which
-       is district geometry. HANDOFF section 6 trap #7 already says this: "
-       Smaller steps need LONGER flights, which means moving where they land —
-       district work, not a generator change." This confirms it with numbers
-       and names the threshold: a flight needs run >= 1.14 x rise to be
-       climbable at all (0.37 tread over 0.42 rise). Anything steeper cannot
-       be fixed here.
-
-       Reverted per rule 11: non-beneficial changes get reported, not kept. */
-
     var baseY = (opt.baseY === undefined) ? sy - 0.02 : opt.baseY;
     stairs.push({
       sx: sx, sy: sy, sz: sz, dirX: dirX, dirZ: dirZ,

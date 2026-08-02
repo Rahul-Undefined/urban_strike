@@ -345,14 +345,19 @@ for (const map of maps) {
       if (!hitAny) { clearOff = o; break; }
     }
     let okC = okR, peakC = rr.peak, moved = false;
-    if (clearOff !== null && Math.abs(clearOff - back) > 1e-9) {
+    if (clearOff === null) {
+      /* No standing position anywhere along the approach. That is a real map
+         defect (the stair foot is walled in), not a harness artifact — but it
+         still has to be REPORTED, or it hides inside the ordinary failures. */
+      moved = true;
+    } else if (Math.abs(clearOff - back) > 1e-9) {
       moved = true;
       const cx2 = f.sx - f.dirX * clearOff, cz2 = f.sz - f.dirZ * clearOff;
       const rc = Rw.walk(cx2, sy, cz2, f.dirX, f.dirZ, ticks);
       okC = rc.peak >= f.topY - STEP; peakC = rc.peak;
     }
 
-    summary.push({ map, i, where, okG, okR, okC, moved, clearOff, back, peakG: rg.peak, peakR: rr.peak, peakC, topY: f.topY });
+    summary.push({ map, i, where, okG, okR, okC, moved, clearOff, back, peakG: rg.peak, peakR: rr.peak, peakC, topY: f.topY, f });
     if (okG !== okR) disagreements.push({ map, i, where, okG, okR, peakG: rg.peak, peakR: rr.peak, topY: f.topY, f });
 
     /* Only mine refusals from flights the REAL walker cannot climb — those
@@ -400,8 +405,14 @@ for (const s of spawnStuck) {
 }
 const trulyBad = summary.filter(s => !s.okC);
 console.log(`\nTRUE unclimbable count (real physics, legal start): ${trulyBad.length}`);
-for (const s of trulyBad)
-  console.log(`  [${s.map}] #${String(s.i).padEnd(3)} [${String(s.where).padEnd(18).slice(0, 18)}] reached ${s.peakC.toFixed(2)} need ${(s.topY - STEP).toFixed(2)}`);
+for (const s of trulyBad) {
+  const f = s.f;
+  console.log(`  [${s.map}] #${String(s.i).padEnd(3)} [${String(s.where).padEnd(18).slice(0, 18)}] reached ${s.peakC.toFixed(2)} need ${(s.topY - STEP).toFixed(2)}` +
+    `${s.clearOff === null ? "   *** FOOT IS WALLED IN — no legal standing position on the approach ***" : ""}`);
+  console.log(`         flight: start (${f.sx.toFixed(2)}, ${f.sy.toFixed(2)}, ${f.sz.toFixed(2)}) dir (${f.dirX},${f.dirZ}) ` +
+    `${f.steps} steps x ${f.stepH.toFixed(3)} rise / ${f.stepD.toFixed(3)} run, width ${f.width.toFixed(2)}, ` +
+    `topY ${f.topY.toFixed(2)}, end (${f.endX.toFixed(2)}, ${f.endZ.toFixed(2)})`);
+}
 
 /* ---------- report 2: refusal reason frequency ---------- */
 console.log("\n\n########## 2. WHY STEP-UPS ARE REFUSED (real walker) ##########");

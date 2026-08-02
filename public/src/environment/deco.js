@@ -163,59 +163,15 @@ World._buildDeco = function (T) {
   }
   pallet(-34, -17.6, 0.2); pallet(-32.4, -17.8, -0.15);
 
-  /* ---------- corner trees ----------
-
-     v8.12: THESE USED TO BE PLACED BLIND.
-
-     The header on this section still said "dead space" because that is what
-     those four corners were in v4.1. Six versions of district work later,
-     BUS TERMINAL had been built around the one at (64, 64) and Rahul filmed a
-     tree growing through the floor of the building at (61.4, 1.15, 63.9).
-
-     Nothing was wrong with the tree. It was placed at a hard-coded coordinate
-     that nobody re-checked after the city grew around it, which is trap #9 in
-     HANDOFF section 4 — check what is already there before placing anything,
-     and test the WHOLE object, not one point of it.
-
-     treeClear() tests the CANOPY footprint, not the trunk. A trunk can stand
-     in a doorway while a 3 m canopy fills the room above it, and the trunk is
-     the only thing a point test would have looked at. Same outward-ring search
-     as signClear() in world.js: try the anchor, then walk out; if nothing in
-     the ring is clear, plant nothing. A missing tree is invisible. A tree
-     inside a building is a bug report. */
-  function treeClear(x, z, sc) {
-    var cols = World._colliders();
-    var r = 1.6 * sc, top = 5.3 * sc;
-    for (var i = 0; i < cols.length; i++) {
-      var c = cols[i];
-      if (c[4] <= 0.35) continue;                    // ground / kerb, fine to stand on
-      if (c[1] > top) continue;                      // above the crown
-      if (x + r <= c[0] || x - r >= c[3]) continue;
-      if (z + r <= c[2] || z - r >= c[5]) continue;
-      return false;
-    }
-    return true;
-  }
-  var TREE_RING = [[0, 0], [3, 0], [-3, 0], [0, 3], [0, -3], [5, 0], [-5, 0], [0, 5], [0, -5],
-                   [4, 4], [-4, 4], [4, -4], [-4, -4], [8, 0], [-8, 0], [0, 8], [0, -8]];
-  var treesPlanted = 0, treesSkipped = 0;
+  // ---------- corner trees (dead space, pass-through) ----------
   function tree(x, z, sscale) {
     var sc = sscale || 1;
-    var tx = null, tz = null;
-    for (var r = 0; r < TREE_RING.length; r++) {
-      var ax = x + TREE_RING[r][0], az = z + TREE_RING[r][1];
-      if (Math.abs(ax) > 98 || Math.abs(az) > 98) continue;
-      if (treeClear(ax, az, sc)) { tx = ax; tz = az; break; }
-    }
-    if (tx === null) { treesSkipped++; return; }
-    treesPlanted++;
-    cyl(tx, 1.1 * sc, tz, 0.16 * sc, 2.2 * sc, M.trim, NC);
+    cyl(x, 1.1 * sc, z, 0.16 * sc, 2.2 * sc, M.trim, NC);
     still(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 1.5 * sc, 2.4 * sc, 8), M.foliage),
-      tx, 3.1 * sc, tz);
+      x, 3.1 * sc, z);
     still(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 1.1 * sc, 1.9 * sc, 8), M.foliage),
-      tx, 4.3 * sc, tz);
+      x, 4.3 * sc, z);
   }
   tree(64, 64); tree(-64, 64, 1.2); tree(64, -64, 0.9); tree(-64, -64, 1.1);
   tree(-11.5, 52, 0.8); tree(11.5, -52, 0.8);
-  World._vegetation = { planted: treesPlanted, skipped: treesSkipped };
 };
