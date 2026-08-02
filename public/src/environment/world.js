@@ -538,7 +538,7 @@ var World = (function () {
       if (urban) groundAndRoads();
     },
     _internals: function () {
-      return { box: box, seg: seg, cyl: cyl, stairFlight: stairFlight, crater: crater, M: M, rnd: rnd, addCollider: addCollider, emissive: emissiveMat, sceneRef: function () { return scene; } };
+      return { box: box, seg: seg, cyl: cyl, stairFlight: stairFlight, crater: crater, M: M, rnd: rnd, addCollider: addCollider, emissive: emissiveMat, canvasTex: canvasTex, sceneRef: function () { return scene; } };
     },
     colliders: colliders,
     minimapShapes: minimapShapes,
@@ -589,6 +589,7 @@ World.build = function (sceneRef) {
   var H = World._internals();
   var emissiveMat = H.emissive;   // unlit-but-mergeable material factory, for districts
   var seg = H.seg, box = H.box, cyl = H.cyl, stairFlight = H.stairFlight, crater = H.crater, M = H.M, rnd = H.rnd, addCollider = H.addCollider;
+  var canvasTex = H.canvasTex;   // district sign faces are drawn, not loaded
 
   // Wall with openings: fixed-plane facade, greedy row-merged into few boxes.
   // plane 'z': wall at z in [c0,c1], runs along x (u=x). plane 'x': fixed x, runs along z.
@@ -939,6 +940,66 @@ World.build = function (sceneRef) {
   lamp(8.5, -18, 'w'); lamp(-8.5, 14, 'e'); lamp(8.5, 30, 'w');
   lamp(-8.5, -34, 'e'); lamp(24, 8.5, 'n'); lamp(-24, -8.5, 's');
 
+  /* ===== DISTRICT SIGNS =====
+
+     Rahul's actual words: "map pe bhi ek sign board add karo taki mai ss lekar
+     tumko exact bata saku ki kaha issue hai." Every bug report so far has been a
+     screenshot plus a guess at where it was, and I have burned whole turns
+     reverse-engineering a location from the shape of a roofline. A readable
+     board in frame ends that.
+
+     One board per district, from DISTRICTS in districts.config.js, so the names
+     on the map and the names in the gates are literally the same strings.
+
+     The face is a canvas texture with the name drawn into it — this project
+     ships no image files, and canvasTex already exists for exactly this. The
+     panel is emissive so it reads at night without needing its own light, which
+     matters: the lamp budget is full at 7 of 7. */
+  function districtSigns() {
+    if (typeof DISTRICTS === 'undefined') return;
+    var list = DISTRICTS.list;
+    for (var i = 0; i < list.length; i++) {
+      var d = list[i], sx = d.sign[0], sz = d.sign[1], face = d.sign[2] || 0;
+      var PH = 3.2, PW = 0.16;                       // post height / thickness
+      var BW = 4.2, BH = 1.05;                       // board width / height
+      var yB = PH - BH / 2 - 0.05;
+
+      var faceTex = canvasTex(512, (function (label) {
+        return function (g, S) {
+          g.fillStyle = '#12304a'; g.fillRect(0, 0, S, S);
+          g.fillStyle = '#e8eef4';
+          g.fillRect(6, 6, S - 12, 5); g.fillRect(6, S - 11, S - 12, 5);
+          g.fillRect(6, 6, 5, S - 12); g.fillRect(S - 11, 6, 5, S - 12);
+          g.fillStyle = '#ffffff';
+          g.textAlign = 'center'; g.textBaseline = 'middle';
+          var size = label.length > 14 ? 52 : 68;
+          g.font = 'bold ' + size + 'px sans-serif';
+          g.fillText(label, S / 2, S / 2);
+        };
+      })(d.name));
+      var boardMat = new THREE.MeshLambertMaterial(
+        { map: faceTex, color: 0x000000, emissive: 0xffffff, emissiveMap: faceTex });
+
+      var dx = Math.cos(face), dz = Math.sin(face);
+      var px = -dz, pz = dx;                          // along the board's width
+      /* ONE centre post, not two set in from the ends. The two-post version put
+         uprights 2.1 m either side of the anchor, and the anchor is the only
+         point actually checked for clearance — so posts kept landing inside
+         kerbs and wall stubs and verify-props went 133 -> 135. A single post at
+         the anchor is also what a real road sign looks like. */
+      box(sx, PH / 2, sz, PW * 1.6, PH, PW * 1.6, M.trim, { cast: false });
+      // board: thin along the facing axis, wide across it
+      var bw = Math.abs(px) * BW + Math.abs(dx) * 0.12;
+      var bd = Math.abs(pz) * BW + Math.abs(dz) * 0.12;
+      /* cast:false on both post and board. Twelve unique sign faces cannot
+         merge into an existing batch, so each is a loose mesh, and loose meshes
+         cast — that took shadow casters from 56 to 69 against a budget of 62
+         Rahul asked to hold. A signboard casting a shadow is worth nothing and
+         costs a whole shadow pass entry. */
+      box(sx, yB, sz, bw, BH, bd, boardMat, { collide: false, cast: false });
+    }
+  }
+
   /* ===== PERIMETER + SKYLINE =====
 
      v8.3: THE INNER CITY WALL IS GONE.
@@ -967,6 +1028,8 @@ World.build = function (sceneRef) {
   seg(62.5, 67.5, 3.9, 4.3, -71.0, -69.9, M.railGreen);           // service gate lintel
   seg(69.6, 71.3, 0, 4.6, -44.8, -44.4, M.brick);     // piers either side of the mall
   seg(69.6, 71.3, 0, 4.6, -21.6, -21.2, M.brick);
+  districtSigns();
+
   // V4.2 outer perimeter
   seg(-100.9, 100.9, 0, 3.2, -100.9, -100, M.concrete);
   seg(-100.9, 100.9, 0, 3.2, 100, 100.9, M.concrete);

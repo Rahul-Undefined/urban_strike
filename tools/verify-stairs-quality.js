@@ -27,6 +27,9 @@ let THREE;
 try { THREE = require("three"); } catch (e) { console.log("SKIP: npm install first"); process.exit(0); }
 const vm = require("vm"), fs = require("fs"), path = require("path");
 const ROOT = path.join(__dirname, "..");
+/* District names come from the same registry the map signs are built from, so a
+   gate line and a signboard in a screenshot say the identical string. */
+const DIST = require(path.join(ROOT, "public/src/config/districts.config.js"));
 const CFG = require(path.join(ROOT, "public/src/config/index.js"));
 
 let pass = 0, fail = 0;
@@ -63,6 +66,7 @@ vm.createContext(ctx);
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
   "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+  "public/src/config/districts.config.js",
   "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
@@ -246,7 +250,7 @@ for (const map of ["urban", "rural", "metro"]) {
     ok(bad[k].length <= B[k], `${map}: ${bad[k].length} flights fail ${k} (budget ${B[k]})`);
     if (VERBOSE || bad[k].length > B[k]) {
       bad[k].slice(0, 8).forEach(f => console.log(
-        `        ${k}  start (${f.sx.toFixed(1)}, ${f.sy.toFixed(2)}, ${f.sz.toFixed(1)}) ` +
+        `        ${k}  [${DIST.nameAt(f.sx, f.sz)}] start (${f.sx.toFixed(1)}, ${f.sy.toFixed(2)}, ${f.sz.toFixed(1)}) ` +
         `-> top (${f.endX.toFixed(1)}, ${f.topY.toFixed(2)}, ${f.endZ.toFixed(1)})  ${f.steps} steps` +
         (f._miss ? `  nearest deck ${f._miss.gap.toFixed(2)}m away, ${f._miss.rise >= 0 ? "+" : ""}${f._miss.rise.toFixed(2)}m up` : "")));
     }

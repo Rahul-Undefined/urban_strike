@@ -25,6 +25,9 @@ let THREE;
 try { THREE = require("three"); } catch (e) { console.log("SKIP"); process.exit(0); }
 const vm = require("vm"), fs = require("fs"), path = require("path");
 const ROOT = path.join(__dirname, "..");
+/* District names come from the same registry the map signs are built from, so a
+   gate line and a signboard in a screenshot say the identical string. */
+const DIST = require(path.join(ROOT, "public/src/config/districts.config.js"));
 
 function fakeCanvas() {
   const c = { width: 0, height: 0, style: {} };
@@ -42,7 +45,7 @@ ctx.self = ctx; ctx.window = ctx; ctx.globalThis = ctx;
 vm.createContext(ctx);
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
  "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js",
- "public/src/config/index.js","public/src/environment/merge.js","public/src/environment/world.js",
+ "public/src/config/districts.config.js", "public/src/config/index.js","public/src/environment/merge.js","public/src/environment/world.js",
  "public/src/environment/districts-south.js","public/src/environment/districts-north.js",
  "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js",
  "public/src/environment/metro.js","public/src/environment/access.js"]
@@ -95,7 +98,7 @@ function scanPlane(faceIdx, oA, oB, label) {
   console.log(`        ${label}: ${hits.length} coplanar pairs (${high.length} above y ${ROOF})`);
   if (VERBOSE || high.length) high.slice(0, 8).forEach(h => console.log(
     `          plane ${h.plane.toFixed(3)}  gap ${h.gap.toFixed(4)}m  ${h.area.toFixed(1)} m2  ` +
-    `at (${h.x.toFixed(1)}, ${h.z.toFixed(1)}) y[${h.ylo.toFixed(1)},${h.yhi.toFixed(1)}]`));
+    `[${DIST.nameAt(h.x, h.z)}] at (${h.x.toFixed(1)}, ${h.z.toFixed(1)}) y[${h.ylo.toFixed(1)},${h.yhi.toFixed(1)}]`));
   return { all: hits.length, high: high.length };
 }
 

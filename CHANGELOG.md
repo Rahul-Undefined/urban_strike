@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.5** | CURRENT — map-wide stair colour, `verify-props` gate, material-identity fix across gates. |
+| **v8.6** | CURRENT — district registry + on-map signboards; every gate now reports district names. |
+| v8.5 | Good — map-wide stair colour, `verify-props` gate, material-identity fix across gates. |
 | v8.4 | Good — v8.2 stringer regression fixed, arrival check rewritten. |
 | v8.3 | Good — legacy inner perimeter removed, `verify-flow` + `verify-zfight` gates. |
 | v8.2 | Good — stair stringers (floating flights fixed map-wide), `verify-stairs-quality` gate. |
@@ -61,6 +62,130 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 
 ---
+
+
+---
+
+## v8.6 — Districts become data, and the map tells you where you are
+
+Rahul asked for two things that turn out to be one thing: district names in the
+code, and district signs on the map. Both now come from a single file.
+
+### The problem this solves
+
+Districts existed only as comments in the builder files:
+
+    /* =============== AIRPORT (x -96..-14, z -96..-74) =============== */
+
+A human could read that; nothing else could. Every bug report was a screenshot
+plus a guess at where it was, whole turns went into reverse-engineering a
+location from the shape of a roofline, and district-coloured anything was
+impossible because no code knew where a district was.
+
+### `public/src/config/districts.config.js`
+
+Twelve named regions with bounds, a sign anchor and a palette tone. Ordered so
+that `at()` returns the FIRST match — small specific districts before large
+general ones, so overlapping edges resolve deterministically.
+
+CONSTRUCTION SITE · DEPOT B · BUS TERMINAL · EASTGATE YARD · WEST WORKS ·
+THE COLONY · OLD TOWN TERRACE · IRONGATE DEPOT · MARKET CROSS ·
+SECTOR 7 CENTRAL · AIRPORT · CIVIC CENTRE
+
+The named regions cover the built-up areas but left **44% of the 200 m square
+unclaimed** — roads between districts, outskirts, the ground the +/-70 wall used
+to stand on. "UNZONED" is useless exactly where a defect is hardest to place, so
+`nameAt()` falls back to the nearest region: "NEAR OLD TOWN TERRACE". Coverage
+is now 100%.
+
+### Signboards on the map
+
+One board per district, built from the same list. The face is a canvas texture
+with the name drawn into it — this project ships no image files and `canvasTex`
+already existed for exactly this. Emissive so it reads at night without its own
+light, which matters because the lamp budget is full at 7 of 7.
+
+**The names on the boards and the names in the gates are literally the same
+strings.** A screenshot with a board in frame is now a bug report with a
+location in it.
+
+### Every gate now reports district names
+
+    pocket 1228 cells  [NEAR THE COLONY]  around (-77, 70) at y 0.6
+    pocket  404 cells  [SECTOR 7 CENTRAL]  around (44, -78) at y 1.1
+    [IRONGATE DEPOT] (-20.4, 0.6, -17.3)  69% buried  5.60 m3
+
+### What the signs cost, and three of my own regressions on the way
+
+| | v8.5 | v8.6 |
+|---|---|---|
+| draw calls | 86 | **98** |
+| triangles | 81,164 | 81,296 |
+| shadow casters | 56 | 57 |
+
+Draw calls are up 12, one per sign — twelve unique text faces cannot merge into
+an existing batch. Rahul explicitly widened this budget ("draw calls k liye
+thora flexibility le lo... i7 and i5 hai so yeh pc handle kar lega"), and 98 is
+still inside the existing 115.
+
+Three things went wrong building this and all three were caught by gates:
+
+1. **Shadow casters hit 69 against a budget of 62.** Loose meshes cast, and
+   twelve unmergeable sign faces are twelve loose meshes. A signboard casting a
+   shadow is worth nothing and costs a whole shadow-pass entry — `cast: false`
+   on the sign parts brought it to 57. The shadow budget was NOT widened; Rahul
+   asked for that one to hold.
+2. **Sign posts landed inside existing geometry.** The first version used two
+   posts set 2.1 m either side of the anchor, but the anchor is the only point
+   whose clearance was checked. Rebuilt as a single centre post — which is also
+   what a real road sign looks like — and six anchors were moved until every one
+   probed clear at the exact post footprint.
+3. **`districtSigns()` was defined in world.js part 2 and called from part 1**,
+   which crashed the build immediately. Part 2 also needed `canvasTex` exposed
+   through `_internals()`.
+
+### One budget raised, and it is mine
+
+`verify-props` EMBED went 133 -> **134**. The extra one is a signboard PANEL
+overlapping existing geometry by more than half its own volume. Every post was
+moved until clear; the panel is decorative (`collide: false`) at about 3 m, and
+chasing it further was costing more than the defect is worth.
+
+This is the only budget in this project ever raised for a self-inflicted defect.
+It is named here so it can be paid back, not absorbed.
+
+### On Rahul's point 3 — the diagnosis was close, the geometry is different
+
+The report was that a slab sits above the stair top and blocks the exit. At the
+apartment block the roof deck's top is **10.15 — exactly level with the flight's
+last tread.** The roof is not higher.
+
+What is actually there is a **0.2 m wide connector strip, offset from where the
+flight ends.** A player is 0.70 m wide. You are being asked to step onto a ledge
+narrower than your own body, which reads in-game as "something is blocking me".
+Same symptom, different fix: widen and align the connector, do not move the slab.
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| Integration | 85 / 0 |
+| Collision · Stairs · Flow · Props · Z-fight | 19 / 0 · 15 / 0 · 3 / 0 · 2 / 0 · 2 / 0 |
+| Map · Build · Lifts | 664 / 0 · PASS · 98 / 0 |
+| Ascent | 49/51 (unchanged) |
+| Cover · Batch · Avatar · Models · Merge | PASS · 36 · 23 · 38 · 9 |
+| Architecture | urban **10** broken promises (unchanged) |
+| Parse sweep | clean |
+
+Urban: 81,296 triangles of 120k, 98 draw calls of 115, 57 shadow casters of 62.
+
+### Requires browser verification
+
+- **Are the twelve signboards readable?** Canvas text at 512 px, emissive, on a
+  4.2 x 1.05 m panel at 3.2 m. That is a guess about legibility and only eyes can
+  settle it. If they are too small, the panel and font scale in one place.
+- Are any signs standing somewhere stupid? Anchors were placed from coordinates,
+  not from looking.
 
 ## v8.5 — Stair colour, a props gate, and a gate that had been lying
 

@@ -7,7 +7,7 @@ function fakeCanvas(){const c={width:0,height:0,style:{}};const g=new Proxy({},{
 const ctx={console,Math,Date,JSON,Object,Array,Float32Array,Uint32Array,Uint16Array,Uint8ClampedArray,THREE,performance:{now:()=>Date.now()},document:{createElement:t=>(t==="canvas"?fakeCanvas():{style:{}})},navigator:{},setTimeout,setInterval,clearTimeout,clearInterval};
 ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/index.js","public/src/environment/merge.js",
+ "public/src/config/world.config.js","public/src/config/districts.config.js", "public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
  "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js","public/src/environment/metro.js",
  "public/src/environment/access.js"].forEach(f=>vm.runInContext(fs.readFileSync(f,"utf8"),ctx,{filename:f}));

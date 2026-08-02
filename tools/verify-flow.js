@@ -20,6 +20,9 @@ let THREE;
 try { THREE = require("three"); } catch (e) { console.log("SKIP"); process.exit(0); }
 const vm = require("vm"), fs = require("fs"), path = require("path");
 const ROOT = path.join(__dirname, "..");
+/* District names come from the same registry the map signs are built from, so a
+   gate line and a signboard in a screenshot say the identical string. */
+const DIST = require(path.join(ROOT, "public/src/config/districts.config.js"));
 const CFG = require(path.join(ROOT, "public/src/config/index.js"));
 
 function fakeCanvas() {
@@ -38,6 +41,7 @@ ctx.self = ctx; ctx.window = ctx; ctx.globalThis = ctx;
 vm.createContext(ctx);
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
  "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js",
+  "public/src/config/districts.config.js",
  "public/src/config/index.js","public/src/environment/merge.js","public/src/environment/world.js",
  "public/src/environment/districts-south.js","public/src/environment/districts-north.js",
  "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js",
@@ -160,7 +164,7 @@ pockets.sort((a, b) => b.n - a.n);
 const big = pockets.filter(p => p.n >= 40);
 console.log(`        ${pockets.length} isolated pockets, ${big.length} of 40+ cells`);
 big.slice(0, 12).forEach(p => console.log(
-  `        pocket ${String(p.n).padStart(4)} cells around (${p.x.toFixed(0)}, ${p.z.toFixed(0)}) at y ${p.y.toFixed(1)}`));
+  `        pocket ${String(p.n).padStart(4)} cells  [${DIST.nameAt(p.x, p.z)}]  around (${p.x.toFixed(0)}, ${p.z.toFixed(0)}) at y ${p.y.toFixed(1)}`));
 
 /* Ratchets, measured 2026-08-02 against v8.3. Lower is better; never raise one
    to make a build green. Some of this is legitimate — rooftops reached by lift,

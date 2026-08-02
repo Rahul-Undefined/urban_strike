@@ -40,7 +40,7 @@ const files = [
   "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js",
   "public/src/config/world.config.js",
-  "public/src/config/index.js",
+  "public/src/config/districts.config.js", "public/src/config/index.js",
   "public/src/environment/merge.js",
   "public/src/environment/world.js",
   "public/src/environment/districts-south.js",
