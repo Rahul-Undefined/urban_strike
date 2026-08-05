@@ -78,6 +78,102 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+## v8.24 — players on the full map
+
+The full map showed the world and your own arrow, which made it a layout
+reference rather than something you would open mid-fight. It now shows people.
+
+**Allies:** always, named, in team colour.
+
+**Enemies:** on the same detection rule the radar uses — they fired inside
+`CFG.NET.detectMs`, or they are within `CFG.MINIMAP.proximity`. Named, in red.
+
+**Last known:** anything seen in the previous eight seconds leaves a hollow
+ring at the spot it was last seen, fading out over that window. This is the
+part that actually helps you navigate toward a fight rather than guessing
+which way someone ran.
+
+### Why not just show every enemy
+
+Two reasons, and both are worth more than the convenience.
+
+If the dial and the map disagree about whether a contact exists, one of them
+is lying and you stop trusting both. Matching the radar rule keeps a single
+answer to "is that player detected".
+
+And a full map with permanent enemy dots is a wallhack with extra steps. It
+deletes flanking, holding an angle, and most of the reason to carry a sniper —
+in a first-to-5 deathmatch that is the whole game.
+
+It is one condition if the call goes the other way. The `detected` test is
+marked in `drawFull()` and deliberately sits in exactly one place.
+
+---
+
+## v8.23 — three of mine, found from screenshots
+
+### The wedge was welded to north
+
+v8.22 drew the FOV cone immediately after `ctx.rotate(-yaw)` — inside the
+rotated world layer. So it inherited that rotation and pointed at a fixed
+WORLD bearing instead of the player's facing. Rahul's screenshot shows it
+sitting on north while he faced somewhere else.
+
+The dial is player-up: the facing is always straight up on screen, so the
+wedge belongs OUTSIDE the rotated frame and should never rotate at all. Moved
+next to the self arrow, clipped to the rim, drawn under the arrow. It still
+reads the live `camera.fov`, so scoping narrows it.
+
+### The avatar was a featureless slab
+
+v8.17 put the identity accent on shirt AND trousers so players were findable
+against asphalt. It worked too well. With arms, torso and legs all one flat
+colour, nothing cast a readable edge against anything else — Rahul's
+screenshot is a yellow rectangle with a rifle attached, and no amount of arm
+posing was going to fix that because there were no visible arms to pose.
+
+Torso keeps the accent, so team identity still reads at range. Trousers go
+back to a dark neutral (0x2f3540), which restores the waist line and the arm
+edges against the body. Bright above, dark below.
+
+### The corpse was deleted 50 ms after it landed
+
+```js
+var deadAnim = deadFor < 900;          // net.js
+```
+
+The collapse in `poseAvatar` runs to completion at **deadT 0.85 s**. This
+window was **900 ms**. The body was hidden fifty milliseconds after it
+finished falling — which is why "it vanishes" survived v8.21 stopping it from
+sinking through the floor. The animation was never the problem. Nothing was
+left on screen once it ended.
+
+Now five seconds: 0.85 s to fall, three and a half lying there with the name
+tag standing over it as a marker of who died and where, then a 0.6 s fade so
+it leaves rather than pops.
+
+### The end overlay could hide itself
+
+`endWipe` animated `opacity: 0 -> 1` with `both` fill on the container. A
+decorative animation must never be the thing deciding whether critical UI is
+on screen — if it fails to run, is blocked by reduced-motion, or the class
+lands while the element is still `display:none`, the result screen stays
+invisible and the match looks like it never finished.
+
+Blur only now. Worst case the result appears instantly, which is the old
+behaviour, not a broken one.
+
+**This may not be the whole of Rahul's report.** He saw the clock reach 0:00
+with the match still running. The server arms
+`setTimeout(() => endMatch(room, null, 'time'), minutes * 60000)` at match
+start and only clears it when the room empties, and the client's FFA branch
+handles a null winner correctly. So if the match genuinely did not end — as
+opposed to ending invisibly behind a broken fade — the cause is upstream of
+anything changed here and needs the browser console from the moment the clock
+hits zero.
+
+---
+
 ## v8.22 — navigation, and a naming bug the whole project had
 
 ### DISTRICTS was describing every map as Urban

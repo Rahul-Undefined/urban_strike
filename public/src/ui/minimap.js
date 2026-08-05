@@ -97,32 +97,6 @@ var Minimap = (function () {
     ctx.rotate(-yaw);
     ctx.drawImage(off, (-px - WORLD) * SCALE, (-pz - WORLD) * SCALE);
 
-    /* v8.22 FIELD OF VIEW WEDGE.
-
-       The radar is player-up, so the direction you are facing is always
-       straight up on the dial — which meant nothing on screen told you how
-       much of what you could see was in front of you versus behind. A wedge
-       matching the camera FOV makes the dial read the way every shooter's
-       does: contacts inside the cone are ones you could already be looking at.
-
-       Drawn first so dots and beacons sit on top of it, and inside the
-       rotated frame so it stays welded to the facing rather than the world. */
-    /* Read the LIVE camera fov, not a constant. game.js:314 lerps camera.fov
-       toward a target every frame for ADS and sniper zoom, so a hard-coded 75
-       would leave the wedge wide open while the player is scoped at 8 degrees
-       — the dial would claim awareness the player does not have. */
-    var _cam = (typeof Game !== 'undefined' && Game.getCamera) ? Game.getCamera() : null;
-    var fovRad = ((_cam && _cam.fov) || 75) * Math.PI / 180;
-    var g0 = ctx.createRadialGradient(0, 0, 4, 0, 0, R);
-    g0.addColorStop(0, 'rgba(240,162,50,0.30)');
-    g0.addColorStop(1, 'rgba(240,162,50,0.02)');
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, R, -Math.PI / 2 - fovRad / 2, -Math.PI / 2 + fovRad / 2);
-    ctx.closePath();
-    ctx.fillStyle = g0;
-    ctx.fill();
-
     // remote dots (drawn in world space inside the rotated frame)
     Net.eachRemote(function (id, r) {
       if (!r.alive) return;
@@ -145,6 +119,35 @@ var Minimap = (function () {
       var pulse = 4 + Math.sin(now * 0.007) * 1.6;
       dot(bx, bz, pulse, '#f0c040', true);
     });
+    ctx.restore();
+
+    /* v8.23 FIELD OF VIEW WEDGE — IN SCREEN SPACE, NOT WORLD SPACE.
+
+       v8.22 drew this immediately after `ctx.rotate(-yaw)`, inside the rotated
+       world layer. So the wedge inherited that rotation and pointed at a fixed
+       WORLD bearing — it sat on north and stayed there while the player span,
+       which is exactly what Rahul photographed.
+
+       The dial is player-up: the facing is ALWAYS straight up on screen. So the
+       wedge belongs outside the rotated frame, drawn with the self arrow, and
+       it never rotates at all. Clipped to the dial so it cannot spill past the
+       rim, and drawn before the arrow so the arrow stays on top. */
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, 6.2832);
+    ctx.clip();
+    ctx.translate(cx, cy);
+    var _cam = (typeof Game !== 'undefined' && Game.getCamera) ? Game.getCamera() : null;
+    var fovRad = ((_cam && _cam.fov) || 75) * Math.PI / 180;
+    var gW = ctx.createRadialGradient(0, 0, 4, 0, 0, R);
+    gW.addColorStop(0, 'rgba(240,162,50,0.34)');
+    gW.addColorStop(1, 'rgba(240,162,50,0.03)');
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, R, -Math.PI / 2 - fovRad / 2, -Math.PI / 2 + fovRad / 2);
+    ctx.closePath();
+    ctx.fillStyle = gW;
+    ctx.fill();
     ctx.restore();
 
     // self arrow (always centered, pointing up)
@@ -198,6 +201,7 @@ var Minimap = (function () {
      than player-up because a memorised map has to have a fixed orientation.
      Pure 2D canvas: no WebGL, no geometry, nothing added to any budget. */
   var fullOn = false, fullCv = null, fullCtx = null;
+  var lastSeen = {};          // id -> {x, z, t} for the LAST KNOWN rings
 
   function toggleFull() {
     fullCv = fullCv || document.getElementById('fullmap');
@@ -241,16 +245,73 @@ var Minimap = (function () {
       });
     }
 
-    // teammates, then you
+    /* ===== v8.24 EVERYONE ON THE BOARD =====
+
+       Rahul asked for other players on the full map so it is usable for
+       navigating toward a fight rather than only for learning the layout.
+
+       It deliberately uses the SAME detection rule as the radar rather than
+       revealing every enemy outright. Two reasons. Consistency: if the dial
+       and the map disagree about whether a contact exists, one of them is
+       lying and you stop trusting both. And a full map with permanent enemy
+       dots is a wallhack with extra steps — it would delete flanking,
+       holding an angle, and every reason to carry a sniper.
+
+       So: allies always, named. Enemies when the radar would show them —
+       they fired inside CFG.NET.detectMs or are within CFG.MINIMAP.proximity.
+       Anything seen in the last eight seconds stays as a hollow LAST KNOWN
+       ring at the place it was last seen, which is the part that actually
+       helps you navigate toward a fight instead of guessing.
+
+       To make enemies always visible instead, drop the `detected` test on the
+       marked line — it is one condition, deliberately in one place. */
     var myTeam = Net.getMyTeam();
-    Net.eachRemote(function (id, r) {
-      if (!r.alive) return;
-      if (!(myTeam && r.team === myTeam)) return;
+    var nowMs = performance.now();
+    lastSeen = lastSeen || {};
+
+    function marker(wx, wz, radius, fill, solid, label) {
+      var mx = sx(wx), mz = sz(wz);
       g.beginPath();
-      g.arc(sx(r.renderPos.x), sz(r.renderPos.z), 5, 0, 6.2832);
-      g.fillStyle = r.color || '#63d968';
-      g.fill();
-      g.lineWidth = 1.5; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.stroke();
+      g.arc(mx, mz, radius, 0, 6.2832);
+      if (solid) {
+        g.fillStyle = fill; g.fill();
+        g.lineWidth = 1.5; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.stroke();
+      } else {
+        g.lineWidth = 2; g.strokeStyle = fill; g.stroke();
+      }
+      if (label) {
+        g.font = 'bold 11px Rajdhani, sans-serif';
+        g.textAlign = 'center'; g.textBaseline = 'bottom';
+        g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.85)';
+        g.strokeText(label, mx, mz - radius - 3);
+        g.fillStyle = fill;
+        g.fillText(label, mx, mz - radius - 3);
+      }
+    }
+
+    Net.eachRemote(function (id, r) {
+      var ally = myTeam && r.team === myTeam;
+      if (ally) {
+        if (!r.alive) return;
+        marker(r.renderPos.x, r.renderPos.z, 5, r.color || '#63d968', true, r.name || '');
+        return;
+      }
+      var dx = r.renderPos.x - PlayerCtl.pos.x, dz = r.renderPos.z - PlayerCtl.pos.z;
+      var dist = Math.sqrt(dx * dx + dz * dz);
+      var detected = r.alive &&                                   // <-- the one condition
+        ((nowMs - r.lastShotAt) < CFG.NET.detectMs || dist < CFG.MINIMAP.proximity);
+      if (detected) {
+        lastSeen[id] = { x: r.renderPos.x, z: r.renderPos.z, t: nowMs };
+        marker(r.renderPos.x, r.renderPos.z, 5.5, '#e8563e', true, r.name || '');
+      } else {
+        var ls = lastSeen[id];
+        if (ls && nowMs - ls.t < 8000) {
+          g.save();
+          g.globalAlpha = Math.max(0.18, 1 - (nowMs - ls.t) / 8000);
+          marker(ls.x, ls.z, 6, 'rgba(232,86,62,0.95)', false, '');
+          g.restore();
+        }
+      }
     });
 
     var pxw = sx(PlayerCtl.pos.x), pzw = sz(PlayerCtl.pos.z);

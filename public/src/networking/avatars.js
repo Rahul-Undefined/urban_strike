@@ -115,7 +115,18 @@ var Avatars = (function () {
        buildAvatar), so this is only the fallback for anything unaccented.
        Kept bright rather than realistic: readability beats camouflage in a
        4-player arena where you are supposed to find each other. */
-    fatigue: new THREE.MeshLambertMaterial({ color: 0xd8dee8 }),   // fallback only
+    /* v8.23: TROUSERS ARE BACK TO A DARK NEUTRAL.
+
+       v8.17 put the identity accent on shirt AND trousers to make players
+       findable. It worked too well — Rahul's screenshot shows a featureless
+       yellow slab, because arms, torso and legs were all one flat colour and
+       nothing cast a readable edge against anything else. A silhouette needs
+       internal contrast to look like a person rather than a crate.
+
+       Torso keeps the accent, so team identity still reads at range. Legs go
+       dark, which restores the waist line and the arm edges. Bright above,
+       dark below is also the standard way this is done. */
+    fatigue: new THREE.MeshLambertMaterial({ color: 0x2f3540 }),   // trousers
     webbing: new THREE.MeshLambertMaterial({ color: 0x2a2e26 }),   // boots, gloves, straps
     vest:    new THREE.MeshLambertMaterial({ color: 0x3a3f34 }),
     helmet:  new THREE.MeshLambertMaterial({ color: 0x33382e }),
@@ -179,9 +190,9 @@ var Avatars = (function () {
     var hipL = joint(g, -0.115, -0.02, 0);
     var hipR = joint(g, 0.115, -0.02, 0);
     [hipL, hipR].forEach(function (hip) {
-      part(hip, 0, -0.21, 0, 0.155, 0.42, 0.175, accent);          // thigh
+      part(hip, 0, -0.21, 0, 0.155, 0.42, 0.175, AVM.fatigue);     // thigh
       var knee = joint(hip, 0, -0.42, 0);
-      part(knee, 0, -0.20, 0, 0.135, 0.40, 0.155, accent);         // shin
+      part(knee, 0, -0.20, 0, 0.135, 0.40, 0.155, AVM.fatigue);    // shin
       var boot = part(knee, 0, -0.43, 0.025, 0.155, 0.14, 0.245, AVM.webbing);
       detail.push(boot);
       hip.knee = knee;

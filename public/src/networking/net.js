@@ -313,9 +313,30 @@ var Net = (function () {
       var buf = r.buf;
       while (buf.length > 2 && buf[1].t < renderT) buf.shift();
       var vis = r.alive && phase === 'playing' && buf.length > 0;
+      /* v8.23 THE BODY USED TO BE DELETED 50ms AFTER IT FINISHED FALLING.
+
+         The collapse in poseAvatar runs to completion at deadT = 0.85s. This
+         window was 900ms. So the corpse was hidden fifty milliseconds after
+         landing — you saw a body drop and blink out, which is why Rahul kept
+         reporting "it vanishes" even after v8.21 stopped it sinking through
+         the floor. The animation was fine; nothing was left on screen to look
+         at once it ended.
+
+         Five seconds now: 0.85s to fall, roughly three and a half lying there
+         with the name tag standing over it as a marker of who died and where,
+         then a half-second fade out so it leaves rather than pops. */
+      var CORPSE_MS = 5000, FADE_MS = 600;
       var deadFor = (!r.alive && r.deadAt) ? (performance.now() - r.deadAt) : 1e9;
-      var deadAnim = deadFor < 900;
+      var deadAnim = deadFor < CORPSE_MS;
       r.av.group.visible = vis || deadAnim;
+      if (deadAnim && !vis) {
+        var fade = deadFor > (CORPSE_MS - FADE_MS)
+          ? Math.max(0, (CORPSE_MS - deadFor) / FADE_MS) : 1;
+        if (r.av.tag) r.av.tag.material.opacity = fade;
+        if (r.av.tag) r.av.tag.material.transparent = true;
+      } else if (r.av.tag) {
+        r.av.tag.material.opacity = 1;
+      }
       if (!vis) continue;
 
       var a = buf[0], b = buf.length > 1 ? buf[1] : buf[0];

@@ -630,9 +630,17 @@ button { font-family: var(--disp); cursor: pointer; }
 /* v8.22 match-end: the result used to appear instantly, which read as the
    game crashing rather than finishing. Same easing family as the lobby so an
    ending feels like it belongs to the same product as the welcome screen. */
+/* v8.23: the container animation no longer touches opacity.
+
+   A decorative animation must never be the thing that decides whether
+   critical UI is on screen. If it fails to run, is blocked by reduced-motion,
+   or the class is applied while the element is display:none, an
+   opacity-from-zero keyframe leaves the end screen invisible and the match
+   looks like it never finished. Blur only — worst case the result appears
+   instantly, which is the old behaviour, not a broken one. */
 @keyframes endWipe {
-  0%   { opacity: 0; backdrop-filter: blur(0px); }
-  100% { opacity: 1; backdrop-filter: blur(7px); }
+  0%   { backdrop-filter: blur(0px); }
+  100% { backdrop-filter: blur(7px); }
 }
 @keyframes endCard {
   0%   { opacity: 0; transform: translateY(26px) scale(0.94); }
