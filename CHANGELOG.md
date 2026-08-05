@@ -78,6 +78,142 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+## v8.22 — navigation, and a naming bug the whole project had
+
+### DISTRICTS was describing every map as Urban
+
+Rahul asked whether the recent fixes were map-wide or Urban-only. Checking
+turned up the reverse problem: `districts.config.js` holds **twelve Urban
+districts**, nothing said so, and nothing checked. Every caller — the DevHUD,
+the gates, and now the minimap — asked "what district is (43.4, -38.4)?" while
+standing in Metro and was told **MARKET CROSS**.
+
+It is in the v8.20 log in plain sight: the Metro flight list is captioned with
+Urban district names and it looked plausible enough to miss.
+
+`nameAt(x, z, map)` now takes the map and returns an empty string for anything
+that is not Urban; callers fall back to the map label. Metro reads "METRO
+CITY", not somebody else's neighbourhood.
+
+### Minimap: a field-of-view wedge
+
+The radar is player-up, so your facing is always straight up on the dial —
+which meant nothing told you how much of what it showed was actually in front
+of you. A wedge now matches the camera cone, so a contact inside it is one you
+could already be looking at.
+
+It reads the **live** `camera.fov`, not a constant. `game.js` lerps that value
+every frame for ADS and sniper zoom, so a hard-coded 75 would leave the dial
+claiming a wide cone while the player is scoped at 8 degrees — the map would
+be promising awareness the player does not have. Scoping visibly narrows it.
+
+### Minimap: where you are, in words
+
+The current district is printed under the dial, using the same string the
+signboards carry and every gate prints. A callout, a screenshot and a bug
+report now all name the same place.
+
+### Full map on M
+
+The radar shows about 32 m of a 200 m map. **M** opens the whole thing:
+north-up, district rectangles with names, roads, teammates, and your own
+facing arrow.
+
+North-up on purpose — a map you are trying to memorise has to have a fixed
+orientation, which is exactly what the rotating radar cannot give you. It
+reuses the **same baked static layer** the radar draws from, so roads and
+structures cannot drift between the two views. It also works while paused,
+which is when you actually want to study a layout.
+
+Pure 2D canvas. No WebGL, no geometry, nothing added to any budget.
+
+### The match no longer ends by cutting to black
+
+`showEnd()` removed a `hidden` class and that was the entire transition. Now
+the overlay wipes in with a blur, the result card rises with a slight
+overshoot, and the scoreboard rows cascade behind it — the eye lands on the
+winner before the numbers arrive. Same easing family as the lobby, so an
+ending belongs to the same product as the welcome screen.
+
+The class is removed, a reflow is forced, then it is re-added, or the browser
+coalesces the two and a second match in the same session plays no animation at
+all. CSS keyframes only — no JS timers to leak.
+
+### Are the earlier fixes map-wide?
+
+Everything from v8.15 to v8.21 is engine-level and applies to all three maps:
+the stance-drop fix, the rig scale, the nameplate holder, hit boxes, the kill
+model, uniforms, the corpse-sink fix, the weapon carry, the killfeed and the
+smoke bind all live in `avatars.js`, `combat.js`, `system.js`, `weapons.config`
+or CSS. `stairwells()` runs in both build paths, so Urban, Rural and Metro all
+get stairwell openings cut.
+
+Map-specific work: **Metro only** — the v8.18 config key and night lighting,
+and the v8.20 two-storey rebuild. Rural has had no layout work and remains
+paused.
+
+---
+
+## v8.21 — four fixes, three of them one-liners hiding real bugs
+
+### The corpse was falling through the world
+
+Rahul: "when a player avatar gets killed, it just vanishes."
+
+There has been a three-stage death animation since v7.9 — knees give, spine
+folds, body rolls. It was running. It was just running underground:
+
+```js
+av.group.position.y -= e * 0.32;      // EVERY FRAME
+```
+
+A subtraction, not an assignment. Across the 0.85 s collapse that is roughly
+fifty frames each taking up to another 0.32 m, so the body sank about sixteen
+metres inside a second. What Rahul saw was the first three or four frames of a
+topple before the corpse left the map.
+
+Now absolute — settle 0.32 m from wherever the network says the body is, and
+stay. The animation that was always there is finally visible.
+
+The name tag also stays up over the body while it lies there, counter-rotated
+so it reads level against a corpse lying on its side. That is the marker
+Rahul asked for: who died, and where, legible across the fight.
+
+### The weapon was being carried by its owner's knee
+
+"It is always in one position standing gun down... while shooting as well the
+avatar figure is holding the gun down."
+
+The right arm sat at **-0.62 rad**, about 35 degrees forward of hanging. The
+gun is welded to `armR.elbow`, so the arm angle IS the gun angle — nothing
+else could lift it. At any distance that reads as a man walking around with a
+rifle by his leg.
+
+Raised to a chest carry: shoulders further forward (-1.18 / -1.34), elbows
+folded harder so the stock comes in rather than the muzzle going out, support
+arm crossed further so both hands read as on the weapon. The `aim` term still
+adds on top, so a remote player going ADS is still a visible change in
+silhouette rather than the new resting pose.
+
+### The killfeed was behind the minimap
+
+`#killfeed { top: 16px; right: 18px }` — the exact corner the minimap
+occupies. Every kill line rendered behind it. Moved above the HP bars at
+bottom-left, the standard place for a feed, and reversed so the newest line
+sits nearest the eye.
+
+### Smoke was bound to a key the HUD never mentioned
+
+The HUD has read **"T x1"** for smoke since it was added. The bind was
+`KeyB`. Players pressed the key the game told them to and nothing happened,
+which is most of "throwables don't work". T is now the bind; B still works so
+nobody's muscle memory breaks.
+
+Frag (G, hold to cook), flash (F), molotov (H) and mines (V) were all bound
+correctly and match the HUD.
+
+---
+
 ## v8.20 — Metro: the buildings you could not enter
 
 Rahul, after loading Metro for the first time: "Metro map is dull, building is

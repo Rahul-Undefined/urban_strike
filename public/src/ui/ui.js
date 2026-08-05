@@ -313,7 +313,18 @@ var UI = (function () {
   function hideDeath() { els['death-overlay'].classList.add('hidden'); }
 
   function showEnd(d, myId, isHost) {
+    /* v8.22: the result used to snap in with no transition, which reads as the
+       game crashing rather than finishing. Retriggering the class forces the
+       animation to replay on a second match in the same session — without the
+       reflow read, the browser coalesces remove/add and nothing plays. The
+       overlay wipes in, the card rises, then the scoreboard rows cascade, so
+       the eye lands on the winner before the numbers arrive. Same easing
+       family as the lobby, so an ending belongs to the same product as the
+       welcome screen. CSS only — no JS timers to leak. */
     els['end-overlay'].classList.remove('hidden');
+    els['end-overlay'].classList.remove('animate-in');
+    void els['end-overlay'].offsetWidth;
+    els['end-overlay'].classList.add('animate-in');
     var winner = d.players.find(function (p) { return p.id === d.winnerId; });
     var me = d.players.find(function (p) { return p.id === myId; });
     els['end-body'].innerHTML = '';
@@ -349,7 +360,7 @@ var UI = (function () {
     els['btn-back-lobby'].style.display = isHost ? '' : 'none';
     els['end-hint'].style.display = isHost ? 'none' : '';
   }
-  function hideEnd() { els['end-overlay'].classList.add('hidden'); }
+  function hideEnd() { els['end-overlay'].classList.add('hidden'); els['end-overlay'].classList.remove('animate-in'); }
 
   function showPause(on) { els['pause-overlay'].classList.toggle('hidden', !on); }
   function showClickToPlay(on) { els['click-to-play'].classList.toggle('hidden', !on); }

@@ -84,14 +84,22 @@
     }
     return { d: best, dist: bd };
   }
-  function nameAt(x, z) {
+  /* v8.22: THESE TWELVE DISTRICTS ARE URBAN'S. Nothing ever said so, and
+     nothing checked, so every caller — the DevHUD, the gates, the minimap —
+     happily asked "what district is (43.4, -38.4)?" while standing in Metro
+     and got told MARKET CROSS. verify-climb printed Urban district names all
+     over the Metro flight list in v8.20 and it looked plausible enough to
+     miss. Callers now pass the map; anything that is not urban gets an empty
+     string and can fall back to the map label. */
+  function nameAt(x, z, map) {
+    if (map && map !== 'urban') return '';
     var d = at(x, z);
     if (d) return d.name;
     var n = nearest(x, z);
     return n.d ? 'NEAR ' + n.d.name : 'OUTSKIRTS';
   }
 
-  root.DISTRICTS = { list: D, at: at, nameAt: nameAt, nearest: nearest };
+  root.DISTRICTS = { list: D, at: at, nameAt: nameAt, nearest: nearest, map: 'urban' };
 })(typeof module !== 'undefined' && module.exports ? module.exports : (typeof window !== 'undefined' ? window : this));
 
 if (typeof module !== 'undefined' && module.exports) module.exports = module.exports.DISTRICTS;

@@ -188,7 +188,8 @@ var DevHUD = (function () {
     var halfY = (CFG && CFG.PLAYER ? CFG.PLAYER.standH : 1.8) / 2;
     var feetY = P.y - halfY, headY = P.y + halfY;
     var r = probe(P.x, P.y, P.z, feetY, headY);
-    var name = (typeof DISTRICTS !== 'undefined') ? DISTRICTS.nameAt(P.x, P.z) : '(no districts.config)';
+    var mapNow = (typeof World !== 'undefined' && World.builtMap) ? World.builtMap : 'urban';
+    var name = (typeof DISTRICTS !== 'undefined') ? (DISTRICTS.nameAt(P.x, P.z, mapNow) || ('(' + mapNow + ' — no districts)')) : '(no districts.config)';
     var map = (typeof World !== 'undefined' && World.builtMap) ? World.builtMap : '?';
 
     var L = [];

@@ -319,8 +319,31 @@ var Avatars = (function () {
       av.head.rotation.x = e * 0.45;
       av.group.rotation.z = e * 1.52;
       av.group.rotation.x = late * 0.22;
-      av.group.position.y -= e * 0.32;
-      if (av.tagHolder) av.tagHolder.rotation.x = -av.group.rotation.x;
+      /* v8.21 THE CORPSE WAS FALLING THROUGH THE WORLD.
+
+         This line used to read `av.group.position.y -= e * 0.32`, a
+         subtraction applied EVERY FRAME. Over the 0.85 s collapse that is
+         roughly fifty frames each taking up to another 0.32 m, so the body
+         sank about sixteen metres into the ground inside a second. Rahul saw
+         a player "just vanish" and assumed there was no death animation at
+         all — there was a three-stage one, it was simply happening underground
+         after the first few frames.
+
+         Now absolute: settle 0.32 m from wherever the network says the body
+         is, and stay there. */
+      var restY = (typeof av.baseY === 'number' && isFinite(av.baseY)) ? av.baseY : av.group.position.y;
+      av.group.position.y = restY - e * 0.32;
+
+      /* The name stays up over the body while it lies there — a marker for who
+         died and where, readable across the fight, which is what makes a kill
+         legible to everyone else. It fades with the corpse. */
+      if (av.tagHolder) {
+        av.tagHolder.rotation.x = -av.group.rotation.x;
+        av.tagHolder.rotation.z = -av.group.rotation.z;
+        av.tagHolder.position.y = 0.55 * e;
+      }
+      if (av.tag) { av.tag.visible = true; av.tag.material.depthTest = false; }
+      if (av.hb && av.hb.sprite) av.hb.sprite.visible = false;
       return;
     }
 
@@ -384,7 +407,7 @@ var Avatars = (function () {
     var halfNow = 0.9 - c * 0.30 - p * 0.55;
     if (typeof av.baseY === 'number' && isFinite(av.baseY))
       av.group.position.y = av.baseY + halfNow * RIG_LIFT;
-    if (av.tagHolder) av.tagHolder.rotation.x = -av.group.rotation.x;
+    if (av.tagHolder) { av.tagHolder.rotation.x = -av.group.rotation.x; av.tagHolder.rotation.z = 0; av.tagHolder.position.y = 0; }
 
     // ---------- locomotion ----------
     var speed = s.moved / Math.max(0.0001, s.dt);
@@ -435,12 +458,28 @@ var Avatars = (function () {
     var R = av.rT;
     var pump = Math.sin(av.breath * 3.4) * 0.5 + 0.5;
 
-    av.armR.rotation.x = -0.62 + aim + swb * 0.16 * fA + br - R * 0.16;
-    av.armR.rotation.z = -0.28;
-    av.armR.elbow.rotation.x = -0.75 - R * 0.18;
-    av.armL.rotation.x = -0.98 + aim + sw * 0.16 * fA + br + R * (0.55 + pump * 0.35);
-    av.armL.rotation.z = 0.52 - R * 0.30;
-    av.armL.elbow.rotation.x = -0.62 - R * (0.45 + pump * 0.30);
+    /* v8.21 WEAPON IS CARRIED, NOT CARRIED AROUND.
+
+       Rahul: "it is always in one position standing gun down... while shooting
+       as well the avatar figure is holding the gun down."
+
+       He was right and the numbers show why. The right arm sat at -0.62 rad,
+       about 35 degrees forward of hanging — a low-ready at best, and from any
+       distance it reads as a man walking about with a rifle by his knee. The
+       weapon is welded to armR.elbow, so the arm angle IS the gun angle;
+       nothing else could lift it.
+
+       Raised to a chest carry: shoulders driven further forward, elbows folded
+       harder to bring the stock in rather than pushing the muzzle out, and the
+       support arm crossed further so both hands read as on the weapon. `aim`
+       still adds on top when a remote player is ADS, so scoping is still a
+       visible change in silhouette rather than the new resting pose. */
+    av.armR.rotation.x = -1.18 + aim + swb * 0.16 * fA + br - R * 0.16;
+    av.armR.rotation.z = -0.20;
+    av.armR.elbow.rotation.x = -1.02 - R * 0.18;
+    av.armL.rotation.x = -1.34 + aim + sw * 0.16 * fA + br + R * (0.55 + pump * 0.35);
+    av.armL.rotation.z = 0.40 - R * 0.30;
+    av.armL.elbow.rotation.x = -0.94 - R * (0.45 + pump * 0.30);
     av.gun.rotation.x = R * 0.42;
     av.gun.rotation.z = R * 0.18;
 

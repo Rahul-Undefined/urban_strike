@@ -125,7 +125,11 @@ button { font-family: var(--disp); cursor: pointer; }
 #match-timer.urgent { color: var(--red); border-color: var(--red); }
 #kill-target { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); letter-spacing: 0.2em; margin-top: 5px; text-shadow: 0 1px 3px #000; }
 
-#killfeed { position: absolute; top: 16px; right: 18px; display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
+/* v8.21: was top-right, which is exactly where the minimap lives — every kill
+   line rendered behind it and could not be read. Moved above the HP bars on
+   the bottom left, the standard place for a feed, and reversed so the newest
+   line is nearest the eye. */
+#killfeed { position: absolute; bottom: 104px; left: 18px; display: flex; flex-direction: column-reverse; gap: 5px; align-items: flex-start; max-width: 42vw; pointer-events: none; }
 .feed-item { font-size: 14px; letter-spacing: 0.05em; background: rgba(13,16,21,0.7); border: 1px solid var(--line);
   border-right: 3px solid var(--amber); padding: 5px 12px; border-radius: 3px; animation: feedIn 0.18s ease-out; }
 .feed-item .k { font-weight: 700; }
@@ -613,3 +617,40 @@ button { font-family: var(--disp); cursor: pointer; }
 .menu-vignette { inset: 0; }
 .menu-frame { inset: 22px; }
 @media (max-width: 560px) { .menu-frame { inset: 10px; } }
+
+
+/* v8.22 full map overlay (M) — 2D canvas, no WebGL, nothing on any budget. */
+#fullmap {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: none; z-index: 60; border-radius: 4px;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.75);
+  background: rgba(8,11,16,0.94);
+}
+
+/* v8.22 match-end: the result used to appear instantly, which read as the
+   game crashing rather than finishing. Same easing family as the lobby so an
+   ending feels like it belongs to the same product as the welcome screen. */
+@keyframes endWipe {
+  0%   { opacity: 0; backdrop-filter: blur(0px); }
+  100% { opacity: 1; backdrop-filter: blur(7px); }
+}
+@keyframes endCard {
+  0%   { opacity: 0; transform: translateY(26px) scale(0.94); }
+  60%  { opacity: 1; transform: translateY(-4px) scale(1.012); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes endRow {
+  0%   { opacity: 0; transform: translateX(-14px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+#end-overlay.animate-in { animation: endWipe 0.55s ease-out both; }
+#end-overlay.animate-in > * { animation: endCard 0.62s cubic-bezier(.16,.9,.3,1) 0.10s both; }
+#end-overlay.animate-in .end-title { animation: endCard 0.7s cubic-bezier(.16,.9,.3,1) 0.20s both; }
+#end-overlay.animate-in #end-body tr { animation: endRow 0.38s ease-out both; }
+#end-overlay.animate-in #end-body tr:nth-child(1) { animation-delay: 0.44s; }
+#end-overlay.animate-in #end-body tr:nth-child(2) { animation-delay: 0.52s; }
+#end-overlay.animate-in #end-body tr:nth-child(3) { animation-delay: 0.60s; }
+#end-overlay.animate-in #end-body tr:nth-child(4) { animation-delay: 0.68s; }
+#end-overlay.animate-in #end-body tr:nth-child(5) { animation-delay: 0.76s; }
+#end-overlay.animate-in #end-body tr:nth-child(6) { animation-delay: 0.84s; }
+#end-overlay.animate-in #end-body tr:nth-child(n+7) { animation-delay: 0.90s; }

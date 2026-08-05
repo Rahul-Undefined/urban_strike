@@ -101,6 +101,10 @@ var Game = (function () {
          purpose: the panel has to be readable while paused, which is exactly
          when a bug gets examined. F4 copies the readout so coordinates are
          pasted into a report, not re-typed off a screenshot. */
+      /* v8.22: M opens the whole map, north-up, with district names. Placed
+         with the other always-available keys so it works while paused — that
+         is when you actually want to study a layout. */
+      if (e.code === 'KeyM') { e.preventDefault(); Minimap.toggleFull(); return; }
       if (e.code === 'F3') { e.preventDefault(); DevHUD.toggle(); return; }
       if (e.code === 'F4') { e.preventDefault(); DevHUD.copy(); return; }
       if (e.code === 'Tab' && playing) {
@@ -120,7 +124,11 @@ var Game = (function () {
       // work in the lobby too, so it does NOT live here. The old duplicate also
       // shadowed the smoke grenade, which had been unbindable ever since.
       if (e.code === 'KeyZ') { rideLift(); return; }
-      if (e.code === 'KeyB') { Weapons.throwGrenade('smoke'); return; }
+      /* v8.21: the HUD has said "T x1" for smoke since it was added, but the
+         bind was KeyB. Players pressed the key the game told them to and
+         nothing happened, which is most of "throwables don't work". T is now
+         the bind; B still works so nobody's muscle memory breaks. */
+      if (e.code === 'KeyT' || e.code === 'KeyB') { Weapons.throwGrenade('smoke'); return; }
       if (e.code === 'KeyF') { Weapons.throwGrenade('flash'); return; }
       if (e.code.indexOf('Digit') === 0) {
         var n = parseInt(e.code.slice(5), 10);
@@ -282,6 +290,7 @@ var Game = (function () {
   function loop(t) {
     requestAnimationFrame(loop);
     DevHUD.update(t);            // no-ops on its first line while hidden
+    if (Minimap.isFullOpen()) Minimap.drawFull();   // keeps dots live while open
     var dt = Math.min(0.05, Math.max(0.0001, (t - lastT) / 1000));
     lastT = t;
 
@@ -352,6 +361,10 @@ var Game = (function () {
   }
 
   return {
+    /* v8.22: exposed so Minimap can read the LIVE fov for its wedge. It is
+       lerped every frame for ADS and sniper zoom, so a constant would leave
+       the dial claiming a 75-degree cone while the player is scoped at 8. */
+    getCamera: function () { return camera; },
     init: init,
     onMatchStart: onMatchStart,
     onLocalSpawn: onLocalSpawn,
