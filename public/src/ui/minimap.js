@@ -107,7 +107,8 @@ var Minimap = (function () {
         dot(rx, rz, 4, r.color || '#63d968', true);
       } else {
         var dist = Math.sqrt((r.renderPos.x - px) * (r.renderPos.x - px) + (r.renderPos.z - pz) * (r.renderPos.z - pz));
-        var detected = (now - r.lastShotAt) < CFG.NET.detectMs || dist < CFG.MINIMAP.proximity;
+        var detected = CFG.MINIMAP.alwaysShowPlayers ||
+          (now - r.lastShotAt) < CFG.NET.detectMs || dist < CFG.MINIMAP.proximity;
         if (detected) dot(rx, rz, 4.2, '#e8563e', true);
       }
     });
@@ -263,8 +264,11 @@ var Minimap = (function () {
        ring at the place it was last seen, which is the part that actually
        helps you navigate toward a fight instead of guessing.
 
-       To make enemies always visible instead, drop the `detected` test on the
-       marked line — it is one condition, deliberately in one place. */
+       v8.25: CFG.MINIMAP.alwaysShowPlayers is now TRUE. With two to four
+       players on a 200 m map the detection rule left the board empty almost
+       all the time, which reads as a broken feature rather than as stealth.
+       The flag is read here and by the dial, so the two views can never
+       disagree about whether a contact is shown. */
     var myTeam = Net.getMyTeam();
     var nowMs = performance.now();
     lastSeen = lastSeen || {};
@@ -298,8 +302,8 @@ var Minimap = (function () {
       }
       var dx = r.renderPos.x - PlayerCtl.pos.x, dz = r.renderPos.z - PlayerCtl.pos.z;
       var dist = Math.sqrt(dx * dx + dz * dz);
-      var detected = r.alive &&                                   // <-- the one condition
-        ((nowMs - r.lastShotAt) < CFG.NET.detectMs || dist < CFG.MINIMAP.proximity);
+      var detected = r.alive && (CFG.MINIMAP.alwaysShowPlayers ||
+        (nowMs - r.lastShotAt) < CFG.NET.detectMs || dist < CFG.MINIMAP.proximity);
       if (detected) {
         lastSeen[id] = { x: r.renderPos.x, z: r.renderPos.z, t: nowMs };
         marker(r.renderPos.x, r.renderPos.z, 5.5, '#e8563e', true, r.name || '');

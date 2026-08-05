@@ -78,6 +78,63 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+## v8.26 — a faster kill, and the fall shortened to fit it
+
+Rahul asked for the body gone 0.80 s after the kill, down from 1.20.
+
+Dropping `CORPSE_MS` alone would not have worked. **The collapse in
+`poseAvatar` takes 0.85 s on its own**, so at an 0.80 s window the corpse would
+have been deleted mid-topple — you would see it start to fall and get cut off,
+which reads as a rendering fault rather than a fast kill.
+
+So the fall was compressed with it: `deadT / 0.85` becomes `deadT / 0.50`.
+Same three stages, same shapes, just quicker. The sequence now fits inside the
+budget whole — 0.50 s down, a short beat, 0.28 s fade, gone at 0.80.
+
+`CORPSE_MS` in `net.js` remains the knob. Setting it to 0 makes a kill vanish
+instantly; the fall duration would want raising back if that is ever done.
+
+Also added: **`HANDOFF-NEXT.md`** at the project root, for starting a fresh
+session.
+
+---
+
+## v8.25 — two judgement calls reversed after play
+
+Both of these were mine from v8.23 and v8.24, and playing them settled it.
+
+### Player locations were gated behind detection
+
+v8.24 put enemies on the full map only when the radar would show them — fired
+inside `CFG.NET.detectMs`, or within `CFG.MINIMAP.proximity` (18 m). The
+reasoning was that permanent enemy dots delete flanking and holding an angle.
+
+That reasoning is sound for a twenty-player match. It is wrong for this game.
+With two to four players on a 200 m map, the detection rule leaves the board
+empty almost all the time, so what Rahul got was a map feature that appeared
+not to work rather than one that preserved stealth.
+
+`CFG.MINIMAP.alwaysShowPlayers` is now **true**, read by BOTH the dial and the
+full map so the two can never disagree about whether a contact is shown. Set
+it false to restore detection-gated enemies — that is the only switch.
+
+### The corpse was in the way
+
+v8.23 held the body for five seconds so there was a marker of who died and
+where. Played, it reads as a live target you keep shooting at in the middle of
+a first-to-5 firefight, and the kill stops feeling immediate.
+
+Down to **1200 ms**: the 850 ms fall plus a short beat, then a 350 ms fade so
+it leaves rather than pops. `CORPSE_MS` in `net.js` is the knob if the marker
+turns out to be worth more than the clarity.
+
+Worth recording that this setting has now been 900 ms, then 5000, then 1200 —
+each move made on a real complaint, and the middle one overshot. 1200 is the
+first value chosen with the fall duration actually measured against it rather
+than guessed around.
+
+---
+
 ## v8.24 — players on the full map
 
 The full map showed the world and your own arrow, which made it a layout

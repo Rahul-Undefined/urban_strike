@@ -316,7 +316,17 @@ var Avatars = (function () {
     if (s.dead) {
       /* Three stages rather than one topple: the knees give, the spine folds,
          then the body rolls. Arms trail instead of staying welded to the gun. */
-      var t = Math.min(1, s.deadT / 0.85);
+      /* v8.26: collapse compressed 0.85s -> 0.50s.
+
+         Rahul wants a body gone 0.80s after the kill. The old fall took 0.85s
+         on its own, so at that window the corpse would have been deleted
+         mid-topple — you would see it start to fall and get cut off, which
+         looks like a rendering fault rather than a fast kill.
+
+         Shortening the fall keeps the sequence whole inside the budget:
+         0.50s to go down, a short beat, then the fade in net.js finishes at
+         0.80s. Same three stages, same shapes, just quicker. */
+      var t = Math.min(1, s.deadT / 0.50);
       var e = t * t * (3 - 2 * t);
       var late = Math.max(0, (t - 0.35) / 0.65);
       av.hipL.rotation.x = e * 1.2; av.hipR.rotation.x = e * 1.0;

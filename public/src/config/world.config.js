@@ -44,7 +44,14 @@
     metro: { label: 'Metro City', ready: true, render: NIGHT },
   };
 
-  var MINIMAP = { proximity: 18 };   // meters at which an enemy pings the minimap without firing
+  /* v8.25: alwaysShowPlayers. Rahul asked for player locations on the map and
+     got the radar's detection rule instead — enemies only when they had just
+     fired or were already close. In a 2-4 player deathmatch on a 200 m map
+     that means an empty dial almost all the time, which reads as broken
+     rather than as stealth. One flag, read by BOTH the dial and the full map,
+     so the two can never disagree about whether a contact is shown. Set it
+     false to go back to detection-gated enemies. */
+  var MINIMAP = { alwaysShowPlayers: true, proximity: 18 };   // meters at which an enemy pings the minimap without firing
   // V4.1 stylized dusk -- all scene lighting/atmosphere lives here, not in source.
   var RENDER = {
     mergeStatic: true,   // collapse static geometry into per-material meshes

@@ -325,7 +325,19 @@ var Net = (function () {
          Five seconds now: 0.85s to fall, roughly three and a half lying there
          with the name tag standing over it as a marker of who died and where,
          then a half-second fade out so it leaves rather than pops. */
-      var CORPSE_MS = 5000, FADE_MS = 600;
+      /* v8.25: back down from 5000ms. v8.23 held the body for five seconds so
+         there was a marker of who died and where — Rahul's verdict after
+         playing it is that a corpse lying in the middle of a first-to-5
+         firefight reads as a live target you keep shooting at, and the kill
+         should feel immediate. 1200ms is the fall (850ms) plus a short beat,
+         then a 350ms fade so it leaves rather than pops. Raise CORPSE_MS if
+         the marker turns out to be worth more than the clarity. */
+      /* v8.26: 1200 -> 800ms at Rahul's request. The collapse in poseAvatar was
+         compressed to 0.50s in the same change so the fall still completes
+         before the fade starts — 0.50 down, 0.02 beat, 0.28 fade, gone at
+         0.80. Setting CORPSE_MS to 0 makes a kill vanish instantly if that is
+         ever wanted; the fall duration above would want raising back if so. */
+      var CORPSE_MS = 800, FADE_MS = 280;
       var deadFor = (!r.alive && r.deadAt) ? (performance.now() - r.deadAt) : 1e9;
       var deadAnim = deadFor < CORPSE_MS;
       r.av.group.visible = vis || deadAnim;
