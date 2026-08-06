@@ -78,6 +78,87 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+## v8.28 — host-assigned teams
+
+Teams were auto-balanced by join order with no way to change them.
+
+**Server** — `setPlayerTeam` sets the team, recolours the player and flags
+`teamLocked` so the auto-balancer fills around the choice instead of wiping it
+on the next join, leave or settings change (which is every time
+`refreshTeamsAndColors()` runs).
+
+Lobby only, host only, team modes only, and refused during the countdown —
+all checked on the server, none of it trusted from the client. Mid-match
+switching would hand somebody a free look at the other side's spawns.
+
+**Client** — every roster row gets a swap button in a team mode, shown only to
+the host. The arrow names the team the click moves them TO. One delegated
+listener bound once, not one per render.
+
+Caught while wiring it: the emit was written against `sock`, and the variable
+in `net.js` is `socket`. It would have thrown on the first click. Checked
+before shipping rather than after.
+
+### The black screen is still not explained
+
+Four theories have now been checked and all four were wrong:
+
+- Missing team assignment — `refreshTeamsAndColors()` does assign, on join,
+  leave, settings change and match start
+- Missing team spawns — urban 9/9/4, rural 8/8/6, metro 12/12/0
+- Shared team-colour materials being disposed on avatar rebuild —
+  `removeRemote()` removes from the scene and disposes nothing
+- An empty spawn candidate list — real, and closed in v8.27, but it needs
+  `team` to be null and the code says it cannot be
+
+The v8.27 spawn guard may or may not be Rahul's bug. The browser console at
+the moment a team match launches will name it in one line, and that is worth
+more than a fifth theory.
+
+---
+
+## v8.27 — a crash path closed, and groundwork for manual teams
+
+### What I found, and what I did not
+
+Rahul reports a black screen on 3v3 and 5v5. Two theories were checked and
+both were wrong — worth recording so nobody re-checks them:
+
+- **Not missing team assignment.** `refreshTeamsAndColors()` in
+  `server/lib/rooms.js` alternates a/b by join order, and it IS called on
+  join, on leave, on settings change and at match start.
+- **Not missing team spawns.** Urban has 9 'a' / 9 'b' / 4 'n', Rural 8/8/6,
+  Metro 12/12/0.
+
+### The one real crash path in that area
+
+`pickSpawn()` filtered to spawns tagged with the player's own team or `'n'`,
+then took `candidates[0]` with no empty check. If `forP.team` is ever null or
+undefined — someone joining mid-handshake, a mode switched at the wrong
+moment — the filter matches only `'n'`, and **Metro has zero of those**.
+`best.s` then throws inside the match-start path, the match never begins, and
+the client sits on a black screen.
+
+Now falls back to the full spawn set. Worst case one player spawns on a tile
+meant for the other team, which is a fairness annoyance for one life. A crash
+ends the match for everyone.
+
+**This may or may not be Rahul's bug.** It is a genuine crash and it is
+closed, but it depends on `team` being null, which the code above says should
+not happen. If the black screen survives this build the cause is elsewhere and
+the browser console at the moment of launch will name it in one line.
+
+### Groundwork for host-assigned teams
+
+`refreshTeamsAndColors()` now honours a `teamLocked` flag: a player the host
+has placed by hand keeps their team, and the auto-balancer fills everyone else
+around them. Without this, any manual pick would be overwritten on the next
+join, leave or settings change — which is every time that function runs.
+
+The socket event and the lobby buttons to drive it are **not** built yet.
+
+---
+
 ## v8.26 — a faster kill, and the fall shortened to fit it
 
 Rahul asked for the body gone 0.80 s after the kill, down from 1.20.

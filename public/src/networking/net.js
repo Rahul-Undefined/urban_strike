@@ -452,6 +452,7 @@ var Net = (function () {
     sendState: sendState, sendShoot: sendShoot, sendHit: sendHit,
     sendProj: sendProj, sendThrow: sendThrow, requestRespawn: requestRespawn,
     placeMine: function (d, cb) { if (socket) socket.emit('placeMine', d, cb); },
+    setPlayerTeam: function (id, team) { if (socket) socket.emit('setPlayerTeam', { id: id, team: team }); },
     setReady: function (v) { if (socket) socket.emit('setReady', { v: !!v }); },
     peerName: function (id) { var r = remotes[id]; return (r && r.name) || 'Player'; },
     voiceJoin: function () { if (socket) socket.emit('voiceJoin'); },

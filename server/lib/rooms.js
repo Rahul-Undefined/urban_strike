@@ -71,12 +71,22 @@ function addPlayer(room, socket, name) {
 function refreshTeamsAndColors(room) {
   const list = [...room.players.values()].sort((a, b) => a.joinOrder - b.joinOrder);
   const teams = modeInfo(room).teams;
+  /* v8.27: `teamLocked` is set when the host places somebody by hand. The
+     auto-balancer fills everyone else around them instead of overwriting the
+     choice on the next join, leave or settings change — which is every time
+     this function runs. Without it a manual pick survives until the next
+     player breathes. */
+  let autoIdx = 0;
   list.forEach((p, i) => {
     if (teams) {
-      p.team = (i % 2 === 0) ? 'a' : 'b';
+      if (p.teamLocked && (p.team === 'a' || p.team === 'b')) {
+        p.color = CFG.TEAMS[p.team].color;
+        return;
+      }
+      p.team = (autoIdx++ % 2 === 0) ? 'a' : 'b';
       p.color = CFG.TEAMS[p.team].color;
     } else {
-      p.team = null;
+      p.team = null; p.teamLocked = false;
       p.color = CFG.COLORS[i % CFG.COLORS.length];
     }
   });

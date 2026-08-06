@@ -73,9 +73,23 @@ const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) =>
 
 function pickSpawn(room, forP) {
   const teams = modeInfo(room).teams;
-  const candidates = mapData(room).SPAWNS
-    .map((s, i) => ({ s, i }))
-    .filter(c => !teams || c.s[3] === forP.team || c.s[3] === 'n');
+  /* v8.27: NEVER LET THE FILTER RETURN NOTHING.
+
+     In a team mode this keeps only spawns tagged with the player's own team
+     or 'n'. If `forP.team` is ever null or undefined — a player who joined at
+     the wrong moment, a mode switched while someone was mid-handshake — the
+     filter matches only 'n' spawns. Urban has 4 of those and Rural 6, but
+     METRO HAS ZERO. `candidates[0]` is then undefined, `best.s` throws inside
+     the match-start path, and the client sits on a black screen because the
+     match never actually began.
+
+     Falling back to the full spawn set is strictly better than throwing: the
+     worst case is one player spawning on a tile meant for the other team,
+     which is a fairness annoyance for one life. A crash ends the match for
+     everybody. */
+  const all = mapData(room).SPAWNS.map((s, i) => ({ s, i }));
+  let candidates = all.filter(c => !teams || c.s[3] === forP.team || c.s[3] === 'n');
+  if (!candidates.length) candidates = all;
   const enemies = [...room.players.values()]
     .filter(p => p.alive && p.id !== forP.id && (!teams || p.team !== forP.team));
   let best = candidates[0], bestScore = -1;
@@ -289,6 +303,30 @@ io.on('connection', (socket) => {
     if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
     ack(Mines.place(room, p, d && d.p));
   });
+  /* v8.28 HOST-ASSIGNED TEAMS.
+
+     Teams were auto-balanced by join order with no way to change them. This
+     lets the host move anybody, and sets `teamLocked` so the auto-balancer
+     fills around the choice instead of wiping it on the next join, leave or
+     settings change — which is every time refreshTeamsAndColors() runs.
+
+     Lobby only and host only, both checked here rather than trusted from the
+     client. Mid-match team switching would hand someone a free look at the
+     other side's spawns. */
+  socket.on('setPlayerTeam', (d) => {
+    const room = getRoom(socket);
+    if (!room || socket.id !== room.hostId || room.state !== 'lobby') return;
+    if (room.cdTimer) return;                       // no shuffling mid-countdown
+    if (!modeInfo(room).teams) return;              // meaningless in FFA
+    if (!d || (d.team !== 'a' && d.team !== 'b')) return;
+    const p = room.players.get(d.id);
+    if (!p) return;
+    p.team = d.team;
+    p.teamLocked = true;
+    p.color = CFG.TEAMS[d.team].color;
+    pushLobby(room);
+  });
+
   socket.on('startMatch', () => {
     const room = getRoom(socket);
     if (!room || socket.id !== room.hostId) return;

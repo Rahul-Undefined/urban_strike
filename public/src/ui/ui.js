@@ -125,8 +125,26 @@ var UI = (function () {
       var rdy = p.ready ? ' <em class="rdy-tag">READY</em>' : '';
       var vc = p.voice ? ' <em class="voice-tag">MIC</em>' : '';
       li.className = p.ready ? 'is-ready' : '';
-      li.innerHTML = '<i class="dot" style="background:' + p.color + '"></i><b>' + p.name + '</b>' + host + you + vc + rdy;
+      /* v8.28: the host gets a A/B switch on every row in a team mode. Shown
+         only to the host and only in the lobby, because the server refuses it
+         anywhere else and a button that silently does nothing is worse than no
+         button. The arrow points at the team the click MOVES them to. */
+      var swap = '';
+      if (mode.teams && d.hostId === myId && (p.team === 'a' || p.team === 'b')) {
+        var to = p.team === 'a' ? 'b' : 'a';
+        swap = ' <button class="team-swap" data-id="' + p.id + '" data-to="' + to +
+               '" title="Move to ' + CFG.TEAMS[to].name + '">&#8644; ' + CFG.TEAMS[to].name + '</button>';
+      }
+      li.innerHTML = '<i class="dot" style="background:' + p.color + '"></i><b>' + p.name + '</b>' + host + you + vc + rdy + swap;
       els['lobby-players'].appendChild(li);
+    }
+    if (!els['lobby-players'].__teamSwapBound) {
+      els['lobby-players'].__teamSwapBound = true;
+      els['lobby-players'].addEventListener('click', function (e) {
+        var b = e.target.closest && e.target.closest('.team-swap');
+        if (!b) return;
+        Net.setPlayerTeam(b.getAttribute('data-id'), b.getAttribute('data-to'));
+      });
     }
     if (mode.teams) {
       ['a', 'b'].forEach(function (t) {

@@ -662,3 +662,12 @@ button { font-family: var(--disp); cursor: pointer; }
 #end-overlay.animate-in #end-body tr:nth-child(5) { animation-delay: 0.76s; }
 #end-overlay.animate-in #end-body tr:nth-child(6) { animation-delay: 0.84s; }
 #end-overlay.animate-in #end-body tr:nth-child(n+7) { animation-delay: 0.90s; }
+
+
+/* v8.28 host team-swap button in the lobby roster */
+.team-swap {
+  margin-left: 8px; padding: 1px 7px; font: 600 11px/1.5 Rajdhani, sans-serif;
+  letter-spacing: 0.4px; color: #cfe0f2; background: rgba(70,96,128,0.32);
+  border: 1px solid rgba(140,180,220,0.35); border-radius: 3px; cursor: pointer;
+}
+.team-swap:hover { background: rgba(96,132,176,0.55); color: #fff; }
