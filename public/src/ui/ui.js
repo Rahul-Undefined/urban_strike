@@ -18,7 +18,7 @@ var UI = (function () {
       'weapon-name', 'ammo-mag', 'ammo-reserve', 'tc-frag', 'tc-smoke', 'tc-flash', 'reload-hint',
       'scoreboard', 'sb-code', 'sb-body',
       'death-overlay', 'death-info', 'death-timer',
-      'end-overlay', 'end-title', 'end-sub', 'end-body', 'btn-back-lobby', 'end-hint',
+      'end-overlay', 'end-title', 'end-sub', 'end-body', 'end-insights', 'btn-back-lobby', 'end-hint',
       'pause-overlay', 'sens-range', 'sens-val', 'vol-range', 'vol-val', 'quality-shadows',
       'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading',
       'announce', 'cook-bar', 'cook-fill', 'att-list',
@@ -348,7 +348,13 @@ var UI = (function () {
     els['end-body'].innerHTML = '';
     function row(p) {
       var tr = document.createElement('tr');
-      tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (p.assists || 0) + '</td><td>' + (p.damage || 0) + '</td>';
+      /* v8.29: STREAK and K/D added so this table matches the live one behind
+         Tab. It was five columns against the live board's seven, which is why
+         the two never looked like the same scoreboard. Ping is deliberately
+         left out — it is a live network reading and means nothing once the
+         match is over. */
+      var kd = p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : (p.kills > 0 ? p.kills.toFixed(2) : '0.00');
+      tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (p.assists || 0) + '</td><td>' + (p.damage || 0) + '</td><td>' + (p.bestStreak || p.streak || 0) + '</td><td>' + kd + '</td>';
       els['end-body'].appendChild(tr);
     }
     if (d.winnerTeam) {
@@ -362,7 +368,7 @@ var UI = (function () {
       ['a', 'b'].forEach(function (t) {
         var hdr = document.createElement('tr');
         hdr.className = 'team-hdr t' + t;
-        hdr.innerHTML = '<td>TEAM ' + CFG.TEAMS[t].name + '</td><td></td><td></td><td></td><td></td>';
+        hdr.innerHTML = '<td>TEAM ' + CFG.TEAMS[t].name + '</td><td></td><td></td><td></td><td></td><td></td><td></td>';
         els['end-body'].appendChild(hdr);
         d.players.filter(function (p) { return p.team === t; })
           .sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
@@ -375,6 +381,46 @@ var UI = (function () {
         : 'Time expired';
       d.players.slice().sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
     }
+    /* v8.29 MATCH INSIGHTS.
+
+       Every field the server sends is optional — a two-player match with one
+       kill produces most of them as null — so each card is pushed only if its
+       data exists and the whole block hides when nothing qualified. An empty
+       row of headings looks broken; no row at all looks deliberate.
+
+       Nemesis is the only one that reads differently per player, which is what
+       makes it worth having. */
+    var ins = d.insights, cards = [];
+    function card(label, text, tone) {
+      cards.push('<div class="ins' + (tone ? ' ' + tone : '') + '"><span class="ins-k">' +
+        label + '</span><span class="ins-v">' + text + '</span></div>');
+    }
+    if (ins) {
+      if (ins.rivalry) card('RIVALRY', ins.rivalry.killer + ' dominated ' + ins.rivalry.victim +
+        ' &middot; ' + ins.rivalry.n + ' kills', 'hot');
+      if (ins.nemesis && me && ins.nemesis[myId]) card('YOUR NEMESIS',
+        ins.nemesis[myId].name + ' killed you ' + ins.nemesis[myId].n + '\u00d7', 'bad');
+      if (ins.bestStreak) card('BEST STREAK', ins.bestStreak.name + ' &middot; ' +
+        ins.bestStreak.n + ' in a row', 'hot');
+      if (ins.longest) card('LONGEST SHOT', ins.longest.name + ' &middot; ' +
+        ins.longest.m.toFixed(0) + ' m with the ' +
+        ((CFG.WEAPONS[ins.longest.weapon] || {}).label || ins.longest.weapon));
+      if (ins.favouriteWeapon) card('WEAPON OF CHOICE', ins.favouriteWeapon.name + ' &middot; ' +
+        ins.favouriteWeapon.n + ' with the ' +
+        ((CFG.WEAPONS[ins.favouriteWeapon.w] || CFG.THROWS[ins.favouriteWeapon.w] ||
+          CFG.GEAR[ins.favouriteWeapon.w] || {}).label || ins.favouriteWeapon.w));
+      if (ins.headshots) card('DEADEYE', ins.headshots.name + ' &middot; ' + ins.headshots.n +
+        ' headshot' + (ins.headshots.n === 1 ? '' : 's'));
+      if (ins.mostDamage) card('MOST DAMAGE', ins.mostDamage.name + ' &middot; ' +
+        ins.mostDamage.n);
+      if (ins.firstBlood) card('FIRST BLOOD', ins.firstBlood.name + ' \u2192 ' + ins.firstBlood.victim);
+      if (ins.finalBlow) card('FINAL BLOW', ins.finalBlow.name + ' \u2192 ' + ins.finalBlow.victim);
+    }
+    els['end-insights'].innerHTML = cards.length
+      ? '<div class="ins-title">MATCH INSIGHTS</div><div class="ins-grid">' + cards.join('') + '</div>'
+      : '';
+    els['end-insights'].style.display = cards.length ? '' : 'none';
+
     els['btn-back-lobby'].style.display = isHost ? '' : 'none';
     els['end-hint'].style.display = isHost ? 'none' : '';
   }

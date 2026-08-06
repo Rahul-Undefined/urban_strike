@@ -78,6 +78,57 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+## v8.29 — the two scoreboards now agree, plus match insights
+
+### Why they never matched
+
+They were reading the same numbers. They were showing different columns.
+
+```
+live (Tab)   OPERATOR  K  D  A  DMG  STREAK  PING
+end card     OPERATOR  K  D  A  DMG
+```
+
+Five against seven. Nothing was wrong with the values — the end card simply
+showed less, so it read as a different scoreboard.
+
+The end card now carries **STREAK** and a computed **K/D**. Ping is
+deliberately left out: it is a live network reading and means nothing once the
+match is over.
+
+### Match insights
+
+Recorded in `combat.js` at the moment of the kill, because that is the only
+place that knows all of it at once — who, whom, with what, from how far, and
+whether it was a head hit. Reconstructing any of it later from the killfeed
+would mean trusting the client.
+
+| Card | Reads |
+|---|---|
+| RIVALRY | who killed one particular person the most |
+| YOUR NEMESIS | who killed **you** the most — different for every player |
+| BEST STREAK | longest run without dying |
+| LONGEST SHOT | distance and weapon |
+| WEAPON OF CHOICE | most kills with a single weapon |
+| DEADEYE | most headshots |
+| MOST DAMAGE | highest total damage |
+| FIRST BLOOD | opening kill |
+| FINAL BLOW | the kill that ended it |
+
+Every field is optional and the client treats it that way. A two-player match
+with one kill produces most of them as null, so each card is pushed only if
+its data exists and the whole block hides when nothing qualified. An empty row
+of headings looks broken; no row at all looks deliberate.
+
+RIVALRY needs at least two kills on the same person before it appears, and
+LONGEST SHOT needs 5 m, so neither fires on a lucky first frag.
+
+Counters reset per match alongside kills and deaths — insights are never
+cumulative across rounds. Plain counters, no timers, nothing that can throw: a
+bad insight must never be able to break a kill.
+
+---
+
 ## v8.28 — host-assigned teams
 
 Teams were auto-balanced by join order with no way to change them.

@@ -105,8 +105,37 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
         attacker.kills++;
         attacker.streak++;
         killerStreak = attacker.streak;
+        if (attacker.streak > (attacker.bestStreak || 0)) attacker.bestStreak = attacker.streak;
         killerName = attacker.name;
         if (teams && attacker.team) room.teamKills[attacker.team]++;
+
+        /* v8.29 MATCH INSIGHTS. Recorded here because this is the only place
+           that knows all of it at once — who, whom, with what, from how far,
+           and whether it was a head hit. Reconstructing any of this later from
+           the killfeed would mean trusting the client. Plain counters, no
+           timers, nothing that can throw: a bad insight must never be able to
+           break a kill. */
+        const S = room.insights || (room.insights = {
+          pairs: {}, weapons: {}, longest: null, first: null, last: null, heads: {}
+        });
+        const pk = attackerId + '>' + victim.id;
+        S.pairs[pk] = (S.pairs[pk] || 0) + 1;
+        const wk = attackerId + '|' + (weapon || '?');
+        S.weapons[wk] = (S.weapons[wk] || 0) + 1;
+        if (headshot) S.heads[attackerId] = (S.heads[attackerId] || 0) + 1;
+        let dist = 0;
+        if (attacker.pos && victim.pos) {
+          const dx = attacker.pos[0] - victim.pos[0];
+          const dy = attacker.pos[1] - victim.pos[1];
+          const dz = attacker.pos[2] - victim.pos[2];
+          dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+        if (dist > 0 && (!S.longest || dist > S.longest.m)) {
+          S.longest = { id: attackerId, name: attacker.name, m: dist, weapon: weapon || '?' };
+        }
+        const stamp = { id: attackerId, name: attacker.name, victim: victim.name };
+        if (!S.first) S.first = stamp;
+        S.last = stamp;
       }
     }
     // assists: meaningful damage shortly before the kill, by someone else

@@ -55,7 +55,7 @@ function addPlayer(room, socket, name) {
     color: CFG.COLORS[0],
     team: null,
     joinOrder: joinCounter++,
-    kills: 0, deaths: 0, assists: 0, damage: 0, streak: 0, ping: 0, ready: false,
+    kills: 0, deaths: 0, assists: 0, damage: 0, streak: 0, bestStreak: 0, ping: 0, ready: false,
     hp: CFG.PLAYER.hp, armorLvl: 0, armorDur: 0, helmLvl: 0, helmDur: 0, alive: false,
     protUntil: 0, att: { sight: null, muzzle: null, mag: null }, exW: {}, rd: {},
     pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0, mv: 0, wp: 0, ln: 0,
@@ -108,7 +108,8 @@ function lobbyPayload(room) {
     players: [...room.players.values()].map(p => ({
       id: p.id, name: p.name, color: p.color, team: p.team,
       kills: p.kills, deaths: p.deaths, assists: p.assists,
-      damage: Math.round(p.damage), streak: p.streak, ping: p.ping, ready: !!p.ready,
+      damage: Math.round(p.damage), streak: p.streak, bestStreak: p.bestStreak || 0,
+      ping: p.ping, ready: !!p.ready,
       voice: !!p.voice
     }))
   };

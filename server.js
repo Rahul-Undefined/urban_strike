@@ -71,6 +71,58 @@ const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
 const { weaponServerDamage, applyDamage, positionPlausible, fireRateOk } = Combat;
 const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo }); // code -> room
 
+/* v8.29: turn the raw counters into the handful of lines worth reading. Every
+   field is optional and every consumer must treat it as such — a two-player
+   match with one kill produces most of these as null, and the end screen has
+   to render cleanly in that case rather than showing empty rows. */
+function buildInsights(room) {
+  const S = room.insights;
+  if (!S) return null;
+  const nameOf = id => (room.players.get(id) || {}).name || 'Someone';
+  const out = {};
+
+  let topPair = null;
+  for (const k in S.pairs) {
+    if (!topPair || S.pairs[k] > topPair.n) {
+      const [a, b] = k.split('>');
+      topPair = { n: S.pairs[k], killer: nameOf(a), victim: nameOf(b) };
+    }
+  }
+  if (topPair && topPair.n > 1) out.rivalry = topPair;
+
+  out.nemesis = {};                       // per player: who killed them most
+  for (const k in S.pairs) {
+    const [a, b] = k.split('>');
+    const cur = out.nemesis[b];
+    if (!cur || S.pairs[k] > cur.n) out.nemesis[b] = { n: S.pairs[k], name: nameOf(a) };
+  }
+
+  const bestW = {};
+  for (const k in S.weapons) {
+    const [id, w] = k.split('|');
+    if (!bestW[id] || S.weapons[k] > bestW[id].n) bestW[id] = { n: S.weapons[k], w };
+  }
+  let topGun = null;
+  for (const id in bestW) if (!topGun || bestW[id].n > topGun.n) topGun = { ...bestW[id], name: nameOf(id) };
+  if (topGun) out.favouriteWeapon = topGun;
+
+  if (S.longest && S.longest.m >= 5) out.longest = S.longest;
+  if (S.first) out.firstBlood = S.first;
+  if (S.last && (!S.first || S.last.name !== S.first.name || S.last.victim !== S.first.victim)) out.finalBlow = S.last;
+
+  let streak = null, carry = null, heads = null;
+  for (const p of room.players.values()) {
+    if (!streak || p.bestStreak > streak.n) streak = { n: p.bestStreak || 0, name: p.name };
+    if (!carry || p.damage > carry.n) carry = { n: Math.round(p.damage || 0), name: p.name };
+    const h = S.heads[p.id] || 0;
+    if (h > 0 && (!heads || h > heads.n)) heads = { n: h, name: p.name, of: p.kills };
+  }
+  if (streak && streak.n > 1) out.bestStreak = streak;
+  if (carry && carry.n > 0) out.mostDamage = carry;
+  if (heads) out.headshots = heads;
+  return out;
+}
+
 function pickSpawn(room, forP) {
   const teams = modeInfo(room).teams;
   /* v8.27: NEVER LET THE FILTER RETURN NOTHING.
@@ -121,7 +173,8 @@ function startMatch(room) {
   room.startedAt = now();
   room.teamKills = { a: 0, b: 0 };
   for (const p of room.players.values()) {
-    p.kills = 0; p.deaths = 0; p.assists = 0; p.damage = 0; p.streak = 0;
+    p.kills = 0; p.deaths = 0; p.assists = 0; p.damage = 0; p.streak = 0; p.bestStreak = 0;
+    room.insights = null;   // v8.29: insights are per match, never cumulative
     p.att = { sight: null, muzzle: null, mag: null }; p.exW = {}; p.rd = {};
     p.ready = false; p.mines = CFG.GEAR.mine.start; p.lastMolo = {};
   }
@@ -200,6 +253,7 @@ function endMatch(room, winnerId, reason) {
   clearAirdrop(room);
   Mines.clear(room);
   const teams = modeInfo(room).teams;
+  const insights = buildInsights(room);
   let winnerTeam = null;
   if (teams) {
     winnerTeam = room.teamKills.a === room.teamKills.b ? null
@@ -217,7 +271,7 @@ function endMatch(room, winnerId, reason) {
     winnerId = best ? best.id : null;
   }
   io.to(room.code).emit('matchEnd', {
-    winnerId, winnerTeam, reason,
+    winnerId, winnerTeam, reason, insights,
     teamKills: teams ? room.teamKills : null,
     players: lobbyPayload(room).players
   });
