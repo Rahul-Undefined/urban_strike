@@ -159,7 +159,11 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     pushLobby(room);
     if (attacker && attackerId !== victim.id) {
       const target = room.settings.killTarget;
-      if (teams ? room.teamKills[attacker.team] >= target : attacker.kills >= target) {
+      /* v8.30: target 0 means UNLIMITED — never end on kills, let the clock
+         decide. Guarding on `> 0` rather than a separate flag keeps the
+         setting a single number all the way from the dropdown to here. */
+      if (target > 0 &&
+          (teams ? room.teamKills[attacker.team] >= target : attacker.kills >= target)) {
         endMatch(room, attackerId, 'kills');
       }
     }

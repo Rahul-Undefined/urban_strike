@@ -18,6 +18,27 @@ var Game = (function () {
   var timerAccum = 0;
   var landDip = 0;
 
+  /* v8.30 ERROR SURFACE.
+
+     Before this, a client-side throw was invisible: the console had it, the
+     player had a black screen, and the report that came back was "it is
+     stuck". Every guard added in this version funnels here, so the actual
+     message reaches the screen and the bug becomes reportable instead of
+     guessable.
+
+     Rate-limited hard, because the render loop runs at 60Hz and an unlucky
+     frame would otherwise queue sixty toasts a second and make things worse
+     than the fault it is reporting. Each distinct message is shown once. */
+  var seenErrors = {};
+  function reportError(where, err) {
+    var msg = (err && err.message) ? err.message : String(err);
+    var key = where + '|' + msg;
+    if (seenErrors[key]) return;
+    seenErrors[key] = true;
+    try { console.error('[UrbanStrike:' + where + ']', err); } catch (e) {}
+    try { UI.toast(where + ': ' + msg, true); } catch (e) {}
+  }
+
   // ---------- boot ----------
   function init() {
     canvas = document.getElementById('game-canvas');
@@ -47,6 +68,17 @@ var Game = (function () {
 
     wireInput();
     wirePointerLock();
+
+    /* v8.30: catch anything that escapes a handler we do not own — a socket
+       callback, an audio decode, a promise nobody awaited. Same rate-limited
+       surface, so the player sees a message instead of a silent freeze. */
+    window.addEventListener('error', function (e) {
+      reportError('script', (e && e.error) || (e && e.message) || 'unknown error');
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      reportError('async', (e && e.reason) || 'unhandled rejection');
+    });
+
     requestAnimationFrame(loop);
   }
 
@@ -124,11 +156,20 @@ var Game = (function () {
       // work in the lobby too, so it does NOT live here. The old duplicate also
       // shadowed the smoke grenade, which had been unbindable ever since.
       if (e.code === 'KeyZ') { rideLift(); return; }
-      /* v8.21: the HUD has said "T x1" for smoke since it was added, but the
-         bind was KeyB. Players pressed the key the game told them to and
-         nothing happened, which is most of "throwables don't work". T is now
-         the bind; B still works so nobody's muscle memory breaks. */
-      if (e.code === 'KeyT' || e.code === 'KeyB') { Weapons.throwGrenade('smoke'); return; }
+      /* v8.21 moved smoke from B onto T so the bind matched the HUD label.
+         v8.30 moves it back, because T WAS ALREADY TAKEN.
+
+         ui.js wireV43() binds T at document level for push-to-talk, and it has
+         to stay there so voice works in the lobby. Both listeners are on
+         `document` and neither stops propagation, so pressing T threw a smoke
+         AND keyed the microphone open at the same time. Nobody noticed because
+         the smoke throw was separately crashing on the missing mat() helper —
+         fixing that would have made this audible immediately.
+
+         Smoke is B, the HUD label below now says B, and T belongs to voice
+         alone. The two are no longer allowed to disagree: verify-models.js
+         checks the throwable binds against ui.js as well as this file. */
+      if (e.code === 'KeyB') { Weapons.throwGrenade('smoke'); return; }
       if (e.code === 'KeyF') { Weapons.throwGrenade('flash'); return; }
       if (e.code.indexOf('Digit') === 0) {
         var n = parseInt(e.code.slice(5), 10);
@@ -201,28 +242,68 @@ var Game = (function () {
   }
 
   // ---------- match lifecycle (called by Net) ----------
+  /* v8.30 THE BLACK SCREEN WAS A MISSING ERROR BOUNDARY, NOT A MISSING FEATURE.
+
+     `#loading` is a full-screen overlay at z-index 80 filled with var(--bg),
+     which is #0d1015 — near black. Everything below used to run unguarded
+     between `setLoading(true)` and `setLoading(false)`. If ANY line in that
+     chain threw — the map build, a pickup, the minimap, a bad settings
+     payload — the exception escaped the timer callback and the last four
+     calls never ran. No `setLoading(false)`, no `showHUD()`, no
+     `showClickToPlay()`. The player was left staring at a near-black overlay
+     with faint dim text, unable to click into the game, forever. That is the
+     "stuck on a single black screen" report, and it is why guessing at
+     individual triggers never fixed it: the trigger varies, the trap does not.
+
+     The build is now wrapped so the recovery calls run in a `finally`. Worst
+     case the player lands in a half-built match and is TOLD so, which they
+     can leave and rejoin. Best case nothing throws and this costs nothing.
+     `reportError` puts the real message on screen so the actual trigger can
+     finally be identified instead of guessed at. */
   function onMatchStart(d) {
     UI.setLoading(true);
     setTimeout(function () {           // let the loading bar paint before the ~1s map build
-      var mapId = (d.settings && d.settings.map) || 'urban';
-      UI.setLoadingMap((CFG.MAPS[mapId] || CFG.MAPS.urban).label);
-      World.buildMap(scene, mapId);
-      Minimap.invalidate();
-      Weapons.matchReset();
-      Pickups.build(scene);
-      Pickups.init(d.pickups);
-      Minimap.init();
-      if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
-      AudioSys.ambient();
-      UI.setLoading(false);
-      UI.hideEnd(); UI.hideDeath();
-      UI.setCountdown(-1);
-      UI.showHUD();
-      var teams = CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams;
-      UI.setKillTarget((teams ? 'FIRST TEAM TO ' : 'FIRST TO ') + d.settings.killTarget);
-      UI.setTeamScore({ a: 0, b: 0 }, Net.getMyTeam(), !!teams);
+      var built = false;
+      try {
+        var mapId = (d.settings && d.settings.map) || 'urban';
+        UI.setLoadingMap((CFG.MAPS[mapId] || CFG.MAPS.urban).label);
+        World.buildMap(scene, mapId);
+        Minimap.invalidate();
+        Weapons.matchReset();
+        Pickups.build(scene);
+        Pickups.init(d.pickups);
+        Minimap.init();
+        if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
+        AudioSys.ambient();
+        built = true;
+      } catch (err) {
+        reportError('match start', err);
+      } finally {
+        /* These four own the screen. They run whether the build succeeded or
+           not, so a failure is a visible, playable-or-leavable state rather
+           than a black hole. */
+        UI.setLoading(false);
+        UI.hideEnd(); UI.hideDeath();
+        UI.setCountdown(-1);
+        UI.showHUD();
+      }
+      try {
+        var teams = CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams;
+        UI.setKillTarget(killTargetLabel(d.settings.killTarget, teams));
+        UI.setTeamScore({ a: 0, b: 0 }, Net.getMyTeam(), !!teams);
+      } catch (err2) {
+        reportError('match start hud', err2);
+      }
       UI.showClickToPlay(true);
+      if (!built) UI.toast('Map failed to load \u2014 press ESC and rejoin the room', true);
     }, 60);
+  }
+
+  /* v8.30: 0 kills means UNLIMITED — the match runs until the clock expires.
+     Mirrors how `minutes: 0` already reads as an infinity symbol on the HUD. */
+  function killTargetLabel(target, teams) {
+    if (!(target > 0)) return 'UNLIMITED KILLS';
+    return (teams ? 'FIRST TEAM TO ' : 'FIRST TO ') + target;
   }
 
   function onLocalSpawn(pos, ry, prot) {
@@ -294,7 +375,18 @@ var Game = (function () {
     var dt = Math.min(0.05, Math.max(0.0001, (t - lastT) / 1000));
     lastT = t;
 
+    /* v8.30 A THROWN FRAME USED TO MEAN A PERMANENTLY BLACK CANVAS.
+
+       `renderer.render()` is the last statement in this function, so anything
+       that threw in the gameplay block below skipped it. requestAnimationFrame
+       was already queued at the top, so the loop kept spinning and kept
+       throwing — sixty times a second — while the canvas held whatever was
+       last drawn. On the first frame of a match that is nothing at all: black.
+
+       The block is now guarded so the render call is unreachable-proof. One
+       bad frame is a dropped frame, not a dead game. */
     var playing = Net.getPhase() === 'playing';
+    try {
     if (playing && World.isBuilt()) {
       var wu = Weapons.update(dt);
       PlayerCtl.update(dt, Input, wu.speedMult, wu.aiming);
@@ -355,6 +447,9 @@ var Game = (function () {
       World.flickers.forEach(function (l, i) {
         if (Math.random() < 0.06) l.intensity = flickerBases[i] * (0.55 + Math.random() * 0.6);
       });
+    }
+    } catch (err) {
+      reportError('frame', err);       // rate-limited inside reportError
     }
 
     renderer.render(scene, camera);

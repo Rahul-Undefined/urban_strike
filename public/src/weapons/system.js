@@ -70,6 +70,23 @@ var Weapons = (function () {
   }
 
   // Full reset at match start: back to the base 8, no attachments.
+  /* v8.30 THE MISSING ONE-LINER THAT KILLED THREE GRENADES AND THE ROCKET.
+
+     grenadeMesh() and spawnRocket() both called `mat(colour)`. That helper is
+     defined privately inside pickups.js and viewmodels.js — two other IIFEs —
+     so from in here it was simply an undefined identifier. Every call threw
+     ReferenceError.
+
+     Molotov survived only because its branch builds materials inline and
+     returns BEFORE reaching the shared line, which is why "same function,
+     works for one type and not the others" looked impossible: the bug was one
+     level down, in the mesh builder, not in throwGrenade().
+
+     The throw crashed inside hurl() before Net.sendThrow(), so the grenade
+     never reached the server either, and the count had already been
+     decremented — you heard the pin, lost the grenade, and saw nothing. */
+  function mat(c) { return new THREE.MeshLambertMaterial({ color: c }); }
+
   function matchReset() {
     owned = {};
     BASE_WEAPONS.forEach(function (n) { owned[n] = true; });

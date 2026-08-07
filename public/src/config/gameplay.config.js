@@ -120,7 +120,16 @@
 
   var MATCH = {
     defaultKills: 15,
-    killOptions: [5, 10, 15, 20, 30],
+    /* v8.30: 0 = UNLIMITED. The match ignores the kill count entirely and
+       runs until the clock expires, so players can keep fighting instead of
+       the round ending under them.
+
+       SAFETY: this is only survivable because every entry in timeOptions is
+       greater than zero, so an unlimited-kills match still has exactly one
+       guaranteed way to end. If a "no time limit" option is ever added, the
+       two must be mutually exclusive or a match could never finish — test.js
+       asserts this pairing so it cannot be broken by accident. */
+    killOptions: [5, 10, 15, 20, 30, 0],
     defaultMinutes: 10,
     timeOptions: [5, 10, 15, 30, 60],
     startCountdown: 5,    // seconds between the host pressing START and the match beginning

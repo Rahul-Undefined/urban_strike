@@ -219,6 +219,26 @@ function startSnapshots(room) {
   stopSnapshots(room);
   room.snapN = 0;
   room.snapTimer = setInterval(() => {
+    /* v8.30 THE CLOCK HIT 0:00 AND THE MATCH KEPT GOING.
+
+       There were two independent clocks. The HUD counted down from
+       `startedAt + minutes`, while the only thing that actually ended the
+       match was a single `setTimeout(minutes * 60000)` armed a few
+       milliseconds later. Node does not fire a ten-minute timer to the
+       millisecond — under a snapshot loop running fifteen times a second it
+       fires LATE — so the display reliably reached zero before the server
+       agreed, and the players sat in a match the scoreboard said was over.
+
+       Ending it from the tick means both sides now derive the end from the
+       same quantity, so they cannot disagree by more than one tick (~67ms).
+       The setTimeout stays armed as a backstop; endMatch() guards on
+       `room.state !== 'playing'`, so whichever fires first wins and the
+       second is a no-op. */
+    if (room.settings.minutes > 0 && room.startedAt &&
+        now() - room.startedAt >= room.settings.minutes * 60000) {
+      endMatch(room, null, 'time');
+      return;
+    }
     respawnPickups(room);
     Mines.tick(room);
     regenTick(room);

@@ -145,8 +145,8 @@ move every frame — so the only levers are part count, material sharing and LOD
 
 | Gate | Command | Current | Proves |
 |---|---|---|---|
-| Integration | `node server.js & sleep 3; node test.js` | 85 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
-| Models+loot+voice | `node verify-models.js` | 38 | viewmodels, grants, loot exclusivity, scope ladder, voice wiring |
+| Integration | `node server.js & sleep 3; node test.js` | 94 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
+| Models+loot+voice | `node verify-models.js` | 40 | viewmodels, grants, loot exclusivity, scope ladder, voice wiring |
 | Map | `node tools/verify-map.js` | **992** | loot support / spawn clearance / airdrop landing, all 3 maps |
 | Build chain | `node tools/verify-build.js` | PASS | real-three vm build of all 3 maps + reset + coplanar-ground gate |
 | Ascent | `node tools/verify-access.js` | **50/51** *(1 known, see below)* | walks a capsule up every staircase |
@@ -464,6 +464,64 @@ Blocked: Rahul is still reviewing Rural and will supply direction.
 | Helmet absorb | No assertion covers the maths |
 | Anti-cheat | Movement, ammo and fire rate are fully client-trusted. The Render URL is public. Social boundary, not a technical one. Raise once if the audience widens; don't nag |
 | Voice TURN | Blocked on Rahul supplying credentials |
+
+---
+
+## 8a. v8.30 — what changed and what is still open
+
+**Fixed and gated.** `mat()` restored in `weapons/system.js` (frag, smoke, flash
+and the rocket all threw `ReferenceError` — molotov worked only because its
+branch returns before the shared line). Smoke moved off `KeyT`, which
+push-to-talk already owned in `ui.js`; smoke is `B`, HUD labels updated. Match
+end now also fires from the snapshot tick using the same `startedAt + duration`
+the HUD reads, so 0:00 and the real end cannot drift. Unlimited kill target (0).
+
+**Black screen: mechanism removed, trigger still unknown.** Reproduction was
+attempted and FAILED — live 2v2/3v3/5v5, odd counts, mid-countdown joins and
+joins into a running match were all healthy server-side, and a harness booting
+all 30 real client modules against a captured joiner event stream threw nothing.
+What was fixed is the reason any such fault was invisible and terminal:
+
+- `onMatchStart` now wraps the build and runs `setLoading(false)` / `showHUD()` /
+  `showClickToPlay()` in a `finally`. Previously a throw anywhere in the build
+  chain left the near-black `#loading` overlay up permanently.
+- the render loop now guards its gameplay block so `renderer.render()` — the
+  last statement — can never be skipped.
+- `window.onerror` and `unhandledrejection` route to a rate-limited on-screen
+  toast.
+
+**If the black screen recurs, the toast now names the error. Get that text
+before changing anything.** That is the missing evidence every previous attempt
+lacked.
+
+**Open, deliberately not fixed: the head hitbox disagrees with the model.**
+Measured with the real `castRay` against a settled rig, firing 11 rays up the
+visible head from 20 m:
+
+| Stance | head | body | passes straight through |
+|---|---|---|---|
+| Standing | 2 / 11 | 5 / 11 | **4 / 11** |
+| Crouching | 2 / 11 | 1 / 11 | **8 / 11** |
+| Prone | 1 / 11 | 10 / 11 | 0 / 11 |
+
+The head box is positioned from `CFG.PLAYER.eyeHeight`; the rendered head comes
+from the rig's joint chain (`spine 0.02` -> `neck +0.625` -> `head +0.105`, all
+scaled by `RIG`, plus `RIG_LIFT`). They agree prone and diverge badly standing
+and crouching. v8.19 scaled the boxes by `RIG` but never re-derived the head
+CENTRE, which is why `castRay` reading `Avatars.RIG` at runtime did not fix it.
+
+The right fix is to take the head position from the avatar's actual rendered
+head rather than recomputing it, and to add a gate that fires rays at the
+rendered head in all three stances and asserts `head`. **Do it in its own build**
+— it changes how aiming feels.
+
+**Other small items found in the v8.30 audit, not fixed:** `room.insights = null`
+sits inside the per-player loop in `startMatch` (harmless, misplaced); the client
+`socket.on('proj')` and `socket.on('throw')` handlers do no validation of `d.o`,
+`d.v` or `d.type`; the server has no `uncaughtException` handler; avatar feet sit
+~5.5cm below ground standing and ~6cm above it crouched/prone. A scan for
+undefined function references across all 30 client modules came back clean apart
+from `mat()`, so there are no other landmines of that class.
 
 ---
 

@@ -55,7 +55,10 @@ var UI = (function () {
     });
   }
   function killItems() {
-    return CFG.MATCH.killOptions.map(function (n) { return { v: n, t: String(n) + ' kills' }; });
+    // v8.30: 0 is the UNLIMITED sentinel — the clock ends the match instead.
+    return CFG.MATCH.killOptions.map(function (n) {
+      return { v: n, t: n > 0 ? (String(n) + ' kills') : 'Unlimited kills' };
+    });
   }
   function timeItems() {
     return CFG.MATCH.timeOptions.map(function (n) { return { v: n, t: n + ' min' }; });
@@ -215,7 +218,8 @@ var UI = (function () {
     var mapCfg = CFG.MAPS[d.settings.map] || CFG.MAPS.urban;
     if (els['info-map'])   els['info-map'].textContent   = mapCfg ? mapCfg.label : d.settings.map;
     if (els['info-mode'])  els['info-mode'].textContent  = mode.label;
-    if (els['info-kills']) els['info-kills'].textContent = d.settings.killTarget + ' kills';
+    if (els['info-kills']) els['info-kills'].textContent =
+      d.settings.killTarget > 0 ? (d.settings.killTarget + ' kills') : 'Unlimited';
     if (els['info-time'])  els['info-time'].textContent  = d.settings.minutes + ' min';
     if (els['info-slots']) els['info-slots'].textContent = total + ' / ' + mode.maxPlayers;
     if (els['info-role'])  els['info-role'].textContent  = isHost ? 'HOST' : 'OPERATOR';
@@ -255,7 +259,7 @@ var UI = (function () {
     else { els['ammo-mag'].textContent = mag; els['ammo-reserve'].textContent = reserve; }
     if (throwsLeft) {
       els['tc-frag'].textContent = 'G \u00d7' + throwsLeft.frag;
-      els['tc-smoke'].textContent = 'T \u00d7' + throwsLeft.smoke;
+      els['tc-smoke'].textContent = 'B \u00d7' + throwsLeft.smoke;
       els['tc-flash'].textContent = 'F \u00d7' + throwsLeft.flash;
       els['tc-frag'].classList.toggle('spent', throwsLeft.frag <= 0);
       els['tc-smoke'].classList.toggle('spent', throwsLeft.smoke <= 0);

@@ -162,12 +162,72 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
   const pttGame = (gsrc.match(/setTalking\(/g) || []).length;
   ok(pttUi === 1 && pttGame === 0, 'push-to-talk is bound once in ui.js and not duplicated in game.js');
 
-  // every throwable must have a reachable key binding
-  const bound = new Set((gsrc.match(/e\.code === '(Key[A-Z])'/g) || []).map(m => m.slice(14, -1)));
+  /* v8.30 THIS GATE USED TO ONLY READ game.js, WHICH IS WHY IT PASSED WHILE
+     SMOKE AND PUSH-TO-TALK WERE BOTH BOUND TO T.
+
+     PTT lives in ui.js, so a collision between the two files was invisible
+     here. The old second assertion was also an `||` whose fallback
+     (`bound.size >= thrown.length`) is almost always true, so it could not
+     fail in practice. Both problems are fixed: every document-level key
+     listener in BOTH files is collected, and a key claimed by two different
+     actions is now a hard failure. */
+  const keyRe = /e\.code === '(Key[A-Z])'/g;
+
+  // what each file claims, as key -> list of actions
+  const claims = {};
+  function claim(key, action) { (claims[key] = claims[key] || []).push(action); }
+
+  /* Scan each file split by LISTENER TYPE. A key legitimately appears in both
+     keydown and keyup — G is hold-to-cook, release-to-throw — so a collision
+     only counts when two different actions claim the same key on the SAME
+     event. */
+  function scan(src, label) {
+    let evt = null;
+    src.split('\n').forEach(line => {
+      const lis = line.match(/addEventListener\('(keydown|keyup)'/);
+      if (lis) { evt = lis[1]; return; }
+      if (!evt) return;
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;         // ignore comments
+      /* Match BOTH `e.code === 'KeyX'` and `e.code !== 'KeyX'` (the PTT guard
+         is written as an early-return `!==`, which an === -only regex misses —
+         that is exactly how the T collision hid from this gate), and every key
+         on the line, since `KeyT || KeyB` claims two. */
+      const keys = [...line.matchAll(/e\.code\s*[!=]==\s*'(Key[A-Z])'/g)].map(m => m[1]);
+      if (!keys.length) return;
+      const act = (line.match(/throwGrenade\('(\w+)'\)/) || [])[1]
+        || (/setTalking/.test(line) ? 'push-to-talk' : null)
+        || (line.match(/([A-Za-z]\w*)\s*\(\s*\)\s*;/) || [])[1]
+        || label;
+      keys.forEach(k => claim(evt + ':' + k, act));
+    });
+  }
+  scan(gsrc, 'gameplay');
+  scan(usrc, 'ui');
+
+  const collisions = Object.keys(claims).filter(k => new Set(claims[k]).size > 1);
+  ok(collisions.length === 0,
+    'no key is claimed by two different actions on the same event (game.js + ui.js)' +
+    (collisions.length ? ' [' + collisions.map(k => k + '=' + claims[k].join('/')).join(', ') + ']' : ''));
+
   const thrown = (gsrc.match(/throwGrenade\('(\w+)'\)/g) || []).map(m => m.slice(15, -2));
   ok(new Set(thrown).size === thrown.length, 'no throwable is bound twice');
-  ok(bound.size === (gsrc.match(/e\.code === '(Key[A-Z])'/g) || []).length ||
-     bound.size >= thrown.length, 'every throwable has a distinct reachable key');
+
+  const bound = new Set((gsrc.match(keyRe) || []).map(m => m.slice(14, -1)));
+  ok(bound.size >= thrown.length, 'every throwable has a distinct reachable key');
+
+  /* The HUD label and the real bind must agree — players press the key the
+     game tells them to. v8.21 shipped a HUD saying "T" against a B bind and
+     it read as "throwables are broken". */
+  const smokeKey = (gsrc.match(/e\.code === '(Key([A-Z]))'\s*\)\s*\{\s*Weapons\.throwGrenade\('smoke'\)/) || [])[2];
+  const smokeLabel = (hsrc.match(/id="tc-smoke">([A-Z])\s/) || [])[1];
+  ok(smokeKey && smokeLabel && smokeKey === smokeLabel,
+    'smoke HUD label matches its actual bind [bind=' + smokeKey + ' label=' + smokeLabel + ']');
+
+  /* mat() was called in weapons/system.js but only ever DEFINED inside other
+     IIFEs, so frag, smoke, flash and the rocket all threw ReferenceError. */
+  const wsrc = fs.readFileSync('./public/src/weapons/system.js', 'utf8');
+  ok(!/\bmat\(/.test(wsrc) || /function mat\s*\(/.test(wsrc),
+    'weapons/system.js defines mat() locally if it calls it');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

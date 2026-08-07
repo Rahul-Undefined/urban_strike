@@ -21,9 +21,24 @@ setTimeout(() => { console.log('TIMEOUT'); finish(); }, 120000);   // +30s: the 
 /* ---- static config gates (no server needed) ---- */
 function configGates() {
   console.log('--- Config: match options + mode registry ---');
-  ok(CFG.MATCH.killOptions.join(',') === '5,10,15,20,30', 'kill options are 5/10/15/20/30 (no Unlimited)');
+  /* v8.30: Unlimited kills (0) is now a selectable option. The gate that used
+     to forbid it encoded a PRODUCT decision, not a safety one — but the safety
+     rule underneath it ("every match can end") still holds and is now asserted
+     explicitly and more strictly than before, rather than being an accident of
+     the option list. */
+  ok(CFG.MATCH.killOptions.join(',') === '5,10,15,20,30,0',
+    'kill options are 5/10/15/20/30 + 0 (Unlimited)');
   ok(CFG.MATCH.timeOptions.join(',') === '5,10,15,30,60', 'duration options are 5/10/15/30/60 (no No-Limit)');
   ok(CFG.MATCH.timeOptions.every(n => n > 0), 'no zero duration: every match can end');
+  /* THE PAIRING RULE. Unlimited kills is only survivable because the clock is
+     always finite. If a no-limit duration is ever added, this fails loudly
+     instead of shipping a match that can never end. */
+  ok(!(CFG.MATCH.killOptions.indexOf(0) >= 0 && CFG.MATCH.timeOptions.indexOf(0) >= 0),
+    'unlimited kills and unlimited time can never both be selectable');
+  CFG.MATCH.killOptions.forEach(k => {
+    ok(k > 0 || CFG.MATCH.timeOptions.every(t => t > 0),
+      'kill option ' + k + ' still leaves every match with a way to end');
+  });
   ok(CFG.MATCH.killOptions.indexOf(CFG.MATCH.defaultKills) >= 0, 'default kill target is a selectable option');
   ok(CFG.MATCH.timeOptions.indexOf(CFG.MATCH.defaultMinutes) >= 0, 'default duration is a selectable option');
   ok(typeof CFG.MATCH.startCountdown === 'number' && CFG.MATCH.startCountdown > 0, 'launch countdown is configured');
@@ -347,7 +362,7 @@ function phase3(done) {
   });
 }
 
-phase1(() => phase2(() => phase3(() => phase4(() => phase5(phase6)))));
+phase1(() => phase2(() => phase3(() => phase4(() => phase5(() => phase6(phase7))))));
 
 
 /* ---------------- Phase 4: v4.3 — lobby flow, stance, mines, molotov ---------------- */
@@ -599,7 +614,7 @@ function phase5(done) {
 
 
 /* ---------------- Phase 6: v4.6 — multi-map plumbing ---------------- */
-function phase6() {
+function phase6(done) {
   console.log('--- Phase 6: rural map selection + per-map spawns ---');
   const A = io(URL), B = io(URL);
   A.on('connect', () => {
@@ -623,6 +638,55 @@ function phase6() {
     const near = S.some(s => Math.abs(s[0] - d.pos[0]) < 0.6 && Math.abs(s[1] - d.pos[2]) < 0.6);
     ok(near, 'spawn position comes from the RURAL spawn set [got ' + d.pos[0] + ',' + d.pos[2] + ']');
     [A, B].forEach(s => s.disconnect());
-    setTimeout(finish, 300);
+    setTimeout(done, 300);
   });
+}
+
+
+/* ---------------- Phase 7: v8.30 — Unlimited kill target ----------------
+   The config gate above proves 0 is SELECTABLE. This proves it BEHAVES:
+   the server must accept it, echo it, and then refuse to end the match no
+   matter how many kills land. Without this the option could ship as a
+   dropdown entry that silently ends the round at the default target. */
+function phase7() {
+  console.log('--- Phase 7: unlimited kill target (0) ---');
+  const A = io(URL), B = io(URL);
+  let ended = false, kills = 0, settingsSeen = null;
+  let bPos = [0, 0.95, 0];
+
+  A.on('matchEnd', () => { ended = true; });
+  B.on('matchEnd', () => { ended = true; });
+  B.on('spawn', d => { if (d.id === B.id) bPos = d.pos; });
+
+  A.on('connect', () => {
+    A.emit('createRoom', { name: 'Au', settings: { killTarget: 0, minutes: 10 } }, (res) => {
+      B.emit('joinRoom', { name: 'Bu', code: res.code }, () => {
+        A.once('matchStart', (d) => {
+          settingsSeen = d.settings;
+          ok(settingsSeen.killTarget === 0,
+            'server accepts and echoes killTarget 0 (Unlimited)');
+          // land well past every finite option in killOptions
+          const fire = () => {
+            if (kills >= 8) return check();
+            A.emit('state', { p: [bPos[0] + 2, bPos[1], bPos[2]], ry: 0, cr: 0 });
+            setTimeout(() => {
+              A.emit('hit', { victim: B.id, w: 'sniper', part: 'head', pellets: 1, vp: bPos });
+              kills++;
+              setTimeout(fire, 900);
+            }, 80);
+          };
+          setTimeout(fire, 500);
+        });
+        launch([A, B]);
+      });
+    });
+  });
+
+  function check() {
+    const maxFinite = Math.max.apply(null, CFG.MATCH.killOptions.filter(n => n > 0));
+    ok(!ended,
+      'unlimited match does NOT end on kills (' + kills + ' kill attempts, highest finite target is ' + maxFinite + ')');
+    [A, B].forEach(s => s.disconnect());
+    setTimeout(finish, 300);
+  }
 }

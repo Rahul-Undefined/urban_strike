@@ -10,7 +10,9 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.12** | CURRENT — vegetation placement is clearance-tested; the BUS TERMINAL tree is gone. Accessibility work NOT complete. |
+| **v8.30** | CURRENT — black-screen error boundaries + on-screen error surface; Unlimited kills; mat() restored (3 grenades + rocket); smoke moved off the PTT key; match-end clock unified. 94/0. |
+| v8.29 | Good — end scoreboard matches the live one (7 cols) + match insight cards. 85/0. |
+| v8.12 | Good — vegetation placement is clearance-tested; the BUS TERMINAL tree is gone. Accessibility work NOT complete. |
 | v8.11 | Good — `verify-climb`: every staircase walked automatically. 21 unclimbable flights found, 12 invisible to every prior gate. RED BY DESIGN. |
 | v8.10 | Good — Milestone A pt1: stairwell openings cut map-wide. headroom + narrow classes driven to 0 on all three maps. |
 | v8.9 | Good — gate-fidelity correction (5 gates were building an incomplete world) + F3 diagnostic overlay. No map geometry changed. |
@@ -75,6 +77,138 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+
+---
+
+## v8.30 — the black screen has a floor under it, and Unlimited kills
+
+### The black screen was a missing error boundary, not a missing feature
+
+Four previous attempts guessed at *what* threw. This release stops guessing and
+removes the trap that turned any throw into a black screen.
+
+`#loading` is a full-screen overlay at z-index 80 filled with `var(--bg)` —
+`#0d1015`, near black. Everything in `onMatchStart` ran unguarded between
+`setLoading(true)` and `setLoading(false)`:
+
+```
+setLoading(true)
+  buildMap -> minimap -> weapons reset -> pickups -> bindGameplayEvents -> ambient
+setLoading(false)  showHUD()  showClickToPlay()      <-- never reached on a throw
+```
+
+Anything that threw in that chain escaped the timer callback and the last three
+calls never ran. No HUD, no click-to-play, no pointer lock, and a near-black
+overlay with faint dim text sitting over everything. That is the "stuck on a
+single black screen" report. The trigger varied; the trap did not.
+
+Second trap, same shape: `renderer.render()` was the **last statement** of the
+render loop. Anything throwing above it skipped the render while
+`requestAnimationFrame`, already queued at the top, kept the loop spinning. The
+canvas froze on whatever was last drawn — on the first frame of a match, that is
+nothing.
+
+Three changes:
+
+- **`onMatchStart`** — the build is wrapped and the four calls that own the
+  screen run in a `finally`. A failed build is now a visible, leavable state
+  with a toast telling the player to rejoin, not a black hole.
+- **the render loop** — the gameplay block is guarded so `renderer.render()`
+  cannot be skipped. A bad frame is a dropped frame, not a dead game.
+- **an error surface** — `window.onerror` and `unhandledrejection` route to a
+  rate-limited on-screen toast, once per distinct message. The 60Hz loop cannot
+  spam it. **The trigger is now reportable instead of guessable.**
+
+Reproduction was attempted first and is documented as *not achieved*: live
+2v2/3v3/5v5, odd player counts, mid-countdown joins, and joins into a match
+already in progress were all healthy server-side, and a harness that boots all
+30 real client modules and replays a captured joiner event stream threw nothing.
+The fix targets the mechanism that makes any such fault invisible.
+
+### Unlimited kill target
+
+`0` now means unlimited, mirroring how `minutes: 0` already reads as an infinity
+symbol on the HUD. The dropdown reads "Unlimited kills", the HUD reads
+"UNLIMITED KILLS", and the clock ends the match with the highest-kill player
+declared winner.
+
+The gate that forbade this encoded a **product** decision and was changed. The
+**safety** rule underneath it was strengthened, not dropped:
+
+- unlimited kills and unlimited time can never both be selectable
+- every kill option must still leave a match with a way to end
+- Phase 7 lands 8 kills against a 0 target and asserts the match refuses to end
+
+### Three grenades and the rocket were dead
+
+`grenadeMesh()` and `spawnRocket()` called `mat(colour)`. That helper is defined
+privately inside `pickups.js` and `viewmodels.js` — two other IIFEs — so from
+`weapons/system.js` it was an undefined identifier and every call threw
+`ReferenceError`.
+
+Molotov survived only because its branch builds materials inline and returns
+*before* reaching the shared line. That is why "same function, works for one
+type and not the others" looked impossible: the fault was one level down, in the
+mesh builder, not in `throwGrenade()`.
+
+The throw crashed inside `hurl()` *before* `Net.sendThrow()`, so it never
+reached the server either, and the count had already been decremented. Players
+heard the pin, lost the grenade, and saw nothing. Frag, smoke, flash and the
+rocket launcher all worked again from one restored line.
+
+### T was already taken
+
+v8.21 moved smoke onto T so the bind matched the HUD label. `ui.js` binds T at
+document level for push-to-talk and has to, so voice works in the lobby. Both
+listeners are on `document` and neither stops propagation, so T threw a smoke
+**and** keyed the microphone. Nobody noticed because the smoke throw was
+separately crashing on `mat()` — fixing that would have made it audible.
+
+Smoke is B. T belongs to voice alone. The HUD label matches.
+
+`verify-models` could not have caught it: it only read `game.js`, and its
+matcher only understood `e.code === 'KeyX'` while the PTT guard is written as an
+early-return `!==`. It now scans both files, splits by keydown/keyup so
+hold-to-cook is not a false positive, understands both comparison forms and
+multiple keys per line, and asserts the smoke HUD label matches its real bind.
+Verified by re-introducing the bug: `FAIL [keydown:KeyT=smoke/ui]`.
+
+### 0:00 with the match still running
+
+Two independent clocks. The HUD counted down from `startedAt + minutes`; the
+only thing that ended the match was a single `setTimeout(minutes * 60000)` armed
+a few milliseconds later. Node does not fire a ten-minute timer to the
+millisecond — under a snapshot loop running fifteen times a second it fires
+late — so the display reached zero before the server agreed.
+
+The match now also ends from the snapshot tick, reading the same
+`startedAt + duration` the HUD reads. The two cannot drift by more than one tick
+(~67ms). The `setTimeout` stays as a backstop; `endMatch()` guards on
+`room.state !== 'playing'`, so whichever fires first wins.
+
+### Deliberately not done
+
+**The avatar head hitbox does not match the rendered model.** Measured with the
+real `castRay` against a settled rig: firing 11 rays up the visible head,
+standing returns 2 head / 5 body / **4 straight through**, and crouching returns
+2 head / 1 body / **8 straight through**. Prone is the inverse — 10 of 11
+register as body, so a prone head is nearly unhittable.
+
+The head box is positioned from `eyeHeight` while the rendered head comes from
+the rig's joint chain; they agree when prone and diverge badly otherwise. This
+is a real bug and it is **not fixed here**, because it changes how aiming feels
+and belongs in its own build with eyes on it rather than bundled with a
+stability release.
+
+### Gates
+
+| Gate | v8.29 | v8.30 |
+|---|---|---|
+| `test.js` | 85 / 0 | **94 / 0** |
+| `verify-models` | 37 / 0 | **40 / 0** |
+
+All other gates unchanged. `verify-access` 50/1, `verify-climb` and
+`verify-arch` remain RED BY DESIGN.
 
 ---
 
