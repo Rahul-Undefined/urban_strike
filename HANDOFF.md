@@ -148,6 +148,7 @@ move every frame — so the only levers are part count, material sharing and LOD
 | Integration | `node server.js & sleep 3; node test.js` | 94 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
 | Models+loot+voice | `node verify-models.js` | 40 | viewmodels, grants, loot exclusivity, scope ladder, voice wiring |
 | Scope + loop isolation | `node tools/verify-scope.js` | 20 | cross-IIFE identifier leaks, drawHpBar ally paths, per-subsystem frame guards |
+| End screen | `node tools/verify-endscreen.js` | 28 | runs the real UI.showEnd: opacity, HUD suppression, column split |
 | Map | `node tools/verify-map.js` | **992** | loot support / spawn clearance / airdrop landing, all 3 maps |
 | Build chain | `node tools/verify-build.js` | PASS | real-three vm build of all 3 maps + reset + coplanar-ground gate |
 | Ascent | `node tools/verify-access.js` | **50/51** *(1 known, see below)* | walks a capsule up every staircase |
@@ -468,7 +469,24 @@ Blocked: Rahul is still reviewing Rural and will supply direction.
 
 ---
 
-## 8a. v8.31 — THE TEAM-MODE BUG, SOLVED
+## 8a. v8.31.2 — END SCREEN
+
+Rebuilt after a screenshot showed the final scores floating over a still-running
+map with the minimap and live mini-scoreboard drawn on top.
+
+**The thing to remember:** `#end-overlay` is a CHILD of `#hud-layer`. Every HUD
+element is its SIBLING and keeps drawing unless something switches it off.
+`showEnd` adds `end-active` to `#hud-layer` and `hideEnd` removes it. If you add
+a new HUD element, it is covered automatically; if you ever move the overlay out
+of `#hud-layer`, that rule stops applying and the bug returns.
+
+Also: `.end-table` inherits `width:100%` from the `#scoreboard` rule. It needs a
+bounded container or it stretches edge to edge.
+
+`tools/verify-endscreen.js` runs the real `UI.showEnd` against a DOM stub and is
+now part of the required sweep.
+
+## 8b. v8.31 — THE TEAM-MODE BUG, SOLVED
 
 `avatars.js` `drawHpBar` read `myTeam`, which is private to the Net IIFE in
 `net.js`. Every ally health bar threw `ReferenceError`. FFA never hit it because

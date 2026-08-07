@@ -175,13 +175,53 @@ button { font-family: var(--disp); cursor: pointer; }
 .death-sub { font-size: 18px; color: var(--ink-dim); letter-spacing: 0.1em; }
 .death-timer { font-family: var(--mono); font-size: 15px; color: var(--ink); letter-spacing: 0.15em; }
 
-#end-overlay { position: absolute; inset: 0; background: rgba(10,12,16,0.9); display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 18px; pointer-events: auto !important; }
-.end-title { font-size: 54px; letter-spacing: 0.24em; font-weight: 700; }
+/* v8.31.2 END SCREEN LAYOUT.
+
+   Three faults in the old version, all visible in one screenshot:
+
+   1. The overlay was rgba(...,0.9), so the live 3D map bled through behind the
+      result. A scoreboard floating over a still-rendering city reads as the
+      game having failed to stop, not as a match ending.
+   2. #end-overlay is a CHILD of #hud-layer, so the minimap, the live
+      mini-scoreboard, the crosshair and the ammo block were all still drawn as
+      siblings — the mini board landed directly on top of the real one.
+   3. .end-table inherits `width:100%` from the #scoreboard rule, so with no
+      container to bound it the table stretched the full width of the screen
+      while the insights collapsed into one narrow column underneath.
+
+   Now: fully opaque, the rest of the HUD is switched off while it is up, and a
+   fixed-width three-column stage puts the scoreboard in the middle with the
+   insight cards flanking it. */
+#end-overlay { position: absolute; inset: 0; background: #0b0e13; display: flex; flex-direction: column;
+  align-items: center; gap: 12px; padding: 22px 18px; overflow-y: auto;
+  pointer-events: auto !important; }
+/* Centred vertically by auto margins rather than justify-content: with
+   overflow-y:auto a centred flex column clips its own top once the content is
+   taller than the screen, and the title becomes unreachable. Auto margins
+   centre when there is room and scroll correctly when there is not. */
+#end-overlay > .end-title { margin-top: auto; }
+#end-overlay > .end-stage { margin-bottom: auto; }
+
+/* Switch off the live HUD behind the result. Pause stays reachable. */
+#hud-layer.end-active > *:not(#end-overlay):not(#pause-overlay) { display: none !important; }
+
+.end-title { font-size: 44px; letter-spacing: 0.22em; font-weight: 700; text-align: center; }
 .end-title.win { color: var(--amber); text-shadow: 0 0 40px rgba(240,162,50,0.4); }
 .end-title.lose { color: var(--ink-dim); }
-.end-sub { font-size: 17px; color: var(--ink-dim); letter-spacing: 0.12em; }
-.end-table { min-width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.end-sub { font-size: 15px; color: var(--ink-dim); letter-spacing: 0.12em; text-align: center; }
+
+.end-stage { display: grid; gap: 14px; width: min(1480px, 97vw); align-items: start;
+  grid-template-columns: minmax(210px, 1fr) minmax(500px, 1.9fr) minmax(210px, 1fr); }
+.end-center { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; }
+.end-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.end-table { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+
+/* Narrow screens: stack the columns under the board rather than crushing them. */
+@media (max-width: 1180px) {
+  .end-stage { grid-template-columns: 1fr; width: min(760px, 96vw); }
+  .end-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .end-title { font-size: 34px; }
+}
 
 #pause-overlay { position: absolute; inset: 0; background: rgba(10,12,16,0.82); display: flex; align-items: center; justify-content: center; pointer-events: auto !important; }
 #pause-overlay * { pointer-events: auto; }
@@ -674,20 +714,34 @@ button { font-family: var(--disp); cursor: pointer; }
 
 
 /* v8.29 match insights under the end scoreboard */
-#end-insights { margin-top: 14px; }
+/* v8.31.2 INSIGHT CARDS.
+
+   Rahul: "the insights are completely boring." They were a flat 7px stack of
+   near-identical grey slabs in one narrow column, so nine genuinely different
+   facts all looked like the same fact repeated.
+
+   Each card is now a panel in its own right: a heavier top rule in the card's
+   own accent colour, a larger value line that is the thing you actually read,
+   and enough padding that it reads as a result rather than a table row. The
+   label sits above in small caps as a caption. Tones now mean something —
+   amber for a personal best, red for something that happened TO you, blue-grey
+   for neutral facts — so the eye can sort them without reading every word. */
 .ins-title {
   font: 700 11px/1 Rajdhani, sans-serif; letter-spacing: 2.2px;
   color: rgba(200,215,230,0.55); margin-bottom: 8px; text-align: left;
 }
 .ins-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 7px; }
 .ins {
-  display: flex; flex-direction: column; gap: 2px; text-align: left;
-  padding: 7px 10px; border-radius: 3px;
-  background: rgba(28,38,52,0.62); border-left: 2px solid rgba(140,180,220,0.35);
+  display: flex; flex-direction: column; gap: 5px; text-align: left;
+  padding: 11px 13px 12px; border-radius: 5px;
+  background: linear-gradient(180deg, rgba(32,44,60,0.85), rgba(22,30,42,0.85));
+  border: 1px solid rgba(120,155,195,0.16);
+  border-top: 2px solid rgba(140,180,220,0.45);
 }
-.ins-k { font: 700 10px/1.2 Rajdhani, sans-serif; letter-spacing: 1.6px; color: rgba(170,195,220,0.75); }
-.ins-v { font: 600 13px/1.35 Rajdhani, sans-serif; color: #e8eef5; }
-.ins.hot { border-left-color: #f0a232; }
+.ins-k { font: 700 10px/1.2 Rajdhani, sans-serif; letter-spacing: 1.8px; color: rgba(170,195,220,0.8); }
+.ins-v { font: 600 15px/1.3 Rajdhani, sans-serif; color: #eef4fa; }
+.ins-v b { color: #fff; font-weight: 700; }
+.ins.hot { border-top-color: #f0a232; background: linear-gradient(180deg, rgba(58,42,22,0.85), rgba(26,22,18,0.85)); }
 .ins.hot .ins-k { color: #f0a232; }
-.ins.bad { border-left-color: #e8563e; }
-.ins.bad .ins-k { color: #e8563e; }
+.ins.bad { border-top-color: #e8563e; background: linear-gradient(180deg, rgba(58,26,22,0.85), rgba(28,18,18,0.85)); }
+.ins.bad .ins-k { color: #ef7d69; }

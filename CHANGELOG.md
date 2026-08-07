@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.31** | CURRENT — TEAM MODE FIXED: `myTeam` read out of scope in `drawHpBar` threw for every ally, starving FX/clock/score. Render loop segmented per subsystem. New `verify-scope` gate. |
+| **v8.31.2** | CURRENT — end screen rebuilt: opaque overlay, live HUD suppressed, scoreboard centred with insight cards flanking it. New verify-endscreen gate. |
+| v8.31 | Good — TEAM MODE FIXED: `myTeam` read out of scope in `drawHpBar` threw for every ally, starving FX/clock/score. Render loop segmented per subsystem. New `verify-scope` gate. |
 | v8.30 | Superseded — black-screen error boundaries + on-screen error surface; Unlimited kills; mat() restored (3 grenades + rocket); smoke moved off the PTT key; match-end clock unified. 94/0. |
 | v8.29 | Good — end scoreboard matches the live one (7 cols) + match insight cards. 85/0. |
 | v8.12 | Good — vegetation placement is clearance-tested; the BUS TERMINAL tree is gone. Accessibility work NOT complete. |
@@ -78,6 +79,66 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+
+---
+
+## v8.31.2 — the end screen is now a result, not a scoreboard over a live map
+
+Three faults, all visible in one screenshot, all fixed. No other changes.
+
+### The map was still running behind the result
+
+`#end-overlay` was `rgba(10,12,16,0.9)` — ten percent transparent — so the city
+kept rendering behind the final scores. It is fully opaque now.
+
+### The live HUD was drawn on top of it
+
+`#end-overlay` is a CHILD of `#hud-layer`, so the minimap, the live
+mini-scoreboard, the crosshair and the ammo block were all siblings that never
+switched off. The mini board landed directly on top of the real one. `showEnd`
+now puts `#hud-layer` into `end-active`, one CSS rule hides every sibling except
+the overlay (and pause, which stays reachable), and `hideEnd` gives them back.
+
+### The layout had nothing holding it together
+
+`.end-table` inherits `width:100%` from the `#scoreboard` rule, and with no
+container bounding it the table stretched the full width of the screen — while
+nine insight cards collapsed into a single narrow column pushed off the bottom.
+
+The result is now a three-column stage: insight cards down the left, the
+scoreboard in the middle, insight cards down the right. Cards alternate between
+the two sides rather than filling one then the other, so the columns stay level
+on an odd count and the strongest cards sit at the top of BOTH sides. Below
+1180px the stage collapses to one column instead of crushing three.
+
+Vertical centring uses auto margins rather than `justify-content: center`,
+because a centred flex column with `overflow-y: auto` clips its own top once the
+content is taller than the viewport and the title becomes unreachable.
+
+### The cards were boring
+
+They were a flat stack of near-identical grey slabs, so nine genuinely different
+facts all looked like the same fact repeated. Each is now a panel: a heavier top
+rule in its own accent colour, a larger value line that is the thing you
+actually read, and enough padding to read as a result rather than a table row.
+Tones carry meaning — amber for a personal best, red for something that happened
+TO you, blue-grey for neutral facts.
+
+### New gate: `tools/verify-endscreen.js`
+
+v8.29 verified the table had seven columns and nothing else, which is why a
+scoreboard floating over a live map with the minimap on top of it shipped and
+passed. This gate runs the real `UI.showEnd` against a DOM stub with a realistic
+five-player payload and asserts the things that make the screen readable:
+opacity, HUD suppression, column order, bounded width, and that all nine cards
+land split across both columns. Verified by restoring the original CSS: 2
+failures.
+
+| Gate | v8.31 | v8.31.2 |
+|---|---|---|
+| `tools/verify-endscreen.js` | — | **28 / 0** (new) |
+| `test.js` | 94 / 0 | 94 / 0 |
+| everything else | unchanged | unchanged |
 
 ---
 

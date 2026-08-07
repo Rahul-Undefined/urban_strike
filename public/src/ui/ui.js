@@ -18,7 +18,7 @@ var UI = (function () {
       'weapon-name', 'ammo-mag', 'ammo-reserve', 'tc-frag', 'tc-smoke', 'tc-flash', 'reload-hint',
       'scoreboard', 'sb-code', 'sb-body',
       'death-overlay', 'death-info', 'death-timer',
-      'end-overlay', 'end-title', 'end-sub', 'end-body', 'end-insights', 'btn-back-lobby', 'end-hint',
+      'end-overlay', 'end-title', 'end-sub', 'end-body', 'end-ins-left', 'end-ins-right', 'btn-back-lobby', 'end-hint',
       'pause-overlay', 'sens-range', 'sens-val', 'vol-range', 'vol-val', 'quality-shadows',
       'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading',
       'announce', 'cook-bar', 'cook-fill', 'att-list',
@@ -343,6 +343,11 @@ var UI = (function () {
        the eye lands on the winner before the numbers arrive. Same easing
        family as the lobby, so an ending belongs to the same product as the
        welcome screen. CSS only — no JS timers to leak. */
+    /* v8.31.2: #end-overlay is a CHILD of #hud-layer, so the minimap, the live
+       mini-scoreboard, the crosshair and the ammo block kept drawing behind and
+       on top of the result. One class switches the lot off; hideEnd puts them
+       back. */
+    if (els['hud-layer']) els['hud-layer'].classList.add('end-active');
     els['end-overlay'].classList.remove('hidden');
     els['end-overlay'].classList.remove('animate-in');
     void els['end-overlay'].offsetWidth;
@@ -420,15 +425,31 @@ var UI = (function () {
       if (ins.firstBlood) card('FIRST BLOOD', ins.firstBlood.name + ' \u2192 ' + ins.firstBlood.victim);
       if (ins.finalBlow) card('FINAL BLOW', ins.finalBlow.name + ' \u2192 ' + ins.finalBlow.victim);
     }
-    els['end-insights'].innerHTML = cards.length
-      ? '<div class="ins-title">MATCH INSIGHTS</div><div class="ins-grid">' + cards.join('') + '</div>'
-      : '';
-    els['end-insights'].style.display = cards.length ? '' : 'none';
+    /* v8.31.2: deal the cards alternately into the two columns flanking the
+       scoreboard. Alternating rather than splitting down the middle keeps the
+       two sides the same height when the count is odd, and keeps the most
+       interesting cards (rivalry, nemesis) at the top of BOTH columns instead
+       of stacking them all on the left. */
+    var L = [], Rr = [];
+    cards.forEach(function (c, i) { (i % 2 ? Rr : L).push(c); });
+    function fill(el, list, withTitle) {
+      if (!el) return;
+      el.innerHTML = list.length
+        ? (withTitle ? '<div class="ins-title">MATCH INSIGHTS</div>' : '') + list.join('')
+        : '';
+      el.style.display = list.length ? '' : 'none';
+    }
+    fill(els['end-ins-left'], L, true);
+    fill(els['end-ins-right'], Rr, false);
 
     els['btn-back-lobby'].style.display = isHost ? '' : 'none';
     els['end-hint'].style.display = isHost ? 'none' : '';
   }
-  function hideEnd() { els['end-overlay'].classList.add('hidden'); els['end-overlay'].classList.remove('animate-in'); }
+  function hideEnd() {
+    els['end-overlay'].classList.add('hidden');
+    els['end-overlay'].classList.remove('animate-in');
+    if (els['hud-layer']) els['hud-layer'].classList.remove('end-active');   // v8.31.2: give the HUD back
+  }
 
   function showPause(on) { els['pause-overlay'].classList.toggle('hidden', !on); }
   function showClickToPlay(on) { els['click-to-play'].classList.toggle('hidden', !on); }
