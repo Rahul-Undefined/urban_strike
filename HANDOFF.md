@@ -147,6 +147,7 @@ move every frame — so the only levers are part count, material sharing and LOD
 |---|---|---|---|
 | Integration | `node server.js & sleep 3; node test.js` | 94 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
 | Models+loot+voice | `node verify-models.js` | 40 | viewmodels, grants, loot exclusivity, scope ladder, voice wiring |
+| Scope + loop isolation | `node tools/verify-scope.js` | 20 | cross-IIFE identifier leaks, drawHpBar ally paths, per-subsystem frame guards |
 | Map | `node tools/verify-map.js` | **992** | loot support / spawn clearance / airdrop landing, all 3 maps |
 | Build chain | `node tools/verify-build.js` | PASS | real-three vm build of all 3 maps + reset + coplanar-ground gate |
 | Ascent | `node tools/verify-access.js` | **50/51** *(1 known, see below)* | walks a capsule up every staircase |
@@ -467,7 +468,29 @@ Blocked: Rahul is still reviewing Rural and will supply direction.
 
 ---
 
-## 8a. v8.30 — what changed and what is still open
+## 8a. v8.31 — THE TEAM-MODE BUG, SOLVED
+
+`avatars.js` `drawHpBar` read `myTeam`, which is private to the Net IIFE in
+`net.js`. Every ally health bar threw `ReferenceError`. FFA never hit it because
+`myTeam` is null there, so `ally` is always false and short-circuit evaluation
+skips the branch entirely.
+
+The throw was inside `Net.updateRemotes()`, upstream of `FX.update`,
+`Pickups.update`, `Minimap.update`, the clock and the team score — and, before
+v8.30, upstream of `renderer.render()` itself. That was the black screen. The
+v8.30 error boundary converted it into the visible symptoms captured on video:
+permanent muzzle flashes and tracers, clock frozen at 10:00, score stuck 0-0.
+
+**Fixed** by using `Net.getMyTeam()` as `minimap.js` already did. **Contained**
+by giving every frame subsystem its own `step()` guard. **Gated** by
+`tools/verify-scope.js` — run it; it is now part of the required sweep.
+
+**Lesson for the next person:** these modules are bare IIFEs with no bundler. A
+variable private to one file is unreachable from another and NOTHING warns you —
+not a linter, not the parse sweep, not a gate that only checks function calls.
+`verify-scope` is the only thing that catches it. Do not weaken it.
+
+## 8b. v8.30 — what changed and what is still open
 
 **Fixed and gated.** `mat()` restored in `weapons/system.js` (frag, smoke, flash
 and the rocket all threw `ReferenceError` — molotov worked only because its

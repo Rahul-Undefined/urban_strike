@@ -510,13 +510,38 @@ var Avatars = (function () {
     av.group.rotation.z = -s.lean * 0.18;
   }
 
+  /* v8.31 THE TEAM-MODE BUG. THIS ONE LINE.
+
+     `myTeam` is declared `var myTeam = null` INSIDE the Net IIFE in net.js.
+     It was never visible here, so reading it bare threw ReferenceError.
+
+     It only ever fired for an ALLY, because of short-circuit evaluation:
+       ally ? (myTeam ? ...) : '#e8563e'
+     With `ally` false the expression resolves to the enemy colour and never
+     touches `myTeam`. In FFA `myTeam` is null, so `ally` is ALWAYS false and
+     the branch is unreachable — which is exactly why free-for-all was flawless
+     while every team match broke. The first time a teammate's bar needed
+     drawing (hbDrawn starts at -1 against dispHp 100, so the very first frame
+     they are visible) this threw.
+
+     The throw landed inside Net.updateRemotes(), which the render loop calls
+     BEFORE FX.update, Pickups.update, Minimap.update, the match clock and the
+     team score. Before v8.30 it also skipped renderer.render() outright: the
+     black screen. v8.30's error boundary let the frame render, which turned the
+     fatal into the visible symptom that finally identified it — muzzle flashes
+     and tracers that never age out, a clock frozen at 10:00, and a team score
+     stuck at 0-0.
+
+     minimap.js already did this correctly: `var myTeam = Net.getMyTeam();`. */
   function drawHpBar(r, ally) {
     var g = r.av.hb.ctx, W = 128, H = 18;
     g.clearRect(0, 0, W, H);
     g.fillStyle = 'rgba(8,10,14,0.78)';
     g.fillRect(0, 2, W, H - 4);
     var frac = Math.max(0, Math.min(1, r.dispHp / CFG.PLAYER.hp));
-    g.fillStyle = ally ? (myTeam ? CFG.TEAMS[myTeam].color : '#63d968') : '#e8563e';
+    var mt = (typeof Net !== 'undefined' && Net.getMyTeam) ? Net.getMyTeam() : null;
+    var allyColor = (mt && CFG.TEAMS[mt]) ? CFG.TEAMS[mt].color : '#63d968';
+    g.fillStyle = ally ? allyColor : '#e8563e';
     g.fillRect(2, 4, (W - 4) * frac, H - 8);
     g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 2;
     g.strokeRect(1, 3, W - 2, H - 6);

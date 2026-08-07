@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.30** | CURRENT — black-screen error boundaries + on-screen error surface; Unlimited kills; mat() restored (3 grenades + rocket); smoke moved off the PTT key; match-end clock unified. 94/0. |
+| **v8.31** | CURRENT — TEAM MODE FIXED: `myTeam` read out of scope in `drawHpBar` threw for every ally, starving FX/clock/score. Render loop segmented per subsystem. New `verify-scope` gate. |
+| v8.30 | Superseded — black-screen error boundaries + on-screen error surface; Unlimited kills; mat() restored (3 grenades + rocket); smoke moved off the PTT key; match-end clock unified. 94/0. |
 | v8.29 | Good — end scoreboard matches the live one (7 cols) + match insight cards. 85/0. |
 | v8.12 | Good — vegetation placement is clearance-tested; the BUS TERMINAL tree is gone. Accessibility work NOT complete. |
 | v8.11 | Good — `verify-climb`: every staircase walked automatically. 21 unclimbable flights found, 12 invisible to every prior gate. RED BY DESIGN. |
@@ -77,6 +78,77 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+
+---
+
+## v8.31 — the team-mode bug, found
+
+### One line, and it was never `myTeam`'s file to read
+
+```js
+g.fillStyle = ally ? (myTeam ? CFG.TEAMS[myTeam].color : '#63d968') : '#e8563e';
+```
+
+`avatars.js`, in `drawHpBar`. `myTeam` is declared `var myTeam = null` **inside
+the Net IIFE in net.js** — private to that closure and never visible here.
+Reading it bare threw `ReferenceError: myTeam is not defined`.
+
+It only ever fired for an **ally**, because of short-circuit evaluation. With
+`ally` false the expression resolves straight to the enemy colour and never
+touches `myTeam`. In free-for-all `myTeam` is null, so `ally` is *always* false
+and the branch is unreachable — which is exactly why FFA was flawless while
+every single team match broke. `minimap.js` had it right all along:
+`var myTeam = Net.getMyTeam();`.
+
+The trigger is the first frame a teammate is on screen: `hbDrawn` starts at -1
+against `dispHp` 100, so the redraw threshold is crossed immediately.
+
+### Why this took three versions to find
+
+The throw lands inside `Net.updateRemotes()`, which the render loop calls
+**before** `FX.update`, `Pickups.update`, `Minimap.update`, the match clock and
+the team score.
+
+- **Before v8.30** it also skipped `renderer.render()` — the last statement in
+  the loop. That was the black screen. Nothing was ever printed where anyone
+  would look.
+- **v8.30's error boundary** let the frame render, which turned a silent fatal
+  into a *visible* one. The gameplay recording shows it exactly: muzzle flashes
+  and tracers that never age out because `FX.update` was starved, a clock frozen
+  at 10:00, and a score stuck at AMBER 0 - 0 COBALT. Every symptom is downstream
+  of that one line.
+
+The boundary did its job. It did not fix the bug — it made the bug describable.
+
+### Containment, so this class cannot repeat
+
+v8.30 wrapped the whole frame in one guard. That protected the render call but
+still let one failure starve every subsystem below it. Each now runs in its own
+`step()` guard: weapons, player, camera, remotes, fx, pickups, minimap, hud,
+flicker. A fault is contained to the thing that faulted — effects still expire,
+the clock still ticks, the frame still renders.
+
+### New gate: `tools/verify-scope.js`
+
+The v8.30 audit ran a scanner over every client module and found `mat()`. It
+missed `myTeam`, because it only inspected identifiers used as **function
+calls** — and `myTeam` is a plain variable **read**.
+
+These modules are bare IIFEs loaded by `<script>` tags. There is no bundler and
+no import statement, so a variable private to one file is genuinely unreachable
+from another and nothing warns you. The new gate finds any identifier read in a
+module but never declared there, and separately exercises `drawHpBar` across
+every ally/team combination. Verified by restoring the original line: it fails
+statically **and** behaviourally.
+
+It also asserts the loop stays segmented and that `renderer.render()` remains
+outside every `try`.
+
+| Gate | v8.30 | v8.31 |
+|---|---|---|
+| `tools/verify-scope.js` | — | **20 / 0** (new) |
+| `test.js` | 94 / 0 | 94 / 0 |
+| `verify-models` | 40 / 0 | 40 / 0 |
 
 ---
 

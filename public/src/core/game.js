@@ -39,6 +39,16 @@ var Game = (function () {
     try { UI.toast(where + ': ' + msg, true); } catch (e) {}
   }
 
+  /* v8.31: run one frame subsystem in isolation. Returns its value, or
+     undefined if it threw. Containment is the point — a fault in remote
+     avatars must not stop effects ageing, the clock ticking, or the frame
+     rendering. Reporting is rate-limited by reportError, so a subsystem that
+     fails every frame names itself once. */
+  function step(name, fn) {
+    try { return fn(); }
+    catch (err) { reportError(name, err); }
+  }
+
   // ---------- boot ----------
   function init() {
     canvas = document.getElementById('game-canvas');
@@ -375,81 +385,106 @@ var Game = (function () {
     var dt = Math.min(0.05, Math.max(0.0001, (t - lastT) / 1000));
     lastT = t;
 
-    /* v8.30 A THROWN FRAME USED TO MEAN A PERMANENTLY BLACK CANVAS.
+    /* v8.31 ONE GUARD AROUND THE WHOLE FRAME WAS NOT ENOUGH.
 
-       `renderer.render()` is the last statement in this function, so anything
-       that threw in the gameplay block below skipped it. requestAnimationFrame
-       was already queued at the top, so the loop kept spinning and kept
-       throwing — sixty times a second — while the canvas held whatever was
-       last drawn. On the first frame of a match that is nothing at all: black.
+       v8.30 wrapped this entire block in a single try/catch so that
+       `renderer.render()` — the last statement — could never be skipped. That
+       fixed the black screen, but it swapped one failure for a quieter one:
+       when `Net.updateRemotes` threw (the myTeam bug), everything AFTER it in
+       the block was skipped too. `FX.update` never aged anything, so muzzle
+       flashes and tracers stayed on screen forever; the match clock froze at
+       10:00 and the team score stayed 0-0, because both live below it.
 
-       The block is now guarded so the render call is unreachable-proof. One
-       bad frame is a dropped frame, not a dead game. */
+       Each subsystem now runs in its own guard. A fault is contained to the
+       thing that faulted: effects still expire, the clock still ticks, and the
+       frame still renders. `step()` reports through the same rate-limited
+       surface, so the first failure names itself once and does not spam. */
     var playing = Net.getPhase() === 'playing';
-    try {
+
     if (playing && World.isBuilt()) {
-      var wu = Weapons.update(dt);
-      PlayerCtl.update(dt, Input, wu.speedMult, wu.aiming);
-      UI.setCrosshairGap(wu.crossGap);
+      var wu = step('weapons', function () { return Weapons.update(dt); });
+      /* Every later line reads wu. If the weapons update itself failed, fall
+         back to inert values rather than letting one fault cascade. */
+      if (!wu) wu = { speedMult: 1, aiming: false, crossGap: 0, adsFov: 75, scoped: false };
 
-      var land = PlayerCtl.consumeLand();
-      if (land) landDip = Math.max(landDip, land);
-      landDip *= Math.pow(0.0004, dt);
+      step('player', function () {
+        PlayerCtl.update(dt, Input, wu.speedMult, wu.aiming);
+        UI.setCrosshairGap(wu.crossGap);
 
-      PlayerCtl.eyePosition(camera.position);
-      camera.position.y -= landDip * 0.2;
-      camera.rotation.y = -PlayerCtl.yaw;
-      camera.rotation.x = PlayerCtl.pitch;
-      camera.rotation.z = -PlayerCtl.lean * CFG.MOVE.leanAngle;
+        var land = PlayerCtl.consumeLand();
+        if (land) landDip = Math.max(landDip, land);
+        landDip *= Math.pow(0.0004, dt);
+      });
 
-      var targetFov = wu.aiming ? wu.adsFov : 75;
-      camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 11);
-      camera.updateProjectionMatrix();
-      UI.setScope(!!wu.scoped);
+      step('camera', function () {
+        PlayerCtl.eyePosition(camera.position);
+        camera.position.y -= landDip * 0.2;
+        camera.rotation.y = -PlayerCtl.yaw;
+        camera.rotation.x = PlayerCtl.pitch;
+        camera.rotation.z = -PlayerCtl.lean * CFG.MOVE.leanAngle;
 
-      Net.updateRemotes(dt, camera);   // camera drives avatar distance LOD
-      Net.sendState();
+        var targetFov = wu.aiming ? wu.adsFov : 75;
+        camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 11);
+        camera.updateProjectionMatrix();
+        UI.setScope(!!wu.scoped);
+      });
 
-      FX.update(dt);
-      FX.applyShake(camera);
-      FX.updateFlash(dt);
-      Pickups.update(dt);
-      Minimap.update();
+      /* Remote avatars are their own step. This is the one that broke in team
+         mode, and starving everything below it is exactly what must not
+         happen again. */
+      step('remotes', function () {
+        Net.updateRemotes(dt, camera);   // camera drives avatar distance LOD
+      });
+      step('netsend', function () { Net.sendState(); });
 
-      camera.getWorldDirection(fwdV);
-      AudioSys.updateListener(camera.position, fwdV, upV);
+      /* FX ageing is deliberately its own step and deliberately AFTER nothing
+         it depends on. If this is skipped, effects never expire and the screen
+         fills with permanent muzzle flashes and tracers. */
+      step('fx', function () {
+        FX.update(dt);
+        FX.applyShake(camera);
+        FX.updateFlash(dt);
+      });
+      step('pickups', function () { Pickups.update(dt); });
+      step('minimap', function () { Minimap.update(); });
+
+      step('audio', function () {
+        camera.getWorldDirection(fwdV);
+        AudioSys.updateListener(camera.position, fwdV, upV);
+      });
 
       // match timer + team score
       timerAccum += dt;
       if (timerAccum > 0.25) {
         timerAccum = 0;
-        var m = Net.getMatch();
-        // roof-overhead probe -> indoor echo routing
-        var CC = World.colliders, px = PlayerCtl.pos.x, py = PlayerCtl.pos.y, pz = PlayerCtl.pos.z, ind = false;
-        for (var ci = 0; ci < CC.length; ci++) {
-          var cc = CC[ci];
-          if (px >= cc[0] && px <= cc[3] && pz >= cc[2] && pz <= cc[5] && cc[1] > py + 0.6 && cc[1] < py + 9) { ind = true; break; }
-        }
-        AudioSys.setIndoors(ind);
-        var teamsOn = CFG.MODES[m.mode] && CFG.MODES[m.mode].teams;
-        if (teamsOn) UI.setTeamScore(Net.getTeamKills(), Net.getMyTeam(), true);
-        if (m.minutes > 0) {
-          var serverNow = Date.now() + m.serverOffset;
-          var remain = Math.max(0, m.startedAt + m.minutes * 60000 - serverNow);
-          var mm = Math.floor(remain / 60000);
-          var ss = Math.floor((remain % 60000) / 1000);
-          UI.setTimer(mm + ':' + (ss < 10 ? '0' : '') + ss);
-        } else UI.setTimer('\u221e');
+        step('hud', function () {
+          var m = Net.getMatch();
+          // roof-overhead probe -> indoor echo routing
+          var CC = World.colliders, px = PlayerCtl.pos.x, py = PlayerCtl.pos.y, pz = PlayerCtl.pos.z, ind = false;
+          for (var ci = 0; ci < CC.length; ci++) {
+            var cc = CC[ci];
+            if (px >= cc[0] && px <= cc[3] && pz >= cc[2] && pz <= cc[5] && cc[1] > py + 0.6 && cc[1] < py + 9) { ind = true; break; }
+          }
+          AudioSys.setIndoors(ind);
+          var teamsOn = CFG.MODES[m.mode] && CFG.MODES[m.mode].teams;
+          if (teamsOn) UI.setTeamScore(Net.getTeamKills(), Net.getMyTeam(), true);
+          if (m.minutes > 0) {
+            var serverNow = Date.now() + m.serverOffset;
+            var remain = Math.max(0, m.startedAt + m.minutes * 60000 - serverNow);
+            var mm = Math.floor(remain / 60000);
+            var ss = Math.floor((remain % 60000) / 1000);
+            UI.setTimer(mm + ':' + (ss < 10 ? '0' : '') + ss);
+          } else UI.setTimer('\u221e');
+        });
       }
 
       // flickering warehouse / street light
-      if (!flickerBases) flickerBases = World.flickers.map(function (l) { return l.intensity; });
-      World.flickers.forEach(function (l, i) {
-        if (Math.random() < 0.06) l.intensity = flickerBases[i] * (0.55 + Math.random() * 0.6);
+      step('flicker', function () {
+        if (!flickerBases) flickerBases = World.flickers.map(function (l) { return l.intensity; });
+        World.flickers.forEach(function (l, i) {
+          if (Math.random() < 0.06) l.intensity = flickerBases[i] * (0.55 + Math.random() * 0.6);
+        });
       });
-    }
-    } catch (err) {
-      reportError('frame', err);       // rate-limited inside reportError
     }
 
     renderer.render(scene, camera);
