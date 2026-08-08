@@ -84,6 +84,22 @@ const rooms = new Map();
 const Rooms = require('./server/lib/rooms.js')({ io, rooms, now });
 const { makeCode, cleanName, cleanTeamName, num, clampOpt, modeInfo, makeRoom, zeroTeamKills,
   addPlayer, refreshTeamsAndColors, lobbyPayload, pushLobby } = Rooms;
+const Bots = require('./server/lib/bots.js')({
+  io, now, mapData,
+  spawnPlayer: (room, p) => spawnPlayer(room, p),
+  pushLobby: (room) => pushLobby(room),
+  endMatch: (room, w, r) => endMatch(room, w, r),
+  modeInfo: (room) => modeInfo(room),
+  /* v8.38: a bot's shot goes through the SAME damage path a human's does —
+     friendly fire, spawn protection, armour, headshot rules, kill feed, streaks
+     and the win condition all come along for free. A separate bot damage path
+     would drift from the real one the first time either changed. */
+  botShoot: (room, bot, victim, part, mul) => {
+    const w = 'ak47';
+    const base = Combat.weaponServerDamage(w, part, 1);
+    Combat.applyDamage(room, victim, base * mul, bot.id, w, part === 'head', false);
+  }
+});
 const Loot = require('./server/lib/loot.js')({ io, now, mapData });
 const { initPickups, pickupList, tryCollect, respawnPickups,
   scheduleAirdrop, clearAirdrop, dropCrate } = Loot;
@@ -202,6 +218,9 @@ function startMatch(room) {
   }
   refreshTeamsAndColors(room);
   initPickups(room);
+  /* v8.38: bots must exist BEFORE the matchStart payload is built, or clients
+     receive a roster without them and never render the ones they are fighting. */
+  Bots.addBots(room);
   io.to(room.code).emit('matchStart', {
     settings: room.settings,
     startedAt: room.startedAt,
@@ -261,6 +280,7 @@ function startSnapshots(room) {
       endMatch(room, null, 'time');
       return;
     }
+    Bots.tick(room, 1 / CFG.NET.snapRate);   // v8.38
     respawnPickups(room);
     Mines.tick(room);
     regenTick(room);
@@ -295,6 +315,7 @@ function endMatch(room, winnerId, reason) {
   clearAirdrop(room);
   Mines.clear(room);
   const teams = modeInfo(room).teams;
+  Bots.removeBots(room);      // v8.38: bots are per-match; never let them into a lobby
   const insights = buildInsights(room);
   let winnerTeam = null;
   if (teams) {
@@ -363,6 +384,10 @@ io.on('connection', (socket) => {
     if (s && s.map && CFG.MAPS[s.map] && CFG.MAPS[s.map].ready !== false) room.settings.map = s.map;
     /* v8.33: only the host may rename a team, and only in the lobby — both
        already guaranteed by the guard at the top of this handler. */
+    if (s && typeof s.botCount === 'number')
+      room.settings.botCount = Math.max(0, Math.min(19, s.botCount | 0));
+    if (s && s.botSkill && Bots.SKILL_IDS.indexOf(s.botSkill) >= 0)
+      room.settings.botSkill = s.botSkill;
     if (s && s.teamNames) {
       /* v8.34: rename any side the mode fields. Sides not sent keep whatever
          they had, so editing team A never blanks team B. */
@@ -460,6 +485,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('returnLobby', () => {
+    { const r0 = getRoom(socket); if (r0) Bots.removeBots(r0); }   // v8.38
     const room = getRoom(socket);
     if (!room || socket.id !== room.hostId || room.state !== 'ended') return;
     room.state = 'lobby';
@@ -594,6 +620,9 @@ io.on('connection', (socket) => {
       endMatch(room, room.players.keys().next().value, 'forfeit');
     }
     lastStandOnLeave(room);
+    /* v8.38: bots cannot finish a match on their own. If the last human leaves
+       a bot room, end it rather than leaving robots duelling forever. */
+    if (room && room.state === 'playing' && !Bots.anyHumans(room)) endMatch(room, null, 'abandoned');
   });
 
   function getRoom(sock) { return rooms.get(sock.data.roomCode); }

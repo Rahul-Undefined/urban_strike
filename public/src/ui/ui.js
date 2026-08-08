@@ -12,7 +12,7 @@ var UI = (function () {
       'lobby-mode', 'lobby-cat', 'create-cat', 'lobby-var-field', 'create-var-field', 'btn-shuffle', 'lobby-map', 'create-map', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
       'join-name', 'join-code', 'btn-join',
       'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count', 'lobby-kills', 'lobby-time',
-      'lobby-team-a', 'lobby-team-b', 'team-name-row',
+      'lobby-team-a', 'lobby-team-b', 'team-name-row', 'lobby-bots', 'lobby-skill', 'bot-row',
       'lobby-hint', 'btn-start', 'btn-leave',
       'crosshair', 'scope-overlay', 'match-timer', 'kill-target', 'killfeed',
       'hp-fill', 'hp-num', 'armor-fill', 'armor-num',
@@ -95,6 +95,15 @@ var UI = (function () {
     fillSelect(els['create-map'], mapItems(), 'urban');
     fillSelect(els['create-kills'], killItems(), M.defaultKills);
     fillSelect(els['create-time'], timeItems(), M.defaultMinutes);
+    var botItems = [];
+    for (var bi = 1; bi <= 19; bi++) botItems.push({ v: bi, t: bi + (bi === 1 ? ' bot' : ' bots') });
+    fillSelect(els['lobby-bots'], botItems, 5);
+    fillSelect(els['lobby-skill'], [
+      { v: 'recruit', t: 'Recruit \u00b7 learning the map' },
+      { v: 'regular', t: 'Regular \u00b7 a fair fight' },
+      { v: 'veteran', t: 'Veteran \u00b7 they shoot back properly' },
+      { v: 'extreme', t: 'Extreme \u00b7 they will not miss much' }
+    ], 'regular');
     fillSelect(els['lobby-cat'], catItems(), catOf(M.defaultMode));
     syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], M.defaultMode);
     fillSelect(els['lobby-map'], mapItems(), 'urban');
@@ -167,6 +176,7 @@ var UI = (function () {
       var host = p.id === d.hostId ? ' <em class="host-tag">HOST</em>' : '';
       var you = p.id === myId ? ' <em class="you-tag">YOU</em>' : '';
       var rdy = p.ready ? ' <em class="rdy-tag">READY</em>' : '';
+      var botTag = p.bot ? ' <em class="bot-tag">BOT</em>' : '';   // v8.38
       var vc = '';
       li.className = p.ready ? 'is-ready' : '';
       /* v8.28: the host gets a A/B switch on every row in a team mode. Shown
@@ -196,7 +206,7 @@ var UI = (function () {
             }).join('') + '</select>';
         }
       }
-      li.innerHTML = '<i class="dot" style="background:' + p.color + '"></i><b>' + p.name + '</b>' + host + you + vc + rdy + swap;
+      li.innerHTML = '<i class="dot" style="background:' + p.color + '"></i><b>' + p.name + '</b>' + host + you + botTag + vc + rdy + swap;
       els['lobby-players'].appendChild(li);
     }
     if (!els['lobby-players'].__teamSwapBound) {
@@ -309,6 +319,17 @@ var UI = (function () {
       els['btn-shuffle'].style.display =
         (isHost && CFG.activeTeams(d.settings.mode).length >= 2) ? '' : 'none';
     }
+    /* v8.38: bot controls belong to Training only. */
+    var isPractice = (CFG.MODES[d.settings.mode] || {}).cat === 'practice';
+    if (els['bot-row']) els['bot-row'].style.display = isPractice ? '' : 'none';
+    if (els['lobby-bots'] && document.activeElement !== els['lobby-bots']) {
+      els['lobby-bots'].value = String(d.settings.botCount || 5);
+      els['lobby-bots'].disabled = !isHost;
+    }
+    if (els['lobby-skill'] && document.activeElement !== els['lobby-skill']) {
+      els['lobby-skill'].value = d.settings.botSkill || 'regular';
+      els['lobby-skill'].disabled = !isHost;
+    }
     els['lobby-kills'].value = String(d.settings.killTarget);
     /* v8.33: only meaningful in team modes, and only the host may edit. Skip
        writing the value back while the host is mid-typing, otherwise every
@@ -336,7 +357,9 @@ var UI = (function () {
     if (els['info-kills']) els['info-kills'].textContent =
       d.settings.killTarget > 0 ? (d.settings.killTarget + ' kills') : 'Unlimited';
     if (els['info-time'])  els['info-time'].textContent  = d.settings.minutes + ' min';
-    if (els['info-slots']) els['info-slots'].textContent = total + ' / ' + mode.maxPlayers;
+    if (els['info-slots']) els['info-slots'].textContent =
+      isPractice ? (total + ' + ' + (d.settings.botCount || 0) + ' bots')
+                 : (total + ' / ' + mode.maxPlayers);
     if (els['info-role'])  els['info-role'].textContent  = isHost ? 'HOST' : 'OPERATOR';
   }
 
@@ -714,6 +737,8 @@ var UI = (function () {
         mode: els['lobby-mode'].value,
         killTarget: parseInt(els['lobby-kills'].value, 10),
         minutes: parseInt(els['lobby-time'].value, 10),
+        botCount: parseInt(els['lobby-bots'] ? els['lobby-bots'].value : 0, 10) || 0,
+        botSkill: els['lobby-skill'] ? els['lobby-skill'].value : 'regular',
         teamNames: {                                    // v8.33
           a: els['lobby-team-a'] ? els['lobby-team-a'].value : '',
           b: els['lobby-team-b'] ? els['lobby-team-b'].value : ''
@@ -735,6 +760,8 @@ var UI = (function () {
     });
     els['lobby-kills'].addEventListener('change', pushSettings);
     els['lobby-time'].addEventListener('change', pushSettings);
+    if (els['lobby-bots']) els['lobby-bots'].addEventListener('change', pushSettings);
+    if (els['lobby-skill']) els['lobby-skill'].addEventListener('change', pushSettings);
     /* Push on blur and on Enter rather than on every keystroke: a rename is a
        whole word, and one socket message per character would be silly. */
     ['lobby-team-a', 'lobby-team-b'].forEach(function (id) {

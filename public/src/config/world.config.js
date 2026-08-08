@@ -60,6 +60,12 @@
             cat: 'last', teams: false, teamCount: 0, maxPlayers: 20, lives: 1 },
     lsq2: { label: 'Last Stand \u00b7 Squads 10 \u00d7 2', vlabel: '10 squads of 2',
             cat: 'last', teams: true, squads: true, teamCount: 10, squadSize: 2, maxPlayers: 20, lives: 1 },
+    /* v8.38 TRAINING. One human, up to nineteen bots, on any difficulty. It is
+       free-for-all shaped so every bot is hostile — a practice room where half
+       the room is on your side teaches you nothing. Startable solo, which is
+       the whole point: no waiting for a lobby to fill. */
+    bots: { label: 'Training \u00b7 vs Bots', vlabel: 'Solo vs bots \u00b7 you pick how many',
+            cat: 'practice', teams: false, teamCount: 0, maxPlayers: 20, practice: true },
     lsq4: { label: 'Last Stand \u00b7 Squads 5 \u00d7 4',  vlabel: '5 squads of 4',
             cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20, lives: 1 }
   };
@@ -73,7 +79,9 @@
     { id: 'squads', label: 'Squads',
       blurb: 'Many small squads, one sector. Your squad\u2019s kills are your score.' },
     { id: 'last',   label: 'Last Stand',
-      blurb: 'One life. No respawn. No clock. Last one breathing wins.' }
+      blurb: 'One life. No respawn. No clock. Last one breathing wins.' },
+    { id: 'practice', label: 'Training',
+      blurb: 'Bots, your call on how many and how mean. Learn the map, then raise the bar.' }
   ];
   function modesInCat(catId) {
     return Object.keys(MODES).filter(function (m) { return MODES[m].cat === catId; });

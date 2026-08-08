@@ -10,7 +10,8 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.37** | CURRENT — Last Stand (one life, no timer, solo + squads); mode picker grouped into 4 categories; staging area shows every team with inline rename, per-player picker and shuffle; welcome screen rewritten, field manual moved to staging. |
+| **v8.38** | CURRENT — Training vs bots: server-side bot players with real map line-of-sight, 1-19 bots, four difficulty rungs. `three` is now a runtime dependency. |
+| v8.37 | Good — Last Stand (one life, no timer, solo + squads); mode picker grouped into 4 categories; staging area shows every team with inline rename, per-player picker and shuffle; welcome screen rewritten, field manual moved to staging. |
 | v8.36 | Good — remote avatars faced backwards (fixed); style.css was malformed since v8.33 and ate the live scoreboard (fixed); minimap label clipping; victory line lists all teams. |
 | v8.35 | Good — prone fixed (was lying backwards, feet-first, rifle at the sky); packet validation; server survives a bad packet. Open list empty. |
 | v8.34 | Good — 10 modes: FFA (default, 20p) + 2v2/3v3/4v4/5v5/6v6/8v8/10v10 + two squad modes (10x2, 5x4). Teams generalised from 2 to 10, uneven squads allowed. |
@@ -84,6 +85,107 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+
+---
+
+## v8.38 — Training bots
+
+Fourteen modes now. The new one is a practice room: one human, up to nineteen
+bots, four difficulty rungs, startable solo with nobody else online.
+
+### Bots are server-side PLAYERS, not a client-side simulation
+
+The shortcut was to fake them on the client — cheap, no netcode, and completely
+wrong. This game is server-authoritative: the server owns positions, damage,
+spawns and hit validation. A client-side bot would not appear in a snapshot,
+could not be shot through the normal damage path, would be absent from the
+scoreboard, minimap and killfeed, and would desync the instant a second human
+joined.
+
+So a bot is a player object with `bot: true` and no socket. It is spawned by
+`spawnPlayer`, damaged by `applyDamage`, serialised into snapshots and drawn by
+the existing avatar code. **The client needed no changes at all** to see and
+fight them — and because there is only one implementation of "a player", bots
+cannot drift out of sync with how humans behave.
+
+A bot's shot goes through the same `applyDamage` call a human's does, so
+friendly fire, spawn protection, armour, headshot rules, streaks, the killfeed
+and the win condition all apply without a second code path to keep in step.
+
+### The hard part was line of sight
+
+The server had **no wall geometry**. `mapData` carries spawns and loot points;
+every collider is built by the client's world module. Bots that cannot see walls
+shoot through them, which reads as broken immediately.
+
+The colliders are now built server-side, once per map, by running the real world
+builder in a vm exactly as the verify tools do — **3,191 AABBs for urban** — and
+cached. It costs about a second the first time a bot match starts on a map and
+nothing after. Approximating the geometry was the alternative, and it would have
+been a worse game.
+
+It degrades rather than fails: if `three` is unavailable the match still runs and
+bots simply lose wall awareness, logged loudly so dumb bots are not blamed on the
+AI.
+
+**`three` moved from devDependencies to dependencies.** It is a runtime
+requirement now, and `npm install --production` skips devDependencies — leaving
+it would have silently stripped wall awareness in deployment.
+
+### Two bugs worth recording
+
+**Bots stood perfectly still.** The collision test counted the GROUND SLAB — a
+collider like any other — as an obstacle, so every candidate step was blocked
+from every position on the map. The AI was fine; the geometry test was not. That
+is the most expensive kind of wrong, because it reads as "the bots are broken".
+A step is now blocked only by geometry between step-height and head-height.
+
+**Bots were missing from the match-start roster**, because `addBots` ran after
+the payload was built. Clients received a roster without the opponents they were
+about to fight.
+
+### Difficulty is a ladder, not a knob
+
+Four rungs, moving several axes together, because difficulty is not one
+dimension — a recruit is slow to notice you and sprays; extreme sees further,
+reacts before you finish peeking, and puts rounds where it aims.
+
+| | reaction | aim error | range | headshot rate |
+|---|---|---|---|---|
+| Recruit | 950 ms | 0.34 | 40 m | 2% |
+| Regular | 580 ms | 0.19 | 60 m | 6% |
+| Veteran | 300 ms | 0.10 | 85 m | 14% |
+| **Extreme** | **120 ms** | **0.045** | **130 m** | **28%** |
+
+Extreme is deliberately unfair on reaction time. It is meant to be the wall you
+practise against, not a fair duel.
+
+Hit resolution is a probability with range falloff rather than a simulated
+bullet. Raycasting every bot shot would mean reimplementing spread, recoil, drop
+and penetration server-side and keeping them in sync with the client's forever;
+this produces the same felt outcome with one number to tune.
+
+### Housekeeping
+
+Bots exist only for the duration of a match — added at start, stripped at end and
+on return to lobby — so they never count toward the ready gate or the player cap.
+A host who lowers the bot count is not stuck with the old ones. If the last human
+leaves a bot room the match ends rather than leaving robots duelling forever.
+Bots are labelled BOT in the roster and scoreboard.
+
+### Gates
+
+| Gate | v8.37 | v8.38 |
+|---|---|---|
+| `test.js` | 192 / 0 | **211 / 0** |
+| `tools/verify-bots.js` | — | **25 / 0** (new) |
+| `verify-models` | 137 / 0 | **139 / 0** |
+| everything else | unchanged | unchanged |
+
+Phase 11 plays a real training match: six bots spawn, appear in snapshots like
+any player, **are shown to actually move** by comparing positions across
+snapshots, and one is killed through the ordinary damage path. `verify-bots`
+proves the ground-slab trap stays closed — reintroducing it fails the gate.
 
 ---
 

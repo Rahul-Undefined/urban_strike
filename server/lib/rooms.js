@@ -51,6 +51,8 @@ function makeRoom(hostSocket, name, settings) {
       minutes: clampOpt(settings && settings.minutes, CFG.MATCH.timeOptions, CFG.MATCH.defaultMinutes),
       airdropSec: settings && settings.airdropSec ? Math.max(5, Math.min(600, settings.airdropSec | 0)) : 0,
       mode,
+      botCount: Math.max(0, Math.min(19, (settings && settings.botCount | 0) || 0)),
+      botSkill: (settings && settings.botSkill) || 'regular',
       // v8.33: default to the config names until the host renames them
       // v8.34: seed a name for every side this mode could field
       teamNames: (function () {
@@ -136,6 +138,8 @@ function lobbyPayload(room) {
     counting: !!room.cdTimer,
     players: [...room.players.values()].map(p => ({
       id: p.id, name: p.name, color: p.color, team: p.team,
+      bot: !!p.bot,          // v8.38: clients label bots in the roster and scoreboard
+
       kills: p.kills, deaths: p.deaths, assists: p.assists,
       damage: Math.round(p.damage), streak: p.streak, bestStreak: p.bestStreak || 0,
       ping: p.ping, ready: !!p.ready

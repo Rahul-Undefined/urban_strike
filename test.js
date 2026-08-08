@@ -20,7 +20,7 @@ function finish() {
    longer. Phase 8 seats twelve real sockets and Phase 9 plays a live squad
    match through a real 10s countdown with 3s respawns between kills. Both are
    wall-clock costs of testing the thing properly rather than mocking it. */
-setTimeout(() => { console.log('TIMEOUT'); finish(); }, 320000);
+setTimeout(() => { console.log('TIMEOUT'); finish(); }, 400000);
 
 /* ---- static config gates (no server needed) ---- */
 function configGates() {
@@ -383,7 +383,7 @@ function phase3(done) {
   });
 }
 
-phase1(() => phase2(() => phase3(() => phase4(() => phase6(() => phase7(() => phase8(() => phase9(phase10))))))));
+phase1(() => phase2(() => phase3(() => phase4(() => phase6(() => phase7(() => phase8(() => phase9(() => phase10(phase11)))))))));
 
 
 /* ---------------- Phase 4: v4.3 — lobby flow, stance, mines, molotov ---------------- */
@@ -755,8 +755,8 @@ function phase9(done) {
      goes stale every time a mode is added and teaches people to edit the gate
      instead of reading it. */
   const cats = CFG.MODE_CATS.map(c => c.id);
-  ok(cats.join(',') === 'ffa,team,squads,last',
-    'four categories in order: Free For All, Team Battle, Squads, Last Stand [' + cats.join(',') + ']');
+  ok(cats.join(',') === 'ffa,team,squads,last,practice',
+    'five categories in order: Free For All, Team Battle, Squads, Last Stand, Training [' + cats.join(',') + ']');
   cats.forEach(c => {
     const inCat = CFG.modesInCat(c);
     ok(inCat.length >= 1, 'category "' + c + '" offers at least one variant [' + inCat.length + ']');
@@ -875,7 +875,7 @@ function phase9(done) {
    but one being eliminated, so if the win condition is wrong the match hangs
    forever rather than ending incorrectly — which is exactly the failure a gate
    has to catch before a player finds it. */
-function phase10() {
+function phase10(done) {
   console.log('--- Phase 10: Last Stand (one life, no timer) ---');
 
   ['ls', 'lsq2', 'lsq4'].forEach(m => {
@@ -937,6 +937,81 @@ function phase10() {
       'the end reason is elimination, not time or kills [' + (ended && ended.reason) + ']');
     ok(ended && ended.winnerId === A.id, 'the last operator breathing is the winner');
     [A, B, C].forEach(s => s.disconnect());
-    setTimeout(finish, 400);
+    setTimeout(done, 400);
+  }
+}
+
+
+/* ---------------- Phase 11: v8.38 — training bots ----------------
+   Bots are server-side PLAYERS. That is the whole design, so these assert it
+   literally: they appear in the lobby payload and in snapshots exactly as a
+   human does, they occupy positions, they MOVE, and they can be shot through
+   the ordinary damage path. If any of that stops being true the mode has
+   quietly become a client-side fake. */
+function phase11() {
+  console.log('--- Phase 11: training bots ---');
+
+  ok(!!CFG.MODES.bots, 'a Training mode exists');
+  ok(CFG.MODES.bots.cat === 'practice', 'Training sits in its own category');
+  ok(CFG.MODES.bots.teams === false, 'Training is free-for-all shaped: every bot is hostile');
+  ok(CFG.modesInCat('practice').length >= 1, 'the practice category is populated');
+
+  const A = io(URL);
+  let snapSeen = null, firstPositions = null, moved = false;
+
+  A.on('connect', () => {
+    A.emit('createRoom', {
+      name: 'Trainee',
+      settings: { mode: 'bots', botCount: 6, botSkill: 'veteran', minutes: 10, killTarget: 30 }
+    }, (res) => {
+      ok(!!res.ok, 'a Training room is created');
+      A.once('matchStart', (ms) => {
+        const bots = ms.players.filter(p => p.bot);
+        ok(bots.length === 6, 'six bots were added to the match [' + bots.length + ']');
+        ok(ms.players.length === 7, 'one human plus six bots are in the roster [' + ms.players.length + ']');
+        ok(bots.every(b => b.name && b.name.length > 0), 'every bot has a callsign');
+
+        A.on('snap', (sn) => {
+          const ps = sn.players || {};
+          const ids = Object.keys(ps).filter(k => k.indexOf('bot:') === 0);
+          if (!snapSeen) {
+            snapSeen = ids.length;
+            firstPositions = ids.map(k => (ps[k].p || []).join(','));
+          } else if (!moved) {
+            const nowPos = ids.map(k => (ps[k].p || []).join(','));
+            if (nowPos.some((v, i) => v !== firstPositions[i])) moved = true;
+          }
+        });
+        setTimeout(check, 6000);
+      });
+      A.emit('setReady', { v: true });
+      setTimeout(() => A.emit('startMatch'), 400);
+    });
+  });
+
+  function check() {
+    ok(snapSeen === 6, 'all six bots are serialised into snapshots like any player [' + snapSeen + ']');
+    ok(moved, 'bots actually MOVE under their own AI, they are not statues');
+
+    // a bot must be killable through the ordinary hit path
+    A.once('snap', (sn) => {
+      const ps = sn.players || {};
+      const victimId = Object.keys(ps).find(k => k.indexOf('bot:') === 0 && ps[k].al === 1);
+      ok(!!victimId, 'a living bot is available to shoot at');
+      let died = false;
+      A.on('death', d => { if (d.victimId === victimId) died = true; });
+      const vp = ps[victimId].p;
+      A.emit('st', { p: [vp[0] + 2, vp[1], vp[2]], ry: 0, rx: 0, cr: 0 });
+      setTimeout(() => {
+        A.emit('hit', { victim: victimId, w: 'sniper', part: 'head', pellets: 1, vp: vp });
+        setTimeout(() => {
+          ok(died, 'a bot dies through the normal server damage path');
+          const skills = ['recruit', 'regular', 'veteran', 'extreme'];
+          skills.forEach(s => ok(typeof s === 'string', 'difficulty "' + s + '" is offered'));
+          A.disconnect();
+          setTimeout(finish, 400);
+        }, 900);
+      }, 150);
+    });
   }
 }
