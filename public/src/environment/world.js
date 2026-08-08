@@ -526,7 +526,26 @@ var World = (function () {
     sun.shadow.camera.left = -95; sun.shadow.camera.right = 95;
     sun.shadow.camera.top = 95; sun.shadow.camera.bottom = -95;
     sun.shadow.camera.far = 260;
-    sun.shadow.bias = -0.0006;
+    /* v8.32 SHADOW ACNE — the black-and-white blinking on wall faces.
+
+       Rahul: "screen flickering on most of the walls corner, black and white
+       blinking going on."
+
+       The shadow camera spans 190 m across a 2048 map, so one shadow texel
+       covers 190/2048 = 0.093 m of world. On a surface seen at a grazing angle
+       — which is every tall wall in a city — a 9 cm texel straddles the depth
+       gradient, and the depth comparison flips between lit and shadowed from
+       one frame to the next as the camera moves. That flip IS the flicker.
+
+       A constant `bias` alone cannot fix this: it shifts depth by the same
+       amount everywhere, so the value that stops acne on a wall detaches
+       shadows from the ground. `normalBias` offsets the lookup ALONG THE
+       SURFACE NORMAL instead, which scales naturally with how obliquely a
+       surface is lit — precisely the case that was failing. Set to roughly
+       half a texel; the constant bias is eased back because normalBias is now
+       doing the work that was being forced out of it. */
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.045;
     scene.add(sun);
     scene.add(sun.target);
 

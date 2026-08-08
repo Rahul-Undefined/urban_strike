@@ -263,13 +263,52 @@ var Weapons = (function () {
          what a bullet can strike. */
       var RG = (typeof Avatars !== 'undefined' && Avatars.RIG) ? Avatars.RIG : { x: 1, y: 1, z: 1 };
       var halfH = (r.prone ? P.proneH / 2 : r.crouch ? P.crouchH / 2 : P.standH / 2) * RG.y;
-      var eyeY = c.y + (r.prone ? P.eyeProne : r.crouch ? P.eyeCrouch : P.eyeStand) * RG.y;
-      var tHead = rayBox(o, d, c.x, eyeY + 0.04 * RG.y, c.z,
-        P.headR * RG.x, P.headR * RG.y, P.headR * RG.z);
+
+      /* v8.32 THE HEAD BOX NOW READS THE HEAD, INSTEAD OF RECALCULATING IT.
+
+         v8.19 scaled the boxes by RIG, which fixed the size but left the head
+         box POSITION derived from CFG.PLAYER.eyeHeight while the rendered head
+         comes from the rig's joint chain (spine 0.02 -> neck +0.625 -> head
+         +0.118, all scaled, plus RIG_LIFT). Two independent chains that happen
+         to agree prone and diverge everywhere else. Measured against the real
+         castRay, firing 11 rays up a visible head: standing returned 4 clean
+         misses out of 11 and crouching returned 8. Bullets went through heads.
+
+         net.js now caches the world position of the actual head mesh once per
+         frame in r.headPos, so there is ONE source of truth and the two cannot
+         drift again. It also fixes prone for free, because a rotated body
+         carries its head with it and the cache follows.
+
+         The fallback keeps the old maths for the first frame before a cache
+         exists, so a remote is never unhittable. */
+      var HH = (typeof Avatars !== 'undefined' && Avatars.HEAD_HALF)
+        ? Avatars.HEAD_HALF : { x: P.headR * RG.x, y: P.headR * RG.y, z: P.headR * RG.z };
+      var hp = r.headPos;
+      var hx = hp ? hp.x : c.x;
+      var hy = hp ? hp.y : (c.y + (r.prone ? P.eyeProne : r.crouch ? P.eyeCrouch : P.eyeStand) * RG.y + 0.04 * RG.y);
+      var hz = hp ? hp.z : c.z;
+      var tHead = rayBox(o, d, hx, hy, hz, HH.x, HH.y, HH.z);
       var tBody = rayBox(o, d, c.x, c.y, c.z, P.radius * RG.x, halfH, P.radius * RG.z);
       var part = null, t = -1;
-      if (tHead >= 0 && (tBody < 0 || tHead <= tBody)) { t = tHead; part = 'head'; }
-      else if (tBody >= 0) {
+      /* v8.32: the BODY box is 0.53 half-deep against a torso that is only 0.19
+         half-deep — nearly three times the model, inherited from the movement
+         capsule. A ray aimed at the head therefore entered the body box before
+         it reached the much smaller head box, and `tHead <= tBody` handed the
+         shot to the body. Four of eleven rays fired straight down a visible
+         head came back 'body' for that reason alone.
+
+         The head box is tight and sits exactly on the rendered head, so if a
+         ray passes through it the player HIT THE HEAD, whichever box the ray
+         technically entered first. Classification now follows the head box;
+         the impact distance still uses the nearest real intersection so the
+         effect spawns where the bullet actually landed.
+
+         This does NOT widen the head box. Shots into the shoulders still hit
+         only the body box and still read as body. */
+      if (tHead >= 0) {
+        part = 'head';
+        t = (tBody >= 0 && tBody < tHead) ? tBody : tHead;
+      } else if (tBody >= 0) {
         t = tBody;
         part = (o.y + d.y * tBody) < (c.y - halfH * 0.25) ? 'legs' : 'body';
       }

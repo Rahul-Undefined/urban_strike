@@ -16,6 +16,22 @@ function cleanName(n) {
   return n || 'Operator';
 }
 function num(v) { const n = Number(v); return isFinite(n) ? n : 0; }
+/* v8.34: a fresh score bucket for exactly the sides this mode fields. Building
+   it from CFG.activeTeams rather than a literal is what lets squad modes score
+   at all — combat.js does `room.teamKills[attacker.team]++`, which silently
+   produces NaN if the key was never seeded. */
+function zeroTeamKills(modeId) {
+  const out = {};
+  CFG.activeTeams(modeId).forEach(t => { out[t] = 0; });
+  return out;
+}
+/* v8.33: host-editable team names. Same strip-and-clamp as cleanName — these
+   land in innerHTML on the scoreboard and the end screen, so the angle
+   brackets and quotes have to go here, at the trust boundary, not later. */
+function cleanTeamName(n, dflt) {
+  n = String(n || '').replace(/[<>&"']/g, '').trim().slice(0, 12).toUpperCase();
+  return n || dflt;
+}
 function clampOpt(v, options, dflt) {
   v = parseInt(v, 10);
   return options.indexOf(v) >= 0 ? v : dflt;
@@ -34,10 +50,17 @@ function makeRoom(hostSocket, name, settings) {
       killTarget: clampOpt(settings && settings.killTarget, CFG.MATCH.killOptions, CFG.MATCH.defaultKills),
       minutes: clampOpt(settings && settings.minutes, CFG.MATCH.timeOptions, CFG.MATCH.defaultMinutes),
       airdropSec: settings && settings.airdropSec ? Math.max(5, Math.min(600, settings.airdropSec | 0)) : 0,
-      mode
+      mode,
+      // v8.33: default to the config names until the host renames them
+      // v8.34: seed a name for every side this mode could field
+      teamNames: (function () {
+        const tn = {}, src = (settings && settings.teamNames) || {};
+        CFG.TEAM_IDS.forEach(t => { tn[t] = cleanTeamName(src[t], CFG.TEAMS[t].name); });
+        return tn;
+      })()
     },
     players: new Map(),
-    teamKills: { a: 0, b: 0 },
+    teamKills: zeroTeamKills(mode),
     pickups: [],
     startedAt: 0,
     timer: null,
@@ -76,14 +99,20 @@ function refreshTeamsAndColors(room) {
      choice on the next join, leave or settings change — which is every time
      this function runs. Without it a manual pick survives until the next
      player breathes. */
+  /* v8.34: round-robin across however many sides the mode fields, not a
+     hardcoded two. A held lock is honoured only if that side actually exists in
+     the CURRENT mode — otherwise switching from squads back to 5v5 would strand
+     players on team 'g' with no way to score. */
+  const ids = CFG.activeTeams(room.settings.mode);
   let autoIdx = 0;
   list.forEach((p, i) => {
     if (teams) {
-      if (p.teamLocked && (p.team === 'a' || p.team === 'b')) {
+      if (p.teamLocked && ids.indexOf(p.team) >= 0) {
         p.color = CFG.TEAMS[p.team].color;
         return;
       }
-      p.team = (autoIdx++ % 2 === 0) ? 'a' : 'b';
+      p.team = ids[autoIdx++ % ids.length];
+      p.teamLocked = false;                      // a stale lock is cleared, not carried
       p.color = CFG.TEAMS[p.team].color;
     } else {
       p.team = null; p.teamLocked = false;
@@ -109,8 +138,7 @@ function lobbyPayload(room) {
       id: p.id, name: p.name, color: p.color, team: p.team,
       kills: p.kills, deaths: p.deaths, assists: p.assists,
       damage: Math.round(p.damage), streak: p.streak, bestStreak: p.bestStreak || 0,
-      ping: p.ping, ready: !!p.ready,
-      voice: !!p.voice
+      ping: p.ping, ready: !!p.ready
     }))
   };
 }
@@ -118,6 +146,6 @@ function pushLobby(room) { io.to(room.code).emit('lobby', lobbyPayload(room)); }
 
 // ---------- spawns ----------
 
-  return { makeCode, cleanName, num, clampOpt, modeInfo, makeRoom,
+  return { makeCode, cleanName, cleanTeamName, num, clampOpt, modeInfo, makeRoom, zeroTeamKills,
     addPlayer, refreshTeamsAndColors, lobbyPayload, pushLobby };
 };

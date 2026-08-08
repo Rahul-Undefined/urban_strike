@@ -71,11 +71,11 @@
     </div>
     <div class="menu-stats">
       <div class="mstat"><b id="stat-maps">3</b><span>THEATRES</span></div>
-      <div class="mstat"><b>14</b><span>WEAPONS</span></div>
+      <div class="mstat"><b>15</b><span>WEAPONS</span></div>
       <div class="mstat"><b>11</b><span>ATTACHMENTS</span></div>
-      <div class="mstat"><b>P2P</b><span>VOICE COMMS</span></div>
+      <div class="mstat"><b>20</b><span>MAX OPERATORS</span></div>
     </div>
-    <div class="menu-foot">WASD move · SHIFT sprint · C crouch · Q/E lean · RMB aim · hold G cook frag · X prone · H molotov · V mine · wheel = scope zoom · 9 exclusive · TAB scoreboard</div>
+    <div class="menu-foot">WASD move · SHIFT sprint · C crouch · Q/E lean · RMB aim · hold G cook frag · X prone · H molotov · V mine · wheel = scope zoom · 7 Kar98 · 9 exclusive · TAB scoreboard · M map</div>
   </section>
 
   <!-- CREATE -->
@@ -151,7 +151,7 @@
         </div>
       </div>
 
-      <!-- CENTER: operators, host, ready + voice status -->
+      <!-- CENTER: operators, host, ready -->
       <div class="lobby-col">
         <div class="panel grow">
           <div class="panel-head">OPERATORS <span id="lobby-count">0/4</span></div>
@@ -175,11 +175,16 @@
             <label class="field"><span>KILLS</span><select id="lobby-kills"></select></label>
             <label class="field"><span>DURATION</span><select id="lobby-time"></select></label>
           </div>
+          <!-- v8.33: host-editable team names. Hidden entirely in free-for-all,
+               where there are no teams to name. -->
+          <div class="field-row" id="team-name-row">
+            <label class="field"><span>TEAM A</span><input type="text" id="lobby-team-a" maxlength="12" placeholder="AMBER" autocomplete="off"></label>
+            <label class="field"><span>TEAM B</span><input type="text" id="lobby-team-b" maxlength="12" placeholder="COBALT" autocomplete="off"></label>
+          </div>
         </div>
         <div class="panel actions-panel">
           <div class="panel-head">ACTIONS</div>
           <button class="btn wide ghost" id="btn-ready" data-r="0">READY UP</button>
-          <button class="btn wide ghost" id="btn-voice">JOIN VOICE</button>
           <button class="btn btn-primary wide" id="btn-start" disabled>START MATCH</button>
           <div class="hint" id="lobby-hint">Waiting for host to start…</div>
           <button class="btn wide ghost danger" id="btn-leave">LEAVE ROOM</button>
@@ -206,8 +211,6 @@
   </div>
   <div id="live-board"></div>
   <div id="announce"></div>
-  <div id="voice-ind" class="hidden">● TALKING</div>
-  <div id="voice-diag" class="hidden"></div>
 
   <canvas id="minimap" width="200" height="200"></canvas>
 
@@ -300,7 +303,6 @@
   <script src="src/config/districts.config.js"></script>
   <script src="src/config/index.js"></script>
   <script src="src/audio/audio.js"></script>
-  <script src="src/audio/voice.js"></script>
   <script src="src/environment/merge.js"></script>
   <script src="src/environment/world.js"></script>
   <script src="src/environment/districts-south.js"></script>

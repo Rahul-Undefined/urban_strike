@@ -9,6 +9,27 @@ const path = require('path');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+
+/* v8.35 ONE BAD PACKET MUST NOT END TWENTY PEOPLE'S MATCH.
+
+   Every socket handler runs on the shared event loop. An unguarded throw in any
+   one of them takes down the PROCESS, which takes down every room on it — and
+   at a 20-player cap that is up to twenty operators dropped by a single
+   malformed message.
+
+   This logs loudly and keeps serving. That is deliberately not the textbook
+   advice, which is to exit on an uncaught exception because process state may
+   be suspect. The trade is made knowingly: rooms here are independent
+   in-memory objects, a fault in one player's handler does not corrupt another
+   room's state, and a stack trace in the log with the game still running is far
+   more useful than a silent restart nobody can reproduce. If a fault repeats,
+   it repeats visibly in the log rather than as an unexplained disconnect. */
+process.on('uncaughtException', (err) => {
+  console.error('[UrbanStrike] uncaught exception — server staying up:', err && err.stack || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[UrbanStrike] unhandled rejection:', reason);
+});
 const CFG = require('./public/src/config/index.js');
 const now = () => Date.now();
 
@@ -61,7 +82,7 @@ const rooms = new Map();
 
 // ---------- domain modules (io/state injected; no module touches globals) ----------
 const Rooms = require('./server/lib/rooms.js')({ io, rooms, now });
-const { makeCode, cleanName, num, clampOpt, modeInfo, makeRoom,
+const { makeCode, cleanName, cleanTeamName, num, clampOpt, modeInfo, makeRoom, zeroTeamKills,
   addPlayer, refreshTeamsAndColors, lobbyPayload, pushLobby } = Rooms;
 const Loot = require('./server/lib/loot.js')({ io, now, mapData });
 const { initPickups, pickupList, tryCollect, respawnPickups,
@@ -171,7 +192,7 @@ function spawnPlayer(room, p) {
 function startMatch(room) {
   room.state = 'playing';
   room.startedAt = now();
-  room.teamKills = { a: 0, b: 0 };
+  room.teamKills = zeroTeamKills(room.settings.mode);   // v8.34: sized to the mode
   for (const p of room.players.values()) {
     p.kills = 0; p.deaths = 0; p.assists = 0; p.damage = 0; p.streak = 0; p.bestStreak = 0;
     room.insights = null;   // v8.29: insights are per match, never cumulative
@@ -276,8 +297,16 @@ function endMatch(room, winnerId, reason) {
   const insights = buildInsights(room);
   let winnerTeam = null;
   if (teams) {
-    winnerTeam = room.teamKills.a === room.teamKills.b ? null
-      : (room.teamKills.a > room.teamKills.b ? 'a' : 'b');
+    /* v8.34: highest-scoring side wins, across however many are in play. A
+       clean tie for first has no winner, exactly as a-vs-b did. */
+    const ids = CFG.activeTeams(room.settings.mode);
+    let top = -1, tied = false;
+    ids.forEach(t => {
+      const v = room.teamKills[t] | 0;
+      if (v > top) { top = v; winnerTeam = t; tied = false; }
+      else if (v === top) tied = true;
+    });
+    if (tied || top < 0) winnerTeam = null;
     if (winnerId) winnerTeam = (room.players.get(winnerId) || {}).team || winnerTeam;
     if (!winnerId) {
       let best = null;
@@ -331,6 +360,17 @@ io.on('connection', (socket) => {
     room.settings.killTarget = clampOpt(s && s.killTarget, CFG.MATCH.killOptions, room.settings.killTarget);
     room.settings.minutes = clampOpt(s && s.minutes, CFG.MATCH.timeOptions, room.settings.minutes);
     if (s && s.map && CFG.MAPS[s.map] && CFG.MAPS[s.map].ready !== false) room.settings.map = s.map;
+    /* v8.33: only the host may rename a team, and only in the lobby — both
+       already guaranteed by the guard at the top of this handler. */
+    if (s && s.teamNames) {
+      /* v8.34: rename any side the mode fields. Sides not sent keep whatever
+         they had, so editing team A never blanks team B. */
+      const tn = Object.assign({}, room.settings.teamNames);
+      CFG.activeTeams(room.settings.mode).forEach(t => {
+        if (s.teamNames[t] !== undefined) tn[t] = cleanTeamName(s.teamNames[t], CFG.TEAMS[t].name);
+      });
+      room.settings.teamNames = tn;
+    }
     if (s && CFG.MODES[s.mode]) {
       if (room.players.size > CFG.MODES[s.mode].maxPlayers) {
         socket.emit('toast', { msg: 'Too many players in room for that mode' });
@@ -347,27 +387,6 @@ io.on('connection', (socket) => {
     const p = room.players.get(socket.id); if (!p) return;
     p.ready = !!(d && d.v);
     pushLobby(room);   // the START gate is derived from this payload, client-side
-  });
-  socket.on('voiceJoin', () => {
-    const room = getRoom(socket); if (!room) return;
-    const p = room.players.get(socket.id); if (!p) return;
-    p.voice = true;
-    const ids = [...room.players.values()].filter(q => q.voice && q.id !== socket.id).map(q => q.id);
-    socket.emit('voicePeers', { ids });
-    socket.to(room.code).emit('voicePeerJoin', { id: socket.id });
-  });
-  socket.on('voiceLeave', () => {
-    const room = getRoom(socket); if (!room) return;
-    const p = room.players.get(socket.id); if (!p) return;
-    p.voice = false;
-    socket.to(room.code).emit('voicePeerLeave', { id: socket.id });
-  });
-  socket.on('voiceSignal', (d) => {
-    const room = getRoom(socket); if (!room || !d || !d.to) return;
-    const p = room.players.get(socket.id);
-    const q = room.players.get(d.to);
-    if (!p || !q || !p.voice || !q.voice) return; // same room + both opted in
-    io.to(d.to).emit('voiceSignal', { from: socket.id, data: d.data });
   });
   socket.on('placeMine', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};
@@ -392,7 +411,11 @@ io.on('connection', (socket) => {
     if (!room || socket.id !== room.hostId || room.state !== 'lobby') return;
     if (room.cdTimer) return;                       // no shuffling mid-countdown
     if (!modeInfo(room).teams) return;              // meaningless in FFA
-    if (!d || (d.team !== 'a' && d.team !== 'b')) return;
+    /* v8.34: any side the CURRENT mode fields, not just a/b. Validating against
+       activeTeams rather than CFG.TEAMS matters — 'g' is a real team but not a
+       legal destination in 5v5, and putting someone there would leave them
+       unable to score. */
+    if (!d || CFG.activeTeams(room.settings.mode).indexOf(d.team) < 0) return;
     const p = room.players.get(d.id);
     if (!p) return;
     p.team = d.team;
@@ -509,7 +532,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const room = getRoom(socket); if (!room) return;
     const p = room.players.get(socket.id);
-    if (p && p.voice) io.to(room.code).emit('voicePeerLeave', { id: socket.id }); // socket.to() is dead inside disconnect
     room.players.delete(socket.id);
     if (room.players.size === 0) {
       stopSnapshots(room);

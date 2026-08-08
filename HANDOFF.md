@@ -135,7 +135,7 @@ TWICE per frame — shadow map, then main pass. Urban's "98 draw calls" is reall
 | rural | 17 / 40 | 13 / 20 | 21.9k / 30k |
 | metro | 19 / 45 | 14 / 22 | 12.7k / 26k |
 
-Players are budgeted separately (`verify-avatar`): ten kitted operators visible
+Players are budgeted separately (`verify-avatar`): ten AND twenty kitted operators visible
 at once = 180 draw calls, budget 200. Avatars CANNOT be static-merged — they
 move every frame — so the only levers are part count, material sharing and LOD.
 
@@ -145,10 +145,10 @@ move every frame — so the only levers are part count, material sharing and LOD
 
 | Gate | Command | Current | Proves |
 |---|---|---|---|
-| Integration | `node server.js & sleep 3; node test.js` | 94 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
-| Models+loot+voice | `node verify-models.js` | 40 | viewmodels, grants, loot exclusivity, scope ladder, voice wiring |
+| Integration | `node server.js & sleep 3; node test.js` | 139 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
+| Models + weapons + keybinds | `node verify-models.js` | 125 | viewmodels, grants, loot exclusivity, scope ladder, weapon/viewmodel parity, sniper rules, keybind collisions |
 | Scope + loop isolation | `node tools/verify-scope.js` | 20 | cross-IIFE identifier leaks, drawHpBar ally paths, per-subsystem frame guards |
-| End screen | `node tools/verify-endscreen.js` | 28 | runs the real UI.showEnd: opacity, HUD suppression, column split |
+| Hitbox + prone orientation | `node tools/verify-hitbox.js` | 27 | fires the real castRay at the real posed avatar in all 3 stances |
 | Map | `node tools/verify-map.js` | **992** | loot support / spawn clearance / airdrop landing, all 3 maps |
 | Build chain | `node tools/verify-build.js` | PASS | real-three vm build of all 3 maps + reset + coplanar-ground gate |
 | Ascent | `node tools/verify-access.js` | **50/51** *(1 known, see below)* | walks a capsule up every staircase |
@@ -156,7 +156,7 @@ move every frame — so the only levers are part count, material sharing and LOD
 | Cover | `node tools/verify-cover.js` | PASS | dead-ground budget (<6%); `--report` prints an ASCII map |
 | **Batching** | `node tools/verify-batch.js` | 36 | draw-call budget + the four batching invariants + edge-on decals |
 | **Architecture** | `node tools/verify-arch.js` | **3/6 — RED BY DESIGN** | floating geometry (0 everywhere) + broken-promise roofs |
-| **Avatar** | `node verify-avatar.js` | **23** | player rig: parts, material sharing, joints, stance, strafe, turn, reload, LOD, lobby cost |
+| **Avatar** | `node verify-avatar.js` | **25** | player rig: parts, material sharing, joints, stance, strafe, turn, reload, LOD, lobby cost |
 | **Collision** | `node tools/verify-collision.js` | **19** | the resolver itself: order independence, auto-step, no downward resolve, void plane, world-edge probe |
 | **Stair quality** | `node tools/verify-stairs-quality.js` | **15** | support, rise, width, headroom, landing — per flight, from a build-time registry |
 | **Map flow** | `node tools/verify-flow.js` | **3** | walkable ground reachable from spawn; enumerates sealed pockets |
@@ -469,22 +469,108 @@ Blocked: Rahul is still reviewing Rural and will supply direction.
 
 ---
 
-## 8a. v8.31.2 — END SCREEN
+## 8a. v8.35 — PRONE, AND THE LESSON IN IT
 
-Rebuilt after a screenshot showed the final scores floating over a still-running
-map with the minimap and live mini-scoreboard drawn on top.
+Prone lay backwards from whenever it was written until v8.35: the body rotation
+had the wrong SIGN, so the operator was on their back, feet-first, rifle aimed
+at the sky. Detail in CHANGELOG v8.35.
 
-**The thing to remember:** `#end-overlay` is a CHILD of `#hud-layer`. Every HUD
-element is its SIBLING and keeps drawing unless something switches it off.
-`showEnd` adds `end-active` to `#hud-layer` and `hideEnd` removes it. If you add
-a new HUD element, it is covered automatically; if you ever move the overlay out
-of `#hud-layer`, that rule stops applying and the bug returns.
+**THE LESSON, which matters more than the fix:** thirteen versions of gates
+never caught it because every one of them measured HEIGHTS. A body lying the
+wrong way round is exactly the right height. When you add a gate, ask which
+AXIS the failure would live on — position, direction, orientation, timing — and
+make sure something measures that axis. `verify-hitbox` now measures direction.
 
-Also: `.end-table` inherits `width:100%` from the `#scoreboard` rule. It needs a
-bounded container or it stretches edge to edge.
+**The rig's forward is +Z.** Boot toe `+0.025` Z, rifle carried at `+Z`. Any
+rotation you write is measured against that.
 
-`tools/verify-endscreen.js` runs the real `UI.showEnd` against a DOM stub and is
-now part of the required sweep.
+**The prone weapon counter-rotation is deliberately written as the negated body
+rotation**, not as the solved constant `-1.45`. If you retune the 0.92 lie-flat
+factor the barrel follows automatically. Do not "simplify" it back to a number.
+
+**Server survives a bad packet.** `process.on('uncaughtException')` logs and
+keeps serving rather than exiting, because one malformed message must not drop
+twenty operators. If you see repeated traces in the log, that is the handler
+doing its job — fix the cause, do not remove the net.
+
+## 8b. v8.34 — N TEAMS
+
+Ten modes now share one team system. Full detail in CHANGELOG v8.34.
+
+**THE RULE:** `CFG.activeTeams(modeId)` is the only thing allowed to decide
+which sides are in play. Do not write `'a'` or `'b'` as a literal anywhere in
+server or client team logic again — nine places did, and that was the ceiling.
+
+**The trap that will bite you:** `combat.js` does
+`room.teamKills[attacker.team]++`. If that key was never seeded the result is
+`undefined++` = **NaN**, which propagates into every snapshot and NEVER THROWS.
+Always build the bucket with `zeroTeamKills(mode)`. A gate asserts no squad
+score is NaN — keep it.
+
+**Team locks are validated against the current mode.** A player locked to squad
+'g' in sq2 must not survive a switch to 5v5, or they sit on a side that cannot
+score.
+
+**Squad sizes are deliberately unenforced** so a host can run 4-vs-2. Do not
+"fix" this.
+
+**pickSpawn needs no team tags for squads** — its v8.27 empty-set fallback
+already routes c-j to the full spawn set and picks the point furthest from
+enemies. Leave that fallback alone; it is load-bearing for squads now.
+
+**Free-for-all is the default and must stay first in CFG.MODES.** Six gates
+enforce it.
+
+## 8b. v8.33 — WEAPONS, CAPACITY, TEAMS, VOICE REMOVAL
+
+Full detail in CHANGELOG v8.33. What a future session needs to know:
+
+**Global hotkeys must skip text fields.** `game.js`'s keydown handler now bails
+when the event target is an INPUT/TEXTAREA/SELECT. It is at the TOP of the
+handler on purpose — every letter key that handler claims would otherwise eat
+that character out of the callsign box. Do not move a letter binding above it.
+
+**Snipers are hitscan.** `bullet` / `bulletSpeed` / `bulletDrop` are gone from
+all three bolt rifles. Nothing else in the game uses the projectile path any
+more except the rocket. Sniper lethality is a rule, not a vibe: body >= 100,
+head >= 100, legs ~80. `verify-models` enforces all three.
+
+**Every weapon in WEAPON_ORDER needs a viewmodel** or it is invisible in the
+hands. Gated now — that is the failure a new gun introduces.
+
+**Voice chat is gone and gated gone.** Do not reintroduce half of it.
+
+**Capacity is 20.** `verify-avatar` bills a real twenty-player lobby: 380 draw
+calls, 16 materials. The material count is the one to watch — it stayed at 16
+going from 10 to 20 players because body materials are module-level. If it ever
+starts climbing with player count, something began minting per-instance
+materials and that is a much bigger problem than the draw count.
+
+**Team names come from `room.settings.teamNames`, never from CFG directly.**
+`CFG.TEAMS[t].name` is the FALLBACK inside `UI.teamName()` and nowhere else.
+Sanitised server-side because they land in innerHTML.
+
+## 8b. v8.32 — RIG AND HITBOX
+
+Weapon carry, neck, and head hit detection all fixed; shadow acne on walls
+fixed. Numbers and reasoning in CHANGELOG v8.32.
+
+**The rule this release exists to enforce:** the hit box must be derived FROM
+the rendered model, never calculated alongside it. `net.js` caches the real head
+mesh world position each frame and `castRay` reads it. Do not reintroduce a
+parallel calculation from `CFG.PLAYER.eyeHeight` — that is exactly what let
+bullets pass through visible heads for thirteen versions while every gate
+passed. `tools/verify-hitbox.js` fires the real castRay at the real posed model
+and is now part of the required sweep.
+
+**Watch out:** `RIG` is non-uniform (1.52 / 1.22 / 1.52). Any limb rotated
+toward horizontal is stretched 1.52x instead of 1.22x, so changing an arm angle
+also changes how far the hand reaches. Angles and mount offsets have to be
+solved together, not one after the other.
+
+**Known, unfixed:** PRONE LIES BACKWARDS. Head at z -0.40, feet at z +1.01, +Z
+being forward — the body is laid out feet-first with the weapon pointing
+skyward. Separate defect, deserves its own change.
 
 ## 8b. v8.31 — THE TEAM-MODE BUG, SOLVED
 

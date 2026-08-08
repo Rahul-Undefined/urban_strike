@@ -206,10 +206,22 @@ var Avatars = (function () {
        fewer parts per player, and a coloured upper arm reads at twice the
        distance a shoulder patch does. */
 
-    /* ---- head. 0.21 wide against a 0.42 chest: roughly seven and a half
-       heads tall, which is what makes a body read as a person. ---- */
+    /* ---- head + neck.
+       v8.32: there was a 0.079 m gap between the top of the chest and the
+       bottom of the head with NOTHING in it, so the head read as a box
+       balanced on the shoulders. Rahul: "it is like a square box on top of the
+       body without the neck."
+
+       A short neck now bridges that gap, overlapping both ends slightly so
+       there is no seam. The head itself was 0.296 wide but 0.312 DEEP — deeper
+       than it was wide, which is what made it read as a crate rather than a
+       head. It is now slightly taller and slightly shallower, so the
+       proportions read as a person while the silhouette stays exactly as wide.
+       Nothing here shrinks the body: width is untouched, and total height goes
+       UP by 0.031 m, which the hitbox follows (see HEAD below). ---- */
     var neck = joint(spine, 0, 0.625, 0);
-    part(neck, 0, 0.105, 0, 0.195, 0.21, 0.205, AVM.skin);
+    part(neck, 0, -0.030, 0, 0.115, 0.085, 0.115, AVM.skin);        // neck
+    var headMesh = part(neck, 0, 0.118, 0, 0.195, 0.235, 0.185, AVM.skin);   // head
 
     /* ---- arms ---- */
     function buildArm(sx) {
@@ -234,9 +246,12 @@ var Avatars = (function () {
     var pack = part(spine, 0, 0.34, 0.19, 0.30, 0.34, 0.14, AVM.pack);
     pack.visible = false;
 
-    /* ---- weapon holder, parented to the RIGHT HAND so it follows the arm --- */
+    /* ---- weapon holder, parented to the RIGHT HAND so it follows the arm ---
+       v8.32: was (0, -0.28, -0.06), which hung the weapon a full forearm below
+       the elbow. Combined with the forward shoulder rotation and the rig's
+       non-uniform scale that threw it 0.79 m clear of the chest. */
     var gun = new THREE.Group();
-    gun.position.set(0, -0.28, -0.06);
+    gun.position.set(0, -0.12, 0.10);
     armR.elbow.add(gun);
 
     /* v8.16: NAMEPLATE AND HP BAR GO IN A COUNTER-ROTATED HOLDER.
@@ -264,7 +279,7 @@ var Avatars = (function () {
     var hb = { sprite: hs, canvas: hc, ctx: hc.getContext('2d'), tex: htx };
 
     return {
-      group: g, gun: gun, head: neck, torso: chest, spine: spine, hb: hb, tag: tag,
+      group: g, gun: gun, head: neck, headMesh: headMesh, torso: chest, spine: spine, hb: hb, tag: tag,
       tagHolder: tagHolder,
       hipL: hipL, hipR: hipR, armL: armL, armR: armR,
       helmet: helmet, vest: vest, pack: pack, detail: detail,
@@ -413,7 +428,24 @@ var Avatars = (function () {
        retuned to sit the feet on the floor. */
     av.spine.position.y = 0.02 - c * 0.12 - p * 0.30;
     av.spine.rotation.x = c * 0.22 + p * 0.10;
-    av.group.rotation.x = -p * (Math.PI / 2) * 0.92;
+    /* v8.35 PRONE WAS LYING BACKWARDS.
+
+       Rotation about X maps +Y -> (0, cos, sin) and +Z -> (0, -sin, cos). The
+       rig's forward is +Z (the boot toe is offset +0.025 in Z and the rifle is
+       carried at +Z). So laying a body face-down with the head forward needs
+       the head to travel +Y -> +Z, which is sin = +1, which is a POSITIVE
+       rotation.
+
+       It was negative. Measured on the real rig, prone put the head at
+       z -0.54 and the feet at z +1.01: the operator was laid out on their BACK,
+       feet-first, crawling backwards. The belly faced the sky, and because the
+       arms were still posed for standing they swung upward with it, leaving the
+       rifle pointing at the clouds 0.49 m above the body.
+
+       One character. Everything downstream follows, including hit detection —
+       v8.32 made the head box read the rendered head's world position, so a
+       correctly-rotated body carries its own hitbox with it for free. */
+    av.group.rotation.x = p * (Math.PI / 2) * 0.92;
     /* NaN GUARD. baseY is written by net.js every frame, but poseAvatar can
        run before the first renderPos exists — a fresh join, a respawn, a
        dropped snapshot. `undefined - p * 0.55` is NaN, Three.js skips an
@@ -495,13 +527,57 @@ var Avatars = (function () {
        support arm crossed further so both hands read as on the weapon. `aim`
        still adds on top when a remote player is ADS, so scoping is still a
        visible change in silhouette rather than the new resting pose. */
-    av.armR.rotation.x = -1.18 + aim + swb * 0.16 * fA + br - R * 0.16;
+    /* v8.32 THE WEAPON WAS BEING CARRIED AT ARM'S LENGTH.
+
+       v8.21 fixed "standing gun down" by driving the shoulders to -1.18 rad and
+       folding the elbows to -1.02. The intent in that commit was to "bring the
+       stock in rather than pushing the muzzle out". Measured, it did the
+       opposite: the weapon ended up 0.79 m in FRONT of the chest and 0.13 m
+       ABOVE it, which on screen reads as arms thrust up in a V with the rifle
+       floating detached beside the body.
+
+       The cause is not the angles alone. RIG scales X and Z by 1.52 but Y by
+       only 1.22, so a limb rotated toward horizontal is stretched 1.52x while
+       the same limb hanging down is stretched 1.22x. Rotating the shoulder
+       forward therefore does not just swing the arm — it LENGTHENS it by 25%.
+       Angles alone could not bring the weapon closer than 0.56 m; the mount
+       offset had to move with them.
+
+       Solved together rather than guessed: shoulder -0.40, elbow -1.10, and the
+       weapon remounted from (0,-0.28,-0.06) to (0,-0.12,+0.10). Result is the
+       weapon at 0.36 m forward and 0.62 m up — chest height, close to the body,
+       and 0.22 m from the elbow, comfortably inside a forearm's reach so the
+       hands read as being ON it. `aim` still adds on top for ADS. */
+    /* v8.35 PRONE NEEDS ITS OWN ARM POSE.
+
+       Correcting the body rotation is only half of it. A standing carry rotated
+       83 degrees puts the arms wherever the torso throws them — with the old
+       backwards rotation that was straight up, and even with the corrected one
+       it would drive the rifle down into the ground, because the arms hang
+       along local -Y and local -Y now points backwards and down.
+
+       Prone shoulders have to reach the other way. Solved numerically against
+       the corrected body rather than guessed: shoulder -1.90 and elbow +0.20
+       relative to the standing pose put the weapon at z +0.65 — forward of the
+       head — and y -0.12, which is 0.23 m above the deck. Reach from the elbow
+       stays 0.21 m, well inside a forearm, so the hands still read as on it.
+
+       Blended by `p`, so the transition in and out of prone is the same smooth
+       lerp every other stance uses. */
+    var proneArm = p * 1.90, proneElbow = p * 0.20;
+    av.armR.rotation.x = -0.40 + aim + swb * 0.16 * fA + br - R * 0.16 - proneArm;
     av.armR.rotation.z = -0.20;
-    av.armR.elbow.rotation.x = -1.02 - R * 0.18;
-    av.armL.rotation.x = -1.34 + aim + sw * 0.16 * fA + br + R * (0.55 + pump * 0.35);
-    av.armL.rotation.z = 0.40 - R * 0.30;
-    av.armL.elbow.rotation.x = -0.94 - R * (0.45 + pump * 0.30);
-    av.gun.rotation.x = R * 0.42;
+    av.armR.elbow.rotation.x = -1.10 - R * 0.18 + proneElbow;
+    av.armL.rotation.x = -0.58 + aim + sw * 0.16 * fA + br + R * (0.55 + pump * 0.35) - proneArm;
+    av.armL.rotation.z = 0.34 - R * 0.30;
+    av.armL.elbow.rotation.x = -1.24 - R * (0.45 + pump * 0.30) + proneElbow;
+    /* v8.35: the weapon counter-rotates by exactly the body's prone rotation,
+       so the barrel stays level with the WORLD while the operator lies flat.
+       Solved numerically at -1.45 rad and then written as the negated body
+       rotation, because that is what it physically is — if the 0.92 lie-flat
+       factor is ever retuned the barrel follows instead of silently drifting
+       back into the dirt. Without this the muzzle buried 0.76 m underground. */
+    av.gun.rotation.x = R * 0.42 - p * (Math.PI / 2) * 0.92;
     av.gun.rotation.z = R * 0.18;
 
     av.torso.scale.z = 1 + br * 1.4;
@@ -548,8 +624,20 @@ var Avatars = (function () {
     r.av.hb.tex.needsUpdate = true;
   }
 
+  /* v8.32: the half-extent of the RENDERED head, derived from the very numbers
+     the head mesh is built from above (0.195 x 0.235 x 0.185) times RIG. Hit
+     detection imports this instead of keeping its own copy, so resizing the
+     head resizes the box that protects it. A little generosity is deliberate:
+     rounding UP never makes a visible head unhittable. */
+  var HEAD_HALF = {
+    x: (0.195 * RIG.x) / 2 + 0.02,
+    y: (0.235 * RIG.y) / 2 + 0.02,
+    z: (0.185 * RIG.z) / 2 + 0.02
+  };
+
   return {
     RIG: RIG,                      // v8.19: hit detection must use these too
+    HEAD_HALF: HEAD_HALF,          // v8.32: and the head box comes from here
     buildAvatar: buildAvatar,
     setRemoteGun: setRemoteGun,
     drawHpBar: drawHpBar,

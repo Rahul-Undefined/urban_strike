@@ -59,7 +59,23 @@ const COLORS = ["#e8563e", "#63d968", "#3f8dff", "#f0a232", "#b06fd8",
 /* matsBody counts MESH materials only. The name tag and hp bar carry a
    per-player canvas texture by definition — those two sprite materials cannot
    be shared and are not a defect. */
-const AV_BUDGET = { partsBase: 13, partsKitted: 16, matsBody: 18, perLobbyDraws: 200 };
+/* v8.32: partsBase 13 -> 14, partsKitted 16 -> 17. RAISED DELIBERATELY, BY
+   EXACTLY ONE, for the neck mesh.
+
+   This project treats budgets as ratchets that fall and never rise, so this
+   needs justifying rather than quietly editing. The head sat 0.079 m clear of
+   the shoulders with nothing between it — Rahul: "it is like a square box on
+   top of the body without the neck." Closing that gap needs one mesh. It
+   shares AVM.skin with the head, so it adds no new material, and the cost is
+   one draw call per VISIBLE avatar — at most ten in a full lobby, against a
+   perLobbyDraws budget of 200 that is unchanged and still enforced below.
+
+   One mesh, one reason, recorded. If a later change needs part fifteen, it
+   needs its own line here saying why. */
+const AV_BUDGET = { partsBase: 14, partsKitted: 17, matsBody: 18, perLobbyDraws: 200,
+  /* v8.33: the cap is 20 now, so there is a budget for 20. Set from the first
+     measured run and treated as a ratchet from here — it may fall, never rise. */
+  perLobbyDraws20: 400, matsBody20: 30 };
 
 const built = COLORS.map((c, i) => vm.runInContext(
   `Avatars.buildAvatar("Op${i}", "${c}")`, ctx));
@@ -224,6 +240,39 @@ built.forEach(a => { const c = census(a); lobbyDraws += c.visible + c.sprites; }
 console.log("        10 kitted avatars visible at once = " + lobbyDraws + " draw calls");
 ok(lobbyDraws <= AV_BUDGET.perLobbyDraws,
   "ten-player lobby costs " + lobbyDraws + " draw calls (budget " + AV_BUDGET.perLobbyDraws + ")");
+
+/* v8.33 THE CAP IS NOW 20, SO MEASURE 20.
+
+   Raising CFG.MODES to twenty players without re-measuring would have been a
+   guess dressed as a decision. Two things make twenty affordable rather than
+   simply double: every body material is module-level and shared, so avatar
+   COUNT does not multiply materials; and anything past 30 m sheds its detail
+   parts. The honest worst case is still every operator visible and kitted at
+   close range, so that is what is billed here.
+
+   The material budget matters more than the draw budget at this size — if
+   twenty avatars started minting twenty accent materials the shading cost
+   would climb far faster than the draw count. */
+const built20 = [];
+for (let i = 0; i < 20; i++) {
+  built20.push(vm.runInContext(
+    `Avatars.buildAvatar("Op20_${i}", "${COLORS[i % COLORS.length]}")`, ctx));
+}
+built20.forEach(a => { ctx.__A = a; vm.runInContext("Avatars.setGear(__A, 3, 3)", ctx); });
+let draws20 = 0;
+const mats20 = new Set();
+built20.forEach(a => {
+  const c = census(a);
+  draws20 += c.visible + c.sprites;
+  a.group.traverse(o => { if (o.isMesh && o.material) mats20.add(o.material.uuid); });
+});
+console.log("        20 kitted avatars visible at once = " + draws20 + " draw calls, " +
+  mats20.size + " distinct materials");
+ok(draws20 <= AV_BUDGET.perLobbyDraws20,
+  "twenty-player lobby costs " + draws20 + " draw calls (budget " + AV_BUDGET.perLobbyDraws20 + ")");
+ok(mats20.size <= AV_BUDGET.matsBody20,
+  "twenty avatars share " + mats20.size + " materials (budget " + AV_BUDGET.matsBody20 +
+  ") — sharing holds at double the player count");
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

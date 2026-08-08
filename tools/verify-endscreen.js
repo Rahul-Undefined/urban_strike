@@ -111,7 +111,6 @@ vm.createContext(ctx);
  'public/src/config/index.js'
 ].forEach(f => vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f }));
 ctx.Net = new Proxy({}, { get: () => () => {} });
-ctx.VoiceChat = new Proxy({}, { get: () => () => {} });
 vm.runInContext(fs.readFileSync('public/src/ui/ui.js', 'utf8'), ctx, { filename: 'ui.js' });
 
 const payload = {

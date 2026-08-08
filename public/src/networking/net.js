@@ -11,7 +11,7 @@ var Net = (function () {
   var roster = [];    // lobby payload players (names/colors/scores)
   var ping = 0;
   var match = { killTarget: 15, minutes: 10, mode: 'ffa', startedAt: 0, serverOffset: 0 };
-  var teamKills = { a: 0, b: 0 };
+  var teamKills = {};                // v8.34: sized by the server, not assumed
   var myTeam = null;
   var scene = null;
   var P = CFG.PLAYER;
@@ -93,7 +93,7 @@ var Net = (function () {
       roster = d.players;
       var me = d.players.find(function (p) { return p.id === myIdV; });
       myTeam = me ? (me.team || null) : null;
-      teamKills = { a: 0, b: 0 };
+      teamKills = {};                  // v8.34
       Game.onMatchStart(d);
     });
 
@@ -279,13 +279,28 @@ var Net = (function () {
         if (wh) FX.impact(wh.point);
       }
     });
+    /* v8.35: the server relays these fields verbatim, so a malformed or
+       hostile packet used to reach THREE.Vector3 unchecked — `d.o[0]` on a
+       missing array throws, and an unknown `d.type` reaches
+       `CFG.THROWS[type].fuse` and throws there. Neither killed the game (the
+       v8.31 per-subsystem guards contain it) but both would spam the error
+       toast and drop the effect for everyone. Validate at the boundary. */
+    function vec3(a) {
+      return (a && a.length === 3 && isFinite(a[0]) && isFinite(a[1]) && isFinite(a[2]))
+        ? new THREE.Vector3(a[0], a[1], a[2]) : null;
+    }
     socket.on('proj', function (d) {
-      Weapons.spawnRocket(new THREE.Vector3(d.o[0], d.o[1], d.o[2]), new THREE.Vector3(d.v[0], d.v[1], d.v[2]), false);
-      AudioSys.shot('rocket', new THREE.Vector3(d.o[0], d.o[1], d.o[2]));
+      if (!d) return;
+      var o = vec3(d.o), v = vec3(d.v);
+      if (!o || !v) return;
+      Weapons.spawnRocket(o, v, false);
+      AudioSys.shot('rocket', o.clone());
     });
     socket.on('throw', function (d) {
-      Weapons.spawnGrenade(d.type, new THREE.Vector3(d.o[0], d.o[1], d.o[2]), new THREE.Vector3(d.v[0], d.v[1], d.v[2]), false,
-        (typeof d.f === 'number') ? d.f : undefined);
+      if (!d || !CFG.THROWS[d.type]) return;          // unknown type = ignore, not crash
+      var o = vec3(d.o), v = vec3(d.v);
+      if (!o || !v) return;
+      Weapons.spawnGrenade(d.type, o, v, false, (typeof d.f === 'number') ? d.f : undefined);
     });
     socket.on('minePlaced', function (d) { Pickups.mineAdd(d); });
     socket.on('mineBoom', function (d) {
@@ -295,12 +310,6 @@ var Net = (function () {
       FX.shake(0.6);
       AudioSys.explosion(mp);
     });
-    socket.on('voicePeers', function (d) { VoiceChat.onPeerList(d.ids); });
-    socket.on('voicePeerJoin', function (d) { VoiceChat.onPeerJoin(d.id); });
-    socket.on('voicePeerLeave', function (d) { VoiceChat.onPeerLeave(d.id); });
-    socket.on('voiceSignal', function (d) { VoiceChat.onSignal(d.from, d.data); });
-    VoiceChat.init(function (to, data) { if (socket) socket.emit('voiceSignal', { to: to, data: data }); });
-    socket.on('disconnect', function () { VoiceChat.leave(); });
   }
 
   // ---------- remote interpolation ----------
@@ -404,6 +413,26 @@ var Net = (function () {
         dist: r.renderPos.distanceTo(_camPos), dt: dt
       });
 
+      /* v8.32 ONE SOURCE OF TRUTH FOR WHERE THE HEAD IS.
+
+         The head box in weapons/system.js used to be derived from
+         CFG.PLAYER.eyeHeight, a completely separate chain from the rig that
+         actually draws the head. They disagreed by up to 0.32 m and bullets
+         passed through visible heads. Caching the real world position here —
+         right after the pose that produced it — means hit detection reads the
+         head instead of predicting it, and prone works for free because a
+         rotated body carries its head with it.
+
+         The matrix update is forced because three.js would not otherwise
+         refresh it until render, which would leave the cache a frame stale.
+         It walks about thirty nodes per remote, which against a 98-draw-call
+         map is not measurable. */
+      if (r.av.headMesh) {
+        r.av.group.updateMatrixWorld(true);
+        if (!r.headPos) r.headPos = new THREE.Vector3();
+        r.av.headMesh.getWorldPosition(r.headPos);
+      }
+
       // floating health bar — smooth lerp; allies always, enemies only while recently hurt
       var ally = !!(myTeam && r.team === myTeam);
       r.dispHp += (r.hp - r.dispHp) * Math.min(1, dt * 9);
@@ -455,8 +484,6 @@ var Net = (function () {
     setPlayerTeam: function (id, team) { if (socket) socket.emit('setPlayerTeam', { id: id, team: team }); },
     setReady: function (v) { if (socket) socket.emit('setReady', { v: !!v }); },
     peerName: function (id) { var r = remotes[id]; return (r && r.name) || 'Player'; },
-    voiceJoin: function () { if (socket) socket.emit('voiceJoin'); },
-    voiceLeave: function () { if (socket) socket.emit('voiceLeave'); },
     bindGameplayEvents: bindGameplayEvents,
     updateRemotes: updateRemotes,
     eachRemote: eachRemote,

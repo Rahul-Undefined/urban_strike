@@ -139,28 +139,21 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
   ok(new Set(fovs).size === fovs.length, 'every scope has a distinct magnification');
 }
 
-/* ---- v5.2 voice wiring invariants ------------------------------------
-   Voice failed silently for four releases because nothing asserted that the
-   pieces were connected to each other. These are cheap static checks that
-   would have caught the dead CFG.VOICE.turn hook immediately. */
+/* ---- keybind + model invariants ------------------------------------
+   v8.33 removed voice chat entirely, so the v5.2 WebRTC assertions that used to
+   live here are gone with it. What remains is the keybind collision gate added
+   in v8.30, which is the part that has actually caught bugs. */
 {
-  const vsrc = fs.readFileSync('./public/src/audio/voice.js', 'utf8');
   const usrc = fs.readFileSync('./public/src/ui/ui.js', 'utf8');
   const gsrc = fs.readFileSync('./public/src/core/game.js', 'utf8');
   const hsrc = fs.readFileSync('./public/index.html', 'utf8');
 
-  ok(CFG.VOICE && typeof CFG.VOICE === 'object', 'CFG.VOICE exists (voice.js reads it for TURN)');
-  ok(Array.isArray(CFG.VOICE.turn), 'CFG.VOICE.turn is an array voice.js can iterate');
-  ok(/CFG\.VOICE/.test(vsrc), 'voice.js actually reads CFG.VOICE');
-  ok(/getDiag/.test(vsrc) && /getDiag/.test(usrc), 'voice diagnostics are exposed AND rendered');
-  ok(/id="voice-diag"/.test(hsrc), 'the diagnostics element exists in the DOM');
-  ok(/iceRestart/.test(vsrc), 'a failed peer attempts an ICE restart before being dropped');
-  ok(/candidate-pair/.test(vsrc), 'the selected ICE candidate pair is reported (direct vs relay)');
 
-  // PTT must be bound exactly once, at document level, so it works in the lobby
-  const pttUi = (usrc.match(/setTalking\(true\)/g) || []).length;
-  const pttGame = (gsrc.match(/setTalking\(/g) || []).length;
-  ok(pttUi === 1 && pttGame === 0, 'push-to-talk is bound once in ui.js and not duplicated in game.js');
+  /* v8.33: voice chat is gone. Assert it stays gone rather than silently
+     rotting back in — a half-removed feature is worse than either state. */
+  ok(!/VoiceChat|setTalking/.test(usrc + gsrc), 'no VoiceChat references remain in the client');
+  ok(!fs.existsSync('./public/src/audio/voice.js'), 'voice.js is deleted, not orphaned');
+  ok(!/voice/i.test(hsrc), 'no voice UI remains in index.html');
 
   /* v8.30 THIS GATE USED TO ONLY READ game.js, WHICH IS WHY IT PASSED WHILE
      SMOKE AND PUSH-TO-TALK WERE BOTH BOUND TO T.
@@ -222,6 +215,76 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
   const smokeLabel = (hsrc.match(/id="tc-smoke">([A-Z])\s/) || [])[1];
   ok(smokeKey && smokeLabel && smokeKey === smokeLabel,
     'smoke HUD label matches its actual bind [bind=' + smokeKey + ' label=' + smokeLabel + ']');
+
+  /* ---- v8.33 sniper dynamics + Kar98 ----
+     Rahul asked for instant sniper shots and a fixed lethality rule. Both are
+     config, and config is exactly the kind of thing that gets half-edited. */
+  const vmsrc = fs.readFileSync('./public/src/weapons/viewmodels.js', 'utf8');
+  const SNIPERS = Object.keys(CFG.WEAPONS).filter(k => CFG.WEAPONS[k].type === 'bolt');
+  ok(SNIPERS.length >= 3, 'at least three bolt-action rifles exist [' + SNIPERS.join(', ') + ']');
+  ok(SNIPERS.indexOf('kar98') >= 0, 'the Kar98 is in the weapon table');
+  ok(CFG.WEAPON_ORDER.indexOf('kar98') >= 0, 'the Kar98 is in WEAPON_ORDER (so it can be selected and synced)');
+  ok(/models\.kar98\s*=/.test(vmsrc), 'the Kar98 has a first-person viewmodel');
+  /* Every weapon in WEAPON_ORDER needs a viewmodel or it is invisible in the
+     hands — the exact failure a new gun introduces. */
+  CFG.WEAPON_ORDER.forEach(n => {
+    ok(new RegExp('models\\.' + n + '\\s*=').test(vmsrc), 'weapon "' + n + '" has a viewmodel');
+  });
+  SNIPERS.forEach(k => {
+    const w = CFG.WEAPONS[k];
+    ok(!w.bullet, k + ' is hitscan, so the shot lands the frame it is fired');
+    ok(w.bulletSpeed === undefined && w.bulletDrop === undefined,
+      k + ' carries no leftover projectile fields');
+    ok(w.dmg >= 100, k + ' body shot kills an unarmoured target [' + w.dmg + ']');
+    ok(w.dmg * w.head >= 100, k + ' headshot kills [' + (w.dmg * w.head) + ']');
+    const legs = w.dmg * w.legs;
+    ok(legs >= 78 && legs <= 92, k + ' leg shot takes ~80 and leaves the target alive [' + legs + ']');
+    ok(w.boltTime <= 1.0, k + ' cycles in under a second [' + w.boltTime + ']');
+  });
+
+  /* ---- v8.34 mode table invariants ----
+     Ten modes now share one team system. These are the rules that make that
+     safe: every side a mode fields must be a real, named, distinctly-coloured
+     team, and nothing may exceed the room cap the avatar budget was measured
+     against. */
+  Object.keys(CFG.MODES).forEach(m => {
+    const M = CFG.MODES[m];
+    ok(M.maxPlayers >= 2 && M.maxPlayers <= 20, m + ' seats 2-20 players [' + M.maxPlayers + ']');
+    const ids = CFG.activeTeams(m);
+    if (!M.teams) {
+      ok(ids.length === 0, m + ' fields no teams (free-for-all)');
+      return;
+    }
+    ok(ids.length >= 2, m + ' fields at least two sides');
+    ok(ids.every(t => CFG.TEAMS[t] && CFG.TEAMS[t].name && CFG.TEAMS[t].color),
+      m + ': every side is a real named team');
+    ok(new Set(ids.map(t => CFG.TEAMS[t].color)).size === ids.length,
+      m + ': every side has a distinct colour');
+    ok(ids.length <= M.maxPlayers, m + ': more seats than sides, so no side starts empty by design');
+  });
+  ok(Object.keys(CFG.TEAMS).length === CFG.TEAM_IDS.length,
+    'TEAM_IDS covers exactly the teams defined');
+  ok(CFG.TEAM_IDS.slice(0, 2).join(',') === 'a,b',
+    'a and b are still first, so every existing 2-team mode reads unchanged');
+  ok(CFG.TEAMS.a.name === 'AMBER' && CFG.TEAMS.b.name === 'COBALT',
+    'the original two team names are untouched');
+
+  /* The welcome screen advertises a weapon count. It was wrong the moment a
+     weapon was added, and a wrong number on the front door is the first thing
+     a player sees. */
+  const advertised = parseInt((hsrc.match(/<b>(\d+)<\/b><span>WEAPONS<\/span>/) || [])[1], 10);
+  ok(advertised === Object.keys(CFG.WEAPONS).length,
+    'welcome screen weapon count matches the table [says ' + advertised +
+    ', actual ' + Object.keys(CFG.WEAPONS).length + ']');
+
+  /* v8.33: global hotkeys must not eat characters typed into a text field.
+     KeyM called preventDefault() unconditionally, so the callsign box could
+     never accept the letter M. */
+  ok(/tagName === 'INPUT'/.test(gsrc),
+    'game.js keydown skips events targeted at inputs (the callsign "M" bug)');
+  const mIdx = gsrc.indexOf("e.code === 'KeyM'");
+  const guardIdx = gsrc.indexOf("tagName === 'INPUT'");
+  ok(guardIdx >= 0 && guardIdx < mIdx, 'the typing guard runs BEFORE any letter-key binding');
 
   /* mat() was called in weapons/system.js but only ever DEFINED inside other
      IIFEs, so frag, smoke, flash and the rocket all threw ReferenceError. */

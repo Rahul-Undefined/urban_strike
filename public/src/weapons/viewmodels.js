@@ -62,6 +62,25 @@ var WeaponModels = (function () {
       part(g, -0.028, -0.05, -0.78, 0.012, 0.1, 0.012, steel);
       return g;
     })();
+    /* v8.33 Kar98 — deliberately reads as a different rifle to the AWM-S at a
+       glance: full wooden furniture instead of green polymer, a shorter and
+       fatter scope sat lower on the receiver, a straight bolt handle rather
+       than a swept one, and no bipod. Same chassis helper, so it costs the
+       same handful of boxes as every other long gun. */
+    models.kar98 = (function () {
+      var g = rifleBase(wood, 1.06, true);
+      part(g.userData.mag, 0, -0.02, 0, 0.042, 0.06, 0.07, gunmetal);   // internal box mag
+      cylPart(g, 0, 0.074, -0.17, 0.026, 0.19, dark);                   // scope tube (shorter)
+      cylPart(g, 0, 0.074, -0.27, 0.031, 0.028, brass);                 // objective, brass ring
+      cylPart(g, 0, 0.074, -0.07, 0.030, 0.028, gunmetal);              // eyepiece
+      part(g, 0, 0.050, -0.12, 0.015, 0.024, 0.02, steel);              // mount F
+      part(g, 0, 0.050, -0.22, 0.015, 0.024, 0.02, steel);              // mount R
+      var kh = cylPart(g, 0.048, 0.005, 0.03, 0.010, 0.08, steel, false); // straight bolt handle
+      part(g, 0.048, -0.03, 0.03, 0.018, 0.018, 0.018, steel);          // bolt knob
+      part(g, 0, -0.03, -0.62, 0.055, 0.045, 0.30, wood);               // long wooden forend
+      part(g, 0, 0.028, -0.90, 0.020, 0.030, 0.05, gunmetal);           // hooded front sight
+      return g;
+    })();
     models.uzi = (function () {
       var g = new THREE.Group();
       part(g, 0, 0, -0.1, 0.07, 0.09, 0.3, gunmetal);                  // boxy receiver

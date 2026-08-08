@@ -29,7 +29,34 @@
     // assault rifles. AWM-S takes key 3 (previously unused) rather than the
     // elite AWM .338, which stays loot-only on slot 9 — so spawning with a
     // bolt gun does not devalue finding the better one.
-    sniper:  { key: 3, label: 'AWM-S', type: 'bolt', dmg: 80, rpm: 42, mag: 5, reserve: 25, reload: 3.2, spread: 0.0015, ads: 0.0004, range: 999, head: 2, legs: 0.6, speed: 0.85, recoil: 0.03, drift: 0.2, adsFov: 16, scope: true, boltTime: 1.25, scopeZoom: [10, 26], bullet: true, bulletSpeed: 240, bulletDrop: 4.2, sway: 0.0038, trc: 0xcfe8ff },
+    /* v8.33 SNIPERS ARE HITSCAN AND LETHAL.
+
+       Rahul: "sniper should be instant shot... 100% kill if hit headshot and
+       body, if it hit in leg or below 80% health is down."
+
+       INSTANT: `bullet: true` made these the only guns in the game that fired a
+       travelling projectile — 240 m/s with 4.2 drop, so at 100 m the hit landed
+       roughly 0.4s after the trigger while every other weapon was hitscan. That
+       lag is what read as "snipers take some time". They are hitscan now, so
+       the shot registers on the frame it is fired. Bolt cycle is kept, because
+       that is the weapon's character rather than input lag, but shortened so
+       the rifle feels quick between shots.
+
+       LETHAL: base 100 kills an unarmoured body outright. head 2.0 clears a
+       helmet. legs 0.8 lands exactly 80 and leaves the target on 20 HP, which
+       is the "80% health is down" rule.
+
+       ARMOUR STILL COUNTS. A body shot into a level-3 vest is soaked at 70%,
+       so it is not a one-shot through armour, and deliberately so — making the
+       sniper ignore vests would retire every armour pickup on the map. Head
+       shots bypass the vest already (v8.17), so a headshot remains a kill
+       against anything but a helmet. */
+    sniper:  { key: 3, label: 'AWM-S', type: 'bolt', dmg: 100, rpm: 42, mag: 5, reserve: 25, reload: 3.2, spread: 0.0015, ads: 0.0004, range: 999, head: 2, legs: 0.8, speed: 0.85, recoil: 0.03, drift: 0.2, adsFov: 16, scope: true, boltTime: 0.85, scopeZoom: [10, 26], sway: 0.0038, trc: 0xcfe8ff },
+    /* v8.33 KAR98 — the third sniper, on the previously unused key 7. Slower to
+       cycle and smaller magazine than the AWM-S, with a wider zoom floor, so it
+       trades rate of fire for reach rather than being a straight upgrade. Same
+       lethality rules as the others. */
+    kar98:   { key: 7, label: 'Kar98', type: 'bolt', dmg: 100, rpm: 38, mag: 5, reserve: 25, reload: 3.4, spread: 0.0016, ads: 0.00045, range: 999, head: 2, legs: 0.8, speed: 0.87, recoil: 0.032, drift: 0.22, adsFov: 18, scope: true, boltTime: 0.95, scopeZoom: [6, 20], sway: 0.0040, trc: 0xd8e6f2 },
     uzi:     { key: 4, label: 'UZI-9', type: 'auto', dmg: 30, rpm: 950, mag: 32, reserve: 128, reload: 1.9, spread: 0.030, ads: 0.014, range: 22, head: 1.67, legs: 0.72, speed: 1.02, recoil: 0.010, drift: 0.9, adsFov: 55, trc: 0xffc46a, snd: { body: { f0: 2100, f1: 800, dur: 0.05, vol: 0.5 }, crack: { f: 2600, dur: 0.03, vol: 0.3 } } },
     shotgun: { key: 5, shellReload: true, label: 'M870', type: 'semi', dmg: 11, pellets: 9, rpm: 75, mag: 6, reserve: 30, reload: 3.4, spread: 0.075, ads: 0.05, range: 9, head: 1.4, legs: 0.8, speed: 0.96, recoil: 0.05, drift: 0.2, adsFov: 58, trc: 0xffa050, snd: { body: { f0: 700, f1: 140, dur: 0.22, vol: 0.95 }, crack: { f: 900, dur: 0.06, vol: 0.4 }, boom: { f0: 130, f1: 55, dur: 0.3, vol: 0.5 } } },
     pistol:  { key: 6, label: 'P92', type: 'semi', dmg: 30, rpm: 380, mag: 12, reserve: 60, reload: 1.2, spread: 0.011, ads: 0.004, range: 28, head: 1.67, legs: 0.72, speed: 1.0, recoil: 0.0075, drift: 0.3, adsFov: 52, trc: 0xffd9a0 },
@@ -41,10 +68,10 @@
     p90:     { key: 9, ex: 1, label: 'P90', type: 'auto', dmg: 30, rpm: 900, mag: 50, reserve: 150, reload: 2.4, spread: 0.026, ads: 0.012, range: 26, head: 1.67, legs: 0.72, speed: 1.0, recoil: 0.009, drift: 0.8, adsFov: 54, trc: 0xffd070 },
     m249:    { key: 9, ex: 1, label: 'M249 SAW', type: 'auto', dmg: 50, rpm: 680, mag: 100, reserve: 200, reload: 5.2, spread: 0.024, ads: 0.010, range: 42, head: 1.6, legs: 0.72, speed: 0.84, recoil: 0.014, drift: 1.0, adsFov: 50, trc: 0xffa860, snd: { body: { f0: 1500, f1: 300, dur: 0.11, vol: 0.8 }, crack: { f: 1700, dur: 0.05, vol: 0.35 }, boom: { f0: 170, f1: 90, dur: 0.14, vol: 0.3 } } },
     aa12:    { key: 9, ex: 1, label: 'AA-12', type: 'auto', dmg: 10, pellets: 6, rpm: 300, mag: 20, reserve: 40, reload: 3.1, spread: 0.055, ads: 0.04, range: 13, head: 1.4, legs: 0.8, speed: 0.90, recoil: 0.028, drift: 0.7, adsFov: 56, trc: 0xffa050, snd: { body: { f0: 780, f1: 170, dur: 0.14, vol: 0.85 }, crack: { f: 950, dur: 0.05, vol: 0.35 }, boom: { f0: 140, f1: 60, dur: 0.2, vol: 0.42 } } },
-    awm:     { key: 9, ex: 1, label: 'AWM .338', type: 'bolt', dmg: 85, rpm: 32, mag: 5, reserve: 15, reload: 3.6, spread: 0.001, ads: 0.0003, range: 999, head: 2, legs: 0.6, speed: 0.82, recoil: 0.035, drift: 0.2, adsFov: 14, scope: true, boltTime: 1.35, scopeZoom: [8, 24], bullet: true, bulletSpeed: 300, bulletDrop: 3.4, sway: 0.0030, trc: 0xbfe0ff },
+    awm:     { key: 9, ex: 1, label: 'AWM .338', type: 'bolt', dmg: 110, rpm: 32, mag: 5, reserve: 15, reload: 3.6, spread: 0.001, ads: 0.0003, range: 999, head: 2, legs: 0.8, speed: 0.82, recoil: 0.035, drift: 0.2, adsFov: 14, scope: true, boltTime: 0.95, scopeZoom: [8, 24], sway: 0.0030, trc: 0xbfe0ff },
   };
 
-  var WEAPON_ORDER = ['ak47', 'm4a1', 'sniper', 'uzi', 'shotgun', 'pistol', 'rocket', 'knife',
+  var WEAPON_ORDER = ['ak47', 'm4a1', 'sniper', 'uzi', 'shotgun', 'pistol', 'kar98', 'rocket', 'knife',
     'scarh', 'mk14', 'p90', 'm249', 'awm', 'aa12'];
 
   var THROWS = {

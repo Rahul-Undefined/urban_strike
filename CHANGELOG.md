@@ -10,7 +10,10 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.31.2** | CURRENT — end screen rebuilt: opaque overlay, live HUD suppressed, scoreboard centred with insight cards flanking it. New verify-endscreen gate. |
+| **v8.35** | CURRENT — prone fixed (was lying backwards, feet-first, rifle at the sky); packet validation; server survives a bad packet. Open list empty. |
+| v8.34 | Good — 10 modes: FFA (default, 20p) + 2v2/3v3/4v4/5v5/6v6/8v8/10v10 + two squad modes (10x2, 5x4). Teams generalised from 2 to 10, uneven squads allowed. |
+| v8.33 | Good — Kar98 + hitscan snipers, 20-player cap + 10v10, host-renamed teams, voice chat removed, callsign "M" fixed, end screen ported from 8.31.2. |
+| v8.32 | Good — weapon carried at the chest (0.79m -> 0.36m), neck added, head hitbox now reads the rendered head (0 misses, 11/11 headshots all stances), shadow acne fixed. New verify-hitbox gate. |
 | v8.31 | Good — TEAM MODE FIXED: `myTeam` read out of scope in `drawHpBar` threw for every ally, starving FX/clock/score. Render loop segmented per subsystem. New `verify-scope` gate. |
 | v8.30 | Superseded — black-screen error boundaries + on-screen error surface; Unlimited kills; mat() restored (3 grenades + rocket); smoke moved off the PTT key; match-end clock unified. 94/0. |
 | v8.29 | Good — end scoreboard matches the live one (7 cols) + match insight cards. 85/0. |
@@ -82,63 +85,449 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
-## v8.31.2 — the end screen is now a result, not a scoreboard over a live map
+## v8.35 — prone was lying backwards
 
-Three faults, all visible in one screenshot, all fixed. No other changes.
+The last item on the open list, plus a deep pass over the rest.
 
-### The map was still running behind the result
+### One character, and the operator was crawling backwards
 
-`#end-overlay` was `rgba(10,12,16,0.9)` — ten percent transparent — so the city
-kept rendering behind the final scores. It is fully opaque now.
+```js
+av.group.rotation.x = -p * (Math.PI / 2) * 0.92;   // was
+av.group.rotation.x =  p * (Math.PI / 2) * 0.92;   // is
+```
 
-### The live HUD was drawn on top of it
+Rotation about X maps `+Y -> (0, cos, sin)`. The rig's forward is `+Z` — the
+boot toe is offset `+0.025` in Z and the rifle is carried at `+Z`. Laying a body
+face-down head-forward therefore needs the head to travel `+Y -> +Z`, which is
+`sin = +1`, which is a POSITIVE rotation.
 
-`#end-overlay` is a CHILD of `#hud-layer`, so the minimap, the live
-mini-scoreboard, the crosshair and the ammo block were all siblings that never
-switched off. The mini board landed directly on top of the real one. `showEnd`
-now puts `#hud-layer` into `end-active`, one CSS rule hides every sibling except
-the overlay (and pause, which stays reachable), and `hideEnd` gives them back.
+It was negative. Measured on the real rig:
 
-### The layout had nothing holding it together
-
-`.end-table` inherits `width:100%` from the `#scoreboard` rule, and with no
-container bounding it the table stretched the full width of the screen — while
-nine insight cards collapsed into a single narrow column pushed off the bottom.
-
-The result is now a three-column stage: insight cards down the left, the
-scoreboard in the middle, insight cards down the right. Cards alternate between
-the two sides rather than filling one then the other, so the columns stay level
-on an odd count and the strongest cards sit at the top of BOTH sides. Below
-1180px the stage collapses to one column instead of crushing three.
-
-Vertical centring uses auto margins rather than `justify-content: center`,
-because a centred flex column with `overflow-y: auto` clips its own top once the
-content is taller than the viewport and the title becomes unreachable.
-
-### The cards were boring
-
-They were a flat stack of near-identical grey slabs, so nine genuinely different
-facts all looked like the same fact repeated. Each is now a panel: a heavier top
-rule in its own accent colour, a larger value line that is the thing you
-actually read, and enough padding to read as a result rather than a table row.
-Tones carry meaning — amber for a personal best, red for something that happened
-TO you, blue-grey for neutral facts.
-
-### New gate: `tools/verify-endscreen.js`
-
-v8.29 verified the table had seven columns and nothing else, which is why a
-scoreboard floating over a live map with the minimap on top of it shipped and
-passed. This gate runs the real `UI.showEnd` against a DOM stub with a realistic
-five-player payload and asserts the things that make the screen readable:
-opacity, HUD suppression, column order, bounded width, and that all nine cards
-land split across both columns. Verified by restoring the original CSS: 2
-failures.
-
-| Gate | v8.31 | v8.31.2 |
+| | before | after |
 |---|---|---|
-| `tools/verify-endscreen.js` | — | **28 / 0** (new) |
-| `test.js` | 94 / 0 | 94 / 0 |
+| head | z **−0.54** (behind) | z **+0.57** (forward) |
+| feet | z **+1.01** (in front) | z **−1.01** (behind) |
+| weapon | y **+0.49**, aimed at the sky | y −0.12, z +0.65, level |
+
+The operator lay on their BACK, feet-first, belly to the sky — and because the
+arms were still posed for standing they swung up with the torso, leaving the
+rifle pointing at the clouds.
+
+### Correcting the rotation was only a third of the fix
+
+**The arms needed their own prone pose.** A standing carry rotated 83 degrees
+goes wherever the torso throws it; with the sign corrected that drove the rifle
+into the ground, because arms hang along local −Y and local −Y now points
+backwards and down. Solved numerically against the corrected body rather than
+guessed: shoulder −1.90 and elbow +0.20 relative to standing put the weapon
+0.65 m forward — past the head — and 0.23 m above the deck, with 0.21 m of reach
+from the elbow so the hands still read as on it.
+
+**The weapon needed counter-rotating.** Even correctly positioned, the barrel
+buried 0.76 m underground. It now counter-rotates by exactly the body's prone
+rotation, written as the negated expression rather than the solved constant, so
+if the 0.92 lie-flat factor is ever retuned the barrel follows instead of
+silently drifting back into the dirt.
+
+Hit detection needed nothing: v8.32 made the head box read the rendered head's
+world position, so a correctly-rotated body carries its own hitbox with it. All
+three stances still return 11/11 headshots and zero clean misses.
+
+### Why thirteen versions of gates never caught it
+
+Every gate up to now measured HEIGHTS — feet on the deck, head under the box,
+body inside the capsule. **A body lying the wrong way round is exactly the right
+height.** The bug lived on an axis nothing was looking at.
+
+`verify-hitbox` now measures DIRECTION: head forward of feet, weapon in front of
+the head, barrel level and pointing forward, nothing underground. Verified by
+restoring the original sign — 4 failures.
+
+### Deep review pass
+
+Ran alongside, on the whole codebase:
+
+- **Clean:** no undefined identifiers across all 30 client modules; every DOM id
+  resolves; setInterval/clearInterval balanced; the v8.30 timer tick, v8.31
+  per-subsystem frame guards, v8.32 head-position cache and `mat()` all still in
+  place and working.
+- **One leftover found and fixed:** `onMatchStart` still seeded the team score
+  with a literal `{ a: 0, b: 0 }`. Harmless head-to-head, but in a squad match
+  the HUD opened against a two-key object. Now seeded from `activeTeams`.
+- **Relayed packets are validated at the boundary.** `proj` and `throw` took
+  `d.o[0]` and `d.type` straight from the wire into `THREE.Vector3` and
+  `CFG.THROWS[type].fuse`. A malformed packet threw — contained by the v8.31
+  guards, but it spammed the error toast and dropped the effect for everyone.
+- **The server no longer dies on one bad packet.** There was no
+  `uncaughtException` handler, so an unguarded throw in any of the sixteen
+  socket handlers took down the process — and with it every room on it, up to
+  twenty operators. It now logs the stack loudly and keeps serving. That is
+  knowingly not the textbook advice: rooms are independent in-memory objects, a
+  fault in one handler does not corrupt another room, and a visible stack trace
+  with the game still running beats a silent restart nobody can reproduce.
+
+### Gates
+
+| Gate | v8.34 | v8.35 |
+|---|---|---|
+| `verify-hitbox` | 18 / 0 | **27 / 0** |
+| `test.js` | 139 / 0 | 139 / 0 |
+| `verify-models` | 125 / 0 | 125 / 0 |
 | everything else | unchanged | unchanged |
+
+### Independent re-verification before release
+
+The prone fix was re-measured from scratch against the shipping rig rather than
+trusted from this entry, because a changelog claiming a body faces forward is
+not evidence that it does:
+
+| measured | value | verdict |
+|---|---|---|
+| head z | **+0.57** | forward of the feet |
+| feet z | **−1.01** | behind, 1.58 m end to end |
+| head y | +0.04 | at deck level, not upright |
+| weapon | y **−0.13**, z **+0.64** | level and out front, not skyward |
+| body top | +0.33 vs capsule half-height 0.35 | nothing pokes out |
+| body bottom | −0.39 vs ground −0.35 | resting on the deck |
+
+Full sweep re-run from the packaged tree: every gate green, `test.js` run THREE
+times per the standing rule, 139/0 each time, and the only line in the server
+log across all three was an `EADDRINUSE` from a duplicate start — caught by the
+new `uncaughtException` handler, process stayed up, which is exactly the
+behaviour that handler exists for.
+
+### Open list
+
+Empty. `verify-access` 50/1, `verify-climb` and `verify-arch` remain RED BY
+DESIGN — those are the documented Milestone A map-accessibility items, not
+defects.
+
+---
+
+## v8.34 — ten modes, ten teams, squads
+
+Free-for-all is untouched and still the default: twenty players, no sides,
+everyone against everyone. Everything below is added ALONGSIDE it.
+
+| mode | sides | players |
+|---|---|---|
+| **Free For All** (default) | none | 20 |
+| 2v2 / 3v3 / 4v4 / 5v5 / 6v6 / 8v8 / 10v10 | 2 | 4 – 20 |
+| **Squads · 10 x 2** | 10 | 20 |
+| **Squads · 5 x 4** | 5 | 20 |
+
+### The whole game assumed exactly two teams
+
+`teamKills = { a: 0, b: 0 }`, `autoIdx % 2 === 0 ? 'a' : 'b'`, `teamKills.a >
+teamKills.b`, `p.team === 'a' || p.team === 'b'`, a scoreline built from two
+spans, an end screen that looped `['a','b']`. Nine separate places, each
+individually reasonable, collectively a hard ceiling of two.
+
+They now all derive from one helper — `CFG.activeTeams(mode)` — which returns
+the sides a mode actually fields. Nothing outside that helper is allowed to
+name a team literal.
+
+`CFG.TEAMS` grew from two entries to ten (a–j), each with a distinct name and a
+colour taken from the existing palette in order, so a squad's colour is one
+value across the minimap, the nameplate, the roster dot and the scoreboard.
+**a and b keep AMBER and COBALT**, so every existing mode, saved room and test
+reads exactly as it did.
+
+### Two places needed no change at all, and that is worth recording
+
+`pickSpawn` already ended with `if (!candidates.length) candidates = all;` — a
+v8.27 guard added after the black-screen hunt. Squad teams c–j match no spawn
+tag, so they fall straight through to the full spawn set and then take the point
+furthest from any enemy, which is the correct behaviour for squads. The defensive
+fallback written for a different bug turned out to be the feature.
+
+`combat.js` indexes `room.teamKills[attacker.team]` dynamically, so it counts for
+ten squads without edits — **provided the bucket was seeded**. An unseeded key
+gives `undefined++` = `NaN`, which propagates silently into every snapshot and
+never throws. That is why `zeroTeamKills(mode)` builds the object from
+`activeTeams` rather than a literal, and why a gate asserts no squad score is
+ever NaN.
+
+### Uneven squads are allowed, by design
+
+Rahul: *"it can support 4 team members in one team but 2 team in another."*
+
+The auto-balancer spreads players evenly on join, but nothing enforces squad
+size afterwards. The host's roster button now CYCLES a player to the next squad
+instead of toggling A/B, so repeated clicks walk someone round the ring — no new
+UI, and the arrow still names exactly where the click sends them. Stacking four
+into one squad and leaving two in another is legal, and tested: the suite moves
+three players into squad A and asserts the room accepts it.
+
+A held team lock is now validated against the CURRENT mode. Without that,
+switching from squads back to 5v5 would strand players on squad 'g' — a side
+that no longer exists and therefore cannot score.
+
+### Displays that could not simply grow
+
+A ten-way scoreline does not fit a HUD. Two sides keep the exact head-to-head
+readout they always had; more than two shows **your squad, then the leader**,
+which is the only information that changes a decision mid-match. The full ladder
+is what TAB is for. Same split on the mini board and the end-screen sub-line
+(top three), and the end screen now groups by squad strongest-first and skips
+empty squads.
+
+Team renaming stays a two-side feature. Ten text inputs would swamp the lobby
+panel, so squad modes keep the palette names, which are already distinct and
+colour-matched.
+
+### Gates
+
+| Gate | v8.33 | v8.34 |
+|---|---|---|
+| `test.js` | 97 / 0 | **139 / 0** |
+| `verify-models` | 75 / 0 | **125 / 0** |
+| everything else | unchanged | unchanged |
+
+Phase 9 plays a real squad match: ten sockets into ten different squads, three
+stacked into one to prove uneven is legal, then live kills asserting the score
+lands on the killer's own squad and **nowhere else**.
+
+Six assertions specifically guard free-for-all — that it exists, has no teams,
+seats 20, is first in the list and is still `defaultMode` — because adding nine
+team modes is exactly the change that could quietly demote it.
+
+The suite's global timeout moved 120s → 240s. Not a budget being relaxed: Phase 8
+seats twelve real sockets and Phase 9 plays through a real 10s countdown with 3s
+respawns. Those are the wall-clock costs of testing it properly instead of
+mocking it.
+
+### Still open
+
+Prone lies backwards — head at z −0.40, feet at z +1.01. Unchanged since v8.32,
+still deserves its own pass.
+
+---
+
+## v8.33 — Kar98, instant snipers, 20 players, custom team names, no more voice chat
+
+Also ports the v8.31.2 end-screen rebuild forward: opaque overlay, live HUD
+suppressed, scoreboard centred with insight cards flanking it. Identical fix,
+28/0.
+
+### The callsign box would not accept the letter M
+
+`game.js` called `preventDefault()` on `KeyM` unconditionally so the map could
+be opened while paused. Nothing checked whether the player was TYPING at the
+time, so every M aimed at the name field was swallowed and turned into a map
+toggle — "Sam" came out "Sa".
+
+The guard is at the TOP of the handler rather than on the one binding that got
+reported, because the same trap sits under every letter key that handler ever
+claims. `verify-models` asserts the guard exists AND that it runs before any
+letter-key binding.
+
+### Snipers are hitscan now
+
+`bullet: true` made the bolt rifles the only guns in the game firing a
+travelling projectile — 240 m/s with 4.2 drop, so at 100 m the hit landed
+roughly 0.4 s after the trigger while every other weapon in the game was
+hitscan. That lag is what read as "snipers take some time". Removed.
+
+Bolt cycle is kept — that is the weapon's character rather than input lag — but
+shortened from 1.25/1.35 s to 0.85/0.95 s.
+
+| | body | head | legs | bolt | hitscan |
+|---|---|---|---|---|---|
+| AWM-S | **100** kill | 200 kill | **80** | 0.85 s | yes |
+| **Kar98** (new, key 7) | **100** kill | 200 kill | **80** | 0.95 s | yes |
+| AWM .338 | 110 kill | 220 kill | 88 | 0.95 s | yes |
+
+A leg hit lands exactly 80 and leaves the target on 20 HP.
+
+**Armour still counts.** A body shot into a level-3 vest is soaked at 70%, so it
+is not a one-shot through armour. Making the sniper ignore vests would need a
+base above 330 and would retire every armour pickup on the map. Head shots
+already bypass the vest (v8.17), so a headshot remains a kill against anything
+short of a helmet.
+
+### Kar98
+
+Key 7, which was the only free slot. Wooden furniture, a shorter fatter scope
+sat lower, a straight bolt handle and no bipod, so it reads as a different rifle
+to the AWM-S at a glance. Slower cycle and a tighter zoom floor: it trades rate
+of fire for reach rather than being a straight upgrade.
+
+It has no `ex` flag, so it is base loadout — you spawn with it. `verify-models`
+now checks that EVERY weapon in `WEAPON_ORDER` has a viewmodel, because a gun
+without one is simply invisible in the hands, which is exactly the failure a new
+weapon introduces.
+
+### Voice chat removed
+
+`voice.js` deleted, plus every reference across eight files: the three server
+socket handlers, the client signalling wiring, both push-to-talk listeners, the
+lobby button, the talking indicator, the diagnostics panel, the CSS, the dead
+`CFG.VOICE` block, the "P2P / VOICE COMMS" stat on the welcome screen, and the
+seven-assertion test phase.
+
+`verify-models` now asserts it STAYS gone — no `VoiceChat` references, no
+orphaned `voice.js`, no voice UI in the DOM. A half-removed feature is worse
+than either state.
+
+### Twenty players
+
+`ffa` raised 10 -> 20, and a new `t10` 10v10 mode, because team play topped out
+at 5v5 and there was nothing above it.
+
+Measured rather than assumed. Twenty kitted avatars all visible at close range:
+
+| | 10 players | 20 players |
+|---|---|---|
+| draw calls | 190 | **380** |
+| distinct materials | 16 | **16** |
+
+The material count not moving is the important number: every body material is
+module-level and shared, so player COUNT does not multiply shading cost. Draw
+calls do scale, and 380 on top of the map's 98 is the heaviest configuration
+this game has ever had — worth watching on low-end machines, which is why
+`verify-avatar` now bills a full twenty-player lobby explicitly instead of
+extrapolating from ten.
+
+### Host-editable team names
+
+Two inputs in the lobby, host-only, hidden entirely in free-for-all. Six places
+hardcoded `CFG.TEAMS[t].name`; all six now route through a single `teamName()`
+helper, so a rename lands everywhere at once — lobby roster, live scoreboard,
+in-match team score, end screen — instead of drifting apart. The config value is
+the fallback, never the source.
+
+Sanitised server-side at the trust boundary, because these land in `innerHTML`.
+Tested with a hostile string: `<img src=x>BLU` comes back `IMG SRC=XBLU`.
+Non-hosts cannot rename.
+
+Edits push on blur and Enter rather than per keystroke, and a lobby push will
+not overwrite the field while the host is mid-typing — otherwise the caret jumps
+to the end on every broadcast.
+
+### Gates
+
+| Gate | v8.32 | v8.33 |
+|---|---|---|
+| `test.js` | 94 / 0 | **97 / 0** (−7 voice, +10 capacity/team-name) |
+| `verify-models` | 40 / 0 | **75 / 0** |
+| `verify-avatar` | 23 / 0 | **25 / 0** (20-player budgets added) |
+| `verify-endscreen` | — | **28 / 0** (ported) |
+| `verify-hitbox` · `verify-scope` · `verify-map` · `verify-batch` | unchanged | unchanged |
+
+### Still open
+
+Prone lies backwards — head at z −0.40, feet at z +1.01 with +Z forward. Found
+while measuring the rig in v8.32, still not fixed, still deserves its own change.
+
+---
+
+## v8.32 — the operator carries the rifle, and the head is now hittable
+
+### The weapon was being carried at arm's length
+
+v8.21 fixed "standing gun down" by driving the shoulders to -1.18 rad. Measured,
+it overshot badly: the weapon ended up **0.79 m in front of the chest and 0.13 m
+above it**, which reads as arms thrust up in a V with the rifle floating loose
+beside the body.
+
+The angles were only half of it. `RIG` scales X and Z by 1.52 but Y by 1.22, so
+a limb rotated toward horizontal is stretched 1.52x while the same limb hanging
+down is stretched 1.22x. **Rotating a shoulder forward does not just swing the
+arm, it lengthens it by 25%.** A sweep of every shoulder/elbow pair proved no
+angle alone could bring the weapon closer than 0.56 m — the mount offset had to
+move with them.
+
+Solved together rather than guessed: shoulder -0.40, elbow -1.10, mount
+(0,-0.28,-0.06) -> (0,-0.12,+0.10).
+
+| | before | after |
+|---|---|---|
+| forward of chest | 0.79 m | **0.36 m** |
+| height vs chest | +0.13 m | **-0.09 m** |
+| distance from elbow | 0.42 m | **0.22 m** |
+
+A forearm is about 0.35 m after scaling, so the weapon now sits comfortably
+inside the hand rather than beyond it.
+
+### The head was a box balanced on the shoulders
+
+There was a **0.079 m gap between the top of the chest and the bottom of the
+head with nothing in it**, and the head was 0.296 wide but 0.312 DEEP — deeper
+than wide, which is what made it read as a crate. A neck now bridges the gap,
+overlapping both ends so there is no seam, and the head is slightly taller and
+shallower. Width is untouched and total height goes UP, so nothing about the
+silhouette got smaller or harder to spot.
+
+`verify-avatar`'s part budget was raised from 13 to 14 for the neck mesh. That
+is a ratchet and raising one needs a reason on the record, so the reason is
+written into the gate. It shares AVM.skin, adds no material, and costs one draw
+call per visible avatar: a ten-player lobby went 180 -> 190 against an unchanged
+budget of 200.
+
+### Bullets went through visible heads. They no longer do.
+
+The head hit box was positioned from `CFG.PLAYER.eyeHeight` while the rendered
+head came from the rig's joint chain — two independent calculations that happen
+to agree prone and diverge everywhere else. v8.19 scaled both by RIG and called
+them aligned; it fixed the size and left the position wrong.
+
+Firing eleven rays straight up a visible head with the REAL `castRay`:
+
+| stance | before | after |
+|---|---|---|
+| standing | 7 clean misses, 4 headshots | **0 misses, 11 headshots** |
+| crouching | 11 clean misses, 0 headshots | **0 misses, 11 headshots** |
+| prone | body only | **0 misses, 11 headshots** |
+
+Two changes got there. `net.js` now caches the world position of the real head
+mesh once per frame, so hit detection READS the head instead of predicting it —
+one source of truth, and prone works for free because a rotated body carries its
+head with it. And classification now follows the head box: the body capsule is
+0.53 half-deep against a torso only 0.19 half-deep, so a ray aimed at the head
+entered the oversized body box first and was scored as a body hit. The head box
+is tight and sits exactly on the model, so passing through it IS a headshot.
+
+**This is a balance change as well as a fix.** Shots that previously scored as
+body at jaw and neck height now score as head. Shoulder shots are unaffected —
+the head box did not get wider.
+
+### Shadow acne on wall faces
+
+Rahul: *"screen flickering on most of the walls corner, black and white blinking
+going on."*
+
+The shadow camera spans 190 m across a 2048 map: one texel covers 9.3 cm of
+world. On a surface lit at a grazing angle — every tall wall in a city — a texel
+that coarse straddles the depth gradient and the comparison flips between lit
+and shadowed frame to frame. That flip is the flicker. A constant `bias` cannot
+fix it, because the value that clears a wall detaches shadows from the ground.
+`normalBias` offsets along the surface normal instead, which scales with
+obliqueness — exactly the failing case. Set to roughly half a texel, with the
+constant bias eased back.
+
+### New gate: `tools/verify-hitbox.js`
+
+Every existing gate checked the model or the config. None fired a ray at what
+the player actually sees, which is why a head the bullets passed through
+survived thirteen versions. This one builds the real avatar, settles the real
+pose, lifts the real `castRay` out of `weapons/system.js`, and shoots it.
+Verified by reverting the head cache: 4 failures, including 11/11 misses
+crouching.
+
+| Gate | v8.31 | v8.32 |
+|---|---|---|
+| `tools/verify-hitbox.js` | — | **18 / 0** (new) |
+| `verify-avatar` | 23 / 0 | 23 / 0 (budget 13->14, documented) |
+| `test.js` | 94 / 0 | 94 / 0 |
+
+### Still open
+
+**Prone lies backwards.** Measured: head at z -0.40, feet at z +1.01, with +Z
+forward. A prone operator is laid out feet-first with the head behind and the
+weapon pointing at the sky. Found while measuring the rig; not fixed here
+because it is a separate defect from anything reported and deserves its own
+change.
 
 ---
 

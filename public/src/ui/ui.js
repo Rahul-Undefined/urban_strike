@@ -12,6 +12,7 @@ var UI = (function () {
       'lobby-mode', 'lobby-map', 'create-map', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
       'join-name', 'join-code', 'btn-join',
       'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count', 'lobby-kills', 'lobby-time',
+      'lobby-team-a', 'lobby-team-b', 'team-name-row',
       'lobby-hint', 'btn-start', 'btn-leave',
       'crosshair', 'scope-overlay', 'match-timer', 'kill-target', 'killfeed',
       'hp-fill', 'hp-num', 'armor-fill', 'armor-num',
@@ -23,7 +24,6 @@ var UI = (function () {
       'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading',
       'announce', 'cook-bar', 'cook-fill', 'att-list',
       'tc-mine', 'tc-molotov', 'countdown', 'btn-ready',
-      'btn-voice', 'voice-ind', 'voice-diag',
       'info-map', 'info-mode', 'info-kills', 'info-time', 'info-slots', 'info-role',
       'ready-fill', 'ready-text', 'brand-modes', 'stat-maps'
     ].forEach(function (id) { els[id] = $(id); });
@@ -106,8 +106,22 @@ var UI = (function () {
       var s = (p.kills | 0) * 200 + (p.assists | 0) * 50 + Math.round((p.damage || 0) * 0.5);
       return { n: p.name, k: p.kills | 0, dd: p.deaths | 0, a: p.assists | 0, s: s };
     }).sort(function (a, b) { return b.s - a.s || b.k - a.k; }).slice(0, 10);
-    var t = (d.teams && d.settings && d.settings.mode !== 'ffa')
-      ? '<div class="lb-teams">A ' + (d.teams.a | 0) + ' \u2014 ' + (d.teams.b | 0) + ' B</div>' : '';
+    /* v8.34: two sides keep the A n — n B line. More than two and the mini
+       board shows the top three, which is what a squad player actually scans
+       for: am I winning, and who do I have to catch. */
+    var t = '';
+    if (d.teams && d.settings && d.settings.mode !== 'ffa') {
+      var tids = Object.keys(d.teams);
+      if (tids.length <= 2) {
+        t = '<div class="lb-teams">A ' + (d.teams.a | 0) + ' \u2014 ' + (d.teams.b | 0) + ' B</div>';
+      } else {
+        t = '<div class="lb-teams">' + tids.slice()
+          .sort(function (x, y) { return (d.teams[y] | 0) - (d.teams[x] | 0); })
+          .slice(0, 3)
+          .map(function (id) { return esc(teamName(id)) + ' ' + (d.teams[id] | 0); })
+          .join(' \u00b7 ') + '</div>';
+      }
+    }
     el.innerHTML = '<div class="lb-title">' + esc(currentMapLabel).toUpperCase() + '</div>' + t +
       '<div class="lb-row lb-h"><span>PLAYER</span><b>K</b><b>D</b><b>A</b><b>S</b></div>' +
       rows.map(function (r) {
@@ -126,17 +140,23 @@ var UI = (function () {
       var host = p.id === d.hostId ? ' <em class="host-tag">HOST</em>' : '';
       var you = p.id === myId ? ' <em class="you-tag">YOU</em>' : '';
       var rdy = p.ready ? ' <em class="rdy-tag">READY</em>' : '';
-      var vc = p.voice ? ' <em class="voice-tag">MIC</em>' : '';
+      var vc = '';
       li.className = p.ready ? 'is-ready' : '';
       /* v8.28: the host gets a A/B switch on every row in a team mode. Shown
          only to the host and only in the lobby, because the server refuses it
          anywhere else and a button that silently does nothing is worse than no
          button. The arrow points at the team the click MOVES them to. */
+      /* v8.34: with two sides this is still a straight A/B toggle. With ten it
+         CYCLES to the next squad, so the host walks a player round the ring
+         with repeated clicks — no dropdown, no new UI, and the arrow still
+         names exactly where the click sends them. Team sizes are never
+         enforced, which is what allows "4 in one squad and 2 in another". */
       var swap = '';
-      if (mode.teams && d.hostId === myId && (p.team === 'a' || p.team === 'b')) {
-        var to = p.team === 'a' ? 'b' : 'a';
+      var sides = CFG.activeTeams(d.settings.mode);
+      if (mode.teams && d.hostId === myId && sides.indexOf(p.team) >= 0) {
+        var to = sides[(sides.indexOf(p.team) + 1) % sides.length];
         swap = ' <button class="team-swap" data-id="' + p.id + '" data-to="' + to +
-               '" title="Move to ' + CFG.TEAMS[to].name + '">&#8644; ' + CFG.TEAMS[to].name + '</button>';
+               '" title="Move to ' + teamName(to) + '">&#8644; ' + teamName(to) + '</button>';
       }
       li.innerHTML = '<i class="dot" style="background:' + p.color + '"></i><b>' + p.name + '</b>' + host + you + vc + rdy + swap;
       els['lobby-players'].appendChild(li);
@@ -153,7 +173,7 @@ var UI = (function () {
       ['a', 'b'].forEach(function (t) {
         var hdr = document.createElement('li');
         hdr.className = 'hdr t' + t;
-        hdr.textContent = 'TEAM ' + CFG.TEAMS[t].name;
+        hdr.textContent = 'TEAM ' + teamName(t);
         els['lobby-players'].appendChild(hdr);
         d.players.filter(function (p) { return p.team === t; }).forEach(row);
       });
@@ -212,9 +232,26 @@ var UI = (function () {
     els['lobby-mode'].value = d.settings.mode || 'ffa';
     if (els['lobby-map']) els['lobby-map'].value = d.settings.map || 'urban';
     els['lobby-kills'].value = String(d.settings.killTarget);
+    /* v8.33: only meaningful in team modes, and only the host may edit. Skip
+       writing the value back while the host is mid-typing, otherwise every
+       lobby push would yank the caret to the end of the field. */
+    /* v8.34: the two rename boxes only make sense head-to-head. Squad modes
+       field up to ten sides and ten text inputs would swamp the panel, so they
+       keep the palette names — which are already distinct and colour-matched. */
+    var sidesN = CFG.activeTeams(d.settings.mode).length;
+    var teamsOn = !!(CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams) && sidesN === 2;
+    if (els['team-name-row']) els['team-name-row'].style.display = teamsOn ? '' : 'none';
+    ['a', 'b'].forEach(function (t) {
+      var el = els['lobby-team-' + t];
+      if (!el) return;
+      el.disabled = !isHost;
+      if (document.activeElement !== el) el.value = teamName(t);
+    });
     els['lobby-time'].value = String(d.settings.minutes);
 
     // ---- LEFT column: room information ----
+    setTeamNames(d.settings && d.settings.teamNames);      // v8.33
+    _mode = d.settings.mode || 'ffa';                     // v8.34
     var mapCfg = CFG.MAPS[d.settings.map] || CFG.MAPS.urban;
     if (els['info-map'])   els['info-map'].textContent   = mapCfg ? mapCfg.label : d.settings.map;
     if (els['info-mode'])  els['info-mode'].textContent  = mode.label;
@@ -248,11 +285,49 @@ var UI = (function () {
   function setTeamScore(tk, myTeam, show) {
     if (!show) { els['team-score'].classList.add('hidden'); return; }
     els['team-score'].classList.remove('hidden');
-    els['team-score'].innerHTML =
-      '<span class="ta">' + CFG.TEAMS.a.name + ' ' + tk.a + '</span>' +
-      '<span class="sep">\u2013</span>' +
-      '<span class="tb">' + tk.b + ' ' + CFG.TEAMS.b.name + '</span>';
+    var ids = CFG.activeTeams(_mode);
+    /* v8.34: two sides keep the exact head-to-head readout they always had.
+       Ten sides cannot fit that shape, so squads get a compact form instead:
+       your own squad, then whoever is leading. That is the only information
+       that changes a decision mid-match — a ten-column ladder on the HUD would
+       be unreadable at a glance and is what the TAB scoreboard is for. */
+    if (ids.length <= 2) {
+      els['team-score'].innerHTML =
+        '<span class="ta">' + teamName('a') + ' ' + (tk.a | 0) + '</span>' +
+        '<span class="tdash">-</span>' +
+        '<span class="tb">' + (tk.b | 0) + ' ' + teamName('b') + '</span>';
+      return;
+    }
+    var lead = null, leadN = -1;
+    ids.forEach(function (t) { var v = tk[t] | 0; if (v > leadN) { leadN = v; lead = t; } });
+    var mine = myTeam && ids.indexOf(myTeam) >= 0 ? myTeam : null;
+    var html = '';
+    if (mine) html += '<span class="ta" style="color:' + (CFG.TEAMS[mine] || {}).color + '">' +
+      teamName(mine) + ' ' + (tk[mine] | 0) + '</span>';
+    if (lead && lead !== mine) {
+      html += '<span class="tdash">\u00b7</span><span class="tb" style="color:' +
+        (CFG.TEAMS[lead] || {}).color + '">LEAD ' + teamName(lead) + ' ' + leadN + '</span>';
+    } else if (lead === mine) {
+      html += '<span class="tdash">\u00b7</span><span class="tb">LEADING</span>';
+    }
+    els['team-score'].innerHTML = html;
   }
+
+  /* v8.33 HOST-EDITABLE TEAM NAMES.
+
+     Six places used to hardcode CFG.TEAMS[t].name. They now all route through
+     here, so a rename lands everywhere at once — lobby roster, live scoreboard,
+     in-match team score, and the end screen — instead of drifting apart. The
+     config value is the fallback, never the source, and the server has already
+     stripped anything dangerous before it reaches this point. */
+  var _teamNames = null;
+  var _mode = 'ffa';                 // v8.34: drives how many sides to render
+  function setTeamNames(tn) { _teamNames = tn || null; }
+  function teamName(t) {
+    if (_teamNames && _teamNames[t]) return _teamNames[t];
+    return (CFG.TEAMS[t] || {}).name || String(t).toUpperCase();
+  }
+
   function setWeapon(label, mag, reserve, throwsLeft) {
     els['weapon-name'].textContent = label;
     if (label === 'Knife') { els['ammo-mag'].textContent = '\u2014'; els['ammo-reserve'].textContent = ''; }
@@ -311,7 +386,7 @@ var UI = (function () {
         var total = members.reduce(function (s, p) { return s + p.kills; }, 0);
         var hdr = document.createElement('tr');
         hdr.className = 'team-hdr t' + t;
-        hdr.innerHTML = '<td>TEAM ' + CFG.TEAMS[t].name + '</td><td>' + total + '</td><td></td><td></td><td></td><td></td><td></td>';
+        hdr.innerHTML = '<td>TEAM ' + teamName(t) + '</td><td>' + total + '</td><td></td><td></td><td></td><td></td><td></td>';
         els['sb-body'].appendChild(hdr);
         members.sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
       });
@@ -368,16 +443,33 @@ var UI = (function () {
     }
     if (d.winnerTeam) {
       var won = me && me.team === d.winnerTeam;
-      els['end-title'].textContent = won ? 'VICTORY' : ('TEAM ' + CFG.TEAMS[d.winnerTeam].name + ' WINS');
+      els['end-title'].textContent = won ? 'VICTORY' : ('TEAM ' + teamName(d.winnerTeam) + ' WINS');
       els['end-title'].className = 'end-title team-' + d.winnerTeam + (won ? ' win' : '');
-      els['end-sub'].textContent = d.teamKills
-        ? (CFG.TEAMS.a.name + ' ' + d.teamKills.a + ' \u2013 ' + d.teamKills.b + ' ' + CFG.TEAMS.b.name +
-          (d.reason === 'time' ? ' \u00b7 time expired' : d.reason === 'forfeit' ? ' \u00b7 forfeit' : ''))
-        : '';
-      ['a', 'b'].forEach(function (t) {
+      /* v8.34: read the sides straight off the payload rather than assuming
+         two. Head-to-head keeps its dash; squads list the top three, because a
+         ten-way scoreline on one line is noise. */
+      var tks = d.teamKills ? Object.keys(d.teamKills) : [];
+      var tail = (d.reason === 'time' ? ' \u00b7 time expired'
+        : d.reason === 'forfeit' ? ' \u00b7 forfeit' : '');
+      if (!tks.length) els['end-sub'].textContent = '';
+      else if (tks.length <= 2) {
+        els['end-sub'].textContent = teamName('a') + ' ' + (d.teamKills.a | 0) + ' \u2013 ' +
+          (d.teamKills.b | 0) + ' ' + teamName('b') + tail;
+      } else {
+        var top = tks.slice().sort(function (x, y) { return (d.teamKills[y] | 0) - (d.teamKills[x] | 0); });
+        els['end-sub'].textContent = top.slice(0, 3).map(function (t) {
+          return teamName(t) + ' ' + (d.teamKills[t] | 0);
+        }).join('  \u00b7  ') + tail;
+      }
+      /* Group the board by side, strongest first, so a squad match reads as a
+         ladder instead of an arbitrary order. */
+      var order = tks.slice().sort(function (x, y) { return (d.teamKills[y] | 0) - (d.teamKills[x] | 0); });
+      if (!order.length) order = ['a', 'b'];
+      order.forEach(function (t) {
         var hdr = document.createElement('tr');
         hdr.className = 'team-hdr t' + t;
-        hdr.innerHTML = '<td>TEAM ' + CFG.TEAMS[t].name + '</td><td></td><td></td><td></td><td></td><td></td><td></td>';
+        if (!d.players.some(function (p) { return p.team === t; })) return;   // v8.34: skip empty squads
+        hdr.innerHTML = '<td>TEAM ' + teamName(t) + '</td><td></td><td></td><td></td><td></td><td></td><td></td>';
         els['end-body'].appendChild(hdr);
         d.players.filter(function (p) { return p.team === t; })
           .sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
@@ -527,12 +619,24 @@ var UI = (function () {
         map: els['lobby-map'] ? els['lobby-map'].value : 'urban',
         mode: els['lobby-mode'].value,
         killTarget: parseInt(els['lobby-kills'].value, 10),
-        minutes: parseInt(els['lobby-time'].value, 10)
+        minutes: parseInt(els['lobby-time'].value, 10),
+        teamNames: {                                    // v8.33
+          a: els['lobby-team-a'] ? els['lobby-team-a'].value : '',
+          b: els['lobby-team-b'] ? els['lobby-team-b'].value : ''
+        }
       });
     }
     els['lobby-mode'].addEventListener('change', pushSettings);
     els['lobby-kills'].addEventListener('change', pushSettings);
     els['lobby-time'].addEventListener('change', pushSettings);
+    /* Push on blur and on Enter rather than on every keystroke: a rename is a
+       whole word, and one socket message per character would be silly. */
+    ['lobby-team-a', 'lobby-team-b'].forEach(function (id) {
+      if (!els[id]) return;
+      els[id].addEventListener('change', pushSettings);
+      els[id].addEventListener('blur', pushSettings);
+      els[id].addEventListener('keydown', function (e) { if (e.key === 'Enter') els[id].blur(); });
+    });
     els['btn-start'].onclick = function () { Net.startMatch(); };
     els['btn-leave'].onclick = function () { Net.leaveRoom(); showScreen('screen-main'); };
     els['btn-back-lobby'].onclick = function () { Net.returnLobby(); };
@@ -553,48 +657,6 @@ var UI = (function () {
   function setLoadingMap(label) {
     currentMapLabel = label || 'Urban';
     if (els['loading-label']) els['loading-label'].textContent = 'BUILDING ' + currentMapLabel.toUpperCase() + '\u2026';
-  }
-  function setVoiceState(state) {
-    if (els['btn-voice']) {
-      els['btn-voice'].textContent = state === 'off' ? 'JOIN VOICE' : 'VOICE ON \u00b7 hold T to talk';
-      els['btn-voice'].classList.toggle('is-on', state !== 'off');
-    }
-    var ind = els['voice-ind'];
-    if (!ind) return;
-    ind.classList.toggle('hidden', state === 'off');
-    ind.classList.toggle('live', state === 'talking');
-    ind.classList.toggle('muted', state === 'muted');
-    ind.textContent = state === 'talking' ? '\u25CF TALKING' : 'MIC MUTED \u2014 HOLD T';
-  }
-  /* Voice diagnostics. Voice failed silently for four releases because the only
-     feedback was a toast that vanished. This shows the live per-peer state so a
-     failure names its own stage instead of being "it doesn't work". */
-  var vdTimer = null;
-  function esc(t) { return String(t).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
-  function renderVoiceDiag() {
-    var el = els['voice-diag'];
-    if (!el || typeof VoiceChat === 'undefined' || !VoiceChat.getDiag) return;
-    var dbg = (typeof CFG !== 'undefined' && CFG.VOICE && CFG.VOICE.debug);
-    var d = VoiceChat.getDiag();
-    if (!dbg || !d.joined) { el.classList.add('hidden'); return; }
-    el.classList.remove('hidden');
-    var turnBad = d.turn.indexOf('NONE') === 0;
-    var h = '<div class="vd-h">VOICE DIAGNOSTICS</div>';
-    h += '<div class="vd-row">mic: <span class="' + (d.mic.indexOf('live') > -1 ? 'vd-ok' : '') + '">' + esc(d.mic) + '</span></div>';
-    h += '<div class="vd-row">turn: <span class="' + (turnBad ? 'vd-bad' : 'vd-ok') + '">' + esc(d.turn) + '</span></div>';
-    if (!d.peers.length) h += '<div class="vd-row vd-bad">no peers &mdash; is the other side joined?</div>';
-    d.peers.forEach(function (p) {
-      var good = p.conn === 'connected' && p.track === 'YES';
-      h += '<div class="vd-row">' + esc(p.name) + ': <span class="' + (good ? 'vd-ok' : 'vd-bad') + '">'
-        + esc(p.conn) + '</span> ice=' + esc(p.ice) + ' audio=' + esc(p.track) + '</div>';
-      if (p.cand !== '-') h += '<div class="vd-row">&nbsp;&nbsp;route: ' + esc(p.cand) + '</div>';
-      if (p.err) h += '<div class="vd-row vd-bad">&nbsp;&nbsp;' + esc(p.err) + '</div>';
-    });
-    el.innerHTML = h;
-  }
-  function startVoiceDiag() {
-    if (vdTimer) return;
-    vdTimer = setInterval(renderVoiceDiag, 700);
   }
 
   function setGear(minesN, molosN) {
@@ -635,20 +697,6 @@ var UI = (function () {
     if (els['btn-ready']) els['btn-ready'].addEventListener('click', function () {
       Net.setReady(this.dataset.r !== '1');
     });
-    document.addEventListener('keydown', function (e) {
-      if (e.code !== 'KeyT' || e.repeat) return;
-      var t = e.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
-      VoiceChat.setTalking(true);
-    });
-    document.addEventListener('keyup', function (e) {
-      if (e.code === 'KeyT') VoiceChat.setTalking(false);
-    });
-    if (els['btn-voice']) els['btn-voice'].addEventListener('click', function () {
-      if (VoiceChat.isJoined()) VoiceChat.leave();
-      else VoiceChat.join();
-    });
-    startVoiceDiag();
   }
 
   function init() {
@@ -666,8 +714,7 @@ var UI = (function () {
     setVitals: setVitals, setTeamScore: setTeamScore, setWeapon: setWeapon, setReloading: setReloading,
     setScope: setScope, setCrosshair: setCrosshair,
     setAttachments: setAttachments, setCooking: setCooking, announce: announce, setCrosshairGap: setCrosshairGap,
-    setGear: setGear, setCountdown: setCountdown,
-    setVoiceState: setVoiceState,
+    setGear: setGear, setCountdown: setCountdown, setTeamNames: setTeamNames, teamName: teamName,
     setLoadingMap: setLoadingMap,
     getMapLabel: function () { return currentMapLabel; },
     setTimer: setTimer, setKillTarget: setKillTarget,

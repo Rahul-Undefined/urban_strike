@@ -16,7 +16,11 @@ function finish() {
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 }
-setTimeout(() => { console.log('TIMEOUT'); finish(); }, 120000);   // +30s: the host-gated launch adds a real 10s countdown
+/* v8.34: 120s -> 240s. Not a budget being relaxed — the suite genuinely got
+   longer. Phase 8 seats twelve real sockets and Phase 9 plays a live squad
+   match through a real 10s countdown with 3s respawns between kills. Both are
+   wall-clock costs of testing the thing properly rather than mocking it. */
+setTimeout(() => { console.log('TIMEOUT'); finish(); }, 240000);
 
 /* ---- static config gates (no server needed) ---- */
 function configGates() {
@@ -362,7 +366,7 @@ function phase3(done) {
   });
 }
 
-phase1(() => phase2(() => phase3(() => phase4(() => phase5(() => phase6(phase7))))));
+phase1(() => phase2(() => phase3(() => phase4(() => phase6(() => phase7(() => phase8(phase9)))))));
 
 
 /* ---------------- Phase 4: v4.3 — lobby flow, stance, mines, molotov ---------------- */
@@ -542,77 +546,6 @@ function phase4(done) {
 }
 
 
-/* ---------------- Phase 5: v4.5 — voice signaling relay ---------------- */
-function phase5(done) {
-  console.log('--- Phase 5: voice signaling (room-scoped, opt-in gated) ---');
-  const A = io(URL), B = io(URL), D = io(URL), C = io(URL);
-  let leaks = 0, legit = null, peerJoinSeen = null, peerLeaveSeen = null;
-
-  A.on('voiceSignal', (d) => {
-    if (d && d.data && d.data.x === 1) legit = d;
-    else leaks++;
-  });
-  A.on('voicePeerJoin', (d) => { peerJoinSeen = d.id; });
-  A.on('voicePeerLeave', (d) => { peerLeaveSeen = d.id; });
-
-  A.on('connect', () => {
-    A.emit('createRoom', { name: 'Av', settings: {} }, (res) => {
-      const code = res.code;
-      B.emit('joinRoom', { name: 'Bv', code }, () => {
-        D.emit('joinRoom', { name: 'Dv', code }, () => {
-          C.emit('createRoom', { name: 'Cv', settings: {} }, () => {
-            C.emit('voiceJoin');
-            step1();
-          });
-        });
-      });
-    });
-  });
-
-  function step1() {
-    A.emit('voiceJoin');
-    A.once('voicePeers', (d) => {
-      ok(Array.isArray(d.ids) && d.ids.length === 0, 'first voice joiner receives an empty peer list');
-      step2();
-    });
-  }
-  function step2() {
-    B.emit('voiceJoin');
-    B.once('voicePeers', (d) => {
-      ok(d.ids.length === 1 && d.ids[0] === A.id, 'second joiner receives the existing peer to initiate toward');
-      setTimeout(() => {
-        ok(peerJoinSeen === B.id, 'existing member is notified of the new voice peer');
-        step3();
-      }, 250);
-    });
-  }
-  function step3() {
-    B.emit('voiceSignal', { to: A.id, data: { x: 1 } });
-    D.emit('voiceSignal', { to: A.id, data: { x: 9 } });   // same room, never opted in
-    C.emit('voiceSignal', { to: A.id, data: { x: 7 } });   // different room entirely
-    setTimeout(() => {
-      ok(legit && legit.from === B.id && legit.data.x === 1, 'signal relayed with correct sender identity');
-      ok(leaks === 0, 'non-opted-in and cross-room signals are both dropped (' + leaks + ' leaks)');
-      step4();
-    }, 500);
-  }
-  function step4() {
-    const bId = B.id; // socket.id nulls on disconnect — capture before
-    B.disconnect();
-    setTimeout(() => {
-      ok(peerLeaveSeen === bId, 'disconnect broadcasts voicePeerLeave to the mesh');
-      A.emit('voiceLeave');
-      A.emit('voiceJoin');
-      A.once('voicePeers', (d2) => {
-        ok(Array.isArray(d2.ids) && d2.ids.length === 0, 'voice rejoin yields a fresh, correct peer list');
-        [A, C, D].forEach(s => s.disconnect());
-        setTimeout(done, 300);
-      });
-    }, 500);
-  }
-}
-
-
 /* ---------------- Phase 6: v4.6 — multi-map plumbing ---------------- */
 function phase6(done) {
   console.log('--- Phase 6: rural map selection + per-map spawns ---');
@@ -648,7 +581,7 @@ function phase6(done) {
    the server must accept it, echo it, and then refuse to end the match no
    matter how many kills land. Without this the option could ship as a
    dropdown entry that silently ends the round at the default target. */
-function phase7() {
+function phase7(done) {
   console.log('--- Phase 7: unlimited kill target (0) ---');
   const A = io(URL), B = io(URL);
   let ended = false, kills = 0, settingsSeen = null;
@@ -687,6 +620,220 @@ function phase7() {
     ok(!ended,
       'unlimited match does NOT end on kills (' + kills + ' kill attempts, highest finite target is ' + maxFinite + ')');
     [A, B].forEach(s => s.disconnect());
-    setTimeout(finish, 300);
+    setTimeout(done, 300);
+  }
+}
+
+
+/* -------- Phase 8: v8.33 — 20-player capacity + host-renamed teams --------
+   Both are server-authoritative and both are new trust boundaries: a cap that
+   silently lets an 11th player into a 10-slot mode desyncs teams, and a team
+   name goes straight into innerHTML on the scoreboard. */
+function phase8(done) {
+  console.log('--- Phase 8: capacity 20 + custom team names ---');
+
+  ok(CFG.MODES.ffa.maxPlayers === 20, 'free-for-all cap raised to 20');
+  ok(!!CFG.MODES.t10 && CFG.MODES.t10.maxPlayers === 20, 'a 10v10 mode exists at 20 players');
+  ok(Object.keys(CFG.MODES).every(m => CFG.MODES[m].maxPlayers <= 20),
+    'no mode claims a cap above 20');
+
+  const socks = [];
+  for (let i = 0; i < 12; i++) socks.push(io(URL));
+  let up = 0;
+  socks.forEach(s => s.on('connect', () => { if (++up === socks.length) go(); }));
+
+  function go() {
+    socks[0].emit('createRoom', { name: 'Host', settings: { mode: 't10', killTarget: 10, minutes: 10 } }, (res) => {
+      const code = res.code;
+      let joined = 0;
+      const joinNext = () => {
+        if (joined >= socks.length - 1) return afterJoins(code);
+        const s = socks[++joined];
+        s.emit('joinRoom', { name: 'P' + joined, code }, () => setTimeout(joinNext, 40));
+      };
+      joinNext();
+    });
+  }
+
+  function afterJoins(code) {
+    socks[0].once('lobby', (d) => {
+      ok(d.players.length === 12, '12 players fit in a t10 room [' + d.players.length + ']');
+      const a = d.players.filter(p => p.team === 'a').length;
+      const b = d.players.filter(p => p.team === 'b').length;
+      ok(Math.abs(a - b) <= 1, 'teams stay balanced past 10 players [' + a + ' vs ' + b + ']');
+
+      /* Rename, including a hostile string. Waiting for the SPECIFIC lobby push
+         that carries the change rather than the next one to arrive: a setReady
+         push is already in flight and would otherwise be mistaken for the
+         answer. */
+      socks[0].emit('updateSettings', { teamNames: { a: 'RED WOLVES', b: '<img src=x>BLU' } });
+      const waitRename = (d2) => {
+        if (!d2.settings || !d2.settings.teamNames || d2.settings.teamNames.a === 'AMBER') return;
+        socks[1].off('lobby', waitRename);
+        onRenamed(d2);
+      };
+      socks[1].on('lobby', waitRename);
+      const onRenamed = (d2) => {
+        const tn = d2.settings.teamNames;
+        ok(!!tn, 'lobby payload carries teamNames');
+        ok(tn.a === 'RED WOLVES', 'host rename reaches every client [' + tn.a + ']');
+        ok(!/[<>&"']/.test(tn.b), 'team names are stripped of HTML before broadcast [' + tn.b + ']');
+        ok(tn.b.length <= 12, 'team names are length-clamped [' + tn.b.length + ']');
+
+        // a non-host must not be able to rename
+        socks[1].emit('updateSettings', { teamNames: { a: 'HACKED', b: 'HACKED' } });
+        setTimeout(() => {
+          socks[0].once('lobby', (d3) => {
+            ok(d3.settings.teamNames.a === 'RED WOLVES', 'a non-host cannot rename a team');
+            socks.forEach(s => s.disconnect());
+            setTimeout(done, 400);
+          });
+          socks[0].emit('setReady', { v: false });
+        }, 250);
+      };
+    });
+    socks[0].emit('setReady', { v: false });
+  }
+}
+
+
+/* ---------------- Phase 9: v8.34 — squad modes (N teams) ----------------
+   Everything before this assumed exactly two sides. These assert the squad path
+   end to end: the room accepts the mode, players are spread across all ten
+   squads, kills score to the RIGHT squad, uneven squads are allowed, and the
+   winner is the highest scorer rather than "a beats b". */
+function phase9() {
+  console.log('--- Phase 9: squad modes, 10 teams of 2 ---');
+
+  ['sq2', 'sq4'].forEach(m => {
+    const M = CFG.MODES[m];
+    ok(!!M && M.teams && M.teamCount > 2, m + ' is a squad mode with more than two sides');
+    ok(CFG.activeTeams(m).length === M.teamCount,
+      m + ' fields exactly ' + M.teamCount + ' squads');
+    ok(M.teamCount * M.squadSize === M.maxPlayers,
+      m + ': ' + M.teamCount + ' x ' + M.squadSize + ' = ' + M.maxPlayers + ' players');
+  });
+  CFG.activeTeams('sq2').forEach(t => {
+    ok(!!CFG.TEAMS[t] && !!CFG.TEAMS[t].name && !!CFG.TEAMS[t].color,
+      'squad "' + t + '" has a name and a colour');
+  });
+  const cols = CFG.activeTeams('sq2').map(t => CFG.TEAMS[t].color);
+  ok(new Set(cols).size === cols.length, 'every squad has a distinct colour');
+  ['t2','t3','t4','t5','t6','t8','t10'].forEach(m => {
+    ok(CFG.activeTeams(m).join(',') === 'a,b', m + ' is still exactly two sides (unchanged)');
+  });
+
+  /* THE DEFAULT MODE MUST SURVIVE ALL OF THIS.
+     Rahul: "the default mode is there where all 20 players are fighting for
+     each other. That mode should be there along with these modes." Adding nine
+     team modes must not quietly demote or shrink free-for-all — it is still the
+     mode a room opens in and it still seats everybody. */
+  ok(!!CFG.MODES.ffa, 'free-for-all still exists');
+  ok(CFG.MODES.ffa.teams === false, 'free-for-all has no teams: everyone fights everyone');
+  ok(CFG.MODES.ffa.maxPlayers === 20, 'free-for-all seats all 20 players');
+  ok(CFG.activeTeams('ffa').length === 0, 'free-for-all fields no sides at all');
+  ok(CFG.MATCH.defaultMode === 'ffa', 'a new room still opens in free-for-all by default');
+  ok(Object.keys(CFG.MODES)[0] === 'ffa', 'free-for-all is first in the mode list');
+  ok(Object.keys(CFG.MODES).length === 10,
+    'ten modes offered: ffa + six head-to-head sizes + 3v3 + two squad modes [' +
+    Object.keys(CFG.MODES).length + ']');
+
+  const N = 10;
+  const socks = [];
+  for (let i = 0; i < N; i++) socks.push(io(URL));
+  let up = 0;
+  socks.forEach(s => s.on('connect', () => { if (++up === N) go(); }));
+  let bPos = [0, 0.95, 0];
+
+  function go() {
+    socks[0].emit('createRoom', { name: 'S0', settings: { mode: 'sq2', killTarget: 5, minutes: 10 } }, (res) => {
+      const code = res.code;
+      let j = 0;
+      const next = () => {
+        if (j >= N - 1) return setTimeout(() => afterJoin(code), 300);
+        socks[++j].emit('joinRoom', { name: 'S' + j, code }, () => setTimeout(next, 40));
+      };
+      next();
+    });
+  }
+
+  function afterJoin(code) {
+    socks[0].once('lobby', (d) => {
+      const byTeam = {};
+      d.players.forEach(p => { byTeam[p.team] = (byTeam[p.team] || 0) + 1; });
+      const used = Object.keys(byTeam);
+      ok(d.players.length === N, N + ' players in the squad room');
+      ok(used.length === N, 'ten players land in ten DIFFERENT squads [' + used.sort().join(',') + ']');
+      ok(used.every(t => CFG.activeTeams('sq2').indexOf(t) >= 0),
+        'every assigned squad is one the mode actually fields');
+
+      // uneven squads must be allowed: stack three players into squad 'a'
+      socks[0].emit('setPlayerTeam', { id: socks[1].id, team: 'a' });
+      socks[0].emit('setPlayerTeam', { id: socks[2].id, team: 'a' });
+      setTimeout(() => {
+        socks[0].once('lobby', (d2) => {
+          const inA = d2.players.filter(p => p.team === 'a').length;
+          ok(inA >= 3, 'uneven squads are allowed — squad A holds ' + inA + ' while others hold fewer');
+          const stillTen = new Set(d2.players.map(p => p.team)).size;
+          ok(stillTen < N, 'moving players leaves some squads empty, which is legal');
+          runMatch(d2);
+        });
+        socks[0].emit('setReady', { v: false });
+      }, 300);
+    });
+    socks[0].emit('setReady', { v: false });
+  }
+
+  function runMatch() {
+    socks.forEach(s => s.emit('setReady', { v: true }));
+    socks[3].on('spawn', d => { if (d.id === socks[3].id) bPos = d.pos; });
+    /* respawnDelay is 3s and nothing respawns you automatically — without this
+       the victim stays dead after the first kill and every later hit lands on a
+       corpse, so the squad score would read 1 and the assertion would be
+       measuring the harness rather than the game. */
+    socks[3].on('death', d => {
+      if (d.victimId === socks[3].id) setTimeout(() => socks[3].emit('respawn'), 3300);
+    });
+    let ended = null;
+    socks[0].on('matchEnd', d => { if (!ended) ended = d; });
+    socks[0].once('matchStart', (ms) => {
+      ok(ms.settings.mode === 'sq2', 'match starts in squad mode');
+      const me = ms.players.find(p => p.id === socks[0].id);
+      ok(!!me && !!me.team, 'matchStart gives every operator a squad [' + (me && me.team) + ']');
+      // socks[0] is squad 'a'; kill socks[3] (a different squad) repeatedly
+      let n = 0;
+      const fire = () => {
+        if (n >= 4) return check();
+        socks[0].emit('st', { p: [bPos[0] + 2, bPos[1], bPos[2]], ry: 0, rx: 0, cr: 0 });
+        setTimeout(() => {
+          socks[0].emit('hit', { victim: socks[3].id, w: 'sniper', part: 'head', pellets: 1, vp: bPos });
+          n++;
+          setTimeout(fire, 4200);      // 3s respawn + margin
+        }, 100);
+      };
+      setTimeout(fire, 11500);
+    });
+    setTimeout(() => socks[0].emit('startMatch'), 400);
+
+    function check() {
+      socks[0].once('snap', (sn) => {
+        const tk = sn.tk || {};
+        const keys = Object.keys(tk);
+        ok(keys.length === CFG.MODES.sq2.teamCount,
+          'snapshot carries a score for all ' + CFG.MODES.sq2.teamCount + ' squads [' + keys.length + ']');
+        ok(keys.every(k => typeof tk[k] === 'number' && !isNaN(tk[k])),
+          'no squad score is NaN (the bucket was seeded, not invented)');
+        /* The invariant is ROUTING, not volume: multiple kills must accumulate
+           on the killer's own squad and nowhere else. Asserting an exact count
+           would only be measuring how many hits this harness managed to land
+           between 3s respawns, which is a property of the test, not the game. */
+        const mine = tk.a | 0;
+        ok(mine >= 2, 'kills accumulate on the killer\'s own squad [squad A has ' + mine + ']');
+        const others = keys.filter(k => k !== 'a').reduce((t, k) => t + (tk[k] | 0), 0);
+        ok(others === 0, 'no other squad was credited [' + others + ']');
+        socks.forEach(s => s.disconnect());
+        setTimeout(finish, 400);
+      });
+    }
   }
 }

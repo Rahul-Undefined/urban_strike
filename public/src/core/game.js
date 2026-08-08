@@ -138,6 +138,21 @@ var Game = (function () {
     }
     document.addEventListener('keydown', function (e) {
       if (e.repeat) return;
+      /* v8.33 THE CALLSIGN BOX WOULD NOT ACCEPT THE LETTER M.
+
+         The M binding below calls preventDefault() and is registered ABOVE the
+         pointer-lock guard on purpose, so the map opens while paused. Nothing
+         checked whether the player was TYPING at the time, so every M aimed at
+         the name field was swallowed and turned into a map toggle instead —
+         "Sam" came out as "Sa". The same trap sits under every letter key this
+         handler ever claims, so the guard is at the top of the handler rather
+         than on the one binding that happened to be reported.
+
+         ui.js already does exactly this for push-to-talk; this is the same
+         check in the file that needed it. */
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
+                t.tagName === 'SELECT' || t.isContentEditable)) return;
       var playing = Net.getPhase() === 'playing';
       /* v8.9 dev overlay. Registered BEFORE the pointer-lock guard below on
          purpose: the panel has to be readable while paused, which is exactly
@@ -166,19 +181,11 @@ var Game = (function () {
       // work in the lobby too, so it does NOT live here. The old duplicate also
       // shadowed the smoke grenade, which had been unbindable ever since.
       if (e.code === 'KeyZ') { rideLift(); return; }
-      /* v8.21 moved smoke from B onto T so the bind matched the HUD label.
-         v8.30 moves it back, because T WAS ALREADY TAKEN.
-
-         ui.js wireV43() binds T at document level for push-to-talk, and it has
-         to stay there so voice works in the lobby. Both listeners are on
-         `document` and neither stops propagation, so pressing T threw a smoke
-         AND keyed the microphone open at the same time. Nobody noticed because
-         the smoke throw was separately crashing on the missing mat() helper —
-         fixing that would have made this audible immediately.
-
-         Smoke is B, the HUD label below now says B, and T belongs to voice
-         alone. The two are no longer allowed to disagree: verify-models.js
-         checks the throwable binds against ui.js as well as this file. */
+      /* Smoke is B. v8.21 briefly moved it to T, which collided with the old
+         push-to-talk bind; v8.30 moved it back and v8.33 removed voice chat
+         entirely, so T is now simply free. Left on B because that is what the
+         HUD label says and what muscle memory now expects — verify-models.js
+         asserts the bind and the label agree. */
       if (e.code === 'KeyB') { Weapons.throwGrenade('smoke'); return; }
       if (e.code === 'KeyF') { Weapons.throwGrenade('flash'); return; }
       if (e.code.indexOf('Digit') === 0) {
@@ -300,7 +307,12 @@ var Game = (function () {
       try {
         var teams = CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams;
         UI.setKillTarget(killTargetLabel(d.settings.killTarget, teams));
-        UI.setTeamScore({ a: 0, b: 0 }, Net.getMyTeam(), !!teams);
+        /* v8.35: seed a zero for every side this mode fields, not just a/b.
+           Harmless with two, but in a squad match the HUD would otherwise open
+           against a two-key object and read the wrong shape for one frame. */
+        var zero = {};
+        CFG.activeTeams(d.settings.mode).forEach(function (t) { zero[t] = 0; });
+        UI.setTeamScore(zero, Net.getMyTeam(), !!teams);
       } catch (err2) {
         reportError('match start hud', err2);
       }
