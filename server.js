@@ -195,6 +195,7 @@ function startMatch(room) {
   room.teamKills = zeroTeamKills(room.settings.mode);   // v8.34: sized to the mode
   for (const p of room.players.values()) {
     p.kills = 0; p.deaths = 0; p.assists = 0; p.damage = 0; p.streak = 0; p.bestStreak = 0;
+    p.out = false;                    // v8.37: Last Stand elimination flag, cleared per match
     room.insights = null;   // v8.29: insights are per match, never cumulative
     p.att = { sight: null, muzzle: null, mag: null }; p.exW = {}; p.rd = {};
     p.ready = false; p.mines = CFG.GEAR.mine.start; p.lastMolo = {};
@@ -406,6 +407,28 @@ io.on('connection', (socket) => {
      Lobby only and host only, both checked here rather than trusted from the
      client. Mid-match team switching would hand someone a free look at the
      other side's spawns. */
+  /* v8.37: host re-rolls the sides. Clears every lock first, otherwise a
+     previously-moved player would pin in place and the shuffle would look
+     broken rather than partial. */
+  socket.on('shuffleTeams', () => {
+    const room = getRoom(socket);
+    if (!room || socket.id !== room.hostId || room.state !== 'lobby') return;
+    if (room.cdTimer) return;
+    if (!modeInfo(room).teams) return;
+    const list = [...room.players.values()];
+    for (let i = list.length - 1; i > 0; i--) {          // Fisher-Yates
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    const ids = CFG.activeTeams(room.settings.mode);
+    list.forEach((p, i) => {
+      p.team = ids[i % ids.length];
+      p.teamLocked = false;
+      p.color = CFG.TEAMS[p.team].color;
+    });
+    pushLobby(room);
+  });
+
   socket.on('setPlayerTeam', (d) => {
     const room = getRoom(socket);
     if (!room || socket.id !== room.hostId || room.state !== 'lobby') return;
@@ -523,11 +546,31 @@ io.on('connection', (socket) => {
   socket.on('respawn', () => {
     const room = getRoom(socket); if (!room || room.state !== 'playing') return;
     const p = room.players.get(socket.id); if (!p || p.alive) return;
+    if (p.out) return;                       // v8.37: Last Stand — one life, no coming back
     if (now() < p.respawnAt - 250) return;
     spawnPlayer(room, p);
   });
 
   socket.on('pingCheck', (t, cb) => { if (cb) cb(t); });
+
+  /* v8.37: leaving is the same as being eliminated in Last Stand, so a
+     disconnect can be the event that ends the match. Without this a room with
+     one survivor and one quitter would sit there forever — there is no clock to
+     rescue it. */
+  function lastStandOnLeave(room) {
+    if (!room || room.state !== 'playing') return;
+    if (!CFG.isElimination(room.settings.mode)) return;
+    const live = [];
+    for (const p of room.players.values()) if (!p.out && p.connected !== false) live.push(p);
+    if (modeInfo(room).teams) {
+      const sides = new Set(live.map(p => p.team));
+      if (sides.size <= 1) endMatch(room, sides.size === 1 && live[0] ? live[0].id : null,
+        sides.size === 1 ? 'laststand' : 'draw');
+    } else if (live.length <= 1) {
+      endMatch(room, live.length === 1 ? live[0].id : null,
+        live.length === 1 ? 'laststand' : 'draw');
+    }
+  }
 
   socket.on('disconnect', () => {
     const room = getRoom(socket); if (!room) return;
@@ -550,6 +593,7 @@ io.on('connection', (socket) => {
     if (room.state === 'playing' && room.players.size === 1) {
       endMatch(room, room.players.keys().next().value, 'forfeit');
     }
+    lastStandOnLeave(room);
   });
 
   function getRoom(sock) { return rooms.get(sock.data.roomCode); }

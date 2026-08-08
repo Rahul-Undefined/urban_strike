@@ -27,27 +27,59 @@
   };
   var TEAM_IDS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
 
-  /* v8.34 MODES.
+  /* v8.37 MODES, GROUPED.
 
-     `teamCount` is the number of sides. `squadSize` is only a LABEL hint for
-     squad modes — it is never enforced, because Rahul asked for "4 team members
-     in one team but 2 team in another". Team sizes are free; the auto-balancer
-     spreads people evenly and the host can then move anyone anywhere.
+     Ten flat entries in one dropdown had become a wall of text. They are now
+     picked in two steps — CATEGORY then VARIANT — which is what MODE_CATS below
+     describes. The flat table stays exactly as it is because it is
+     server-authoritative and every gate reads it; the grouping is a view over
+     it, not a replacement for it.
 
-     maxPlayers is the room cap. For squad modes it is teamCount * squadSize,
-     but nothing breaks if a room is short — empty squads simply score zero. */
+     `lives` turns a mode into an elimination match. Absent or 0 means the
+     normal kill/clock rules apply. */
   var MODES = {
-    ffa:  { label: 'Free For All',      teams: false, teamCount: 0,  maxPlayers: 20 },
-    t2:   { label: '2 vs 2',            teams: true,  teamCount: 2,  maxPlayers: 4 },
-    t3:   { label: '3 vs 3',            teams: true,  teamCount: 2,  maxPlayers: 6 },
-    t4:   { label: '4 vs 4',            teams: true,  teamCount: 2,  maxPlayers: 8 },
-    t5:   { label: '5 vs 5',            teams: true,  teamCount: 2,  maxPlayers: 10 },
-    t6:   { label: '6 vs 6',            teams: true,  teamCount: 2,  maxPlayers: 12 },
-    t8:   { label: '8 vs 8',            teams: true,  teamCount: 2,  maxPlayers: 16 },
-    t10:  { label: '10 vs 10',          teams: true,  teamCount: 2,  maxPlayers: 20 },
-    sq2:  { label: 'Squads \u00b7 10 \u00d7 2', teams: true, squads: true, teamCount: 10, squadSize: 2, maxPlayers: 20 },
-    sq4:  { label: 'Squads \u00b7 5 \u00d7 4',  teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20 }
+    ffa:  { label: 'Free For All',      vlabel: 'Free For All',  cat: 'ffa',    teams: false, teamCount: 0,  maxPlayers: 20 },
+    t2:   { label: '2 vs 2',            vlabel: '2 vs 2',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 4 },
+    t3:   { label: '3 vs 3',            vlabel: '3 vs 3',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 6 },
+    t4:   { label: '4 vs 4',            vlabel: '4 vs 4',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 8 },
+    t5:   { label: '5 vs 5',            vlabel: '5 vs 5',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 10 },
+    t6:   { label: '6 vs 6',            vlabel: '6 vs 6',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 12 },
+    t8:   { label: '8 vs 8',            vlabel: '8 vs 8',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 16 },
+    t10:  { label: '10 vs 10',          vlabel: '10 vs 10',      cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 20 },
+    sq2:  { label: 'Squads \u00b7 10 \u00d7 2', vlabel: '10 squads of 2', cat: 'squads', teams: true, squads: true, teamCount: 10, squadSize: 2, maxPlayers: 20 },
+    sq4:  { label: 'Squads \u00b7 5 \u00d7 4',  vlabel: '5 squads of 4',  cat: 'squads', teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20 },
+
+    /* LAST STAND. One life. No respawn, no clock — the match ends when one
+       operator, or one squad, is the only thing left breathing.
+
+       Camping is answered by the map rather than by a timer: pressing M shows
+       where everyone is, so hiding buys you position, not safety. That is why
+       these carry minutes 0 and killTarget 0 and still always terminate — the
+       end condition is elimination, which cannot stall while anyone is alive. */
+    ls:   { label: 'Last Stand \u00b7 Solo', vlabel: 'Solo \u00b7 every operator for themselves',
+            cat: 'last', teams: false, teamCount: 0, maxPlayers: 20, lives: 1 },
+    lsq2: { label: 'Last Stand \u00b7 Squads 10 \u00d7 2', vlabel: '10 squads of 2',
+            cat: 'last', teams: true, squads: true, teamCount: 10, squadSize: 2, maxPlayers: 20, lives: 1 },
+    lsq4: { label: 'Last Stand \u00b7 Squads 5 \u00d7 4',  vlabel: '5 squads of 4',
+            cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20, lives: 1 }
   };
+
+  /* The two-step picker. Order here is the order shown. */
+  var MODE_CATS = [
+    { id: 'ffa',    label: 'Free For All',
+      blurb: 'Twenty operators. No sides. Highest count when the clock dies.' },
+    { id: 'team',   label: 'Team Battle',
+      blurb: 'Two sides, your pick of size. First team to the kill target.' },
+    { id: 'squads', label: 'Squads',
+      blurb: 'Many small squads, one sector. Your squad\u2019s kills are your score.' },
+    { id: 'last',   label: 'Last Stand',
+      blurb: 'One life. No respawn. No clock. Last one breathing wins.' }
+  ];
+  function modesInCat(catId) {
+    return Object.keys(MODES).filter(function (m) { return MODES[m].cat === catId; });
+  }
+  function livesFor(modeId) { return (MODES[modeId] && MODES[modeId].lives) || 0; }
+  function isElimination(modeId) { return livesFor(modeId) > 0; }
 
   /* THE single source of truth for which sides are in play. Server and client
      both call this; nothing anywhere else is allowed to hardcode 'a'/'b'. */
@@ -104,5 +136,6 @@
   };
 
   return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams,
+    MODE_CATS: MODE_CATS, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
     MINIMAP: MINIMAP, RENDER: RENDER, MAPS: MAPS };
 });

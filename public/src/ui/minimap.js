@@ -182,12 +182,39 @@ var Minimap = (function () {
     var mapNow = (World.builtMap || 'urban');
     var dName = (typeof DISTRICTS !== 'undefined') ? DISTRICTS.nameAt(px, pz, mapNow) : '';
     if (!dName) dName = (CFG.MAPS[mapNow] || {}).label || mapNow.toUpperCase();
-    ctx.font = 'bold 11px Rajdhani, sans-serif';
+    /* v8.36 THE LABEL WAS BEING CLIPPED BY THE CIRCLE.
+
+       It was drawn centred at a fixed 11px with no regard for how wide the name
+       actually is, but the minimap is round and clipped to that circle. "NEAR
+       IRONGATE DEPOT" is far wider than the chord available at the bottom of a
+       circle, so both ends were sliced off and it read as "AR IRONGATE DEP".
+
+       The usable width is the CHORD at the label's height, not the diameter —
+       5px up from the bottom of a circle is a narrow slice. Measure the text,
+       compare against that chord, and step the font down until it fits, with a
+       floor so it never becomes unreadable; below the floor the name is
+       ellipsised instead. */
+    var labelY = SIZE - 6;
+    var R0 = SIZE / 2;
+    var dy = Math.abs(labelY - 3 - R0);                       // distance from centre line
+    var chord = 2 * Math.sqrt(Math.max(1, R0 * R0 - dy * dy)) - 6;
+    var size = 11;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.font = 'bold ' + size + 'px Rajdhani, sans-serif';
+    while (ctx.measureText(dName).width > chord && size > 8) {
+      size -= 0.5;
+      ctx.font = 'bold ' + size + 'px Rajdhani, sans-serif';
+    }
+    if (ctx.measureText(dName).width > chord) {
+      while (dName.length > 4 && ctx.measureText(dName + '\u2026').width > chord) {
+        dName = dName.slice(0, -1);
+      }
+      dName += '\u2026';
+    }
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-    ctx.strokeText(dName, cx, SIZE - 5);
+    ctx.strokeText(dName, cx, labelY);
     ctx.fillStyle = 'rgba(240,200,140,0.96)';
-    ctx.fillText(dName, cx, SIZE - 5);
+    ctx.fillText(dName, cx, labelY);
   }
 
   /* ===== v8.22 FULL MAP (M) =====

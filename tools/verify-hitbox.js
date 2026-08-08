@@ -172,6 +172,38 @@ ok(carry.reach < 0.35,
   'weapon stays within a forearm of the elbow so the hands read as on it [' +
   carry.reach.toFixed(2) + ' m]');
 
+/* ---- FACING (v8.36) ----
+   A three.js camera looks down its own local -Z; the rig faces local +Z. Both
+   were fed `-yaw`, so every remote operator was drawn facing the opposite way
+   to the head it belonged to. Nothing caught it because every previous gate
+   posed a single avatar in isolation, where there is no second player to look
+   wrong to. This one compares the RENDERED body direction against the direction
+   the camera says that player is looking. */
+const facing = [0, Math.PI / 2, Math.PI, -Math.PI / 2].map(yaw => vm.runInContext(`(function(){
+  var cam = new THREE.PerspectiveCamera(75, 1.7, 0.1, 100);
+  cam.rotation.order = 'YXZ'; cam.rotation.y = ${-1} * ${yaw};
+  var look = new THREE.Vector3(); cam.getWorldDirection(look); look.y = 0; look.normalize();
+
+  var av = Avatars.buildAvatar('Bot', 0xf0a232);
+  var sc = new THREE.Scene(); sc.add(av.group); av.baseY = 0;
+  av.group.rotation.y = ${-1} * ${yaw} + Math.PI;          // must match net.js
+  for (var f = 0; f < 200; f++) Avatars.poseAvatar(av, { moved:0, mx:0, mz:0, run:false,
+    crouch:0, prone:0, dead:false, deadT:0, rx:0, ry:${yaw}, lean:0, reloading:false, dist:10, dt:0.016 });
+  av.group.updateMatrixWorld(true);
+  var q = new THREE.Quaternion(); av.group.getWorldQuaternion(q);
+  var fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q); fwd.y = 0; fwd.normalize();
+  return { dot: look.dot(fwd), yaw: ${yaw} };
+})();`, ctx, { filename: '<facing>' }));
+
+facing.forEach(f => {
+  ok(f.dot > 0.99,
+    'remote avatar faces where the player is looking at yaw ' +
+    Math.round(f.yaw * 180 / Math.PI) + ' deg [dot ' + f.dot.toFixed(2) + ']');
+});
+const nsrc = fs.readFileSync('public/src/networking/net.js', 'utf8');
+ok(/g\.rotation\.y\s*=\s*-r\.ry\s*\+\s*Math\.PI/.test(nsrc),
+  'net.js applies the camera/rig convention correction');
+
 /* A head balanced straight on the shoulders reads as a crate. */
 const neck = vm.runInContext(`(function(){
   var av = Avatars.buildAvatar('Bot', 0xf0a232);

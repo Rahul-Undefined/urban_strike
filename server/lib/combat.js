@@ -3,6 +3,39 @@
 'use strict';
 const CFG = require('../../public/src/config/index.js');
 module.exports = function initCombatModule(ctx) {
+
+  /* v8.37 LAST STAND WIN CONDITION.
+
+     Solo: one operator still in. Squads: one squad with anyone still in.
+
+     Disconnected players count as OUT — otherwise a match could hang forever
+     waiting on somebody who closed the tab, and with no clock to fall back on
+     there would be nothing to break the deadlock. Zero survivors (a mutual
+     grenade, the last two trading kills) is a draw rather than a hang. */
+  function checkLastStand(room) {
+    const teams = modeInfo(room).teams;
+    const live = [];
+    for (const p of room.players.values()) {
+      if (!p.out && p.connected !== false) live.push(p);
+    }
+    if (teams) {
+      const sides = new Set(live.map(p => p.team));
+      if (sides.size <= 1) {
+        const winTeam = sides.size === 1 ? [...sides][0] : null;
+        const champ = winTeam ? (live[0] && live[0].id) : null;
+        endMatch(room, champ, sides.size === 1 ? 'laststand' : 'draw');
+        return true;
+      }
+      return false;
+    }
+    if (live.length <= 1) {
+      endMatch(room, live.length === 1 ? live[0].id : null,
+        live.length === 1 ? 'laststand' : 'draw');
+      return true;
+    }
+    return false;
+  }
+
   const { io, now, modeInfo, pushLobby, endMatch } = ctx;
 
 function weaponServerDamage(weapon, part, pellets, dist) {
@@ -98,6 +131,16 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     victim.alive = false;
     victim.deaths++;
     victim.respawnAt = now() + CFG.MATCH.respawnDelay * 1000;
+    /* v8.37 LAST STAND: one life, and that was it.
+
+       `out` is what makes a mode an elimination match. It is set here, on the
+       server, at the only place a player can actually die — not derived on the
+       client, where a dropped packet would resurrect someone. */
+    const livesN = CFG.livesFor(room.settings.mode);
+    if (livesN > 0 && victim.deaths >= livesN) {
+      victim.out = true;
+      victim.respawnAt = Infinity;         // nothing will ever let them back in
+    }
     let killerName = 'the world', killerStreak = 0;
     if (attacker) {
       if (attackerId === victim.id) { killerName = victim.name; }
@@ -154,9 +197,16 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     io.to(room.code).emit('death', {
       victimId: victim.id, victimName: victim.name,
       killerId: attackerId, killerName, killerStreak, assistIds,
-      weapon, headshot: !!headshot, self: attackerId === victim.id
+      weapon, headshot: !!headshot, self: attackerId === victim.id,
+      out: !!victim.out, livesLeft: CFG.livesFor(room.settings.mode)
+        ? Math.max(0, CFG.livesFor(room.settings.mode) - victim.deaths) : null
     });
     pushLobby(room);
+
+    /* Elimination is checked BEFORE the kill target, because in Last Stand
+       there is no kill target and no clock — being the last one breathing is
+       the only way the match can end. */
+    if (CFG.isElimination(room.settings.mode) && checkLastStand(room)) return;
     if (attacker && attackerId !== victim.id) {
       const target = room.settings.killTarget;
       /* v8.30: target 0 means UNLIMITED — never end on kills, let the clock

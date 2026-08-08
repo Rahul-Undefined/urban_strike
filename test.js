@@ -20,7 +20,7 @@ function finish() {
    longer. Phase 8 seats twelve real sockets and Phase 9 plays a live squad
    match through a real 10s countdown with 3s respawns between kills. Both are
    wall-clock costs of testing the thing properly rather than mocking it. */
-setTimeout(() => { console.log('TIMEOUT'); finish(); }, 240000);
+setTimeout(() => { console.log('TIMEOUT'); finish(); }, 320000);
 
 /* ---- static config gates (no server needed) ---- */
 function configGates() {
@@ -42,6 +42,23 @@ function configGates() {
   CFG.MATCH.killOptions.forEach(k => {
     ok(k > 0 || CFG.MATCH.timeOptions.every(t => t > 0),
       'kill option ' + k + ' still leaves every match with a way to end');
+  });
+
+  /* v8.37: EVERY MODE MUST BE ABLE TO END, by one of three routes — a kill
+     target, a clock, or elimination. Last Stand deliberately has neither a
+     target nor a clock, so the old rule ("time is always finite") is no longer
+     sufficient on its own and is replaced by the general one. */
+  Object.keys(CFG.MODES).forEach(m => {
+    const elim = CFG.isElimination(m);
+    const canEndOnTime = CFG.MATCH.timeOptions.some(t => t > 0);
+    const canEndOnKills = CFG.MATCH.killOptions.some(k => k > 0);
+    ok(elim || canEndOnTime || canEndOnKills,
+      'mode ' + m + ' has at least one way to end');
+    if (elim) {
+      ok(CFG.livesFor(m) >= 1, 'elimination mode ' + m + ' grants at least one life');
+      ok(CFG.MODES[m].maxPlayers >= 2,
+        'elimination mode ' + m + ' needs someone to be last standing against');
+    }
   });
   ok(CFG.MATCH.killOptions.indexOf(CFG.MATCH.defaultKills) >= 0, 'default kill target is a selectable option');
   ok(CFG.MATCH.timeOptions.indexOf(CFG.MATCH.defaultMinutes) >= 0, 'default duration is a selectable option');
@@ -366,7 +383,7 @@ function phase3(done) {
   });
 }
 
-phase1(() => phase2(() => phase3(() => phase4(() => phase6(() => phase7(() => phase8(phase9)))))));
+phase1(() => phase2(() => phase3(() => phase4(() => phase6(() => phase7(() => phase8(() => phase9(phase10))))))));
 
 
 /* ---------------- Phase 4: v4.3 — lobby flow, stance, mines, molotov ---------------- */
@@ -702,7 +719,7 @@ function phase8(done) {
    end to end: the room accepts the mode, players are spread across all ten
    squads, kills score to the RIGHT squad, uneven squads are allowed, and the
    winner is the highest scorer rather than "a beats b". */
-function phase9() {
+function phase9(done) {
   console.log('--- Phase 9: squad modes, 10 teams of 2 ---');
 
   ['sq2', 'sq4'].forEach(m => {
@@ -734,9 +751,23 @@ function phase9() {
   ok(CFG.activeTeams('ffa').length === 0, 'free-for-all fields no sides at all');
   ok(CFG.MATCH.defaultMode === 'ffa', 'a new room still opens in free-for-all by default');
   ok(Object.keys(CFG.MODES)[0] === 'ffa', 'free-for-all is first in the mode list');
-  ok(Object.keys(CFG.MODES).length === 10,
-    'ten modes offered: ffa + six head-to-head sizes + 3v3 + two squad modes [' +
-    Object.keys(CFG.MODES).length + ']');
+  /* v8.37: assert the SHAPE of the offering rather than a magic total, which
+     goes stale every time a mode is added and teaches people to edit the gate
+     instead of reading it. */
+  const cats = CFG.MODE_CATS.map(c => c.id);
+  ok(cats.join(',') === 'ffa,team,squads,last',
+    'four categories in order: Free For All, Team Battle, Squads, Last Stand [' + cats.join(',') + ']');
+  cats.forEach(c => {
+    const inCat = CFG.modesInCat(c);
+    ok(inCat.length >= 1, 'category "' + c + '" offers at least one variant [' + inCat.length + ']');
+    inCat.forEach(m => {
+      ok(!!CFG.MODES[m].vlabel, 'mode ' + m + ' has a variant label for the picker');
+    });
+  });
+  ok(Object.keys(CFG.MODES).every(m => cats.indexOf(CFG.MODES[m].cat) >= 0),
+    'every mode belongs to a category, so none can be orphaned out of the picker');
+  ok(CFG.modesInCat('team').length === 7, 'seven head-to-head sizes offered');
+  ok(CFG.modesInCat('last').length === 3, 'Last Stand offers solo plus two squad layouts');
 
   const N = 10;
   const socks = [];
@@ -832,8 +863,80 @@ function phase9() {
         const others = keys.filter(k => k !== 'a').reduce((t, k) => t + (tk[k] | 0), 0);
         ok(others === 0, 'no other squad was credited [' + others + ']');
         socks.forEach(s => s.disconnect());
-        setTimeout(finish, 400);
+        setTimeout(done, 400);
       });
     }
+  }
+}
+
+
+/* ---------------- Phase 10: v8.37 — Last Stand elimination ----------------
+   No kill target, no clock. The ONLY way this mode terminates is by everyone
+   but one being eliminated, so if the win condition is wrong the match hangs
+   forever rather than ending incorrectly — which is exactly the failure a gate
+   has to catch before a player finds it. */
+function phase10() {
+  console.log('--- Phase 10: Last Stand (one life, no timer) ---');
+
+  ['ls', 'lsq2', 'lsq4'].forEach(m => {
+    ok(CFG.isElimination(m), m + ' is an elimination mode');
+    ok(CFG.livesFor(m) === 1, m + ' grants exactly one life');
+  });
+  ok(CFG.MODES.ls.teams === false, 'Last Stand Solo has no teams');
+  ok(CFG.MODES.lsq2.teams === true, 'Last Stand Squads has teams');
+
+  const A = io(URL), B = io(URL), C = io(URL);
+  let ended = null, deaths = [];
+  let bPos = [0, 0.95, 0], cPos = [0, 0.95, 0];
+
+  [A, B, C].forEach(s => s.on('matchEnd', d => { if (!ended) ended = d; }));
+  A.on('death', d => deaths.push(d));
+  B.on('spawn', d => { if (d.id === B.id) bPos = d.pos; });
+  C.on('spawn', d => { if (d.id === C.id) cPos = d.pos; });
+
+  let up = 0;
+  [A, B, C].forEach(s => s.on('connect', () => { if (++up === 3) go(); }));
+
+  function go() {
+    A.emit('createRoom', { name: 'LastA', settings: { mode: 'ls', minutes: 10, killTarget: 15 } }, (res) => {
+      B.emit('joinRoom', { name: 'LastB', code: res.code }, () => {
+        C.emit('joinRoom', { name: 'LastC', code: res.code }, () => {
+          A.once('matchStart', () => {
+            /* Kill B, then C. B must NOT come back after dying once, and the
+               match must end the instant only A is left. */
+            setTimeout(() => {
+              A.emit('st', { p: [bPos[0] + 2, bPos[1], bPos[2]], ry: 0, rx: 0, cr: 0 });
+              setTimeout(() => {
+                A.emit('hit', { victim: B.id, w: 'sniper', part: 'head', pellets: 1, vp: bPos });
+                setTimeout(() => {
+                  B.emit('respawn');                       // must be refused
+                  A.emit('st', { p: [cPos[0] + 2, cPos[1], cPos[2]], ry: 0, rx: 0, cr: 0 });
+                  setTimeout(() => {
+                    A.emit('hit', { victim: C.id, w: 'sniper', part: 'head', pellets: 1, vp: cPos });
+                    setTimeout(check, 1200);
+                  }, 150);
+                }, 4000);
+              }, 120);
+            }, 11500);
+          });
+          [A, B, C].forEach(s => s.emit('setReady', { v: true }));
+          setTimeout(() => A.emit('startMatch'), 400);
+        });
+      });
+    });
+  }
+
+  function check() {
+    const bDeath = deaths.find(d => d.victimId === B.id);
+    ok(!!bDeath, 'the death event fired for the first elimination');
+    ok(bDeath && bDeath.out === true,
+      'a one-life death marks the operator OUT, not merely dead');
+    ok(bDeath && bDeath.livesLeft === 0, 'the death payload reports zero lives left');
+    ok(!!ended, 'the match ENDED by elimination with no clock and no kill target');
+    ok(ended && ended.reason === 'laststand',
+      'the end reason is elimination, not time or kills [' + (ended && ended.reason) + ']');
+    ok(ended && ended.winnerId === A.id, 'the last operator breathing is the winner');
+    [A, B, C].forEach(s => s.disconnect());
+    setTimeout(finish, 400);
   }
 }

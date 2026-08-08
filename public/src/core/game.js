@@ -345,6 +345,15 @@ var Game = (function () {
     UI.setCrosshair(false);
     UI.setScope(false);
     UI.showDeath(d);
+    /* v8.37 LAST STAND: one life. There is no countdown to show because there
+       is no coming back — the server refuses the respawn either way, so a
+       ticking clock that leads nowhere would be a lie. The player keeps the
+       map (M) and the scoreboard (TAB) and watches it out. */
+    if (d && d.out) {
+      if (deathInterval) { clearInterval(deathInterval); deathInterval = null; }
+      UI.setDeathEliminated();
+      return;
+    }
     var left = CFG.MATCH.respawnDelay;
     UI.setDeathCountdown(left);
     if (deathInterval) clearInterval(deathInterval);

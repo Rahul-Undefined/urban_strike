@@ -159,5 +159,43 @@ ok(hud && !hud.classList.contains('end-active'), 'hideEnd released the HUD again
 const rows = (cache['end-body'] ? cache['end-body'].children.length : 0);
 ok(rows === 5, 'all five operators are in the board [' + rows + ']');
 
+/* ---- STYLESHEET STRUCTURAL INTEGRITY (v8.36) ----
+
+   The v8.33 voice removal stripped style.css line by line on a /voice/i match.
+   That deleted selector LINES such as `#voice-ind {` while leaving their
+   declaration bodies behind as orphans. An orphan has no `{`, so the CSS parser
+   treats it as a malformed selector and keeps consuming forward looking for
+   one — swallowing the NEXT WHOLE RULE. `#live-board` was the next rule, which
+   is why the live scoreboard lost its 224px width and sprayed across the entire
+   screen. Brace depth had been -2 since v8.33 and three releases shipped that
+   way, because no gate had ever read the stylesheet as a structure.
+
+   Deleting by line is the mistake. These assertions are the cheap insurance. */
+const braceDepth = (css.match(/\{/g) || []).length - (css.match(/\}/g) || []).length;
+ok(braceDepth === 0, 'style.css braces balance [depth ' + braceDepth + ']');
+
+let depth = 0, orphans = [];
+css.split('\n').forEach((line, n) => {
+  const st = line.trim();
+  if (depth === 0 && st && !st.startsWith('/*') && !st.startsWith('*') &&
+      !st.startsWith('@') && !st.startsWith('}') && !st.startsWith('.') &&
+      !st.startsWith('#') && st.indexOf(':') > -1 && st.indexOf('{') < 0 &&
+      (st.endsWith(';') || st.endsWith(','))) {
+    orphans.push(n + 1);
+  }
+  depth += (line.split('{').length - 1) - (line.split('}').length - 1);
+});
+ok(orphans.length === 0,
+  'no orphaned declaration blocks at top level of style.css' +
+  (orphans.length ? ' [lines ' + orphans.slice(0, 5).join(', ') + ']' : ''));
+
+/* The elements the orphans were swallowing must actually be styled. */
+['#live-board', '#end-overlay', '#minimap', '#hud-layer'].forEach(sel => {
+  ok(new RegExp(sel.replace('#', '#') + '\\s*[,{]').test(css),
+    'a rule for ' + sel + ' survives in the stylesheet');
+});
+ok(/#live-board\s*\{[^}]*width:\s*\d+px/.test(css),
+  'the live scoreboard still has an explicit width (it sprayed full-screen without one)');
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

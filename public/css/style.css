@@ -354,11 +354,6 @@ button { font-family: var(--disp); cursor: pointer; }
 }
 #tc-mine, #tc-molotov { margin-left: 8px; }
 
-  position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 40;
-  font: 700 12px "Rajdhani", sans-serif; letter-spacing: 2px; color: #63d968;
-  background: rgba(10, 14, 18, 0.7); border: 1px solid rgba(99, 217, 104, 0.5);
-  padding: 3px 10px; pointer-events: none;
-}
 
 
 /* v4.7 live scoreboard */
@@ -379,12 +374,6 @@ button { font-family: var(--disp); cursor: pointer; }
 .mini-label { display: block; font-size: 10px; letter-spacing: 2px; color: #7d94a3; margin: 8px 0 4px; }
 
 
-  position: absolute; right: 12px; bottom: 96px; z-index: 40;
-  font: 11px/1.45 'Rajdhani', monospace; color: #cfe0f0;
-  background: rgba(8, 11, 16, 0.82); border: 1px solid rgba(120, 160, 200, 0.28);
-  border-radius: 4px; padding: 7px 10px; min-width: 208px; pointer-events: none;
-  letter-spacing: 0.03em;
-}
 
 /* ============================================================================
    v7.4 — MENU / LOBBY VISUAL PASS
@@ -732,3 +721,28 @@ button { font-family: var(--disp); cursor: pointer; }
 .ins.hot .ins-k { color: #f0a232; }
 .ins.bad { border-top-color: #e8563e; background: linear-gradient(180deg, rgba(58,26,22,0.85), rgba(28,18,18,0.85)); }
 .ins.bad .ins-k { color: #ef7d69; }
+
+
+/* v8.37 FIELD MANUAL (staging area). Deliberately quiet: it is reference a
+   player glances at while waiting, not something competing with the roster. */
+.manual { display: flex; flex-direction: column; gap: 6px; padding: 2px 0; }
+.mrow { display: flex; gap: 10px; align-items: baseline; font-size: 12px; line-height: 1.45; }
+.mrow b { flex: 0 0 46px; font: 700 10px/1 var(--mono); letter-spacing: 1.6px; color: var(--amber); padding-top: 2px; }
+.mrow span { color: var(--ink-dim); }
+.mrow.mnote span { color: #cfe0f0; }
+.mrow.mnote b { color: #63d968; }
+#btn-shuffle { margin-top: 10px; }
+
+
+/* v8.37 staging area team controls */
+.player-list .hdr { display: flex; align-items: center; gap: 8px; }
+.player-list .hdr .tcount { margin-left: auto; font-style: normal; font: 700 10px var(--mono);
+  letter-spacing: 1.4px; color: var(--ink-dim); }
+input.team-rename { background: transparent; border: 1px solid transparent; border-radius: 3px;
+  font: 700 12px "Rajdhani", sans-serif; letter-spacing: 2px; padding: 2px 5px; width: 11ch;
+  text-transform: uppercase; }
+input.team-rename:hover { border-color: rgba(120,150,175,0.35); }
+input.team-rename:focus { border-color: var(--amber); background: rgba(0,0,0,0.35); outline: none; }
+select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; padding: 1px 4px;
+  background: rgba(16,22,28,0.9); color: var(--ink); border: 1px solid rgba(120,150,175,0.35);
+  border-radius: 3px; margin-left: 6px; }

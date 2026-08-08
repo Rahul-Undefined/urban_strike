@@ -381,7 +381,28 @@ var Net = (function () {
 
       var g = r.av.group;
       g.position.copy(r.renderPos);
-      g.rotation.y = -r.ry;
+      /* v8.36 EVERY REMOTE PLAYER WAS DRAWN FACING BACKWARDS.
+
+         Rahul: "the player is looking forward but the other player sees his
+         backward."
+
+         Two conventions that were never reconciled. A three.js camera looks
+         down its own LOCAL -Z, and game.js aims it with `camera.rotation.y =
+         -yaw`. The avatar rig faces local +Z — the boot toe is offset +0.025 in
+         Z and the rifle is carried at +0.36 Z. Handing the group the camera's
+         formula therefore pointed the BODY the exact opposite way to the head
+         it belonged to.
+
+         Measured before the fix: the rendered body direction against the look
+         direction gave a dot of -0.78 at 0, 90 and 180 degrees of yaw —
+         consistently, wildly backwards.
+
+         The PI reconciles the two conventions. Nothing else needs to move: the
+         camera keeps its own formula, the minimap arrow reads PlayerCtl.yaw
+         directly and never went through the rig, and prone lies along the
+         body's own local axis so it rotates with the correction rather than
+         against it. */
+      g.rotation.y = -r.ry + Math.PI;
       /* v8.15: guard at the source too. A NaN reaching baseY makes the avatar
          invisible and permanently stationary, and nothing downstream repairs
          it. Belt and braces with the isFinite check in poseAvatar. */
@@ -482,6 +503,7 @@ var Net = (function () {
     sendProj: sendProj, sendThrow: sendThrow, requestRespawn: requestRespawn,
     placeMine: function (d, cb) { if (socket) socket.emit('placeMine', d, cb); },
     setPlayerTeam: function (id, team) { if (socket) socket.emit('setPlayerTeam', { id: id, team: team }); },
+    shuffleTeams: function () { if (socket) socket.emit('shuffleTeams'); },   // v8.37
     setReady: function (v) { if (socket) socket.emit('setReady', { v: !!v }); },
     peerName: function (id) { var r = remotes[id]; return (r && r.name) || 'Player'; },
     bindGameplayEvents: bindGameplayEvents,

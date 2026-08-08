@@ -9,7 +9,7 @@ var UI = (function () {
   function cache() {
     ['menu-layer', 'hud-layer', 'screen-main', 'screen-create', 'screen-join', 'screen-lobby',
       'create-name', 'create-mode', 'create-kills', 'create-time', 'btn-create', 'btn-goto-create', 'btn-goto-join',
-      'lobby-mode', 'lobby-map', 'create-map', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
+      'lobby-mode', 'lobby-cat', 'create-cat', 'lobby-var-field', 'create-var-field', 'btn-shuffle', 'lobby-map', 'create-map', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
       'join-name', 'join-code', 'btn-join',
       'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count', 'lobby-kills', 'lobby-time',
       'lobby-team-a', 'lobby-team-b', 'team-name-row',
@@ -18,7 +18,7 @@ var UI = (function () {
       'hp-fill', 'hp-num', 'armor-fill', 'armor-num',
       'weapon-name', 'ammo-mag', 'ammo-reserve', 'tc-frag', 'tc-smoke', 'tc-flash', 'reload-hint',
       'scoreboard', 'sb-code', 'sb-body',
-      'death-overlay', 'death-info', 'death-timer',
+      'death-overlay', 'death-info', 'death-timer', 'death-title',
       'end-overlay', 'end-title', 'end-sub', 'end-body', 'end-ins-left', 'end-ins-right', 'btn-back-lobby', 'end-hint',
       'pause-overlay', 'sens-range', 'sens-val', 'vol-range', 'vol-val', 'quality-shadows',
       'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading',
@@ -49,10 +49,35 @@ var UI = (function () {
       .filter(function (k) { return CFG.MAPS[k].ready !== false; })
       .map(function (k) { return { v: k, t: CFG.MAPS[k].label }; });
   }
-  function modeItems() {
-    return Object.keys(CFG.MODES).map(function (k) {
-      return { v: k, t: CFG.MODES[k].label + ' (' + CFG.MODES[k].maxPlayers + ')' };
+  /* v8.37 TWO-STEP MODE PICKER.
+
+     Thirteen modes in one dropdown was a wall of text — Rahul: "it is becoming
+     confusing". Category first, then the setup within it. The flat CFG.MODES
+     table is untouched and still what goes on the wire; this is only a view. */
+  function catItems() {
+    return CFG.MODE_CATS.map(function (c) { return { v: c.id, t: c.label }; });
+  }
+  function variantItems(catId) {
+    return CFG.modesInCat(catId).map(function (k) {
+      return { v: k, t: CFG.MODES[k].vlabel + '  (' + CFG.MODES[k].maxPlayers + ')' };
     });
+  }
+  /* v8.37: rename ONE side. The server merges rather than replaces, so sending
+     a single key never blanks the others. */
+  function pushTeamName(t, name) {
+    if (!t) return;
+    var tn = {}; tn[t] = name;
+    Net.updateSettings({ teamNames: tn });
+  }
+  function catOf(modeId) { return (CFG.MODES[modeId] || {}).cat || 'ffa'; }
+  /* A category with one setup has nothing to choose, so the second dropdown is
+     hidden rather than shown holding a single option. */
+  function syncVariants(catSel, varSel, fieldEl, modeId) {
+    if (!catSel || !varSel) return;
+    var cat = catSel.value || catOf(modeId);
+    var items = variantItems(cat);
+    fillSelect(varSel, items, items.some(function (i) { return i.v === modeId; }) ? modeId : items[0].v);
+    if (fieldEl) fieldEl.style.display = items.length > 1 ? '' : 'none';
   }
   function killItems() {
     // v8.30: 0 is the UNLIMITED sentinel — the clock ends the match instead.
@@ -65,11 +90,13 @@ var UI = (function () {
   }
   function populateSelects() {
     var M = CFG.MATCH;
-    fillSelect(els['create-mode'], modeItems(), M.defaultMode);
+    fillSelect(els['create-cat'], catItems(), catOf(M.defaultMode));
+    syncVariants(els['create-cat'], els['create-mode'], els['create-var-field'], M.defaultMode);
     fillSelect(els['create-map'], mapItems(), 'urban');
     fillSelect(els['create-kills'], killItems(), M.defaultKills);
     fillSelect(els['create-time'], timeItems(), M.defaultMinutes);
-    fillSelect(els['lobby-mode'], modeItems(), M.defaultMode);
+    fillSelect(els['lobby-cat'], catItems(), catOf(M.defaultMode));
+    syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], M.defaultMode);
     fillSelect(els['lobby-map'], mapItems(), 'urban');
     fillSelect(els['lobby-kills'], killItems(), M.defaultKills);
     fillSelect(els['lobby-time'], timeItems(), M.defaultMinutes);
@@ -151,12 +178,23 @@ var UI = (function () {
          with repeated clicks — no dropdown, no new UI, and the arrow still
          names exactly where the click sends them. Team sizes are never
          enforced, which is what allows "4 in one squad and 2 in another". */
+      /* v8.37: two sides keeps the one-click toggle it always had. Beyond two,
+         cycling would be up to nine clicks to reach the far squad, so the host
+         gets a direct picker instead. */
       var swap = '';
       var sides = CFG.activeTeams(d.settings.mode);
       if (mode.teams && d.hostId === myId && sides.indexOf(p.team) >= 0) {
-        var to = sides[(sides.indexOf(p.team) + 1) % sides.length];
-        swap = ' <button class="team-swap" data-id="' + p.id + '" data-to="' + to +
-               '" title="Move to ' + teamName(to) + '">&#8644; ' + teamName(to) + '</button>';
+        if (sides.length <= 2) {
+          var to = sides[(sides.indexOf(p.team) + 1) % sides.length];
+          swap = ' <button class="team-swap" data-id="' + p.id + '" data-to="' + to +
+                 '" title="Move to ' + teamName(to) + '">&#8644; ' + teamName(to) + '</button>';
+        } else {
+          swap = ' <select class="team-pick" data-id="' + p.id + '">' +
+            sides.map(function (t) {
+              return '<option value="' + t + '"' + (t === p.team ? ' selected' : '') + '>' +
+                esc(teamName(t)) + '</option>';
+            }).join('') + '</select>';
+        }
       }
       li.innerHTML = '<i class="dot" style="background:' + p.color + '"></i><b>' + p.name + '</b>' + host + you + vc + rdy + swap;
       els['lobby-players'].appendChild(li);
@@ -168,14 +206,46 @@ var UI = (function () {
         if (!b) return;
         Net.setPlayerTeam(b.getAttribute('data-id'), b.getAttribute('data-to'));
       });
+      /* v8.37: the picker used beyond two sides. Delegated on the same list so
+         a re-render never needs to rebind anything. */
+      els['lobby-players'].addEventListener('change', function (e) {
+        var sel = e.target.closest && e.target.closest('.team-pick');
+        if (sel) { Net.setPlayerTeam(sel.getAttribute('data-id'), sel.value); return; }
+        var inp = e.target.closest && e.target.closest('.team-rename');
+        if (inp) pushTeamName(inp.getAttribute('data-team'), inp.value);
+      });
+      els['lobby-players'].addEventListener('keydown', function (e) {
+        var inp = e.target.closest && e.target.closest('.team-rename');
+        if (inp && e.key === 'Enter') inp.blur();
+      });
+      els['lobby-players'].addEventListener('focusout', function (e) {
+        var inp = e.target.closest && e.target.closest('.team-rename');
+        if (inp) pushTeamName(inp.getAttribute('data-team'), inp.value);
+      });
     }
     if (mode.teams) {
-      ['a', 'b'].forEach(function (t) {
+      /* v8.37: EVERY side the mode fields, not just a and b. Rahul: "All teams
+         are currently not showing in the staging area just amber and cobalt."
+         Empty squads are still listed, because a host needs to see the empty
+         slot in order to drag someone into it. */
+      CFG.activeTeams(d.settings.mode).forEach(function (t) {
         var hdr = document.createElement('li');
         hdr.className = 'hdr t' + t;
-        hdr.textContent = 'TEAM ' + teamName(t);
+        var members = d.players.filter(function (p) { return p.team === t; });
+        var tint = (CFG.TEAMS[t] || {}).color || '';
+        if (d.hostId === myId) {
+          /* Renaming happens IN PLACE on the team header. Ten sides would need
+             ten inputs in the rules panel; here each one sits exactly where it
+             already reads, and there is nothing extra to find. */
+          hdr.innerHTML = '<input class="team-rename" data-team="' + t +
+            '" maxlength="12" value="' + esc(teamName(t)) +
+            '" style="color:' + tint + '"><em class="tcount">' + members.length + '</em>';
+        } else {
+          hdr.innerHTML = '<span style="color:' + tint + '">' + esc(teamName(t)) +
+            '</span><em class="tcount">' + members.length + '</em>';
+        }
         els['lobby-players'].appendChild(hdr);
-        d.players.filter(function (p) { return p.team === t; }).forEach(row);
+        members.forEach(row);
       });
     } else {
       d.players.forEach(row);
@@ -231,6 +301,14 @@ var UI = (function () {
     els['lobby-time'].disabled = !isHost;
     els['lobby-mode'].value = d.settings.mode || 'ffa';
     if (els['lobby-map']) els['lobby-map'].value = d.settings.map || 'urban';
+    if (els['lobby-cat'] && document.activeElement !== els['lobby-cat']) {
+      els['lobby-cat'].value = catOf(d.settings.mode);                       // v8.37
+      syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], d.settings.mode);
+    }
+    if (els['btn-shuffle']) {
+      els['btn-shuffle'].style.display =
+        (isHost && CFG.activeTeams(d.settings.mode).length >= 2) ? '' : 'none';
+    }
     els['lobby-kills'].value = String(d.settings.killTarget);
     /* v8.33: only meaningful in team modes, and only the host may edit. Skip
        writing the value back while the host is mid-typing, otherwise every
@@ -381,8 +459,9 @@ var UI = (function () {
     }
     var mode = CFG.MODES[(Net.getMatch().mode) || 'ffa'] || CFG.MODES.ffa;
     if (mode.teams) {
-      ['a', 'b'].forEach(function (t) {
+      CFG.activeTeams(d.settings.mode).forEach(function (t) {          // v8.37: all sides
         var members = roster.filter(function (p) { return p.team === t; });
+        if (!members.length) return;
         var total = members.reduce(function (s, p) { return s + p.kills; }, 0);
         var hdr = document.createElement('tr');
         hdr.className = 'team-hdr t' + t;
@@ -398,6 +477,10 @@ var UI = (function () {
 
   // ---------- overlays ----------
   function showDeath(d) {
+    /* v8.37: reset the elimination wording. Without this a Last Stand match
+       would leave the overlay saying ELIMINATED for every ordinary death in
+       every later match on the same page load. */
+    if (els['death-title']) els['death-title'].textContent = 'K.I.A.';
     els['death-overlay'].classList.remove('hidden');
     var wl = (CFG.WEAPONS[d.weapon] && CFG.WEAPONS[d.weapon].label) ||
              (CFG.THROWS[d.weapon] && CFG.THROWS[d.weapon].label) || '';
@@ -406,6 +489,12 @@ var UI = (function () {
   }
   function setDeathCountdown(sec) {
     els['death-timer'].textContent = sec > 0 ? 'Redeploying in ' + sec + '\u2026' : 'Redeploying\u2026';
+  }
+  /* v8.37: replace the respawn countdown with a plain statement of fact. */
+  function setDeathEliminated() {
+    if (els['death-title']) els['death-title'].textContent = 'ELIMINATED';
+    if (els['death-timer']) els['death-timer'].textContent =
+      'One life. Press M to watch the sector \u00b7 TAB for the board.';
   }
   function hideDeath() { els['death-overlay'].classList.add('hidden'); }
 
@@ -456,8 +545,13 @@ var UI = (function () {
         els['end-sub'].textContent = teamName('a') + ' ' + (d.teamKills.a | 0) + ' \u2013 ' +
           (d.teamKills.b | 0) + ' ' + teamName('b') + tail;
       } else {
+        /* v8.36: ALL sides, not the top three. Rahul: "see at the top it
+           showing only three teams." On an end screen there is room and the
+           full ladder is the point — you want to see where your squad placed,
+           not just who won. Sorted strongest first so the ladder still reads
+           top-down. */
         var top = tks.slice().sort(function (x, y) { return (d.teamKills[y] | 0) - (d.teamKills[x] | 0); });
-        els['end-sub'].textContent = top.slice(0, 3).map(function (t) {
+        els['end-sub'].textContent = top.map(function (t) {
           return teamName(t) + ' ' + (d.teamKills[t] | 0);
         }).join('  \u00b7  ') + tail;
       }
@@ -627,6 +721,18 @@ var UI = (function () {
       });
     }
     els['lobby-mode'].addEventListener('change', pushSettings);
+    /* v8.37: changing category rebuilds the setup list, then pushes, so the
+       server never sees a category without a valid mode under it. */
+    if (els['lobby-cat']) els['lobby-cat'].addEventListener('change', function () {
+      syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], els['lobby-mode'].value);
+      pushSettings();
+    });
+    if (els['create-cat']) els['create-cat'].addEventListener('change', function () {
+      syncVariants(els['create-cat'], els['create-mode'], els['create-var-field'], els['create-mode'].value);
+    });
+    if (els['btn-shuffle']) els['btn-shuffle'].addEventListener('click', function () {
+      Net.shuffleTeams();
+    });
     els['lobby-kills'].addEventListener('change', pushSettings);
     els['lobby-time'].addEventListener('change', pushSettings);
     /* Push on blur and on Enter rather than on every keystroke: a rename is a
@@ -714,7 +820,7 @@ var UI = (function () {
     setVitals: setVitals, setTeamScore: setTeamScore, setWeapon: setWeapon, setReloading: setReloading,
     setScope: setScope, setCrosshair: setCrosshair,
     setAttachments: setAttachments, setCooking: setCooking, announce: announce, setCrosshairGap: setCrosshairGap,
-    setGear: setGear, setCountdown: setCountdown, setTeamNames: setTeamNames, teamName: teamName,
+    setGear: setGear, setCountdown: setCountdown, setDeathEliminated: setDeathEliminated, setTeamNames: setTeamNames, teamName: teamName,
     setLoadingMap: setLoadingMap,
     getMapLabel: function () { return currentMapLabel; },
     setTimer: setTimer, setKillTarget: setKillTarget,

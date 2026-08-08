@@ -145,8 +145,8 @@ move every frame — so the only levers are part count, material sharing and LOD
 
 | Gate | Command | Current | Proves |
 |---|---|---|---|
-| Integration | `node server.js & sleep 3; node test.js` | 139 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
-| Models + weapons + keybinds | `node verify-models.js` | 125 | viewmodels, grants, loot exclusivity, scope ladder, weapon/viewmodel parity, sniper rules, keybind collisions |
+| Integration | `node server.js & sleep 3; node test.js` | 192 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
+| Models + weapons + keybinds | `node verify-models.js` | 137 | viewmodels, grants, loot exclusivity, scope ladder, weapon/viewmodel parity, sniper rules, keybind collisions |
 | Scope + loop isolation | `node tools/verify-scope.js` | 20 | cross-IIFE identifier leaks, drawHpBar ally paths, per-subsystem frame guards |
 | Hitbox + prone orientation | `node tools/verify-hitbox.js` | 27 | fires the real castRay at the real posed avatar in all 3 stances |
 | Map | `node tools/verify-map.js` | **992** | loot support / spawn clearance / airdrop landing, all 3 maps |

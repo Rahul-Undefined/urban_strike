@@ -63,7 +63,9 @@
       <div class="brand-eyebrow"><i class="live"></i>SECTOR 7 // INDUSTRIAL DISTRICT</div>
       <h1>URBAN<span>STRIKE</span></h1>
       <div class="brand-rule"><i></i><b>TACTICAL COMBAT SIMULATION</b><i></i></div>
-      <div class="brand-sub" id="brand-modes">2–10 player tactical combat · in your browser</div>
+      <!-- v8.37: the welcome screen sells the game. The control list moved to
+           the staging area, where a player has a reason to read it. -->
+      <div class="brand-sub" id="brand-modes">Twenty operators drop into one sector.<br>Only the count at the end is remembered.</div>
     </div>
     <div class="menu-actions">
       <button class="btn btn-primary" id="btn-goto-create"><span>CREATE ROOM</span></button>
@@ -75,7 +77,7 @@
       <div class="mstat"><b>11</b><span>ATTACHMENTS</span></div>
       <div class="mstat"><b>20</b><span>MAX OPERATORS</span></div>
     </div>
-    <div class="menu-foot">WASD move · SHIFT sprint · C crouch · Q/E lean · RMB aim · hold G cook frag · X prone · H molotov · V mine · wheel = scope zoom · 7 Kar98 · 9 exclusive · TAB scoreboard · M map</div>
+    <div class="menu-foot">No download. No account. A five-letter code and whoever you can talk into joining.</div>
   </section>
 
   <!-- CREATE -->
@@ -90,6 +92,9 @@
            Metro City existed for three versions but could not be chosen. -->
       <div class="field-row">
         <label class="field"><span>MODE</span>
+          <select id="create-cat"></select>
+        </label>
+        <label class="field" id="create-var-field"><span>SETUP</span>
           <select id="create-mode"></select>
         </label>
         <label class="field"><span>MAP</span>
@@ -160,6 +165,22 @@
             <div class="ready-bar"><i id="ready-fill"></i></div>
             <div class="ready-text" id="ready-text">0 of 0 ready</div>
           </div>
+          <!-- v8.37: host tools. Hidden entirely for non-hosts and in FFA. -->
+          <button class="btn wide ghost" id="btn-shuffle" style="display:none">SHUFFLE TEAMS</button>
+        </div>
+
+        <!-- v8.37 FIELD MANUAL — moved off the welcome screen, where nobody was
+             reading it, to the staging area, where a player is waiting anyway. -->
+        <div class="panel">
+          <div class="panel-head">FIELD MANUAL</div>
+          <div class="manual">
+            <div class="mrow"><b>MOVE</b><span>WASD &middot; SHIFT sprint &middot; C crouch &middot; X prone &middot; Q/E lean</span></div>
+            <div class="mrow"><b>FIGHT</b><span>LMB fire &middot; RMB aim &middot; R reload &middot; wheel scope zoom</span></div>
+            <div class="mrow"><b>GEAR</b><span>hold G frag &middot; B smoke &middot; F flash &middot; H molotov &middot; V mine</span></div>
+            <div class="mrow"><b>GUNS</b><span>1-9 select &middot; 3 AWM-S &middot; 7 Kar98 &middot; 9 exclusive loot</span></div>
+            <div class="mrow"><b>INTEL</b><span>TAB scoreboard &middot; M full map &middot; ESC release cursor</span></div>
+            <div class="mrow mnote"><b>TIP</b><span>In Last Stand you get ONE life. Press M often &mdash; camping shows up on the map.</span></div>
+          </div>
         </div>
       </div>
 
@@ -168,7 +189,8 @@
         <div class="panel" id="lobby-settings">
           <div class="panel-head">MATCH RULES</div>
           <div class="field-row">
-            <label class="field"><span>MODE</span><select id="lobby-mode"></select></label>
+            <label class="field"><span>MODE</span><select id="lobby-cat"></select></label>
+            <label class="field" id="lobby-var-field"><span>SETUP</span><select id="lobby-mode"></select></label>
             <label class="field"><span>MAP</span><select id="lobby-map"></select></label>
           </div>
           <div class="field-row">
@@ -243,7 +265,7 @@
 
   <!-- Death overlay -->
   <div id="death-overlay" class="hidden">
-    <div class="death-title">K.I.A.</div>
+    <div class="death-title" id="death-title">K.I.A.</div>
     <div class="death-sub" id="death-info"></div>
     <div class="death-timer" id="death-timer">Redeploying in 3…</div>
   </div>

@@ -10,7 +10,9 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.35** | CURRENT — prone fixed (was lying backwards, feet-first, rifle at the sky); packet validation; server survives a bad packet. Open list empty. |
+| **v8.37** | CURRENT — Last Stand (one life, no timer, solo + squads); mode picker grouped into 4 categories; staging area shows every team with inline rename, per-player picker and shuffle; welcome screen rewritten, field manual moved to staging. |
+| v8.36 | Good — remote avatars faced backwards (fixed); style.css was malformed since v8.33 and ate the live scoreboard (fixed); minimap label clipping; victory line lists all teams. |
+| v8.35 | Good — prone fixed (was lying backwards, feet-first, rifle at the sky); packet validation; server survives a bad packet. Open list empty. |
 | v8.34 | Good — 10 modes: FFA (default, 20p) + 2v2/3v3/4v4/5v5/6v6/8v8/10v10 + two squad modes (10x2, 5x4). Teams generalised from 2 to 10, uneven squads allowed. |
 | v8.33 | Good — Kar98 + hitscan snipers, 20-player cap + 10v10, host-renamed teams, voice chat removed, callsign "M" fixed, end screen ported from 8.31.2. |
 | v8.32 | Good — weapon carried at the chest (0.79m -> 0.36m), neck added, head hitbox now reads the rendered head (0 misses, 11/11 headshots all stances), shadow acne fixed. New verify-hitbox gate. |
@@ -82,6 +84,156 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+
+---
+
+## v8.37 — Last Stand, a mode picker that fits, and a staging area that shows the whole room
+
+### Last Stand — one life, no clock
+
+Thirteen modes now, in four categories. The new one has no kill target and no
+timer: it ends when one operator, or one squad, is the only thing left.
+
+- **One life.** Death sets `out` on the SERVER, at the only place a player can
+  actually die. The respawn handler refuses them; the client is never trusted to
+  decide who is still alive.
+- **Solo and Squads.** Solo is last operator standing; squads are out when every
+  member is out, and the last squad wins.
+- **A disconnect counts as elimination.** Without that, a room with one survivor
+  and one quitter would hang forever — there is no clock to rescue it.
+- **Zero survivors is a draw**, not a hang. Two operators trading final kills has
+  to resolve.
+- **Camping is answered by the map, not a timer**, exactly as Rahul specified:
+  pressing M shows where everyone is, so hiding buys position, not safety.
+- The death overlay drops the redeploy countdown and says ELIMINATED, because a
+  ticking clock that leads nowhere is a lie.
+
+### The mode list had become a wall
+
+Thirteen entries in one dropdown. It is now **category then setup**: Free For
+All, Team Battle, Squads, Last Stand — pick the second dropdown only when there
+is something to pick. The flat `CFG.MODES` table is untouched and still what
+goes on the wire; the grouping is a view over it.
+
+`test.js` now asserts the SHAPE of the offering — four categories in order,
+every mode belonging to one, every mode carrying a picker label — rather than a
+magic total that goes stale the moment a mode is added.
+
+### The staging area only ever showed two teams
+
+Rahul: *"All teams are currently not showing in the staging area just amber and
+cobalt."* Two loops still said `['a','b']` — the lobby roster and the TAB
+scoreboard. Both now walk `activeTeams`. Empty squads are still listed in the
+lobby, because a host needs to see the empty slot to drag someone into it.
+
+**Renaming happens in place, on the team header.** Ten sides would have needed
+ten inputs in the rules panel; instead each name is editable exactly where it
+already reads. Only one side is sent per edit and the server merges, so renaming
+squad C never blanks squad D.
+
+**Moving players scales with the mode.** Two sides keeps the one-click toggle.
+Beyond two, cycling would be up to nine clicks to reach the far squad, so the
+host gets a direct picker. Plus a **SHUFFLE TEAMS** button that re-rolls
+everyone — it clears every lock first, otherwise a previously-moved player would
+pin in place and the shuffle would look broken rather than partial.
+
+### Welcome screen, and where the tutorial belongs
+
+The control list was on the front door, where a player has no reason to read it,
+and the tagline described the file rather than the game. The welcome screen now
+leads with what the game IS; the full **FIELD MANUAL** moved to the staging area,
+where somebody is sitting waiting for a lobby to fill and will actually read it —
+including the Last Stand warning about having one life.
+
+### Every mode must be able to end
+
+The old rule was "time is always finite". Last Stand has neither a clock nor a
+kill target, so that rule is replaced with the general one: **every mode ends by
+a kill target, a clock, or elimination**, asserted per mode.
+
+### Gates
+
+| Gate | v8.36 | v8.37 |
+|---|---|---|
+| `test.js` | 139 / 0 | **192 / 0** |
+| `verify-models` | 125 / 0 | **137 / 0** |
+| everything else | unchanged | unchanged |
+
+Phase 10 plays a real Last Stand match: kills one operator, asserts the death is
+marked OUT with zero lives left, asserts a respawn request is refused, kills the
+second, and asserts the match ends with reason `laststand` and the survivor as
+winner — with no clock and no kill target anywhere in it.
+
+---
+
+## v8.36 — every remote player was facing backwards, and I broke the stylesheet
+
+Four confirmed defects from live testing. The larger redesign items from the
+same round of feedback (mode selection, staging area, Last Stand, welcome copy)
+are NOT in this build — they need design agreement first.
+
+### Every remote operator was drawn facing backwards
+
+Rahul: *"the player is looking forward but the other player sees his backward."*
+
+Two conventions never reconciled. A three.js camera looks down its own local
+**−Z**, and `game.js` aims it with `camera.rotation.y = -yaw`. The avatar rig
+faces local **+Z** — the boot toe is offset +0.025 in Z and the rifle is carried
+at +0.36 Z. `net.js` handed the avatar group the camera's formula, pointing the
+BODY the opposite way to the head it belonged to.
+
+Measured: rendered body direction against look direction gave a dot of **−0.78
+at 0, 90 and 180 degrees of yaw** — consistently, wildly backwards. After the
+correction: **dot 1.00, zero error, at every yaw.**
+
+Nothing caught it because every prior gate posed a single avatar in isolation,
+where there is no second player for it to look wrong to. `verify-hitbox` now
+compares rendered facing against camera facing at four yaws.
+
+### The live scoreboard sprayed across the whole screen — my fault
+
+The v8.33 voice removal stripped `style.css` **line by line** on a `/voice/i`
+match. That deleted selector lines such as `#voice-ind {` while leaving their
+declaration bodies orphaned. An orphan has no `{`, so the CSS parser treats it
+as a malformed selector and keeps consuming forward looking for one — **it
+swallows the next whole rule**. The next rule was `#live-board`, which is why
+the live scoreboard lost its `width: 224px` and sprayed edge to edge.
+
+Brace depth had been **−2 since v8.33**, and three releases shipped that way,
+because no gate had ever read the stylesheet as a structure rather than as text.
+
+Both orphans removed, depth back to 0. `verify-endscreen` now asserts brace
+balance, no top-level orphans, and that the elements those orphans were
+swallowing are still styled. Deleting CSS by line match was the mistake; the
+gate is the insurance.
+
+### The minimap district label was clipped
+
+"NEAR IRONGATE DEPOT" rendered as "AR IRONGATE DEP". It was drawn centred at a
+fixed 11px with no regard for width — but the minimap is round, and the usable
+space at the label's height is the **chord**, not the diameter. Five pixels up
+from the bottom of a circle is a narrow slice. The label now measures itself
+against that chord and steps the font down until it fits, with a floor, and
+ellipsises below it.
+
+### The victory line showed only three teams
+
+A deliberate top-three cut from v8.34 that was wrong for the end screen: there
+is room, and the full ladder is the point — you want to see where your squad
+placed, not just who won. All sides now listed, strongest first.
+
+### Gates
+
+| Gate | v8.35 | v8.36 |
+|---|---|---|
+| `verify-hitbox` | 27 / 0 | **32 / 0** |
+| `verify-endscreen` | 28 / 0 | **35 / 0** |
+| `test.js` | 139 / 0 | 139 / 0 |
+| everything else | unchanged | unchanged |
+
+### Confirmed good in live testing
+
+Sniper hitscan and the Kar98 — no changes made.
 
 ---
 
