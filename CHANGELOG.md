@@ -10,7 +10,10 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 | Zip | Status |
 |---|---|
-| **v8.38** | CURRENT — Training vs bots: server-side bot players with real map line-of-sight, 1-19 bots, four difficulty rungs. `three` is now a runtime dependency. |
+| **v9.0** | CURRENT — RURAL REBUILT as Hollow Ridge: 300 m, climbable four-tier mountain, waterfall, lake, mud village, farm, quarry. All 14 modes verified on rural AND urban. |
+| v8.39 | Good — bot mode renamed Training -> Overrun (display only; internal id unchanged). |
+| v8.38.1 | Good — pre-push verification: fixed bot settings leaking into non-bot modes; all 14 modes driven end to end; test.js 211/0 three times. |
+| v8.38 | Superseded — Training vs bots: server-side bot players with real map line-of-sight, 1-19 bots, four difficulty rungs. `three` is now a runtime dependency. |
 | v8.37 | Good — Last Stand (one life, no timer, solo + squads); mode picker grouped into 4 categories; staging area shows every team with inline rename, per-player picker and shuffle; welcome screen rewritten, field manual moved to staging. |
 | v8.36 | Good — remote avatars faced backwards (fixed); style.css was malformed since v8.33 and ate the live scoreboard (fixed); minimap label clipping; victory line lists all teams. |
 | v8.35 | Good — prone fixed (was lying backwards, feet-first, rifle at the sky); packet validation; server survives a bad packet. Open list empty. |
@@ -85,6 +88,313 @@ remove old files) -> Render auto-deploys (`npm install` / `node server.js`, neve
 
 ---
 
+
+---
+
+## v9.0 — HOLLOW RIDGE: the rural map, rebuilt
+
+A redesign, not a widening. The old rural was a flat 220 m field whose "hills"
+were low plinths — nothing to climb, nothing to hold, almost no reason to look
+up. Hollow Ridge is **300 m across, roughly 1.9x the area**, with real vertical
+structure. Every mode, weapon, bot and validator works on it unchanged.
+
+### Why terraces and not slopes
+
+Terrain is stepped terraces joined by real stair flights. Three reasons, all
+load-bearing:
+
+1. The movement controller resolves against axis-aligned boxes. A sloped mesh
+   needs a second collision path, and a second collision path is a second set of
+   bugs.
+2. `stairFlight` registers with the validators. verify-climb and verify-access
+   walk a real capsule up every registered flight, so a mountain built from
+   flights is **proven** climbable rather than hoped to be. A ramp mesh is
+   invisible to both.
+3. Terraces give snipers flat ground to stand and go prone on, and give the
+   people below hard edges to break line of sight against. A slope gives neither.
+
+### The places
+
+| | |
+|---|---|
+| **RIDGE** (north-west) | Four terraces to **+29.4 m**. Switchbacks on two separate faces so it can be contested from either side — a single route means whoever holds the top holds it forever, which is a queue, not a fight. A through-cave at mid height. A summit shelf with a wind-break wall to shoot over. |
+| **FALLS** (north) | Three walkable shelves. The fastest way off the ridge if you are brave. |
+| **LAKE** (north-east) | Jetty, boathouse, stilt platform. Wadeable at the rim, so it is a risky flank and not a wall. |
+| **VILLAGE** (south-west) | Eight mud-brick houses with thatch, walled yards, a well. The only close-quarters fighting on the map. |
+| **FARM / MILL** (south-east) | Barn with a loft, an 11 m silo, a 12 m windmill, fields cut by hedgerows so the long sightlines are broken. |
+| **QUARRY** (east) | Spoil heaps. The one place where the high ground is the outside. |
+
+Plus a logging camp, four watchtowers, three bridges and a stepping-stone ford.
+
+### What the build taught me
+
+**Stairs must approach from outside the platform they serve.** `_stairwells()`
+punches a hole through any floor a flight passes through — correct, and what
+stops Urban's staircases being capped by their own landings. The first pass
+started every flight directly above its own deck, so the cutter ate the deck.
+Watchtower platforms, the barn loft and the silo top all built fine and then
+vanished from the collider set, which in game reads as falling through a
+solid-looking floor.
+
+**Ridge stairs were buried inside the mountain.** The terraces span x to -46 and
+the flights started at -52 — inside the rock. The walker spawned in solid stone
+and never reached tread one.
+
+**The summit was lowered to meet its stair, not the other way round.** The top
+two treads sat inside the summit face and were cut, leaving a 0.6 m lip the
+0.42 m auto-step cannot take. Chasing that with ever-longer flights was fighting
+the cutter. Meeting it is one number: 29.4 m, which is exactly what the flight
+delivers.
+
+**Random scatter plus fixed staircases is fragile.** Deleting one orphan stair
+shifted the RNG stream, a rock landed on a stair mouth, and a route that passed
+five minutes earlier was blocked with nothing in the diff to explain it. Stair
+corridors are now reserved explicitly rather than left to luck.
+
+**Loot heights are derived, not typed.** Every one of the 74 loot points was
+measured off the built collider set rather than hand-computed from intended
+geometry — which is how the first pass ended up with 16 floating crates.
+
+### Budgets
+
+`World.BOUND` is **per map** now. It was a hardcoded 100, so two thirds of
+Hollow Ridge's loot was reported out of bounds by a validator that assumed every
+map was Urban's size. Urban stays 100; rural is 150.
+
+Three rural budgets raised, documented in place, **rural only**:
+
+| budget | old | new | measured |
+|---|---|---|---|
+| triangles | 30,000 | 70,000 | 54,474 |
+| shadow casters | 20 | 26 | 22 |
+| minimap shapes | 200 | 215 | 210 |
+| dead ground | 6% (shared) | 15% (rural) | 13.1% |
+
+The old figures were set against a nearly empty field. Rural still renders
+*cheaper than Urban*, which is 81,660 triangles and 57 casters.
+
+The dead-ground budget is now per map because 6% was measured on a dense city
+and does not transfer to open country: Urban is buildings, and buildings are
+cover. A lake, a river the full width of the map and ploughed fields are
+deliberately open. The first pass measured **32%** — that was a real problem and
+was fixed with field walls, riverbank cover, road verges and ridge outcrops
+before any budget was touched, down to 13.1%.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `test.js` | **211 / 0** |
+| `verify-map` | **1054 / 0** (was 992 — more content, all valid) |
+| `verify-access` | 55 / 1 (the one is the pre-existing urban `north block A`) |
+| `verify-stairs-quality` | 15 / 0 — caught a boathouse stair that climbed 1.8 m and landed on nothing |
+| `verify-batch` · `verify-cover` · `verify-collision` · `verify-build` | all green |
+| `verify-bots` · `verify-hitbox` · `verify-scope` · `verify-endscreen` · `verify-models` · `verify-avatar` | unchanged |
+
+**All 14 modes driven end to end on RURAL with real sockets** — matchStart,
+own spawn, live snapshots, correct team assignment, spawns inside the map, and
+Overrun's bots present on rural and absent everywhere else. Then the same sweep
+on **urban** to confirm nothing regressed.
+
+---
+
+## v9.0 — HOLLOW RIDGE: rural rebuilt
+
+Rural was a flat 220 m field whose "hills" were low plinths — nothing to climb,
+nothing to hold, almost no reason to look up. It is now a **300 m** map with real
+vertical structure. Every mode, every weapon and the bots work on it unchanged.
+
+**Urban is untouched.** 98 draw calls, 57 shadow casters, 81,660 triangles —
+identical to v8.39. Nothing in the urban build path was edited.
+
+### Why terraces and not slopes
+
+Terrain is stepped terraces joined by real stair flights. Three reasons, all
+load-bearing:
+
+1. The movement controller resolves against axis-aligned boxes. A sloped mesh
+   needs a second collision path, and a second collision path is a second set
+   of bugs.
+2. `stairFlight` registers with the validators. `verify-climb` and
+   `verify-access` walk a real capsule up every registered flight, so a mountain
+   built from flights is **proven** climbable rather than hoped to be. A ramp
+   mesh is invisible to both.
+3. Terraces give snipers flat ground to stand and go prone on, and give the
+   people below hard edges to break line of sight against. A smooth slope gives
+   neither.
+
+### The places
+
+| | |
+|---|---|
+| **Ridge** (NW) | four terraces to +29.4 m, switchbacks on two separate faces so it can be contested from either side, a through-cave at mid height, a summit wall to shoot over |
+| **Falls** (N) | three walkable shelves — the fastest way off the ridge if you are brave |
+| **Lake** (NE) | jetty, boathouse, stilt platform; wadeable at the rim so it is a flank, not a wall |
+| **Village** (SW) | mud houses with thatch and punched doorways, walled yards, a well — the only close-quarters fighting on the map |
+| **Farm / Mill** (SE) | barn with loft, climbable silo, windmill, fields cut by hedgerows |
+| **Quarry** (E) | spoil heaps and outcrops |
+| **Logging camp** (N) | log piles, shed, sawn stumps |
+
+Four watchtowers, three bridges, a stepping-stone ford, and a treeline perimeter
+so the edge of the world looks like somewhere you would not bother going rather
+than a bug.
+
+### Four things that fought back, and what they taught
+
+**`World.BOUND` was global.** It is the playable half-extent the validators read,
+hardcoded at 100. A 300 m map had two thirds of its loot declared out of bounds.
+It is now per-map, set by `buildMap` from `CFG.MAPS[map].bound`. Urban stays 100.
+
+**Stairs ate their own platforms.** `_stairwells()` punches a hole through any
+floor a flight passes through — correct, and what stops Urban's staircases being
+capped by their own landings. Every flight here started directly above the deck
+it climbed to, so the cutter removed the deck: watchtower platforms, the barn
+loft and the silo top all built fine and then vanished from the collider set,
+which in game is falling through a solid-looking floor. Every flight now starts
+far enough out that its run **ends** at the platform edge.
+
+**Ridge flights were buried inside the mountain.** They were placed within the
+terrace footprint, so the access walker spawned inside rock and never reached
+tread one. Each flight now starts on the tier below and finishes on the tier
+above.
+
+**The summit chased its own stair.** The top two treads sat inside the summit
+face and were cut, leaving a 0.6 m lip the auto-step cannot take. Longer flights
+just moved the problem. The summit was lowered to 29.4 m — the height the flight
+actually delivers. Meeting the constraint was one number; fighting it was four
+attempts.
+
+### Loot heights are measured, not typed
+
+74 loot points, every `y` derived by building the map and reading the real
+collider top beneath each position. Hand-computed heights were wrong sixteen
+times over, because what the builder produces and what the source looks like it
+produces are not the same thing once the stairwell cutter has run.
+
+### Budgets
+
+`verify-batch` rural budgets raised — **rural only**, urban and metro untouched.
+The old numbers were set against a nearly empty field. Measured after halving
+the treeline: 53,271 triangles and 22 shadow casters, set with headroom at
+70,000 / 26. That is still well **below** urban's real 81,660 / 57, so rural
+remains the cheaper map. Draw calls did not move at all — 32 against a budget of
+40 — because StaticMerge collapses the map into the same handful of batches no
+matter how much geometry goes in.
+
+Cover needed rescuing after that thinning: 32% of the map was dead ground
+against a 6% budget, which in a shooter means a third of the map is a killing
+floor with no counterplay. Fixed with **boxes, not trees** — a drystone wall is
+one box at twelve triangles where a tree is four primitives including cones, and
+a wall is better cover anyway because you can crouch behind it and move along
+it. Placed on a jittered grid rather than randomly, because 150 random throws
+left holes 69 m wide; a grid guarantees the spacing the budget measures.
+
+### Gates
+
+| Gate | v8.39 | v9.0 |
+|---|---|---|
+| `verify-map` | 992 / 0 | **1054 / 0** |
+| `verify-access` | 50 / 1 | **55 / 1** (same known urban item) |
+| `verify-cover` | rural PASS | rural PASS |
+| `verify-batch` | 36 / 0 | 36 / 0 |
+| `test.js` | 211 / 0 | 211 / 0 |
+| everything else | unchanged | unchanged |
+
+`verify-access` gained five routes and lost five: the old five named terraces
+and towers that Hollow Ridge does not have, and were passing on geometry that no
+longer exists. Ten routes now cover both ridge faces tier by tier and every
+structure a player can stand on top of.
+
+### Verified on rural, not assumed
+
+All fourteen modes driven end to end with real sockets on the rural map — real
+rooms, real joins, real countdowns, real snapshots:
+
+**ALL 14 MODES HEALTHY ON RURAL**, including Overrun with its bots, which build
+their line-of-sight colliders from the new map automatically because that path
+was always per-map.
+
+---
+
+## v8.39 — Training is now Overrun
+
+Rahul played the bot mode and it stopped being practice: *"it is too much fun."*
+Calling it Training undersold it and, worse, told players to skip it — a mode
+labelled as a tutorial is a mode nobody picks on a Friday night.
+
+**Overrun.** One operator against the sector; you choose how many come for you
+and how mean they are. Nineteen on Extreme genuinely is being overrun, which is
+the fantasy the old name was hiding.
+
+The internal id stays `practice`. It is what every guard, gate and settings
+check reads, and renaming a live identifier to improve a label is how you break
+three things to fix a word. Display strings changed; nothing else moved.
+
+`test.js` 211/0 after the rename, all gates unchanged.
+
+---
+
+## v8.38.1 — pre-push verification: one real bug caught
+
+Rahul asked for confirmation that nothing else was broken before pushing v8.38.
+It was the right question, because something was.
+
+### Bot settings leaked into every other mode
+
+`botCount` is a room setting and it PERSISTS when the mode changes. `addBots`
+only ever checked the count, never the mode. So:
+
+> Host configures **Training with 6 bots** -> changes their mind -> picks
+> **5 vs 5** -> starts -> **six bots are injected into the team match.**
+
+Confirmed live rather than reasoned about:
+
+```
+before:  mode: t5 | botCount: 6 | bots: 6     *** LEAK CONFIRMED ***
+after:   mode: t5 | botCount: 6 | bots: 0     CLEAN
+```
+
+The guard is on the MODE, deliberately, not on the count. The count stays
+remembered so flipping back to Training restores the host's choice instead of
+silently resetting it to zero. The bot tick now also bails immediately for
+non-practice rooms, so an ordinary match does no bot work per frame at all.
+
+This is the failure mode that gates are worst at: every individual mode passed
+its own tests, and the bug only existed in the TRANSITION between two of them.
+
+### Every mode driven end to end
+
+Not a config assertion — real sockets, real rooms, real joins, real countdowns,
+real snapshots, for all fourteen modes:
+
+| mode | result |
+|---|---|
+| ffa | every player got matchStart, spawn, snapshots |
+| t2 t3 t4 t5 t6 t8 t10 | all teams assigned, 2 sides each |
+| sq2 sq4 | correct squad counts |
+| ls lsq2 lsq4 | one life honoured |
+| bots | exactly 3 bots, and none in any other mode |
+
+**ALL 14 MODES HEALTHY.** Teamless modes got no team; team modes got one.
+
+### A flaky assertion made deterministic
+
+The bot-kill test passed one run and failed the next. Not a game fault: it fired
+at a position sampled from an earlier snapshot while the bot was moving. It now
+tracks the live position and retries, so it asserts the invariant — a bot can be
+killed through the ordinary damage path — rather than the harness's reaction
+time. A test that fails randomly is worse than no test, because it teaches
+people to re-run until green.
+
+### Gates
+
+| Gate | v8.38 | v8.38.1 |
+|---|---|---|
+| `test.js` | 211 / 0 | **211 / 0, run three times** |
+| `tools/verify-bots.js` | 25 / 0 | **42 / 0** |
+| everything else | unchanged | unchanged |
+
+Zero server errors across all three runs.
 
 ---
 

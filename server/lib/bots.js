@@ -156,6 +156,16 @@ module.exports = function initBotsModule(ctx) {
   /* ---- lifecycle ---- */
 
   function addBots(room) {
+    /* v8.38.1 BOT SETTINGS LEAKED ACROSS MODES.
+
+       `botCount` is a room setting and it PERSISTS when the mode changes. A
+       host who set up Training with six bots and then switched to 5 vs 5 got
+       six bots injected into their team match — confirmed live, not theorised.
+
+       The guard is on the MODE, not on the count, because the count is
+       remembered on purpose: flipping back to Training should restore the
+       host's choice rather than silently reset it to zero. */
+    if (!(CFG.MODES[room.settings.mode] || {}).practice) return;
     const want = Math.max(0, Math.min(19, (room.settings.botCount | 0)));
     if (!want) return;
     const cols = buildColliders(room.settings.map || 'urban');
@@ -216,6 +226,8 @@ module.exports = function initBotsModule(ctx) {
 
   function tick(room, dt) {
     if (!room || room.state !== 'playing') return;
+    if (!(CFG.MODES[room.settings.mode] || {}).practice) return;   // v8.38.1: nothing to do
+
     const S = skillOf(room);
     const t = now();
     const spawns = (mapData(room).SPAWNS) || [];

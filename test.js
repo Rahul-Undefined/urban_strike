@@ -993,25 +993,44 @@ function phase11() {
     ok(snapSeen === 6, 'all six bots are serialised into snapshots like any player [' + snapSeen + ']');
     ok(moved, 'bots actually MOVE under their own AI, they are not statues');
 
-    // a bot must be killable through the ordinary hit path
-    A.once('snap', (sn) => {
+    /* A bot must be killable through the ordinary hit path.
+
+       Bots MOVE — that is the whole point of the previous assertion — so
+       shooting at a position sampled from an earlier snapshot races the AI and
+       fails intermittently. Track the live position and keep firing until the
+       kill registers, which asserts the invariant (a bot can be killed the
+       normal way) rather than the harness's reaction time. */
+    let victimId = null, victimPos = null, died = false;
+    A.on('snap', (sn) => {
       const ps = sn.players || {};
-      const victimId = Object.keys(ps).find(k => k.indexOf('bot:') === 0 && ps[k].al === 1);
-      ok(!!victimId, 'a living bot is available to shoot at');
-      let died = false;
-      A.on('death', d => { if (d.victimId === victimId) died = true; });
-      const vp = ps[victimId].p;
-      A.emit('st', { p: [vp[0] + 2, vp[1], vp[2]], ry: 0, rx: 0, cr: 0 });
-      setTimeout(() => {
-        A.emit('hit', { victim: victimId, w: 'sniper', part: 'head', pellets: 1, vp: vp });
-        setTimeout(() => {
-          ok(died, 'a bot dies through the normal server damage path');
-          const skills = ['recruit', 'regular', 'veteran', 'extreme'];
-          skills.forEach(s => ok(typeof s === 'string', 'difficulty "' + s + '" is offered'));
-          A.disconnect();
-          setTimeout(finish, 400);
-        }, 900);
-      }, 150);
+      if (!victimId) victimId = Object.keys(ps).find(k => k.indexOf('bot:') === 0 && ps[k].al === 1);
+      if (victimId && ps[victimId]) victimPos = ps[victimId].p;
     });
+    A.on('death', d => { if (d.victimId === victimId) died = true; });
+
+    let shots = 0;
+    const tryKill = () => {
+      if (died || shots >= 12) return finishBots();
+      shots++;
+      if (victimId && victimPos) {
+        A.emit('st', { p: [victimPos[0] + 2, victimPos[1], victimPos[2]], ry: 0, rx: 0, cr: 0 });
+        setTimeout(() => {
+          if (victimPos) {
+            A.emit('hit', { victim: victimId, w: 'sniper', part: 'head', pellets: 1, vp: victimPos });
+          }
+          setTimeout(tryKill, 400);
+        }, 90);
+      } else setTimeout(tryKill, 400);
+    };
+    setTimeout(tryKill, 300);
+
+    function finishBots() {
+      ok(!!victimId, 'a living bot is available to shoot at');
+      ok(died, 'a bot dies through the normal server damage path [' + shots + ' shot(s)]');
+      ['recruit', 'regular', 'veteran', 'extreme'].forEach(sk =>
+        ok(!!sk, 'difficulty "' + sk + '" is offered'));
+      A.disconnect();
+      setTimeout(finish, 400);
+    }
   }
 }

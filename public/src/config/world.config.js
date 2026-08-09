@@ -64,7 +64,12 @@
        free-for-all shaped so every bot is hostile — a practice room where half
        the room is on your side teaches you nothing. Startable solo, which is
        the whole point: no waiting for a lobby to fill. */
-    bots: { label: 'Training \u00b7 vs Bots', vlabel: 'Solo vs bots \u00b7 you pick how many',
+    /* v8.39: renamed from "Training". Rahul played it and it stopped being
+       practice — calling it Training undersold it and told players to skip it.
+       The internal id stays `practice` on purpose: it is what every guard, gate
+       and settings check reads, and renaming a live identifier to improve a
+       label is how you break three things to fix a word. */
+    bots: { label: 'Overrun', vlabel: 'One operator against the sector',
             cat: 'practice', teams: false, teamCount: 0, maxPlayers: 20, practice: true },
     lsq4: { label: 'Last Stand \u00b7 Squads 5 \u00d7 4',  vlabel: '5 squads of 4',
             cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20, lives: 1 }
@@ -80,8 +85,8 @@
       blurb: 'Many small squads, one sector. Your squad\u2019s kills are your score.' },
     { id: 'last',   label: 'Last Stand',
       blurb: 'One life. No respawn. No clock. Last one breathing wins.' },
-    { id: 'practice', label: 'Training',
-      blurb: 'Bots, your call on how many and how mean. Learn the map, then raise the bar.' }
+    { id: 'practice', label: 'Overrun',
+      blurb: 'You against the sector. Choose how many come for you, and how mean they are.' }
   ];
   function modesInCat(catId) {
     return Object.keys(MODES).filter(function (m) { return MODES[m].cat === catId; });
@@ -119,7 +124,7 @@
 
   var MAPS = {
     urban: { label: 'Urban', ready: true },
-    rural: { label: 'Rural', ready: true },
+    rural: { label: 'Rural', ready: true, bound: 150 },
     metro: { label: 'Metro City', ready: true, render: NIGHT },
   };
 

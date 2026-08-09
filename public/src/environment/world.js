@@ -766,7 +766,13 @@ var World = (function () {
   }
 
   return {
-    BOUND: 100, // playable half-extent (V4.2)
+    /* v9.0: BOUND is now the CURRENT map's half-extent, set by buildMap, not a
+       constant. Urban stays 100. Rural is 150 because Hollow Ridge is a 300 m
+       map and a validator that assumed 100 would have declared two thirds of
+       its loot "out of bounds". Nothing clamps the player against this — it is
+       metadata the validators read — but leaving it hardcoded would have meant
+       silently failing every new map that is not exactly Urban's size. */
+    BOUND: 100,
     _colliders: function () { return colliders; }, // test-only introspection
     _stairs: function () { return stairs; },       // test-only introspection
     _recordBoxes: function (on) { boxLog = on ? [] : null; return boxLog; },
@@ -1428,6 +1434,7 @@ World.build = function (sceneRef) {
    Rebuild-on-map-change is safe: reset() disposes the previous world group. */
 World.buildMap = function (sceneRef, map) {
   map = (CFG.MAPS && CFG.MAPS[map]) ? map : 'urban';
+  World.BOUND = (CFG.MAPS[map] && CFG.MAPS[map].bound) || 100;   // v9.0: per map
   if (World.isBuilt()) {
     if (World.builtMap === map) return;
     World.reset();

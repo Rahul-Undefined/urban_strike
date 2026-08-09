@@ -319,7 +319,7 @@ var UI = (function () {
       els['btn-shuffle'].style.display =
         (isHost && CFG.activeTeams(d.settings.mode).length >= 2) ? '' : 'none';
     }
-    /* v8.38: bot controls belong to Training only. */
+    /* v8.38: bot controls belong to Overrun only. */
     var isPractice = (CFG.MODES[d.settings.mode] || {}).cat === 'practice';
     if (els['bot-row']) els['bot-row'].style.display = isPractice ? '' : 'none';
     if (els['lobby-bots'] && document.activeElement !== els['lobby-bots']) {

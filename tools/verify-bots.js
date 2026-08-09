@@ -81,6 +81,33 @@ ok(!!pkg.dependencies.three,
   '`npm install --production` skips devDependencies');
 ok(!(pkg.devDependencies || {}).three, 'three is not left duplicated in devDependencies');
 
+/* ---- BOT SETTINGS MUST NOT LEAK INTO OTHER MODES ----
+
+   `botCount` is a room setting and it persists when the mode changes. A host
+   who configured Training with six bots and then switched to 5 vs 5 got six
+   bots injected into their team match. Confirmed live, not theorised.
+
+   The guard is on the MODE rather than on the count, because the count is
+   remembered deliberately — flipping back to Training should restore the
+   host's choice instead of silently resetting it. */
+ok(/\(CFG\.MODES\[room\.settings\.mode\] \|\| \{\}\)\.practice\) return/.test(srv),
+  'addBots refuses to run outside a practice mode');
+/* Strip comments before checking ORDER — the explanation above the guard
+   mentions botCount, and matching prose would make this assert nothing. */
+const srvCode = srv.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+const addIdx = srvCode.indexOf('function addBots');
+const guardIdx = srvCode.indexOf('.practice) return', addIdx);
+const countIdx = srvCode.indexOf('room.settings.botCount', addIdx);
+ok(guardIdx > -1 && countIdx > -1 && guardIdx < countIdx,
+  'the mode guard runs BEFORE botCount is even read');
+ok(/function tick[\s\S]{0,240}\.practice\) return/.test(srv),
+  'the bot tick also bails immediately for non-practice rooms');
+Object.keys(CFG.MODES).forEach(m => {
+  const practice = !!CFG.MODES[m].practice;
+  ok(practice === (CFG.MODES[m].cat === 'practice'),
+    'mode ' + m + ': the practice flag and the practice category agree');
+});
+
 /* ---- the mode itself ---- */
 ok(CFG.MODES.bots && CFG.MODES.bots.cat === 'practice', 'Training mode is registered in its own category');
 ok(CFG.MODES.bots.teams === false, 'Training is free-for-all shaped: every bot is hostile');

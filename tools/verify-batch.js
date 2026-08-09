@@ -82,10 +82,30 @@ for (const f of FILES) {
    64.3k triangles were being rasterised twice. Shadow casters and triangles are
    now budgeted alongside draw calls, because those are what actually cost
    frames on the hardware this game has to run on. */
+/* v9.0 RURAL BUDGETS RAISED — DELIBERATELY, AND ONLY RURAL.
+
+   These are ratchets, so raising one needs a reason on the record rather than a
+   quiet edit. The old rural numbers were set against a nearly empty 220 m field
+   whose "hills" were low plinths. Hollow Ridge is a 300 m map — roughly 1.9x
+   the area — carrying a four-tier mountain, a waterfall, a lake with structures
+   on it, a mud village, a farm with a silo and windmill, a quarry and a logging
+   camp.
+
+   Measured after thinning the treeline by half: 53,271 triangles and 22 shadow
+   casters. Set with headroom at 70,000 / 26, which is still well BELOW urban's
+   real cost of 81,660 triangles and 57 casters — so rural remains the cheaper
+   map to render, as it should be. Draw calls did not move: 32, unchanged
+   budget of 40, because StaticMerge still collapses the map into the same
+   handful of batches no matter how much geometry goes in.
+
+   Urban and metro budgets are untouched. */
 const BUDGET = { urban: 115, rural: 40, metro: 45 };
-const CAST_BUDGET = { urban: 62, rural: 20, metro: 22 };
-const TRI_BUDGET = { urban: 120000, rural: 30000, metro: 26000 };
-const MM_BUDGET = { urban: 320, rural: 200, metro: 260 };
+const CAST_BUDGET = { urban: 62, rural: 26, metro: 22 };
+const TRI_BUDGET = { urban: 120000, rural: 70000, metro: 26000 };
+/* v9.0: rural 200 -> 215. Hollow Ridge is 1.9x the area of the old map and
+   its cover is drystone walls, which the minimap draws as shapes. Measured at
+   210. Urban's 320 is untouched. */
+const MM_BUDGET = { urban: 320, rural: 215, metro: 260 };
 /* Urban ran 10 lights before v7.5 (3 scene + 7 point). Three point lights were
    removed: two street lamps and one open-air construction work light, all
    replaced by emissive geometry. The four that remain light ENCLOSED volumes

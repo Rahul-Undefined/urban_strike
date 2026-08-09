@@ -148,11 +148,11 @@ move every frame — so the only levers are part count, material sharing and LOD
 | Integration | `node server.js & sleep 3; node test.js` | 211 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
 | Models + weapons + keybinds | `node verify-models.js` | 139 | viewmodels, grants, loot exclusivity, scope ladder, weapon/viewmodel parity, sniper rules, keybind collisions |
 | Scope + loop isolation | `node tools/verify-scope.js` | 20 | cross-IIFE identifier leaks, drawHpBar ally paths, per-subsystem frame guards |
-| Training bots | `node tools/verify-bots.js` | 25 | collider build, ground-slab trap, LOS, ordering, difficulty ladder |
+| Training bots | `node tools/verify-bots.js` | 42 | collider build, ground-slab trap, LOS, ordering, difficulty ladder |
 | Hitbox + prone orientation | `node tools/verify-hitbox.js` | 27 | fires the real castRay at the real posed avatar in all 3 stances |
-| Map | `node tools/verify-map.js` | **992** | loot support / spawn clearance / airdrop landing, all 3 maps |
+| Map | `node tools/verify-map.js` | **1054** | loot support / spawn clearance / airdrop landing, all 3 maps |
 | Build chain | `node tools/verify-build.js` | PASS | real-three vm build of all 3 maps + reset + coplanar-ground gate |
-| Ascent | `node tools/verify-access.js` | **50/51** *(1 known, see below)* | walks a capsule up every staircase |
+| Ascent | `node tools/verify-access.js` | **55/56** *(1 known, see below)* | walks a capsule up every staircase |
 | Lifts | `node tools/verify-lifts.js` | 98 | every lift stop has floor + head clearance |
 | Cover | `node tools/verify-cover.js` | PASS | dead-ground budget (<6%); `--report` prints an ASCII map |
 | **Batching** | `node tools/verify-batch.js` | 36 | draw-call budget + the four batching invariants + edge-on decals |
@@ -469,6 +469,30 @@ Blocked: Rahul is still reviewing Rural and will supply direction.
 | Voice TURN | Blocked on Rahul supplying credentials |
 
 ---
+
+## 8a. v9.0 — HOLLOW RIDGE (rural)
+
+**Stair flights must start OUTSIDE the platform they serve.** `_stairwells()`
+cuts a hole through any floor a flight crosses, so a flight starting above its
+own deck DELETES that deck — it still renders and you fall through it.
+run = steps * stepDepth; make the run END at the platform edge.
+
+**A flight's total rise must equal the deck top**, or the walker stops one tread
+short and the gate calls the deck unreachable. If the cutter eats the top
+treads, LOWER THE DECK to what the flight delivers rather than lengthening the
+flight into the wall.
+
+**Reserve stair corridors from random scatter.** `onStairCorridor()` in
+rural.js exists because deleting one unrelated stair shifted the RNG stream and
+dropped a rock on a stair mouth.
+
+**Derive loot heights from the built colliders, never by hand.**
+
+**`World.BOUND` is per map** (`CFG.MAPS[x].bound`). Urban 100, rural 150.
+
+**Rural budgets are rural's**: triangles 70k, casters 26, minimap 215, dead
+ground 15%. Raised deliberately in v9.0 with measured figures recorded; ratchets
+from here.
 
 ## 8a. v8.35 — PRONE, AND THE LESSON IN IT
 
