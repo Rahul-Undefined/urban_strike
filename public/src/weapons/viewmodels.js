@@ -206,6 +206,138 @@ var WeaponModels = (function () {
       cylPart(g, 0, 0.005, -1.1, 0.024, 0.08, steel);                  // brake
       return g;
     })();
+    /* ===================== v9.3 — THE ARMOURY EXPANSION =====================
+       Nine new weapons. There IS a generic-rifle fallback below, so a missing
+       model here would not crash — it would be worse than that: every new gun
+       would silently render as the same grey rifle and nobody would notice
+       until a screenshot. verify-models asserts an explicit entry per weapon
+       for exactly that reason.
+
+       Each one is built to be recognisable at a glance in first person, because
+       that is the only place a viewmodel is ever seen: distinct silhouette,
+       distinct magazine position, distinct furniture colour. Triangle cost is
+       tiny (a viewmodel is one weapon on screen, not 20 avatars) but the parts
+       are still kept to the shared palette so no new material is created. */
+    models.aug = (function () {                                        // bullpup, integral optic
+      var g = new THREE.Group();
+      part(g, 0, -0.005, 0.04, 0.066, 0.1, 0.44, green);               // one-piece shell
+      cylPart(g, 0, 0.012, -0.34, 0.017, 0.34, dark);                  // barrel
+      part(g, 0, -0.075, -0.12, 0.05, 0.09, 0.07, green);              // forward grip
+      cylPart(g, 0, 0.085, -0.02, 0.03, 0.26, gunmetal);               // integral scope tube
+      cylPart(g, 0, 0.085, -0.16, 0.034, 0.028, steel);                // objective
+      var magA = new THREE.Group(); magA.position.set(0, -0.1, 0.16); g.add(magA);
+      part(magA, 0, 0, 0, 0.044, 0.13, 0.06, tan);                     // mag behind the grip
+      g.userData.mag = magA; g.userData.magHome = magA.position.clone();
+      part(g, 0, -0.06, 0.05, 0.05, 0.06, 0.06, green);                // trigger group
+      return g;
+    })();
+    models.famas = (function () {                                      // bullpup, tall carry handle
+      var g = new THREE.Group();
+      part(g, 0, 0, 0.05, 0.06, 0.1, 0.46, dark);                      // shell
+      cylPart(g, 0, 0.01, -0.36, 0.015, 0.32, gunmetal);               // long thin barrel
+      part(g, 0, 0.088, -0.06, 0.022, 0.055, 0.36, dark);              // full-length carry handle
+      part(g, 0, -0.075, -0.06, 0.045, 0.08, 0.06, dark);              // fore grip
+      var magF = new THREE.Group(); magF.position.set(0, -0.1, 0.18); g.add(magF);
+      part(magF, 0, 0, 0, 0.04, 0.12, 0.055, gunmetal);
+      g.userData.mag = magF; g.userData.magHome = magF.position.clone();
+      part(g, 0, 0.05, -0.5, 0.014, 0.05, 0.014, steel);               // bipod stub
+      return g;
+    })();
+    models.akm = (function () {                                        // heavier AK, slanted brake
+      var g = rifleBase(wood, 0.78, true);
+      var a1 = part(g.userData.mag, 0, 0, 0, 0.044, 0.14, 0.072, gunmetal); a1.rotation.x = 0.2;
+      var a2 = part(g.userData.mag, 0, -0.11, 0.03, 0.044, 0.1, 0.066, gunmetal); a2.rotation.x = 0.48;
+      var brake = cylPart(g, 0, 0.006, -0.82, 0.026, 0.1, steel); brake.rotation.z = 0.22;
+      part(g, 0, 0.048, -0.3, 0.022, 0.03, 0.1, wood);                 // upper handguard
+      return g;
+    })();
+    models.k98w = (function () {                                       // WWII bolt rifle, all wood
+      var g = rifleBase(wood, 1.0, true);
+      part(g, 0, -0.02, -0.3, 0.058, 0.07, 0.52, wood);                // full-length stock
+      part(g.userData.mag, 0, -0.02, 0, 0.05, 0.05, 0.09, wood);       // internal box mag bulge
+      var bolt = cylPart(g, 0.055, 0.03, 0.03, 0.012, 0.1, steel, false); bolt.rotation.z = 1.15;
+      cylPart(g, 0.055, 0.03, -0.02, 0.014, 0.05, steel);              // bolt body
+      part(g, 0, 0.058, -0.86, 0.014, 0.045, 0.02, gunmetal);          // hooded front sight
+      part(g, 0, 0.05, -0.12, 0.03, 0.024, 0.06, gunmetal);            // tangent rear sight
+      cylPart(g, 0, -0.045, -0.62, 0.012, 0.16, steel);                // cleaning rod
+      return g;
+    })();
+    models.garand = (function () {                                     // WWII semi-auto
+      var g = rifleBase(wood, 0.98, true);
+      part(g, 0, -0.02, -0.28, 0.056, 0.066, 0.48, wood);              // stock
+      part(g.userData.mag, 0, -0.01, 0, 0.048, 0.045, 0.08, wood);     // en-bloc clip well
+      cylPart(g, 0, -0.05, -0.5, 0.014, 0.3, steel);                   // op rod
+      part(g, 0, 0.055, -0.84, 0.016, 0.042, 0.018, gunmetal);         // front sight wings
+      part(g, 0, 0.05, -0.08, 0.032, 0.028, 0.05, gunmetal);           // aperture rear
+      return g;
+    })();
+    models.ump9 = (function () {                                       // boxy polymer SMG
+      var g = new THREE.Group();
+      part(g, 0, 0, -0.04, 0.058, 0.09, 0.32, tan);                    // squared receiver
+      cylPart(g, 0, 0.01, -0.34, 0.015, 0.22, dark);                   // short barrel
+      part(g, 0, -0.085, 0.04, 0.048, 0.1, 0.055, dark);               // pistol grip
+      var magU = new THREE.Group(); magU.position.set(0, -0.11, -0.11); g.add(magU);
+      part(magU, 0, 0, 0, 0.04, 0.15, 0.055, tan);                     // straight stick mag
+      g.userData.mag = magU; g.userData.magHome = magU.position.clone();
+      part(g, 0, 0.058, -0.12, 0.03, 0.022, 0.24, dark);               // top rail
+      part(g, 0, -0.01, 0.16, 0.04, 0.05, 0.18, dark);                 // folding stock arm
+      part(g, 0, -0.02, 0.26, 0.05, 0.08, 0.03, dark);                 // stock plate
+      return g;
+    })();
+    models.mp5 = (function () {                                        // slim, tri-lug, curved mag
+      var g = new THREE.Group();
+      part(g, 0, 0, -0.06, 0.05, 0.082, 0.34, dark);                   // receiver
+      cylPart(g, 0, 0.008, -0.32, 0.014, 0.22, gunmetal);              // barrel shroud
+      part(g, 0, -0.055, -0.2, 0.045, 0.055, 0.16, dark);              // handguard
+      part(g, 0, -0.085, 0.05, 0.045, 0.1, 0.055, dark);               // grip
+      var magM = new THREE.Group(); magM.position.set(0, -0.11, -0.1); g.add(magM);
+      var c1 = part(magM, 0, 0, 0, 0.038, 0.15, 0.05, gunmetal); c1.rotation.x = 0.12;
+      g.userData.mag = magM; g.userData.magHome = magM.position.clone();
+      cylPart(g, 0, 0.056, -0.26, 0.019, 0.05, gunmetal);              // hooded front sight
+      cylPart(g, 0, 0.056, 0.02, 0.021, 0.04, gunmetal);               // drum rear sight
+      part(g, 0, -0.005, 0.19, 0.04, 0.05, 0.2, dark);                 // retractable stock
+      return g;
+    })();
+    models.vector = (function () {                                     // angular, tall mag
+      var g = new THREE.Group();
+      part(g, 0, 0.01, -0.02, 0.055, 0.11, 0.3, dark);                 // slanted body
+      cylPart(g, 0, 0.02, -0.26, 0.014, 0.16, gunmetal);               // stubby barrel
+      part(g, 0, -0.08, 0.06, 0.046, 0.1, 0.05, dark);                 // grip
+      var magV = new THREE.Group(); magV.position.set(0, -0.14, -0.02); g.add(magV);
+      part(magV, 0, 0, 0, 0.036, 0.2, 0.05, gunmetal);                 // very long mag
+      g.userData.mag = magV; g.userData.magHome = magV.position.clone();
+      part(g, 0, 0.075, -0.06, 0.03, 0.024, 0.26, dark);               // rail
+      part(g, 0, 0.02, 0.18, 0.045, 0.06, 0.16, dark);                 // folding stock
+      return g;
+    })();
+    models.bow = (function () {                                        // recurve — no receiver at all
+      var g = new THREE.Group();
+      /* A bow has no barrel and no magazine, so nothing from rifleBase applies.
+         The riser sits vertically in front of the hand and the limbs sweep away
+         from it, which reads instantly as "not a gun" in the corner of the eye
+         — the point of the silhouette. */
+      part(g, 0, 0, -0.16, 0.03, 0.26, 0.05, wood);                    // riser
+      part(g, 0, 0.055, -0.2, 0.022, 0.07, 0.04, dark);                // sight window
+      var upper = part(g, 0, 0.30, -0.2, 0.02, 0.34, 0.035, wood);     // upper limb
+      upper.rotation.x = -0.28;
+      var lower = part(g, 0, -0.30, -0.2, 0.02, 0.34, 0.035, wood);    // lower limb
+      lower.rotation.x = 0.28;
+      cylPart(g, 0, 0.46, -0.24, 0.012, 0.05, steel);                  // upper tip
+      cylPart(g, 0, -0.46, -0.24, 0.012, 0.05, steel);                 // lower tip
+      var stringG = new THREE.Group(); g.add(stringG);
+      var st1 = cylPart(stringG, 0, 0.23, -0.12, 0.004, 0.48, blade, false); st1.rotation.x = 0.26;
+      var st2 = cylPart(stringG, 0, -0.23, -0.12, 0.004, 0.48, blade, false); st2.rotation.x = -0.26;
+      /* The nocked arrow is the ammo indicator: it rides the `mag` slot, so the
+         existing reload animation pulls it back and releases it without any
+         bow-specific animation code. */
+      var arrow = new THREE.Group(); arrow.position.set(0, 0, 0); g.add(arrow);
+      cylPart(arrow, 0, 0, -0.34, 0.006, 0.72, wood);                  // shaft
+      part(arrow, 0, 0, -0.68, 0.012, 0.012, 0.05, blade);             // head
+      part(arrow, 0.014, 0, -0.02, 0.002, 0.03, 0.06, brass);          // fletching
+      part(arrow, -0.014, 0, -0.02, 0.002, 0.03, 0.06, brass);
+      g.userData.mag = arrow; g.userData.magHome = arrow.position.clone();
+      return g;
+    })();
     // Registry invariant: EVERY weapon in CFG.WEAPON_ORDER must have a
     // viewmodel. Any future config addition gets a generic rifle instead of
     // invisible hands — an unknown-but-equipped weapon cannot render as nothing.

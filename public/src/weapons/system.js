@@ -116,8 +116,22 @@ var Weapons = (function () {
       UI.toast(CFG.WEAPONS[d.w].label + ' acquired');
     } else if (d.t === 'ammoFor') {
       var a = ammo[d.w];
-      if (a) a.reserve = Math.min(CFG.WEAPONS[d.w].reserve, a.reserve + Math.ceil(CFG.WEAPONS[d.w].reserve * 0.5));
-      UI.toast(CFG.WEAPONS[d.w].label + ' ammo');
+      /* v9.3: honour an explicit amount when the pickup states one (a Quiver is
+         15 arrows, not "half a reserve"), and fall back to the old proportional
+         top-up otherwise. If the player does not own the weapon the pickup is
+         for, resupply what they DO carry rather than doing nothing — a pickup
+         that visibly disappears and grants nothing reads as a lost item. */
+      var bump = d.amount > 0 ? d.amount : Math.ceil(CFG.WEAPONS[d.w].reserve * 0.5);
+      if (a) {
+        a.reserve = Math.min(CFG.WEAPONS[d.w].reserve, a.reserve + bump);
+        UI.toast(CFG.WEAPONS[d.w].label + ' ammo  +' + bump);
+      } else {
+        for (var q in owned) {
+          var qw = CFG.WEAPONS[q];
+          if (qw.reserve > 0 && ammo[q]) ammo[q].reserve = Math.min(qw.reserve, ammo[q].reserve + Math.ceil(qw.reserve * 0.25));
+        }
+        UI.toast('Ammo resupplied');
+      }
     } else if (d.t === 'ammo') {
       for (var n in owned) {
         var w = CFG.WEAPONS[n];

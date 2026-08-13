@@ -83,7 +83,13 @@ function tryCollect(room, p) {
         grant = { t: 'gear', g: 'molotov', n: it.n };
       }
     } else if (it.kind === 'ammo') {
-      grant = { t: 'ammo' };
+      /* v9.3: an ammo pickup may name a WEAPON. The Quiver does, so it tops up
+         arrows specifically instead of resupplying every gun the player owns —
+         a quiver that refills your M249 reads as a bug even though nothing
+         crashes. The `ammoFor` grant already existed for exactly this shape, so
+         this is a routing change, not a new mechanism. Anything without a `w`
+         keeps the old behaviour, which is what Ammo Cache wants. */
+      grant = it.w ? { t: 'ammoFor', w: it.w, amount: it.amount | 0 } : { t: 'ammo' };
     }
     pk.active = false;
     pk.respawnAt = pk.noRespawn ? Infinity : now() + CFG.LOOT_RESPAWN[it.rar] * 1000;

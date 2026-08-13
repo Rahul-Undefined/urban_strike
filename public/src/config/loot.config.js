@@ -37,7 +37,50 @@
     wpn_m249:  { kind: 'weapon', w: 'm249', rar: 'l' },
     wpn_awm:   { kind: 'weapon', w: 'awm', rar: 'l' },
     // drop:1 = NEVER rolls on a ground loot point; airdrop crates only.
-    wpn_aa12:  { kind: 'weapon', w: 'aa12', rar: 'l', drop: 1 }
+    wpn_aa12:  { kind: 'weapon', w: 'aa12', rar: 'l', drop: 1 },
+
+    /* ===================== v9.3 — THE ARMOURY IN THE LOOT POOL =============
+
+       Rarity here is a STATEMENT ABOUT SUPPLY, not about power. All nine are
+       balanced against the same four damage classes as everything else, so
+       nothing below is stronger than what already existed — what rarity buys
+       is how often you get to choose your fight.
+
+       'r' (rare) for the class workhorses: the AUG, AKM, UMP-9 and MP5 are
+       sidegrades to guns already in the pool, so making them scarce would just
+       thin out the rare tier without adding variety.
+
+       'l' (legendary) for the four that change how a fight plays rather than
+       how it is won — the Vector's 1100 rpm, the FAMAS's burst rate, the two
+       war rifles' reach, and the bow.
+
+       The BOW is legendary and `drop: 0` (ground-eligible) on purpose. It is
+       the only silent weapon in the game and putting it airdrop-only would mean
+       most matches never see one, which is a waste of the one genuinely novel
+       thing in this pass. */
+    wpn_aug:    { kind: 'weapon', w: 'aug', rar: 'r' },
+    wpn_akm:    { kind: 'weapon', w: 'akm', rar: 'r' },
+    wpn_ump9:   { kind: 'weapon', w: 'ump9', rar: 'r' },
+    wpn_mp5:    { kind: 'weapon', w: 'mp5', rar: 'r' },
+    wpn_garand: { kind: 'weapon', w: 'garand', rar: 'r' },
+    wpn_famas:  { kind: 'weapon', w: 'famas', rar: 'l' },
+    wpn_vector: { kind: 'weapon', w: 'vector', rar: 'l' },
+    wpn_k98w:   { kind: 'weapon', w: 'k98w', rar: 'l' },
+    wpn_bow:    { kind: 'weapon', w: 'bow', rar: 'l' },
+
+    /* ARROWS — 30 live, and why they are their own pickup.
+
+       Rahul: "add bow and arrow with 30 shots live available in loot system."
+       The bow ships with 1 nocked + 29 in reserve = 30 shots, so a bow found on
+       the ground is a full 30 without needing anything else. This resupply
+       exists so the weapon is not a one-match-one-quiver novelty: a quiver
+       tops the reserve back up the way an Ammo Cache tops up a magazine.
+
+       It is `kind: 'ammo'` with a weapon filter rather than a new pickup kind,
+       so it flows through the existing collect path — a new kind would need
+       server handling, client handling, an icon and a HUD line, and would be
+       four places to get wrong for something the ammo system already does. */
+    arrows:     { kind: 'ammo', w: 'bow', amount: 15, rar: 'c', label: 'Quiver' }
   };
   // Spawn-point classes: g ground, h elevated/interior-notable, s signature.
 
@@ -381,7 +424,10 @@
     points: [[0, -30], [-20, 8], [24, 40], [-40, -6], [0, -48], [46, 26],
       [-37, -86], [87.7, -18], [0, 86], [-88, 10]],
     // crate contents: one legendary weapon, L3 vest, med kit, one strong attachment
-    weaponPool: ['wpn_aa12', 'wpn_awm', 'wpn_m249'],
+    /* v9.3: the crate pool gains the three loot weapons that most change how a
+       fight plays rather than how it is won — the fastest gun in the game, the
+       longest iron sight, and the only silent one. */
+    weaponPool: ['wpn_aa12', 'wpn_awm', 'wpn_m249', 'wpn_vector', 'wpn_k98w', 'wpn_bow'],
     attPool: ['att_supp', 'att_x4', 'att_x6', 'att_x8', 'att_comp', 'att_quick']
   };
 

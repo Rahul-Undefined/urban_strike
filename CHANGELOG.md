@@ -5458,3 +5458,94 @@ reading source — the source is the thing that changed. Confirmed still true:
 Overrun bots take no side and engage each other; a stale `botCount` of 6 injects
 zero bots into t2/t5/t10/sq2/sq4/ffa/ls/lsq2/lsq4 (the v8.38.1 leak stays
 fixed); `removeBots` leaves humans; ticking a room with no bots is a safe no-op.
+
+---
+
+## v9.3 — THE ARMOURY, AND METRO GETS A FLOOR
+
+### Nine new weapons, all loot-only
+| weapon | class | character |
+|---|---|---|
+| AUG A3 | assault | bullpup, integral optic, tightest hip spread in class |
+| FAMAS F1 | assault | 900 rpm, smallest mag, worst sustained spread |
+| AKM | assault | most reach and most kick in the class |
+| Karabiner 98k | marksman | WWII bolt, iron sights, longest unscoped range |
+| M1 Garand | marksman | semi-auto answer to the bolt gun, 8 rounds |
+| UMP-9 | SMG | the controllable one — slowest, tightest, longest |
+| MP5-A4 | SMG | the middle of the class |
+| Vector .45 | SMG | 1100 rpm, 19 rounds, empties in 1.5 s |
+| Recurve Bow | *(own class)* | silent, projectile, 30 arrows |
+
+They differentiate on RATE, RANGE, MAGAZINE, RECOIL and HANDLING — never by
+inventing a fifth damage breakpoint. The four classes at the top of
+weapons.config.js are what make the game learnable and they are unchanged.
+
+**The Kar98k is a marksman, not a sniper, and that is deliberate.**
+Historically it is a one-hit rifle. At 100 HP that is a one-shot body kill,
+which this game gives only to scoped bolt-actions gated behind a 0.85 s cycle.
+An iron-sight rifle with a one-shot kill and a 0.62 s cycle would be strictly
+better than the AWM-S at every range it can see. It gets 55 body and earns its
+history through reach, near-zero spread and heavy recoil instead.
+
+**The bow is 90, not 100.** A silent one-shot kill with no bolt cycle is the
+most oppressive thing you can put in a shooter. At 90 it kills anyone already
+scratched and kills outright on a headshot, and a miss costs a 1.4 s re-draw.
+30 shots (1 nocked + 29 reserve); a Quiver resupplies 15.
+
+### Shotgun: two shots, always
+Rahul: "80% on one shot and 20% on another one." Read as deterministic, not
+probabilistic — a shotgun that sometimes kills and sometimes does not, with no
+visible reason, is the least readable thing a shooter can do, and nothing else
+in this game has random lethality. 9 pellets x 8.9 = **80.1** at point blank,
+leaving 19.9 HP. It was 99, which one-shot anything unarmoured and turned a
+single missed pellet into an unexplained survival.
+
+### Metro City: districts and a floor that is not grey
+The whole 200x200 ground was one material at 0x4a4e56. From any rooftop the map
+read as a single grey sheet — not just drab, disorienting: nothing told you
+which part of the city you were looking at.
+
+Twelve named districts (CENTRAL PLAZA, UNION STATION, RAIL YARD, CARGO
+TERMINAL, MARKET STREET, BUS DEPOT, RIVERSIDE PARK, SECTOR 7 WORKS, STACK
+GARAGE, GALLERIA, FINANCIAL ROW, OLD QUARTER) now exist in
+districts.config.js, and the coloured ground under each one matches its name —
+so what a player reads and what they stand on describe the same place. Kerbs
+mark the seams; lane dashes run the avenues.
+
+Cost: flat non-colliding slabs, five shared materials. 33 draw calls (budget
+45), 24,988 triangles (budget 26,000). **No budget raised.**
+
+Two things the gates caught mid-pass:
+- **Six overlapping district floors at the same height.** verify-build flagged
+  1,008 m2 of coplanar ground — which flickers as the camera moves and is far
+  worse than the grey it replaced. The inner rectangles are clipped to the ring
+  they sit inside now.
+- **Eight deck materials cost three extra draw calls** for colours nobody could
+  distinguish from a rooftop. StaticMerge batches by material, so every colour
+  is a batch. Down to five.
+
+### New gate: `tools/verify-armoury.js` (191/0)
+Asserts the damage CLASSES rather than individual numbers, so weapons may be
+added freely but cannot invent a fifth breakpoint. Also checks the four things
+a new weapon silently forgets: a WEAPON_ORDER slot, an explicit viewmodel, a
+loot entry, and that loot-only weapons are not also in the spawn loadout.
+
+`verify-models` changed too: it filtered snipers on `type === 'bolt'` and
+applied one-shot-kill rules to everything it found, which asserted that the
+Kar98k should be a sniper. It filters on `scope` now, and the one-shot property
+is protected from the other side — nothing outside the class may one-shot a
+healthy body. That pair is strictly stronger than the single test it replaced.
+
+### Verification
+`test.js` **252 / 0**. `verify-armoury` 191/0, `verify-models` 222/0,
+`verify-build` PASS (no coplanar ground), `verify-batch` 36/0,
+`verify-untouched` 23/0 — Urban and Rural still byte-identical.
+Pre-existing reds unchanged: `verify-arch`, `verify-climb`, `verify-access`.
+
+### Open
+- Rural has no districts. Hollow Ridge is a valley with landmarks, not a grid,
+  and inventing rectangles would produce names matching nothing visible.
+- Metro districts have `sign` coordinates but no signboards are BUILT yet —
+  Urban draws its signs from the same field, so wiring them is a follow-up.
+- Bots do not yet weight their loadouts toward the new weapons; the table in
+  bots.js still lists the v9.2 set.

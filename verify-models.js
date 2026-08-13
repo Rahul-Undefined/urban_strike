@@ -220,8 +220,41 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
      Rahul asked for instant sniper shots and a fixed lethality rule. Both are
      config, and config is exactly the kind of thing that gets half-edited. */
   const vmsrc = fs.readFileSync('./public/src/weapons/viewmodels.js', 'utf8');
-  const SNIPERS = Object.keys(CFG.WEAPONS).filter(k => CFG.WEAPONS[k].type === 'bolt');
-  ok(SNIPERS.length >= 3, 'at least three bolt-action rifles exist [' + SNIPERS.join(', ') + ']');
+  /* v9.3: THE SNIPER CLASS IS DEFINED BY THE SCOPE, NOT BY THE ACTION.
+     This filtered on `type === 'bolt'` and then applied the one-shot-kill rule
+     to everything it found, because until v9.3 every bolt rifle in the game was
+     a scoped sniper and the two were the same set.
+
+     The Karabiner 98k broke that. It is a bolt action with iron sights in the
+     marksman class (55 body, two shots) — deliberately, because a one-shot
+     body-kill rifle with no scope and a 0.62 s cycle would be strictly better
+     than the AWM-S at every range it can see. Testing it against sniper rules
+     asserted that a marksman rifle should be a sniper, which is the opposite of
+     the balance decision.
+
+     So the class filter is `scope`, which is what actually marks a sniper here,
+     and the one-shot property is protected from the other direction by the
+     assertion below: nothing OUTSIDE the class may one-shot a healthy body.
+     That pair is strictly stronger than the old single test — it now catches a
+     non-sniper being given 100 damage, which the old version did not. */
+  const SNIPERS = Object.keys(CFG.WEAPONS).filter(k => CFG.WEAPONS[k].scope === true);
+  ok(SNIPERS.length >= 3, 'at least three scoped sniper rifles exist [' + SNIPERS.join(', ') + ']');
+  const BOLTS = Object.keys(CFG.WEAPONS).filter(k => CFG.WEAPONS[k].type === 'bolt');
+  ok(BOLTS.length >= SNIPERS.length, 'every sniper is a bolt action [' + BOLTS.join(', ') + ']');
+  SNIPERS.forEach(k => ok(CFG.WEAPONS[k].type === 'bolt', k + ' is bolt-actioned'));
+  /* THE ONE-SHOT MONOPOLY. 100 HP means dmg >= 100 is a body-shot kill, and it
+     belongs to the sniper class alone. Explosives are exempt (they are area
+     weapons with their own falloff) and so is the melee knife. */
+  Object.keys(CFG.WEAPONS).forEach(k => {
+    const w = CFG.WEAPONS[k];
+    if (w.ex && w.radius) return;                     // rocket / explosive
+    if (w.type === 'melee') return;
+    const body = w.dmg * (w.pellets || 1);
+    if (SNIPERS.indexOf(k) >= 0) return;
+    ok(body < 100,
+      k + ' cannot one-shot a healthy body — that belongs to the sniper class [' +
+      body.toFixed(1) + ']');
+  });
   ok(SNIPERS.indexOf('kar98') >= 0, 'the Kar98 is in the weapon table');
   ok(CFG.WEAPON_ORDER.indexOf('kar98') >= 0, 'the Kar98 is in WEAPON_ORDER (so it can be selected and synced)');
   ok(/models\.kar98\s*=/.test(vmsrc), 'the Kar98 has a first-person viewmodel');

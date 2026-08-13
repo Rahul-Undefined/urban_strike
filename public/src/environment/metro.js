@@ -46,6 +46,101 @@
       seg(-100, 100, 0.03, 0.08, a - 6, a + 6, M.asphalt, { collide: false, cast: false });
     });
 
+    /* ============ v9.3 — THE FLOOR IS NOT A CAR PARK ANYMORE ==============
+
+       Rahul: "floor of the metro map is flat grey make it colourful and
+       playable." Both halves of that are the same complaint. The whole 200x200
+       ground was ONE material at 0x4a4e56, so from any rooftop the map read as
+       a single grey sheet with buildings standing on it: nothing told you which
+       part of the city you were looking at, and nothing told you where you had
+       already been. Grey is not just drab here, it is disorienting.
+
+       WHAT THIS IS NOT. It is not a texture pass and it is not more geometry
+       for its own sake. Every piece below is a flat, non-colliding, non-shadow-
+       casting slab at y 0.03-0.09 — the same trick the avenue grid already
+       uses. They merge into the existing batches, so the cost is triangles
+       (about 900) and NOT draw calls, which is the budget that actually hurts:
+       Metro sits at 29 of 45 draws and this pass must not move it.
+
+       PLAYABLE, specifically. Ground colour is the cheapest wayfinding a map
+       has. A player who can say "I am on the red plaza, they came from the
+       green park" is navigating; a player looking at grey is guessing. The
+       colours therefore follow the DISTRICTS, not decoration — the yard is
+       ballast-brown, the terminal is cargo-blue, the market is warm, the park
+       is green, and the plaza at the centre is the one that reads from every
+       roof on the map.
+
+       LAYER ORDER MATTERS. These sit ABOVE the ground (y 0.03+) and BELOW the
+       avenue asphalt where they meet it, so no two coplanar faces ever fight —
+       verify-zfight is a budget of 0 and this is exactly the change that would
+       break it. Districts are laid first, avenues drawn over them. */
+    /* FIVE materials, not eight. The first cut had one per district and that
+       cost three extra draw calls for colours nobody could tell apart from a
+       rooftop — StaticMerge batches by material, so every distinct colour is a
+       separate batch no matter how small the slab. Draw calls are Metro's
+       tightest budget after triangles, so districts that read the same from
+       distance now share a tone: the garage and the construction site are both
+       industrial olive, the four residential slabs are both sand.
+       GREEN is reused rather than recreated for the same reason. */
+    var DECK = {
+      yard:    L(0x6b5a44),   // rail ballast — warm brown
+      cargo:   L(0x2c5f7a),   // container yard + station forecourt — deep blue
+      market:  L(0x8a5a3c),   // market street + residential — terracotta/sand
+      park:    GREEN,         // park lawn — reuses the existing green
+      indust:  L(0x5c5f52)    // garage apron + construction — olive concrete
+    };
+    function deck(x0, x1, z0, z1, m) {
+      seg(x0, x1, 0.03, 0.075, z0, z1, m, { collide: false, cast: false });
+    }
+    /* Each entry is one district floor. Coordinates match the structures that
+       stand on them, so a district's colour ends where the district ends. */
+    /* THE DECKS TILE. THEY DO NOT OVERLAP.
+       The first cut drew each district floor at its structure's real extent,
+       which meant the rail yard band ran under the construction site, the park
+       band ran under the garage apron, and the two residential slabs ran into
+       each other — six overlapping pairs, all at y 0.075. verify-build called
+       it immediately: two coplanar faces at the same height flicker against
+       each other as the camera moves, and 1,008 m2 of flickering ground is far
+       worse than the grey it replaced.
+
+       So the inner rectangles are CLIPPED to the ring they sit inside, and
+       every pair either abuts exactly or leaves a gap. Where a district's
+       colour stops short of its buildings, the buildings sit on the ring colour
+       and that is correct — the ring IS that part of the city. */
+    deck(-100, 100, -100, -80, DECK.yard);       // NORTH ring — rail yard
+    deck(-100, 100, 80, 100, DECK.market);       // SOUTH ring — depot and market
+    deck(-100, -80, -80, 80, DECK.park);         // WEST  ring — park strip
+    deck(80, 100, -80, 80, DECK.cargo);          // EAST  ring — cargo terminal
+    // inner city, all clipped inside x -80..80 / z -80..80
+    deck(-26, 26, -80, 26, DECK.cargo);          // station deck over the spine
+    deck(54, 80, -80, -54, DECK.indust);         // construction site apron
+    deck(54, 80, 8, 50, DECK.cargo);             // mall forecourt
+    deck(-80, -58, -24, 20, DECK.indust);        // parking garage apron
+    deck(-80, -58, 22, 66, DECK.market);         // residential A / B
+    deck(-56, -34, 10, 80, DECK.market);         // residential C / D
+
+    /* Kerbs. A colour change with no edge looks like a rendering artefact; a
+       2 m band of pale concrete at the seam reads as a pavement and makes the
+       district boundary intentional. Cheap: eight thin slabs. */
+    [[-100, 100, -82, -80], [-100, 100, 80, 82],
+     [-82, -80, -80, 80], [80, 82, -80, 80]].forEach(function (k) {
+      seg(k[0], k[1], 0.076, 0.09, k[2], k[3], M.sidewalk, { collide: false, cast: false });
+    });
+
+    /* Painted road markings down the avenues. The lane dashes are what turn a
+       grey band into a street you can read direction from — and they double as
+       a distance reference when judging a shot down a 200 m avenue. */
+    /* Spacing is 24 m, not 12. At 12 m this loop alone was ~1,150 triangles and
+       pushed Metro to 436 below its ceiling, which is no margin at all for the
+       next person. Half as many dashes read identically from eye level and the
+       gap still works as a distance reference. */
+    [-60, 0, 60].forEach(function (a) {
+      for (var d = -96; d < 96; d += 24) {
+        seg(a - 0.35, a + 0.35, 0.081, 0.088, d, d + 9, M.sidewalk, { collide: false, cast: false });
+        seg(d, d + 9, 0.081, 0.088, a - 0.35, a + 0.35, M.sidewalk, { collide: false, cast: false });
+      }
+    });
+
     // ---- Central Plaza -----------------------------------------------------
     seg(-18, 18, 0.08, 0.2, -18, 18, M.sidewalk, { collide: false, cast: false });
     cyl(0, 0.45, 0, 3.2, 0.9, M.concrete);                       // fountain basin
