@@ -249,7 +249,15 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
      against. */
   Object.keys(CFG.MODES).forEach(m => {
     const M = CFG.MODES[m];
-    ok(M.maxPlayers >= 2 && M.maxPlayers <= 20, m + ' seats 2-20 players [' + M.maxPlayers + ']');
+    /* v9.2: the floor is 1 for a vsBots mode. This assertion was written when
+       every team mode was human against human, so "at least two seats" and "at
+       least one human per side" were the same statement. Strike Team Solo is
+       one operator against a side made entirely of bots, and it is correct at
+       one seat — maxPlayers counts HUMANS. The ceiling of 20 still applies to
+       everything, because that is what the avatar budget was measured against. */
+    const seatFloor = M.vsBots ? 1 : 2;
+    ok(M.maxPlayers >= seatFloor && M.maxPlayers <= 20,
+      m + ' seats ' + seatFloor + '-20 players [' + M.maxPlayers + ']');
     const ids = CFG.activeTeams(m);
     if (!M.teams) {
       ok(ids.length === 0, m + ' fields no teams (free-for-all)');
@@ -260,7 +268,19 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
       m + ': every side is a real named team');
     ok(new Set(ids.map(t => CFG.TEAMS[t].color)).size === ids.length,
       m + ': every side has a distinct colour');
-    ok(ids.length <= M.maxPlayers, m + ': more seats than sides, so no side starts empty by design');
+    if (M.vsBots) {
+      /* A vsBots mode deliberately has more sides than human seats — that is
+         the mode. What has to hold instead is that the two sides are the human
+         side and the bot side, and that they are different, or every operator
+         would spawn on the machine team. */
+      ok(ids.length === 2, m + ': a vsBots mode is exactly two-sided');
+      ok(CFG.humanSideOf(m) && CFG.botSideOf(m) && CFG.humanSideOf(m) !== CFG.botSideOf(m),
+        m + ': humans and bots take different sides');
+      ok(ids.indexOf(CFG.humanSideOf(m)) >= 0 && ids.indexOf(CFG.botSideOf(m)) >= 0,
+        m + ': both of those sides are actually fielded by the mode');
+    } else {
+      ok(ids.length <= M.maxPlayers, m + ': more seats than sides, so no side starts empty by design');
+    }
   });
   ok(Object.keys(CFG.TEAMS).length === CFG.TEAM_IDS.length,
     'TEAM_IDS covers exactly the teams defined');

@@ -99,7 +99,11 @@ function render(map, r) {
 }
 
 let fail = 0;
-for (const map of ["urban", "rural"]) {
+/* v9.1: metro ADDED. A metro budget of 0.06 has sat in DEAD_BUDGET below since
+   v9.0, but metro was never in this loop, so the budget was never applied to
+   anything. Metro had no dead-ground measurement of any kind — the gate that
+   exists to prove a map is fightable had never looked at it. */
+for (const map of ["urban", "rural", "metro"]) {
   const r = analyse(map);
   const land = r.n * r.n - r.skipped;
   const pct = (r.dead.length / land * 100).toFixed(1);

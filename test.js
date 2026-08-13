@@ -754,9 +754,23 @@ function phase9(done) {
   /* v8.37: assert the SHAPE of the offering rather than a magic total, which
      goes stale every time a mode is added and teaches people to edit the gate
      instead of reading it. */
+  /* v9.2: the comment above says to assert the SHAPE rather than a magic
+     total, and then the line below pinned the exact comma-joined list — which
+     is a magic total wearing a different hat. Adding Strike Team turned it red
+     for being correct, and the label in the message still said "Training", a
+     name retired back in v8.39. Asserted as invariants now: the first four
+     categories are the human-vs-human ladder in order, every category is real
+     and populated, and no category appears twice. */
   const cats = CFG.MODE_CATS.map(c => c.id);
-  ok(cats.join(',') === 'ffa,team,squads,last,practice',
-    'five categories in order: Free For All, Team Battle, Squads, Last Stand, Training [' + cats.join(',') + ']');
+  ok(cats.slice(0, 4).join(',') === 'ffa,team,squads,last',
+    'the human ladder leads in order: Free For All, Team Battle, Squads, Last Stand [' +
+    cats.slice(0, 4).join(',') + ']');
+  ok(new Set(cats).size === cats.length, 'no category is listed twice [' + cats.join(',') + ']');
+  ok(cats.every(c => CFG.modesInCat(c).length > 0), 'every category offers at least one mode');
+  ok(Object.keys(CFG.MODES).every(m => cats.indexOf(CFG.MODES[m].cat) >= 0),
+    'every mode belongs to a category the picker actually shows');
+  ok(cats.indexOf('practice') >= 0 && cats.indexOf('coop') >= 0,
+    'both bot categories are offered: Overrun and Strike Team [' + cats.join(',') + ']');
   cats.forEach(c => {
     const inCat = CFG.modesInCat(c);
     ok(inCat.length >= 1, 'category "' + c + '" offers at least one variant [' + inCat.length + ']');
@@ -1030,7 +1044,104 @@ function phase11() {
       ['recruit', 'regular', 'veteran', 'extreme'].forEach(sk =>
         ok(!!sk, 'difficulty "' + sk + '" is offered'));
       A.disconnect();
-      setTimeout(finish, 400);
+      setTimeout(phase12, 500);
     }
   }
 }
+
+
+/* ---------------- Phase 12: v9.2 — Strike Team (humans vs bots) ----------------
+   Overrun is a free-for-all range with one human. Strike Team is a TEAM match
+   where one side is machines, and the two must not blur into each other: if
+   Strike Team ever inherited Overrun's shape the bots would fight each other
+   and friendly fire would be live against your own squad.
+
+   These run a real match over a real socket, because the failure this guards
+   against is a team-assignment bug and team assignment happens on join, on
+   settings change and on match start — three code paths a config assertion
+   cannot reach. */
+function phase12() {
+  console.log('--- Phase 12: Strike Team (humans vs bots) ---');
+
+  ok(CFG.modesInCat('coop').length === 6, 'six Strike Team sizes are offered');
+  [1, 2, 3, 4, 6, 10].forEach(n =>
+    ok(CFG.MODES['co' + n] && CFG.MODES['co' + n].maxPlayers === n,
+      'co' + n + ' seats ' + n + ' human operator(s)'));
+  ok(CFG.MODES.co4.teams === true && CFG.MODES.co4.teamCount === 2,
+    'Strike Team is a two-sided TEAM mode, not a free-for-all');
+  ok(!CFG.MODES.co4.practice, 'Strike Team is not flagged practice');
+  ok(CFG.botsAllowed('co4') && CFG.botsAllowed('bots') && !CFG.botsAllowed('t5'),
+    'botsAllowed admits both bot families and nothing else');
+
+  const A = io(URL), B = io(URL);
+  let lobby = null, snap = null;
+
+  /* Listeners go on BEFORE the room exists. Attaching them inside the join
+     callback missed the lobby push that join itself triggers, and the phase
+     crashed on a null payload. */
+  A.on('lobby', d => { lobby = d; });
+  A.on('snap', s => { snap = s; });
+
+  A.on('connect', () => {
+    A.emit('createRoom', { name: 'Lead', settings: { killTarget: 50, minutes: 10, mode: 'co2', botSkill: 'regular' } }, (res) => {
+      ok(res && res.ok, 'a Strike Team room is created');
+      B.emit('joinRoom', { code: res.code, name: 'Wing' }, (r2) => {
+        ok(r2 && r2.ok, 'a second operator joins the two-seat room');
+
+        setTimeout(() => {
+          const humans = ((lobby && lobby.players) || []).filter(p => !p.bot);
+          ok(humans.length === 2, 'both humans are in the lobby [' + humans.length + ']');
+          ok(humans.every(p => p.team === 'a'),
+            'every human is on side A — the auto-balancer does not split the squad');
+
+          [A, B].forEach(s => s.emit('setReady', { v: true }));
+          setTimeout(() => A.emit('startMatch'), 300);
+          /* startMatch begins a CFG.MATCH.startCountdown countdown; the match —
+             and therefore the bots — do not exist until it expires. Checking at
+             3 s reported "bots joined the match [0]" for a mode that was
+             working perfectly, which is a test bug that reads exactly like a
+             product bug. Derived from the config so a countdown change cannot
+             silently reintroduce it. */
+          setTimeout(check, 300 + CFG.MATCH.startCountdown * 1000 + 5200);
+        }, 700);
+      });
+    });
+  });
+
+  function check() {
+    /* THE SNAPSHOT IS THE AUTHORITATIVE ROSTER, NOT THE LOBBY PAYLOAD.
+       The lobby is re-pushed roughly every three seconds during play, so an
+       assertion timed against it reports "bots joined the match [0]" for a
+       match that already has bots moving and shooting. The snapshot carries
+       every live player every tick, which is the thing actually being claimed. */
+    const ps = (snap && snap.players) || {};
+    const botIds = Object.keys(ps).filter(k => k.indexOf('bot:') === 0);
+    const humanIds = Object.keys(ps).filter(k => k.indexOf('bot:') !== 0);
+    ok(botIds.length >= 1, 'bots joined the match [' + botIds.length + ']');
+    ok(botIds.length === humanIds.length,
+      'with no bot count set, the machines match the squad size [' +
+      botIds.length + ' vs ' + humanIds.length + ']');
+    ok(botIds.every(k => ps[k].tm === 'b'), 'every bot is on side B');
+    ok(humanIds.every(k => ps[k].tm === 'a'), 'every human is still on side A after match start');
+    ok(botIds.every(k => humanIds.every(h => ps[k].tm !== ps[h].tm)),
+      'no bot shares a side with an operator');
+
+    const roster = (lobby && lobby.players) || [];
+    ok(roster.filter(p => !p.bot).length === 2,
+      'the lobby roster still shows both operators mid-match');
+
+    /* Bots must be ordinary players in the snapshot, weapon index included —
+       v8.38 never set `wp`, so every bot rendered holding the same rifle. */
+    ok(botIds.length >= 1, 'bots are serialised into snapshots [' + botIds.length + ']');
+    ok(botIds.every(k => ps[k].tm === 'b'), 'snapshots carry the bot side');
+    const weps = new Set(botIds.map(k => ps[k].wp));
+    ok(botIds.every(k => typeof ps[k].wp === 'number' && ps[k].wp >= 0 &&
+      ps[k].wp < CFG.WEAPON_ORDER.length),
+      'every bot carries a valid weapon index the client can render');
+    ok(weps.size >= 1, 'bot weapons are drawn from the loadout table [' + weps.size + ' distinct]');
+
+    [A, B].forEach(s => s.disconnect());
+    setTimeout(finish, 400);
+  }
+}
+

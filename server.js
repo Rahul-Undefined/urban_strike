@@ -94,11 +94,30 @@ const Bots = require('./server/lib/bots.js')({
      friendly fire, spawn protection, armour, headshot rules, kill feed, streaks
      and the win condition all come along for free. A separate bot damage path
      would drift from the real one the first time either changed. */
-  botShoot: (room, bot, victim, part, mul) => {
-    const w = 'ak47';
-    const base = Combat.weaponServerDamage(w, part, 1);
+  botShoot: (room, bot, victim, part, mul, weapon) => {
+    /* v9.2: the weapon is the BOT'S weapon, not a hardcoded ak47. v8.38 pinned
+       this to one rifle, so a bot rendered carrying an AWM still did AK damage
+       and the kill feed named the wrong gun. Damage, pellet count and range
+       falloff all come from the real weapon table via the human damage path. */
+    const w = (weapon && CFG.WEAPONS[weapon]) ? weapon : 'ak47';
+    const spec = CFG.WEAPONS[w];
+    const dx = bot.pos[0] - victim.pos[0], dy = bot.pos[1] - victim.pos[1], dz = bot.pos[2] - victim.pos[2];
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    /* Shotguns are modelled as landing most of the pattern, not all of it —
+       all nine pellets at any range would make an aa12 bot a sniper. */
+    const pellets = (spec.pellets && spec.pellets > 1)
+      ? Math.max(1, Math.round(spec.pellets * (part === 'head' ? 0.4 : 0.62)))
+      : 1;
+    const base = Combat.weaponServerDamage(w, part, pellets, dist);
     Combat.applyDamage(room, victim, base * mul, bot.id, w, part === 'head', false);
-  }
+  },
+  /* A bot's frag is resolved on the server (it has no client to claim a hit),
+     but it lands in the SAME applyDamage the human path uses, so armour,
+     friendly fire, streaks, the kill feed and the win condition are identical. */
+  botExplode: (room, bot, victim, dmg, weapon, pointBlank) => {
+    Combat.applyDamage(room, victim, dmg, bot.id, weapon || 'frag', false, !!pointBlank);
+  },
+  botPlaceMine: (room, bot, pos) => Mines.place(room, bot, pos)
 });
 const Loot = require('./server/lib/loot.js')({ io, now, mapData });
 const { initPickups, pickupList, tryCollect, respawnPickups,
@@ -361,7 +380,13 @@ io.on('connection', (socket) => {
     const room = rooms.get(code);
     if (!room) return cb && cb({ ok: false, error: 'Room not found. Check the code.' });
     const cap = modeInfo(room).maxPlayers;
-    if (room.players.size >= cap) return cb && cb({ ok: false, error: 'Room is full (' + cap + ' players max for this mode).' });
+    /* v9.2: count HUMANS, not room.players.size. Bots live in the same map as
+       real players, so once a Strike Team or Overrun match starts, size is
+       humans + bots and a room with a genuinely free slot reports itself full.
+       The cap has always meant "how many people", and now it says so. */
+    let humanCount = 0;
+    for (const q of room.players.values()) if (!q.bot) humanCount++;
+    if (humanCount >= cap) return cb && cb({ ok: false, error: 'Room is full (' + cap + ' players max for this mode).' });
     addPlayer(room, socket, data && data.name);
     cb && cb({ ok: true, code: room.code, id: socket.id, inProgress: room.state === 'playing' });
     pushLobby(room);
@@ -398,7 +423,9 @@ io.on('connection', (socket) => {
       room.settings.teamNames = tn;
     }
     if (s && CFG.MODES[s.mode]) {
-      if (room.players.size > CFG.MODES[s.mode].maxPlayers) {
+      let humansNow = 0;
+      for (const q of room.players.values()) if (!q.bot) humansNow++;
+      if (humansNow > CFG.MODES[s.mode].maxPlayers) {
         socket.emit('toast', { msg: 'Too many players in room for that mode' });
       } else {
         room.settings.mode = s.mode;

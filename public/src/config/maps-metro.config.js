@@ -49,17 +49,71 @@
       [64, 0.85, -70, "g"], [78, 5.05, -66, "g"], [70, 9.25, -78, "h"],
       [82, 13.45, -70, "h"], [66, 17.65, -66, "h"], [76, 21.85, -74, "s"],
       // crane platform — highest position on the map, two routes in
-      [92, 30.85, -52, "s"]
+      [92, 30.85, -52, "s"],
+
+      /* ---- v9.1: THE FOUR EDGE DISTRICTS ----------------------------------
+         The rim of this map was bare pavement until v9.1 and carried no loot at
+         all, so a player pushed to the edge had no reason to be there and
+         nothing to pick up on the way back. Heights are surface + 0.55, the
+         same convention as every point above, and verify-map proves each one
+         sits on a collider whose top is between y-0.85 and y-0.30.
+
+         Ground points are 0.55 because the districts are laid on the y 0
+         pavement. The container roofs are the one elevated set: those stacks
+         top out at 2.20 m and ship with their own pallet step, so 2.75 is a
+         reward for a climb rather than a point only a lift can reach. */
+      // rail yard — between the sidings and along the hut line
+      [-70, 0.55, -92, "g"], [-40, 0.55, -92, "g"], [0, 0.55, -92, "g"],
+      [40, 0.55, -92, "g"], [70, 0.55, -92, "g"],
+      [-65, 0.55, -86, "g"], [-10, 0.55, -86, "g"], [45, 0.55, -86, "g"],
+      // cargo terminal — aisles, then the climbable stack roofs
+      [89, 0.55, -70, "g"], [89, 0.55, -20, "g"], [93.3, 0.55, 20, "g"],
+      [89, 0.55, 60, "g"], [93.3, 0.55, 84, "g"],
+      [87, 3.15, -38.8, "h"], [95.4, 3.15, -55.2, "h"], [91.2, 3.15, -3, "s"],
+      // bus depot and market street
+      [-60, 0.55, 82, "g"], [-30, 0.55, 82, "g"], [10, 0.55, 84, "g"],
+      [40, 0.55, 84, "g"], [70, 0.55, 84, "g"],
+      [1, 1.60, 88.2, "g"], [32, 1.60, 88.2, "g"], [64, 1.60, 88.2, "h"],
+      // park strip — open ground, and the bandstand plinth
+      [-93, 0.55, -50, "g"], [-93, 0.55, -10, "g"], [-96, 0.55, 60, "g"],
+      [-93, 0.55, 80, "g"], [-92, 1.15, 22, "h"],
+
+      /* ---- v9.1: FIRE-ESCAPE LANDINGS -------------------------------------
+         Every lift-only building gained an external stair, and a stair with
+         nothing on it is a corridor. These sit on the landings themselves, so
+         the climb pays on the way up rather than only at the top. Landing tops
+         equal the floor tops they serve, which is why these heights match the
+         interior points of the same buildings. */
+      /* Landing positions were PROBED, not typed. The first cut guessed them
+         from the floor heights and nine of nine elevated points floated: a
+         landing's z depends on its flight's step COUNT, which is
+         ceil(riseToNextFloor / 0.34) and therefore differs per building and
+         even between the first flight and the rest of the same stair. Each
+         coordinate below was read back out of the built collider set. */
+      [-58, 4.05, -12.5, "h"], [-58, 7.25, -19, "h"],       // garage escape
+      [-58, 13.65, -19, "s"],
+      [55, 4.80, 20.3, "h"], [55, 8.80, 12.9, "h"],         // mall escape
+      [55, 12.80, 20.3, "s"],
+      [-66.5, 4.00, 25.5, "h"], [-66.5, 10.40, 25.5, "h"],  // residential A
+      [-34.5, 4.00, 21.5, "h"], [-34.5, 10.40, 73.1, "h"],  // residential C / D
+      [54.5, 5.05, -79.3, "h"], [54.5, 17.65, -87.1, "s"]   // construction escape
     ],
     SPAWNS: [
       [-70, -70, 0.78, "a"], [-78, -58, 0.78, "a"], [-58, -78, 0.78, "a"],
       [-70, 70, -0.78, "a"], [-78, 58, -0.78, "a"], [-58, 78, -0.78, "a"],
       [-86, 0, 0, "a"], [-52, -22, 0.4, "a"], [-30, 24, -0.4, "a"],
-      [-20, -86, 1.57, "a"], [20, -86, 1.57, "a"], [0, -86, 1.57, "a"],
+      /* v9.1: WAS [-20,-86], [20,-86], [0,-86]. The north edge was bare
+         pavement when these were placed; it is now the rail yard, and two of
+         the three sat inside a permanent-way hut or a sleeper stack. Moved
+         south onto the station deck (the slab over the subway spine, top y 0,
+         x -24..24) which is open ground with cover on three sides. */
+      [-20, -76, 1.57, "a"], [20, -86, 1.57, "a"], [8, -76, 1.57, "a"],
       [74, -66, 2.36, "b"], [78, -58, 2.36, "b"], [50, -78, 2.36, "b"],
       [70, 70, -2.36, "b"], [78, 58, -2.36, "b"], [58, 78, -2.36, "b"],
       [86, 0, 3.14, "b"], [70, -20, 2.7, "b"], [70, 20, -2.7, "b"],
-      [-20, 86, -1.57, "b"], [20, 86, -1.57, "b"], [0, 86, -1.57, "b"]
+      /* v9.1: [-20,86] was inside the new bus depot's back wall (x -96..-20,
+         z 85..86). Moved east into the market street approach. */
+      [-14, 86, -1.57, "b"], [20, 86, -1.57, "b"], [0, 86, -1.57, "b"]
     ],
     /* v8.18: WAS `AIRDROPS`. Every consumer reads AIRDROP_POINTS — rural uses
        it, the urban fallback in server.js builds it, and server/lib/loot.js:117

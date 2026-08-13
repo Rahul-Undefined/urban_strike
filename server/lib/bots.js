@@ -34,6 +34,7 @@ const CFG = require('../../public/src/config/index.js');
 
 const ROOT = path.join(__dirname, '..', '..');
 const colliderCache = Object.create(null);
+const stairCache = Object.create(null);
 
 /* ---------------------------------------------------------------- geometry */
 
@@ -64,10 +65,21 @@ function buildColliders(mapId) {
       'public/src/environment/deco.js', 'public/src/environment/rural.js',
       'public/src/environment/metro.js', 'public/src/environment/access.js'
     ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }));
-    cols = vm.runInContext(
+    const built = vm.runInContext(
       `(function(){ var s = new THREE.Scene(); World.reset(); World.buildMap(s, ${JSON.stringify(mapId)});
-         return World.colliders.map(function(c){ return [c[0],c[1],c[2],c[3],c[4],c[5]]; }); })();`,
+         return { c: World.colliders.map(function(c){ return [c[0],c[1],c[2],c[3],c[4],c[5]]; }),
+                  s: World._stairs().map(function(f){ return {
+                    sx: f.sx, sy: f.sy, sz: f.sz, dirX: f.dirX, dirZ: f.dirZ,
+                    topY: f.topY, endX: f.endX, endZ: f.endZ }; }) }; })();`,
       ctx, { filename: '<bot-colliders>' });
+    cols = built.c;
+    /* v9.2: the STAIR REGISTRY comes out with the colliders. World already
+       records every flight it builds — base, top, direction, end point — and
+       verify-climb walks that same list with a real capsule. Bots reuse it
+       rather than trying to discover stairs by bumping into geometry, which is
+       what the first cut did and why only one bot in twelve ever got off the
+       street. See planClimb() for what it is used for. */
+    stairCache[mapId] = built.s || [];
   } catch (e) {
     /* Geometry is an OPTIMISATION for the bots, not a requirement. If three is
        missing in production the match must still run — bots simply lose wall
@@ -75,9 +87,110 @@ function buildColliders(mapId) {
        silently dumb bots would be blamed on the AI. */
     console.error('[UrbanStrike] bot colliders unavailable, bots will ignore walls:', e.message);
     cols = [];
+    stairCache[mapId] = [];
   }
   colliderCache[mapId] = cols;
+  if (!stairCache[mapId]) stairCache[mapId] = [];
   return cols;
+}
+
+function stairsFor(mapId) {
+  if (!stairCache[mapId]) buildColliders(mapId);
+  return stairCache[mapId] || [];
+}
+
+/* ---- CLIMB PLANNING ------------------------------------------------------
+
+   The first cut of v9.2 gave bots a body and then sent them at an elevated
+   waypoint in a straight line. They walked into the wall under it, wedged,
+   repathed, and did it again: one bot in twelve gained more than a metre of
+   height in a full minute. Vertical movement worked perfectly and was almost
+   never used, which is the worst kind of half-feature — it looks like the
+   physics is broken when the physics is fine.
+
+   The missing piece is not pathfinding, it is knowing WHERE THE STAIRS ARE.
+   World records every flight it builds and verify-climb already walks that
+   list with a real capsule, so the data is present and independently proven.
+   A climb is a chain over that list: from the height I am at, find a flight
+   whose base I can stand at, take it, and repeat from its top until I am near
+   the height I want.
+
+   This is a breadth-first search over at most 68 flights (urban), so it is
+   cheap enough to run on a repath and needs no navmesh, no caching and no
+   precomputation. It returns WAYPOINTS, not a route: the bot still walks to
+   each one with the ordinary movement code, which means a flight blocked by a
+   crate or a closed-off landing simply fails the way any other walk fails, and
+   the stuck detector picks a different plan. */
+/* A chain is only valid if each link is WALKABLE, not merely reachable in
+   height. The first cut checked only that the next flight's base was within
+   2.2 m vertically and 45 m horizontally, and cheerfully produced routes like
+   "climb the tower at (-48,-52) to 7 m, then walk to the garage stair at
+   (-59,-18)" — 40 m apart, at altitude, through open air. The bot walked to
+   the first staircase, climbed nothing, and wandered off.
+
+   FIRST_HOP is generous because walking to the foot of the first staircase
+   happens on the ground where there is a floor everywhere. HOP is tight because
+   every later hop happens at height, where "walk from the top of that flight to
+   the bottom of this one" is only true if they belong to the same structure.
+   Nine metres is about a landing plus a corridor; the switchback fire escapes
+   this was built for stack their flights within three. */
+const CLIMB_REACH = 2.2;        // vertical slack between a flight top and the next base
+const FIRST_HOP = 50;           // ground-level walk to the first staircase
+const HOP = 14;                 // at-altitude walk between flights of one structure
+const ARRIVE = 34;              // the last flight must actually land near the target
+
+function planClimb(mapId, fromX, fromY, fromZ, toX, toY, toZ) {
+  const flights = stairsFor(mapId);
+  if (!flights.length) return null;
+  if (toY - fromY < 1.2) return null;                 // no climb needed
+
+  const start = { x: fromX, y: fromY, z: fromZ, via: null, prev: null, depth: 0 };
+  const seen = new Array(flights.length).fill(false);
+  const queue = [start];
+  let bestNode = null, bestScore = Infinity;
+
+  /* Score, not "first match". A chain that ends at the right height but on the
+     far side of the map is worse than one that ends slightly low but at the
+     target — so height error and arrival distance are weighed together. */
+  function score(n) {
+    return Math.abs(n.y - toY) * 3 + Math.hypot(n.x - toX, n.z - toZ);
+  }
+
+  for (let head = 0; head < queue.length && head < 300; head++) {
+    const node = queue[head];
+    if (node.via) {
+      const sc = score(node);
+      if (sc < bestScore) { bestScore = sc; bestNode = node; }
+    }
+    if (node.depth >= 6) continue;                    // a stair chain, not an odyssey
+    const maxHop = node.via ? HOP : FIRST_HOP;
+    for (let i = 0; i < flights.length; i++) {
+      if (seen[i]) continue;
+      const f = flights[i];
+      if (Math.abs(f.sy - node.y) > CLIMB_REACH) continue;      // cannot stand at this base
+      if (f.topY <= node.y + 0.4) continue;                     // not a way up
+      if (Math.hypot(f.sx - node.x, f.sz - node.z) > maxHop) continue;
+      seen[i] = true;
+      queue.push({ x: f.endX, y: f.topY, z: f.endZ, via: f, prev: node, depth: node.depth + 1 });
+    }
+  }
+  /* Refuse to return a plan that does not actually help. Sending a bot up a
+     staircase on the wrong side of the map is worse than leaving it on the
+     street, because it looks purposeful and achieves nothing. */
+  if (!bestNode || !bestNode.via) return null;
+  if (Math.hypot(bestNode.x - toX, bestNode.z - toZ) > ARRIVE) return null;
+  if (bestNode.y < fromY + 1.0) return null;
+
+  const out = [];
+  for (let n = bestNode; n && n.via; n = n.prev) {
+    /* Two waypoints per flight: stand at the foot, then walk to the head. One
+       waypoint at the top would let the bot cut the corner and walk into the
+       side of the staircase. */
+    out.unshift([n.via.endX, n.via.endZ, n.via.topY]);
+    out.unshift([n.via.sx, n.via.sz, n.via.sy]);
+  }
+  out.push([toX, toZ, toY]);
+  return out;
 }
 
 /* Segment vs axis-aligned box, slab method. Chest height is sampled rather than
@@ -104,27 +217,101 @@ function segmentBlocked(cols, ax, ay, az, bx, by, bz) {
   return false;
 }
 
-/* A step is blocked only by geometry that overlaps the BODY, between
-   step-height and head-height.
+/* v9.2 — BOTS GET A BODY.
 
-   The first version tested `y > c[1] - 0.1 && y < c[4] + 1.2`, which matched
-   the ground slab — a collider like everything else — from every position on
-   the map. Every candidate step came back blocked and the bots stood still
-   forever while otherwise behaving perfectly, which is exactly the kind of
-   fault that reads as "the AI is broken" when the AI was fine.
+   Everything below this comment was rewritten because of one missing line: in
+   v8.38 `bot.pos[1]` was never assigned ANYWHERE. Bots slid around in x/z at
+   whatever height they spawned at, forever. They could not take a stair, a
+   ramp, a lift or a roof, could not fall off a ledge, and on Metro City — a map
+   whose whole identity is three vertical layers — they stood in the street
+   while humans shot down at them from the fire escapes.
 
-   `y` is the capsule CENTRE, so feet sit at y - standH/2. Anything whose top is
-   below feet + step height is walked over, not into. */
-function insideAny(cols, x, y, z, r) {
-  const feet = y - CFG.PLAYER.standH / 2;
-  const lo = feet + 0.45;                     // ignore kerbs a player would step up
-  const hi = y + CFG.PLAYER.standH / 2;
+   A bot now runs the same shape of physics a human client does: find the
+   surface under the feet, step up anything within MOVE.step, fall under gravity
+   when there is nothing there, and refuse a move only when the BODY would
+   intersect geometry. That single change is what makes stairs work; there is no
+   stair-specific code anywhere in this file, and there should not be. A stair
+   is just a series of 0.32 m rises, which is under the 0.42 m step limit, so a
+   bot walks up it for the same reason a player does.
+
+   THE HEIGHTS ARE THE PLAYER'S, NOT A BOT'S. standH/crouchH/proneH and
+   MOVE.step/walk/sprint all come from CFG. A bot that used its own numbers
+   would drift from the human collision model the first time either changed,
+   and then bots would clip through things players cannot. */
+
+/* pos[1] IS THE CAPSULE CENTRE, NOT THE FEET.
+
+   This cost the first cut of v9.2 an entire pass. spawnPlayer writes
+   `[x, 0.95, z]` and the human controller keeps `pos.y = surfaceTop + halfY`
+   (player/controller.js) — 0.95 is half of standH plus float, not a height
+   above the floor. Bot physics written against feet therefore had every bot
+   sitting 0.9 m into the ground, `groundAt` looked for surfaces below its own
+   knees, and NO bot could climb anything: the probe went from one climber in
+   twelve to zero, which is how the mistake surfaced.
+
+   Everything below converts once, at the edge: helpers take explicit feet
+   because that is the honest input for a ground query, and the tick converts
+   centre to feet and back. Mixing the two conventions inside one function is
+   what produced the bug in the first place. */
+function bodyH(bot) {
+  return bot.crouch === 2 ? CFG.PLAYER.proneH
+       : bot.crouch === 1 ? CFG.PLAYER.crouchH
+       : CFG.PLAYER.standH;
+}
+function halfH(bot) { return bodyH(bot) / 2; }
+function feetOf(bot) { return bot.pos[1] - halfH(bot); }
+
+/* The highest surface a bot standing at (x, z) with its feet at `feetY` could
+   be supported by. `feetY + step` is the ceiling on what counts: a surface
+   higher than that is a wall to walk into, not a step to walk up, and that one
+   comparison is the whole of the stair-climbing logic. */
+function groundAt(cols, x, z, feetY, r) {
+  let best = null;
+  const reach = feetY + CFG.MOVE.step + 0.02;
   for (let i = 0; i < cols.length; i++) {
     const c = cols[i];
-    if (c[4] <= lo || c[1] >= hi) continue;   // entirely underfoot or overhead
+    if (x <= c[0] - r || x >= c[3] + r || z <= c[2] - r || z >= c[5] + r) continue;
+    const top = c[4];
+    if (top > reach) continue;
+    if (best === null || top > best) best = top;
+  }
+  return best;
+}
+
+/* Would the BODY intersect anything standing here? Feet are given explicitly
+   rather than derived from a capsule centre, because the caller already knows
+   where the feet are going and deriving it twice is how the two drift apart.
+
+   The 0.05 lift off the floor is deliberate: a surface the bot is standing ON
+   has its top exactly at feet level, and without the margin every bot would
+   report itself stuck inside the ground. */
+function bodyBlocked(cols, x, feetY, z, r, h, ignoreUpTo) {
+  /* `ignoreUpTo` is what makes a STAIRCASE walkable rather than a wall, and
+     leaving it out cost a full debugging pass. A flight is a run of 0.32 m
+     treads about 0.40 m apart, so the tread AHEAD of the bot always overlaps
+     the body volume — top above the feet, bottom below the head. A body test
+     that counts it reports every staircase in the game as solid, which is
+     precisely what happened: plans were built, bots walked to the foot of the
+     stairs, and then stood there. Twenty-two climb plans produced zero metres
+     of height.
+
+     Anything within one auto-step above where the feet will land is something
+     the bot steps ONTO next frame, not into. v8.38's flat-plane check had the
+     same idea as a bare `feet + 0.45`; this restores it against the resolved
+     landing height instead of the old height. */
+  const lo = feetY + (ignoreUpTo === undefined ? 0.05 : ignoreUpTo), hi = feetY + h;
+  for (let i = 0; i < cols.length; i++) {
+    const c = cols[i];
+    if (c[4] <= lo || c[1] >= hi) continue;
     if (x > c[0] - r && x < c[3] + r && z > c[2] - r && z < c[5] + r) return true;
   }
   return false;
+}
+
+/* Kept for the older call shape used by verify-bots: capsule centre in, body
+   test out. Delegates so there is still only one implementation. */
+function insideAny(cols, x, y, z, r) {
+  return bodyBlocked(cols, x, y - CFG.PLAYER.standH / 2, z, r, CFG.PLAYER.standH);
 }
 
 /* ---------------------------------------------------------------- skill */
@@ -133,14 +320,66 @@ function insideAny(cols, x, y, z, r) {
    because difficulty is not one axis: a recruit is slow to notice you and
    sprays; extreme sees further, reacts before you finish peeking, and puts
    rounds where it aims. Extreme is deliberately unfair on reaction time — it is
-   meant to be the wall you practise against, not a fair duel. */
+   meant to be the wall you practise against, not a fair duel.
+
+   v9.2 adds the dials for the new abilities, on the same principle. A recruit
+   almost never crouches to shoot, rarely sprints, and will not use a grenade;
+   an extreme takes cover posture constantly, sprints between fights and cooks
+   frags at your position. `verticality` is how willing a bot is to leave the
+   street for a stair — recruits fight where they spawn, veterans take the high
+   ground. */
 const SKILLS = {
-  recruit: { label: 'Recruit', react: 950, aimErr: 0.34, fireMs: 700, range: 40, burst: 2, headPct: 0.02, moveMul: 0.72, dmgMul: 0.65 },
-  regular: { label: 'Regular', react: 580, aimErr: 0.19, fireMs: 460, range: 60, burst: 3, headPct: 0.06, moveMul: 0.88, dmgMul: 0.85 },
-  veteran: { label: 'Veteran', react: 300, aimErr: 0.10, fireMs: 280, range: 85, burst: 4, headPct: 0.14, moveMul: 1.0, dmgMul: 1.0 },
-  extreme: { label: 'Extreme', react: 120, aimErr: 0.045, fireMs: 170, range: 130, burst: 6, headPct: 0.28, moveMul: 1.12, dmgMul: 1.0 }
+  recruit: { label: 'Recruit', react: 950, aimErr: 0.34, fireMs: 700, range: 40, burst: 2, headPct: 0.02, moveMul: 0.72, dmgMul: 0.65,
+             crouchPct: 0.08, pronePct: 0.00, sprintPct: 0.15, nadePct: 0.00, minePct: 0.02, verticality: 0.10, nadeCdMs: 22000 },
+  regular: { label: 'Regular', react: 580, aimErr: 0.19, fireMs: 460, range: 60, burst: 3, headPct: 0.06, moveMul: 0.88, dmgMul: 0.85,
+             crouchPct: 0.22, pronePct: 0.03, sprintPct: 0.35, nadePct: 0.18, minePct: 0.08, verticality: 0.28, nadeCdMs: 16000 },
+  veteran: { label: 'Veteran', react: 300, aimErr: 0.10, fireMs: 280, range: 85, burst: 4, headPct: 0.14, moveMul: 1.0,  dmgMul: 1.0,
+             crouchPct: 0.42, pronePct: 0.08, sprintPct: 0.55, nadePct: 0.38, minePct: 0.16, verticality: 0.50, nadeCdMs: 11000 },
+  extreme: { label: 'Extreme', react: 120, aimErr: 0.045, fireMs: 170, range: 130, burst: 6, headPct: 0.28, moveMul: 1.12, dmgMul: 1.0,
+             crouchPct: 0.55, pronePct: 0.12, sprintPct: 0.75, nadePct: 0.60, minePct: 0.26, verticality: 0.72, nadeCdMs: 7000 }
 };
 const SKILL_IDS = ['recruit', 'regular', 'veteran', 'extreme'];
+
+/* BOT LOADOUTS.
+
+   v8.38 hardcoded `const w = 'ak47'` in botShoot and never set `bot.wp`, so
+   every bot on every difficulty carried the same rifle and the client rendered
+   the same model in all of their hands. Now each bot draws a loadout, `wp` is
+   the index into CFG.WEAPON_ORDER so the existing avatar code renders the right
+   weapon with no client change, and botShoot resolves damage through the real
+   weapon table.
+
+   `ideal` is the range the bot tries to hold. It is what stops a shotgun bot
+   plinking from 60 m and a sniper walking into your face — the same engagement
+   logic reads it for every weapon, so adding one here is all it takes.
+   `rateMul` scales the skill's fire interval: a bolt-action cannot cycle at an
+   SMG's cadence and would otherwise out-DPS everything at extreme.
+
+   Rocket and knife are deliberately absent. A rocket bot is a one-shot kill
+   with splash the probability model does not simulate, and a knife bot needs
+   melee closing behaviour that does not exist yet. Leaving them out is honest;
+   shipping them half-modelled is not. */
+const LOADOUTS = [
+  { w: 'ak47',    ideal: 22, rateMul: 1.00, weight: 16 },
+  { w: 'm4a1',    ideal: 24, rateMul: 0.95, weight: 14 },
+  { w: 'scarh',   ideal: 26, rateMul: 1.05, weight: 10 },
+  { w: 'm249',    ideal: 20, rateMul: 0.90, weight: 6 },
+  { w: 'mk14',    ideal: 38, rateMul: 1.60, weight: 8 },
+  { w: 'uzi',     ideal: 12, rateMul: 0.75, weight: 8 },
+  { w: 'p90',     ideal: 13, rateMul: 0.75, weight: 8 },
+  { w: 'shotgun', ideal: 8,  rateMul: 2.10, weight: 7 },
+  { w: 'aa12',    ideal: 9,  rateMul: 1.30, weight: 4 },
+  { w: 'sniper',  ideal: 62, rateMul: 3.20, weight: 7 },
+  { w: 'kar98',   ideal: 66, rateMul: 3.60, weight: 5 },
+  { w: 'awm',     ideal: 74, rateMul: 3.80, weight: 3 },
+  { w: 'pistol',  ideal: 14, rateMul: 1.10, weight: 4 }
+];
+const LOADOUT_TOTAL = LOADOUTS.reduce((a, l) => a + l.weight, 0);
+function pickLoadout() {
+  let r = Math.random() * LOADOUT_TOTAL;
+  for (const l of LOADOUTS) { r -= l.weight; if (r <= 0) return l; }
+  return LOADOUTS[0];
+}
 
 const CALLSIGNS = ['VIPER', 'ECHO', 'RAVEN', 'HALO', 'NOMAD', 'ONYX', 'FLINT', 'ZULU',
   'KILO', 'ROOK', 'SABLE', 'TALON', 'VECTOR', 'WRAITH', 'CINDER', 'DRIFT',
@@ -165,8 +404,20 @@ module.exports = function initBotsModule(ctx) {
        The guard is on the MODE, not on the count, because the count is
        remembered on purpose: flipping back to Training should restore the
        host's choice rather than silently reset it to zero. */
-    if (!(CFG.MODES[room.settings.mode] || {}).practice) return;
-    const want = Math.max(0, Math.min(19, (room.settings.botCount | 0)));
+    /* v9.2: the guard is CFG.botsAllowed, not a literal `.practice` read, so
+       Strike Team (vsBots) gets bots too and there is exactly one place that
+       decides which modes have them. */
+    if (!CFG.botsAllowed(room.settings.mode)) return;
+    const botSide = CFG.botSideOf(room.settings.mode);
+    /* Strike Team defaults its bot count to the size of the human squad, so a
+       host who never touches the slider still gets a fair-shaped fight. They
+       can still raise or lower it — a duo that wants six machines is allowed. */
+    let want = Math.max(0, Math.min(19, (room.settings.botCount | 0)));
+    if (botSide) {
+      let humans = 0;
+      for (const q of room.players.values()) if (!q.bot) humans++;
+      if (!room.settings.botCount) want = Math.max(1, humans);
+    }
     if (!want) return;
     const cols = buildColliders(room.settings.map || 'urban');
     const teams = modeInfo(room).teams;
@@ -177,12 +428,18 @@ module.exports = function initBotsModule(ctx) {
     for (let i = 0; i < want; i++) {
       const id = 'bot:' + room.code + ':' + i;
       let team = null;
-      if (teams) {
+      if (botSide) {
+        /* Every bot on the machine side. Balancing by headcount here would put
+           bots on the human team as soon as the humans outnumbered them, which
+           is the one thing this mode must never do. */
+        team = botSide;
+      } else if (teams) {
         const count = {};
         ids.forEach(t => { count[t] = 0; });
         for (const q of room.players.values()) if (q.team) count[q.team] = (count[q.team] || 0) + 1;
         team = ids.slice().sort((x, y) => count[x] - count[y])[0];
       }
+      const kit = pickLoadout();
       const p = {
         id, name: names[i % names.length] + '-' + (i + 1), bot: true, connected: true,
         color: team ? CFG.TEAMS[team].color : CFG.COLORS[(i + 1) % CFG.COLORS.length],
@@ -190,9 +447,16 @@ module.exports = function initBotsModule(ctx) {
         kills: 0, deaths: 0, assists: 0, damage: 0, streak: 0, bestStreak: 0, ping: 0, ready: true,
         hp: CFG.PLAYER.hp, armorLvl: 0, armorDur: 0, helmLvl: 0, helmDur: 0, alive: false,
         protUntil: 0, att: { sight: null, muzzle: null, mag: null }, exW: {}, rd: {},
-        pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0, mv: 0, wp: 0, ln: 0,
+        pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0, mv: 0, ln: 0,
+        /* wp is the index into CFG.WEAPON_ORDER, which is exactly what a human
+           client sends, so the avatar renders the right weapon in the bot's
+           hands with no client change at all. */
+        wp: Math.max(0, CFG.WEAPON_ORDER.indexOf(kit.w)),
+        mines: CFG.GEAR.mine.start, nades: CFG.THROWS.frag.count, lastMolo: {},
         lastShotAt: {}, history: [], respawnAt: 0, out: false,
-        ai: { cols, target: null, seenAt: 0, nextFire: 0, wanderTo: null, repath: 0 }
+        ai: { cols, kit, target: null, seenAt: 0, nextFire: 0, wanderTo: null, repath: 0,
+              vy: 0, plan: null, planAge: 0, planApex: 0, posture: 0, postureUntil: 0, nextNade: 0, nextMine: 0,
+              stuckFor: 0, lastX: 0, lastZ: 0, sprint: false }
       };
       room.players.set(id, p);
     }
@@ -224,23 +488,176 @@ module.exports = function initBotsModule(ctx) {
     return out;
   }
 
+  /* ---- posture ----------------------------------------------------------
+
+     A posture change is not free: standing up out of prone in the middle of a
+     firefight is a decision, and a bot that re-rolled its stance every tick
+     would strobe between crouch and stand sixty times a second. So a posture is
+     committed to for a period and only reconsidered when that expires.
+
+     Prone is deliberately rare and reserved for long-range weapons. A prone bot
+     at 8 m is a free kill, and a bot that goes prone in a doorway looks broken
+     rather than tactical. */
+  function setStance(bot, want) {
+    if (bot.crouch === want) return;
+    /* Keep the FEET where they are. The capsule centre has to move by the
+       change in half-height or a bot that crouches sinks into the floor and one
+       that stands up pops through the ceiling — the human controller does the
+       same correction at player/controller.js `pos.y += (h - halfY)`. */
+    const before = halfH(bot);
+    bot.crouch = want;
+    bot.pos[1] += halfH(bot) - before;
+  }
+
+  function choosePosture(bot, S, dist, hasTarget, t) {
+    const ai = bot.ai;
+    if (t < ai.postureUntil) return;
+    ai.postureUntil = t + 900 + Math.random() * 2200;
+    if (!hasTarget) {
+      /* Moving between fights: stand. Crouch-walking the whole map is what made
+         the first pass look like the bots were injured. */
+      setStance(bot, 0);
+      return;
+    }
+    const r = Math.random();
+    if (dist > 45 && r < S.pronePct) { setStance(bot, 2); return; }
+    if (r < S.crouchPct) { setStance(bot, 1); return; }
+    setStance(bot, 0);
+  }
+
+  /* ---- movement ---------------------------------------------------------
+
+     One attempt along the desired vector, then each axis alone if that fails.
+     What is new in v9.2 is that every attempt is resolved VERTICALLY as well:
+     `groundAt` decides what the feet would rest on, and a move is legal when
+     the rise is inside MOVE.step and the body fits. Falling is a separate
+     integration afterwards so a bot walking off a roof arcs down instead of
+     teleporting to the pavement. */
+  function tryMove(bot, cols, nx, nz, h) {
+    const r = CFG.PLAYER.radius;
+    const feet = feetOf(bot);
+    const g = groundAt(cols, nx, nz, feet, r);
+    /* No ground within step reach means a DROP, not a wall — walking off a
+       ledge is allowed and gravity deals with it. Refusing it would pin bots to
+       the rooftops they just climbed onto. */
+    const landing = (g === null) ? feet : g;
+    if (landing - feet > CFG.MOVE.step + 0.001) return false;
+    if (bodyBlocked(cols, nx, landing, nz, r, h, CFG.MOVE.step + 0.03)) return false;
+    bot.pos[0] = nx; bot.pos[2] = nz;
+    if (g !== null && g > feet) { bot.pos[1] = g + halfH(bot); bot.ai.vy = 0; }
+    return true;
+  }
+
+  function applyGravity(bot, cols, dt) {
+    const r = CFG.PLAYER.radius, ai = bot.ai, hh = halfH(bot);
+    const feet = feetOf(bot);
+    const g = groundAt(cols, bot.pos[0], bot.pos[2], feet, r);
+    if (g !== null && feet - g < 0.02 && feet - g > -0.06) {
+      ai.vy = 0; bot.pos[1] = g + hh; return;
+    }
+    ai.vy -= CFG.MOVE.gravity * dt;
+    const nFeet = feet + ai.vy * dt;
+    /* Search downward from the CURRENT foot height for the surface being fallen
+       onto, otherwise a fast fall steps straight past a thin roof slab in one
+       frame and the bot drops through the building. */
+    let land = null;
+    for (let i = 0; i < cols.length; i++) {
+      const c = cols[i];
+      if (bot.pos[0] <= c[0] - r || bot.pos[0] >= c[3] + r) continue;
+      if (bot.pos[2] <= c[2] - r || bot.pos[2] >= c[5] + r) continue;
+      if (c[4] > feet + 0.02 || c[4] < nFeet) continue;
+      if (land === null || c[4] > land) land = c[4];
+    }
+    if (land !== null) { bot.pos[1] = land + hh; ai.vy = 0; }
+    else bot.pos[1] = Math.max(hh, nFeet + hh);
+    if (bot.pos[1] <= hh) { bot.pos[1] = hh; ai.vy = 0; }
+  }
+
+  /* ---- throwables -------------------------------------------------------
+
+     A frag is simulated on the server with the SAME constants the client uses
+     to draw it (CFG.THROWS.frag.throwVel, gravity 12 in weapons/system.js), and
+     the `throw` event is emitted so every client renders the arc through the
+     existing projectile code. Damage is applied server-side at the end of the
+     fuse.
+
+     It has to work this way round. A human's grenade damage arrives as a `hit`
+     claim from the thrower's client; a bot has no client, so nothing would ever
+     claim it. Reusing the visual event and owning the damage here keeps one
+     grenade model on screen and one source of truth for who got hurt. */
+  function throwFrag(room, bot, target) {
+    const F = CFG.THROWS.frag;
+    const ai = bot.ai;
+    const ox = bot.pos[0], oy = bot.pos[1] + 0.5, oz = bot.pos[2];
+    const dx = target.pos[0] - ox, dz = target.pos[2] - oz;
+    const d = Math.hypot(dx, dz) || 1;
+    /* Aim high enough to arc. Not a ballistics solution — a bot that computed
+       the exact launch angle would land every frag on your head, which is not
+       fun and not the difficulty dial we want to move. */
+    const up = Math.min(0.75, 0.22 + d / 90);
+    const flat = Math.sqrt(Math.max(0.05, 1 - up * up));
+    const vx = (dx / d) * F.throwVel * flat;
+    const vz = (dz / d) * F.throwVel * flat;
+    const vy = F.throwVel * up;
+    io.to(room.code).emit('throw', { id: bot.id, type: 'frag', o: [ox, oy, oz], v: [vx, vy, vz] });
+
+    // integrate the same arc the client will draw, to find where it goes off
+    let px = ox, py = oy, pz = oz, wx = vx, wy = vy, wz = vz;
+    const step = 1 / 60;
+    for (let i = 0; i < Math.ceil(F.fuse * 60); i++) {
+      wy -= 12 * step;
+      px += wx * step; py += wy * step; pz += wz * step;
+      if (py <= 0.12) { py = 0.12; wy = 0; wx *= 0.55; wz *= 0.55; }
+    }
+    ai.pendingNade = { x: px, y: py, z: pz, at: now() + F.fuse * 1000 };
+  }
+
+  function resolveNades(room, t) {
+    for (const bot of room.players.values()) {
+      const ai = bot.ai;
+      if (!bot.bot || !ai || !ai.pendingNade || t < ai.pendingNade.at) continue;
+      const n = ai.pendingNade; ai.pendingNade = null;
+      const F = CFG.THROWS.frag;
+      const teams = modeInfo(room).teams;
+      for (const q of room.players.values()) {
+        if (!q.alive) continue;
+        if (teams && q.team && bot.team && q.team === bot.team && q.id !== bot.id) continue;
+        const dx = q.pos[0] - n.x, dy = q.pos[1] - n.y, dz = q.pos[2] - n.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > F.radius) continue;
+        const dmg = Math.round(F.dmg * (1 - dist / F.radius));
+        if (dmg > 0) ctx.botExplode(room, bot, q, dmg, 'frag', dmg >= F.dmg - 0.5);
+      }
+    }
+  }
+
+  /* ---- per-tick AI ---- */
+
   function tick(room, dt) {
     if (!room || room.state !== 'playing') return;
-    if (!(CFG.MODES[room.settings.mode] || {}).practice) return;   // v8.38.1: nothing to do
+    if (!CFG.botsAllowed(room.settings.mode)) return;   // v9.2: one rule, one place
 
     const S = skillOf(room);
     const t = now();
     const spawns = (mapData(room).SPAWNS) || [];
 
+    resolveNades(room, t);
+
     for (const bot of room.players.values()) {
       if (!bot.bot) continue;
       if (!bot.alive) {
         /* Respawn on the same clock a human gets, unless the mode says one life. */
-        if (!bot.out && t >= bot.respawnAt) spawnPlayer(room, bot);
+        if (!bot.out && t >= bot.respawnAt) {
+          spawnPlayer(room, bot);
+          bot.ai.vy = 0; bot.crouch = 0; bot.ai.pendingNade = null;
+          bot.ai.plan = null; bot.ai.wanderTo = null; bot.ai.repath = 0;
+          bot.mines = CFG.GEAR.mine.start; bot.nades = CFG.THROWS.frag.count;
+        }
         continue;
       }
       const ai = bot.ai;
       const cols = ai.cols;
+      const kit = ai.kit || LOADOUTS[0];
 
       // --- acquire ---
       const foes = enemiesOf(room, bot);
@@ -250,83 +667,235 @@ module.exports = function initBotsModule(ctx) {
         const dx = q.pos[0] - bot.pos[0], dz = q.pos[2] - bot.pos[2];
         const d = Math.hypot(dx, dz);
         if (d > S.range || d >= bestD) continue;
-        if (cols.length && segmentBlocked(cols, bot.pos[0], bot.pos[1] + 0.45, bot.pos[2],
-                                          q.pos[0], q.pos[1] + 0.45, q.pos[2])) continue;
+        /* Eye height now follows posture, so a prone bot genuinely cannot see
+           over the crate a standing one shoots across. */
+        const eye = bot.crouch === 2 ? CFG.PLAYER.eyeProne
+                  : bot.crouch === 1 ? CFG.PLAYER.eyeCrouch : CFG.PLAYER.eyeStand;
+        if (cols.length && segmentBlocked(cols, bot.pos[0], feetOf(bot) + eye + 0.9, bot.pos[2],
+                                          q.pos[0], q.pos[1], q.pos[2])) continue;
         best = q; bestD = d;
       }
       if (best && ai.target !== best.id) { ai.target = best.id; ai.seenAt = t; }
       if (!best) ai.target = null;
 
+      choosePosture(bot, S, bestD, !!best, t);
+
       // --- aim + move ---
       let wantX = 0, wantZ = 0;
+      ai.sprint = false;
       if (best) {
         const dx = best.pos[0] - bot.pos[0], dz = best.pos[2] - bot.pos[2];
-        /* Face the target. Yaw here matches what a human client sends, so the
-           avatar code turns them the same way it turns anyone else. */
         bot.ry = Math.atan2(-dx, -dz);
-        bot.rx = Math.max(-0.5, Math.min(0.5, -(best.pos[1] - bot.pos[1]) / Math.max(1, bestD)));
+        bot.rx = Math.max(-0.6, Math.min(0.6, -(best.pos[1] - bot.pos[1]) / Math.max(1, bestD)));
         bot.mv = 1;
-        /* Close to about half their range, then strafe rather than walk into
-           point-blank, which is what made early passes feel like bowling pins. */
-        const want = S.range * 0.35;
-        const sign = bestD > want ? 1 : -0.35;
+        /* Hold the loadout's ideal range instead of a fixed fraction of the
+           skill's sight range. A shotgun closes, a sniper backs off, and the
+           same three lines do both. */
+        const want = kit.ideal;
+        const sign = bestD > want * 1.15 ? 1 : (bestD < want * 0.7 ? -1 : -0.2);
         wantX = (dx / (bestD || 1)) * sign;
         wantZ = (dz / (bestD || 1)) * sign;
         const px = -wantZ, pz = wantX;                       // strafe component
         const bob = Math.sin(t / 900 + bot.joinOrder) * 0.8;
         wantX += px * bob; wantZ += pz * bob;
+        if (bestD > want * 2 && Math.random() < S.sprintPct) ai.sprint = true;
       } else {
-        // --- wander toward a spawn point, which is the only map graph we have ---
-        if (!ai.wanderTo || t > ai.repath) {
-          const s = spawns[(Math.random() * spawns.length) | 0];
-          if (s) ai.wanderTo = [s[0], s[1]];
-          ai.repath = t + 6000 + Math.random() * 4000;
+        /* --- wander ---
+           Spawn points are still the only map graph available, but v9.2 also
+           lets a bot pick a LOOT point, which is the one list that describes
+           the insides of buildings and the tops of things. That is what gets
+           bots off the street and onto roofs without a navmesh: walk toward a
+           point that happens to be up a staircase, and the step logic does the
+           rest. `verticality` decides how often they bother. */
+        if ((!ai.wanderTo && !ai.plan) || t > ai.repath) {
+          const md = mapData(room);
+          /* Cached per room AND KEYED BY MAP. The first cut keyed it on the
+             room alone, which is wrong for the one thing a room outlives: its
+             map. Host plays a Strike Team match on Urban, returns to the lobby,
+             switches to Metro City, plays again — and every bot would still be
+             planning climbs toward Urban's rooftop coordinates, on a map where
+             they mean nothing. No crash, no gate failure, just bots that
+             quietly stop using stairs after the first map change.
+             The filter is cheap; caching it is only worth doing if the cache
+             cannot go stale. */
+          const mapKey = room.settings.map || 'urban';
+          if (!room._highLoot || room._highLootMap !== mapKey) {
+            room._highLoot = ((md.LOOT_POINTS) || []).filter(l => l[1] > 1.7);
+            room._highLootMap = mapKey;
+          }
+          const high = room._highLoot;
+          ai.plan = null; ai.wanderTo = null;
+          if (high.length && Math.random() < S.verticality) {
+            /* PICK FROM THE ELEVATED POINTS, AND TRY A FEW.
+               The first cut rolled `verticality`, then chose from ALL loot and
+               asked for a climb. Most loot is on the pavement and most elevated
+               loot has no stair route at all (container roofs, wagon tops, the
+               crane), so the compound odds worked out at roughly one climb plan
+               per bot per ninety seconds — measured, not estimated: a lone
+               extreme bot produced zero in a ninety-second probe.
+               Rolling verticality is a decision to go up. Once it is made, look
+               only at points that are up, and try four before giving up. */
+            let plan = null;
+            for (let a = 0; a < 4 && !plan; a++) {
+              const l = high[(Math.random() * high.length) | 0];
+              plan = planClimb(room.settings.map || 'urban',
+                bot.pos[0], feetOf(bot), bot.pos[2], l[0], l[1] - 0.55, l[2]);
+            }
+            if (plan) ai.plan = plan;
+            else {
+              const sp = spawns[(Math.random() * spawns.length) | 0];
+              if (sp) ai.wanderTo = [sp[0], sp[1]];
+            }
+          } else {
+            const sp = spawns[(Math.random() * spawns.length) | 0];
+            if (sp) ai.wanderTo = [sp[0], sp[1]];
+          }
+          /* A climb is a longer errand than a stroll, so it gets longer before
+             the plan is torn up and re-rolled. */
+          ai.repath = t + (ai.plan ? 16000 : 6000) + Math.random() * 4000;
+          ai.planAge = 0; ai.planApex = feetOf(bot);
         }
-        if (ai.wanderTo) {
+        /* Follow the plan one waypoint at a time. A waypoint is reached on
+           HORIZONTAL distance plus a loose height check: arriving at the foot
+           of a flight means standing near it, not landing on a exact point. */
+        ai.planAge = (ai.planAge || 0) + dt;
+        ai.planApex = Math.max(ai.planApex || 0, feetOf(bot));
+        if (ai.plan && ai.plan.length) {
+          const wp = ai.plan[0];
+          const dx = wp[0] - bot.pos[0], dz = wp[1] - bot.pos[2];
+          const d = Math.hypot(dx, dz);
+          /* Waypoint heights come from the stair registry and are FEET
+             heights; comparing them to pos[1] would be off by half a body.
+
+             The radius is TIGHT on purpose. At 1.8 m a bot ticked off "I am at
+             the foot of the next flight" while still standing on the previous
+             flight's top step, then set off diagonally for the waypoint after
+             it — straight over the open side of a 1.6 m staircase. Traced: up
+             to 3.76 m, two waypoints consumed in one second, then a fall back
+             to the street and a permanent shuffle at the bottom. A waypoint on
+             a staircase has to mean standing ON it. */
+          if (d < 0.9 && Math.abs(feetOf(bot) - wp[2]) < 0.8) {
+            ai.plan.shift();
+            if (!ai.plan.length) ai.plan = null;
+          } else if (feetOf(bot) < ai.planApex - 2.6) {
+            /* FELL OFF — measured against the highest point this plan reached,
+               not against the waypoint. Comparing to the waypoint height voided
+               a plan the moment it was made: the first waypoint of a chain is
+               the foot of a staircase that may itself sit several metres up, so
+               a bot standing on the street was 'below its waypoint' before it
+               had taken a step. Every plan in a forty-second probe was thrown
+               away that way. Losing 2.6 m of ground you had already gained is
+               unambiguous. */
+            ai.plan = null; ai.wanderTo = null; ai.repath = 0;
+          } else {
+            wantX = dx / (d || 1); wantZ = dz / (d || 1);
+            bot.ry = Math.atan2(-dx, -dz); bot.mv = 1;
+            /* Never sprint on a staircase. Sprinting up 0.32 m treads with a
+               per-tick step longer than the tread depth makes a bot skim the
+               nosings and stutter; walking is also what a player does here. */
+            if (d > 12 && Math.abs(bot.pos[1] - wp[2]) < 0.6 && Math.random() < S.sprintPct)
+              ai.sprint = true;
+          }
+        } else if (ai.wanderTo) {
           const dx = ai.wanderTo[0] - bot.pos[0], dz = ai.wanderTo[1] - bot.pos[2];
           const d = Math.hypot(dx, dz);
           if (d < 3) { ai.wanderTo = null; }
-          else { wantX = dx / d; wantZ = dz / d; bot.ry = Math.atan2(-dx, -dz); bot.mv = 1; }
+          else {
+            wantX = dx / d; wantZ = dz / d;
+            bot.ry = Math.atan2(-dx, -dz); bot.mv = 1;
+            if (Math.random() < S.sprintPct) ai.sprint = true;
+          }
         }
       }
 
-      const speed = CFG.MOVE.walk * S.moveMul * dt;
+      /* Speed follows posture and sprint, from the human MOVE table. A prone
+         bot crawling at 1.05 m/s is using the same number the player does. */
+      let base = bot.crouch === 2 ? CFG.MOVE.prone
+               : bot.crouch === 1 ? CFG.MOVE.crouch
+               : (ai.sprint ? CFG.MOVE.sprint : CFG.MOVE.walk);
+      const speed = base * S.moveMul * dt;
+      bot.mv = (wantX || wantZ) ? (ai.sprint && !bot.crouch ? 2 : 1) : 0;
+
+      const h = bodyH(bot);
       if (wantX || wantZ) {
         const m = Math.hypot(wantX, wantZ) || 1;
         const nx = bot.pos[0] + (wantX / m) * speed;
         const nz = bot.pos[2] + (wantZ / m) * speed;
-        /* No pathfinding — a blocked step is simply not taken, and the strafe
-           bob shakes them loose. Cheap, and it keeps bots off walls without a
-           navmesh this map does not have. */
-        if (!insideAny(cols, nx, bot.pos[1], nz, CFG.PLAYER.radius)) {
-          bot.pos[0] = nx; bot.pos[2] = nz;
-        } else if (!insideAny(cols, nx, bot.pos[1], bot.pos[2], CFG.PLAYER.radius)) {
-          bot.pos[0] = nx;
-        } else if (!insideAny(cols, bot.pos[0], bot.pos[1], nz, CFG.PLAYER.radius)) {
-          bot.pos[2] = nz;
+        const moved = tryMove(bot, cols, nx, nz, h)
+                   || tryMove(bot, cols, nx, bot.pos[2], h)
+                   || tryMove(bot, cols, bot.pos[0], nz, h);
+        /* STUCK DETECTION. Without vertical movement a blocked bot simply
+           jittered against a wall forever and the strafe bob eventually shook
+           it loose. Now that bots enter buildings they can wedge in a doorway
+           or a stairwell corner, where the bob is not enough. If almost nothing
+           has been covered for two seconds, throw the path away and pick
+           somewhere else — cheap, and it cannot deadlock. */
+        /* STUCK DETECTION IS A CHECKPOINT, NOT A PER-TICK DELTA.
+           The per-tick version compared movement THIS FRAME against the speed
+           this frame, so a bot oscillating between two points 0.07 m apart —
+           which is exactly what one does when it is wedged against a corner and
+           its strafe bob reverses each tick — read as moving every single
+           frame and never tripped. Traced: a bot frozen at (-57.0, -18.1) for
+           thirty seconds with stuckFor sitting at 0.0.
+           Net displacement from a checkpoint cannot be fooled that way. */
+        ai.stuckFor += dt;
+        if (ai.stuckFor >= 1.5) {
+          const net = Math.hypot(bot.pos[0] - ai.lastX, bot.pos[2] - ai.lastZ);
+          if (net < 1.0) { ai.wanderTo = null; ai.plan = null; ai.repath = 0; }
+          ai.lastX = bot.pos[0]; ai.lastZ = bot.pos[2]; ai.stuckFor = 0;
         }
-      } else bot.mv = 0;
+      }
+      applyGravity(bot, cols, dt);
 
       // --- fire ---
       if (!best) continue;
       if (t - ai.seenAt < S.react) continue;                 // reaction time
-      if (t < ai.nextFire) continue;
       if (best.protUntil && t < best.protUntil) continue;    // respect spawn protection
-      ai.nextFire = t + S.fireMs;
+
+      /* GRENADE. Thrown at a target that is holding still-ish at a range where
+         a frag is the right answer — too close and the bot kills itself, too
+         far and it lands nowhere near. */
+      if (bot.nades > 0 && t > ai.nextNade && bestD > 11 && bestD < 34
+          && Math.random() < S.nadePct) {
+        bot.nades--;
+        ai.nextNade = t + S.nadeCdMs;
+        throwFrag(room, bot, best);
+      }
+
+      /* MINE. Dropped as area denial while backing off, not thrown at anyone —
+         which is exactly how a player uses them. Placement goes through the
+         same Mines.place the human path uses, so arming delay, friendly-fire
+         rules and the client's minePlaced event all come along unchanged. */
+      if ((bot.mines | 0) > 0 && t > ai.nextMine && bestD < kit.ideal * 0.8
+          && Math.random() < S.minePct) {
+        ai.nextMine = t + 9000 + Math.random() * 9000;
+        ctx.botPlaceMine(room, bot, [bot.pos[0], bot.pos[1], bot.pos[2]]);
+      }
+
+      if (t < ai.nextFire) continue;
+      ai.nextFire = t + Math.round(S.fireMs * kit.rateMul);
 
       /* Hit resolution is a probability rather than a simulated bullet. A bot
          that raycast every shot would need the full weapon model — spread,
          recoil, drop, penetration — reimplemented server-side and kept in sync
          with the client's forever. This produces the same felt outcome and has
          one number to tune. Falls off with range so extreme is not a laser at
-         130 m. */
+         130 m.
+
+         v9.2 folds the loadout in: accuracy peaks at the weapon's ideal range
+         and decays either side of it, so a shotgun bot really is lethal in a
+         corridor and useless across the plaza, without a second code path. */
       const fall = Math.max(0.25, 1 - (bestD / S.range) * 0.75);
-      const pHit = Math.max(0.05, Math.min(0.95, (1 - S.aimErr) * fall));
+      const off = Math.abs(bestD - kit.ideal) / Math.max(12, kit.ideal);
+      const fit = Math.max(0.3, 1 - off * 0.55);
+      const posture = bot.crouch ? 1.12 : 1;                 // steadier when set
+      const pHit = Math.max(0.05, Math.min(0.95, (1 - S.aimErr) * fall * fit * posture));
       if (Math.random() > pHit) continue;
       const part = Math.random() < S.headPct ? 'head' : (Math.random() < 0.18 ? 'legs' : 'body');
-      ctx.botShoot(room, bot, best, part, S.dmgMul);
+      ctx.botShoot(room, bot, best, part, S.dmgMul, kit.w);
     }
   }
 
-  return { addBots, removeBots, tick, anyHumans, SKILLS, SKILL_IDS, buildColliders, segmentBlocked };
+  return { addBots, removeBots, tick, anyHumans, SKILLS, SKILL_IDS, LOADOUTS,
+           buildColliders, stairsFor, planClimb, segmentBlocked, groundAt, bodyBlocked };
 };

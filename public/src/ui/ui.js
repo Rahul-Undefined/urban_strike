@@ -319,11 +319,17 @@ var UI = (function () {
       els['btn-shuffle'].style.display =
         (isHost && CFG.activeTeams(d.settings.mode).length >= 2) ? '' : 'none';
     }
-    /* v8.38: bot controls belong to Overrun only. */
+    /* v8.38: bot controls belong to Overrun only.
+       v9.2: and to Strike Team. The test is CFG.botsAllowed rather than a
+       category string, so the controls follow the same rule the server guard
+       does — a mode that gets bots always gets the sliders to configure them. */
     var isPractice = (CFG.MODES[d.settings.mode] || {}).cat === 'practice';
-    if (els['bot-row']) els['bot-row'].style.display = isPractice ? '' : 'none';
+    var hasBots = CFG.botsAllowed(d.settings.mode);
+    if (els['bot-row']) els['bot-row'].style.display = hasBots ? '' : 'none';
     if (els['lobby-bots'] && document.activeElement !== els['lobby-bots']) {
-      els['lobby-bots'].value = String(d.settings.botCount || 5);
+      /* Strike Team shows 0 = "match the squad", which is what the server does
+         with an unset count. Showing 5 there would be a lie about the default. */
+      els['lobby-bots'].value = String(d.settings.botCount || (isPractice ? 5 : 0));
       els['lobby-bots'].disabled = !isHost;
     }
     if (els['lobby-skill'] && document.activeElement !== els['lobby-skill']) {
@@ -359,6 +365,8 @@ var UI = (function () {
     if (els['info-time'])  els['info-time'].textContent  = d.settings.minutes + ' min';
     if (els['info-slots']) els['info-slots'].textContent =
       isPractice ? (total + ' + ' + (d.settings.botCount || 0) + ' bots')
+      : hasBots  ? (total + ' / ' + mode.maxPlayers + '  vs ' +
+                    (d.settings.botCount ? d.settings.botCount : total || 1) + ' bots')
                  : (total + ' / ' + mode.maxPlayers);
     if (els['info-role'])  els['info-role'].textContent  = isHost ? 'HOST' : 'OPERATOR';
   }

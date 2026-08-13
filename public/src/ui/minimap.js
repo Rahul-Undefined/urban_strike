@@ -296,6 +296,37 @@ var Minimap = (function () {
        all the time, which reads as a broken feature rather than as stealth.
        The flag is read here and by the dial, so the two views can never
        disagree about whether a contact is shown. */
+    /* ===== v9.2 THE FULL MAP IS NOT A TACTICAL FEED IN TEAM MODES =====
+
+       The match does NOT pause while M is held. In a team or squad game that
+       turned the full map into a permanent overhead readout of where every
+       team-mate is and where every detected enemy was last seen — free
+       information, refreshed live, with no cost for taking it. Rahul called it
+       exactly right: it is running the gameplay.
+
+       So contacts on the FULL map are now limited to modes with no sides —
+       Free For All, Overrun, Last Stand Solo. The minimap is untouched and
+       still shows everything it always did, because the dial is small, glanced
+       at, and costs you your view of the world to read.
+
+       WHAT THIS COSTS, stated plainly rather than discovered later: Last Stand
+       Squads (lsq2/lsq4) was designed around this. Its entry in world.config.js
+       says camping is answered by the map rather than by a timer — pressing M
+       showed where everyone was, so hiding bought position, not safety. Those
+       two modes are team-shaped, so they lose that. Elimination still
+       terminates the match, but two squads that never seek each other can now
+       stall much longer than before. If that turns out to matter in play, the
+       fix is a mode flag (`fullMapContacts: true` on the Last Stand entries),
+       not a special case wired in here.
+
+       The own-position arrow below is deliberately NOT gated. Without it the
+       full map stops being a map — you cannot orient on a layout you cannot
+       locate yourself in, and your own position is not intel you could gain an
+       advantage from. */
+    var modeNow = (Net.getMatch() || {}).mode;
+    var modeCfg = CFG.MODES[modeNow] || null;
+    var showContacts = !(modeCfg && modeCfg.teams);
+
     var myTeam = Net.getMyTeam();
     var nowMs = performance.now();
     lastSeen = lastSeen || {};
@@ -320,7 +351,7 @@ var Minimap = (function () {
       }
     }
 
-    Net.eachRemote(function (id, r) {
+    if (showContacts) Net.eachRemote(function (id, r) {
       var ally = myTeam && r.team === myTeam;
       if (ally) {
         if (!r.alive) return;

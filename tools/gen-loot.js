@@ -50,7 +50,11 @@ vm.createContext(ctx);
  "public/src/environment/metro.js","public/src/environment/access.js"]
   .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
-ctx.__m = "urban";
+/* v9.1: map is now an argument. It was hardcoded to urban, so Metro's loot
+   could never be regenerated from measured geometry — which is why its points
+   still described the pre-v8.20 24 m towers.
+   Run: node tools/gen-loot.js [urban|rural|metro] */
+ctx.__m = process.argv[2] || "urban";
 const cols = vm.runInContext(`(function(){var sc=new THREE.Scene();World.reset();World.buildMap(sc,__m);
   return World._colliders().map(function(c){return [c[0],c[1],c[2],c[3],c[4],c[5]];});})();`, ctx);
 

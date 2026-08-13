@@ -72,8 +72,59 @@
     bots: { label: 'Overrun', vlabel: 'One operator against the sector',
             cat: 'practice', teams: false, teamCount: 0, maxPlayers: 20, practice: true },
     lsq4: { label: 'Last Stand \u00b7 Squads 5 \u00d7 4',  vlabel: '5 squads of 4',
-            cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20, lives: 1 }
+            cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20, lives: 1 },
+
+    /* v9.2 STRIKE TEAM — humans on one side, bots on the other.
+
+       Overrun (`bots`) is free-for-all shaped: every bot is hostile to
+       everybody, and only one human belongs in the room. That is a practice
+       range. These are the opposite shape — every human on side A, every bot on
+       side B — and the ordinary team rules (friendly fire off, team kill
+       target, shared score) apply unchanged, because these ARE ordinary team
+       modes that happen to fill one side with bots.
+
+       `vsBots` is what turns bot spawning on, NOT the `practice` flag. Keeping
+       them separate matters: `practice` means "free-for-all range, one human",
+       and several guards read it for exactly that. Overloading it to also mean
+       "this mode has bots" would have made Strike Team inherit Overrun's FFA
+       shape, so bots would shoot each other and friendly fire would be on.
+
+       maxPlayers is the HUMAN squad size; the room cap counts humans only, so
+       bots arriving at match start cannot lock a team-mate out of a free slot. */
+    co1:  { label: 'Strike Team \u00b7 Solo',    vlabel: '1 operator vs the machines',
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 1,  vsBots: true },
+    co2:  { label: 'Strike Team \u00b7 Duo',     vlabel: '2 operators vs the machines',
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 2,  vsBots: true },
+    co3:  { label: 'Strike Team \u00b7 Trio',    vlabel: '3 operators vs the machines',
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 3,  vsBots: true },
+    co4:  { label: 'Strike Team \u00b7 Squad',   vlabel: '4 operators vs the machines',
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 4,  vsBots: true },
+    co6:  { label: 'Strike Team \u00b7 Section', vlabel: '6 operators vs the machines',
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 6,  vsBots: true },
+    co10: { label: 'Strike Team \u00b7 Platoon', vlabel: '10 operators vs the machines',
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 10, vsBots: true }
   };
+
+  /* THE single source of truth for "does this mode put bots in the room".
+     The server guard and tools/verify-bots.js both read this, so the gate can
+     never drift from the rule it checks — the previous gate asserted the
+     literal source text `.practice) return`, which meant adding a second bot
+     mode turned it red for being correct. */
+  function botsAllowed(modeId) {
+    var m = MODES[modeId];
+    return !!(m && (m.practice || m.vsBots));
+  }
+  /* Which side humans take when the mode fills the other with bots. Null for
+     every other mode, so a caller cannot accidentally pin a normal match to one
+     team. */
+  function humanSideOf(modeId) {
+    var m = MODES[modeId];
+    return (m && m.vsBots) ? 'a' : null;
+  }
+  function botSideOf(modeId) {
+    var m = MODES[modeId];
+    return (m && m.vsBots) ? 'b' : null;
+  }
 
   /* The two-step picker. Order here is the order shown. */
   var MODE_CATS = [
@@ -86,7 +137,9 @@
     { id: 'last',   label: 'Last Stand',
       blurb: 'One life. No respawn. No clock. Last one breathing wins.' },
     { id: 'practice', label: 'Overrun',
-      blurb: 'You against the sector. Choose how many come for you, and how mean they are.' }
+      blurb: 'You against the sector. Choose how many come for you, and how mean they are.' },
+    { id: 'coop',   label: 'Strike Team',
+      blurb: 'You and your squad against the machines. Pick your size and how mean they are.' }
   ];
   function modesInCat(catId) {
     return Object.keys(MODES).filter(function (m) { return MODES[m].cat === catId; });
@@ -150,5 +203,6 @@
 
   return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams,
     MODE_CATS: MODE_CATS, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
+    botsAllowed: botsAllowed, humanSideOf: humanSideOf, botSideOf: botSideOf,
     MINIMAP: MINIMAP, RENDER: RENDER, MAPS: MAPS };
 });

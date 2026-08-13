@@ -106,6 +106,21 @@ function refreshTeamsAndColors(room) {
      the CURRENT mode — otherwise switching from squads back to 5v5 would strand
      players on team 'g' with no way to score. */
   const ids = CFG.activeTeams(room.settings.mode);
+  /* v9.2 STRIKE TEAM. When the mode fills one side with bots, humans do NOT
+     round-robin — every human belongs on the human side and every bot on the
+     other. Without this the alternating balancer would put operator 2 on the
+     bot team and hand them friendly fire against their own squad, which is the
+     mode failing at its first premise. A manual host placement is ignored here
+     for the same reason: there is no second side for a human to be placed on. */
+  const humanSide = CFG.humanSideOf(room.settings.mode);
+  if (humanSide) {
+    list.forEach(p => {
+      p.team = p.bot ? CFG.botSideOf(room.settings.mode) : humanSide;
+      p.teamLocked = false;
+      p.color = CFG.TEAMS[p.team].color;
+    });
+    return;
+  }
   let autoIdx = 0;
   list.forEach((p, i) => {
     if (teams) {

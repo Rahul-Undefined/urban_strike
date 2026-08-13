@@ -5251,3 +5251,210 @@ geometry. Deployment checkpoints became v4.2 -> v4.3.
 | Merge (9) | `node tools/verify-merge.js` | geometry math vs real three |
 | Build chain | `node tools/verify-build.js` | both maps + reset path on real three |
 | Parse sweep | `node --check` on every .js | syntax |
+
+---
+
+## v9.1 — METRO CITY REBUILD
+
+Scope: `environment/metro.js`, `config/maps-metro.config.js`, plus metro-only lift
+rows. Urban and Rural geometry, data and lifts are byte-identical throughout,
+proven every run by the new `tools/verify-untouched.js`.
+
+### Gates added or extended (Phase 0 — written BEFORE the map work)
+- **`verify-untouched.js` (new).** Fingerprints Urban and Rural: collider count,
+  a checksum over every collider coordinate, draw calls, triangles, casters,
+  lights, BOUND, loot/spawn/airdrop counts, and the five Urban lift shafts.
+  Proven to go red by nudging one Urban lift 0.5 m in the shared config.
+- **`verify-cover.js`** extended to Metro. A `metro: 0.06` budget had sat in the
+  file since v9.0 with Metro never in the loop, so it had never been applied.
+- **`verify-flow.js`** extended to Metro, and a real bug fixed: the flood was
+  seeded from `spawn[0], spawn[2]`, but index 2 is the YAW (`server.js:188`
+  reads `s[0]`/`s[1]`). Rural is explicitly excluded with the reason recorded —
+  the ground-plane rasteriser cannot model terraces and reported a false 44.3%.
+- **`gen-loot.js`** map is now an argument; it was hardcoded to urban.
+
+### Measured results
+| | before | after |
+|---|---|---|
+| Dead ground | 19.2% (budget 6%) | **1.8%** |
+| Worst open run | 36.2 m | 19.3 m |
+| Cover pieces | 252 | 565 |
+| Broken promises | 13 | **0** |
+| Floating props | 16 | **0** |
+| Loot points | 69 | 110 |
+| Flights, all climbable | 8 | **38** |
+| Triangles | 14,012 | 24,244 (ceiling 26,000) |
+
+No budget was raised. Stairs ship `stringers: false` — the decorative side
+plates are two thirds of a staircase's triangle cost, and with them the build
+hit 30,136 and breached the ceiling. Geometry was cut, not the ratchet.
+
+### What changed in the map
+- **Four edge districts** fill the bare ring from +/-84 to the wall: rail yard
+  (north, surfaces the subway), cargo terminal (east), bus depot and market
+  street (south), park strip (west).
+- **A second way into every lift-only building.** Mall, garage, four residential
+  slabs, construction site and crane were reachable only by lift — a 1.6 m
+  trigger one player can hold. All now have external switchback fire escapes.
+  External, not internal: an internal flight needs a void cut through the slab
+  above covering the whole run, which is what cost Urban five unreachable
+  staircases in v8.10. The crane's second route is earned — climb the
+  construction site, two more flights, then a catwalk.
+
+### Rules this pass established
+- **Two cover classes, and the wall decides which.** Against a 2.80 m roof,
+  every piece of standing-height cover is a broken promise, so there is no safe
+  tall prop next to a building. Positions beside a structure get 0.80 m jersey
+  barriers — below the 0.9 m PROMISE_MIN, incapable of reading as a step no
+  matter what is built there later. Open ground gets the tall classes.
+- **A limit is not a target.** `ceil(fh / 0.40)` put the mall's flights at
+  exactly the 0.42 m auto-step limit and every one refused at the first tread.
+  Rise now targets 0.34, the figure the Financial District towers already prove.
+- **Landings go beyond a flight, never over it**, with a nosing reaching back
+  under the next flight's first tread in that flight's lane only.
+- **Keep-outs are read from map data, not typed.** Raising the random scatter
+  from 46 to 96 buried a spawn and blocked an airdrop; the loop now reads
+  SPAWNS and AIRDROP_POINTS and refuses to build near them.
+- **Elevated loot is probed, not derived on paper.** A landing's z depends on
+  its flight's step count, which differs per building; nine of nine guessed
+  points floated. Every elevated point was read back out of the built colliders.
+
+### Known, unchanged, pre-existing
+`verify-arch` urban 11 / rural 18 · `verify-climb` urban 20/68, rural 7/25 ·
+`verify-access` north block A. All red before this work and untouched by it.
+
+### Open
+- `ready: true` NOT flipped. `test.js:69` asserts every map stays selectable, so
+  hiding Metro turns the board red; that assertion should test the mechanism
+  rather than pin the value. Metro is now in a fit state to be played.
+- The parking garage (x -92..-62, z -20..16) and residential block A
+  (x -94..-70, z 14..34) physically OVERLAP in x -92..-70, z 14..16. Pre-existing;
+  the block A fire escape was routed around it. Two buildings in the same volume
+  deserves its own pass.
+- Metro's central plaza is still flat — the sunken bowl from the design proposal
+  was not built.
+
+---
+
+## v9.2 — STRIKE TEAM, BOTS WITH A BODY, AND A QUIETER FULL MAP
+
+### 1. Strike Team — humans on one side, machines on the other
+Six sizes: Solo, Duo, Trio, Squad (4), Section (6), Platoon (10). Every human on
+side A, every bot on side B, ordinary team rules throughout. Bot count defaults
+to the size of the human squad and stays host-adjustable; difficulty picker is
+the existing one.
+
+`vsBots` is a SEPARATE flag from `practice`. Overrun is a free-for-all range
+where every bot is hostile to everybody and one human belongs in the room;
+Strike Team is a team match. Overloading `practice` to mean "has bots" would
+have given Strike Team Overrun's shape — bots shooting each other, friendly fire
+live against your own squad. `CFG.botsAllowed()` is the single rule both the
+server guard and the gate read.
+
+Fixed while building it: the room cap counted `room.players.size`, which
+includes bots, so a Duo room with one human reported itself full the moment the
+match started. It counts humans now, which is what it always meant.
+
+### 2. Bots can do what a player can
+`bot.pos[1]` was never assigned ANYWHERE in v8.38. Bots slid in x/z at their
+spawn height forever — no stairs, no roofs, no falling — and on Metro City they
+stood in the street while humans shot down from the fire escapes.
+
+Now: ground-following physics off the human `CFG.MOVE`/`CFG.PLAYER` tables,
+gravity, sprint, crouch and prone (with the capsule-centre correction the human
+controller does), a 13-entry loadout table with per-weapon engagement ranges,
+frags, and mines. Stair climbing has NO stair-specific code — a stair is a run
+of 0.32 m rises and 0.42 m is the step limit, so a bot walks up one for the same
+reason a player does.
+
+Navigation chains flights from `World._stairs()` — the same registry
+verify-climb walks. Measured: bots reach 13.95 m (the garage top deck).
+
+FOUR DEFECTS, none of which any static check could have caught:
+- **pos[1] is the capsule CENTRE, not the feet.** Physics written against feet
+  buried every bot 0.9 m underground. Climbers went 1-in-12 to 0.
+- **The body test counted the next stair tread as a wall,** so every staircase
+  read as solid. Plans built, bots walked to the foot of the stairs and stood
+  there — 22 climb plans, zero metres of height.
+- **Waypoint acceptance at 1.8 m** let a bot tick off the next flight while
+  still standing on the previous one, cut the corner and fall off the side.
+- **Stuck detection compared per-tick movement to per-tick speed,** so a bot
+  oscillating 7 cm apart read as moving every frame. One sat frozen for thirty
+  seconds at `stuckFor 0.0`. It is a checkpoint over 1.5 s now.
+
+Also fixed: `botShoot` hardcoded `'ak47'`, so a bot rendered carrying an AWM did
+AK damage and the kill feed named the wrong gun.
+
+### 3. The full map is not a live tactical feed in team modes
+Pressing M does not pause the match. Contacts on the FULL map are now limited to
+modes with no sides (FFA, Overrun, Last Stand Solo). The minimap is untouched.
+The own-position arrow is deliberately NOT gated — a map you cannot locate
+yourself on is not a map, and your own position is not exploitable intel.
+
+KNOWN COST, recorded rather than discovered: Last Stand Squads (lsq2/lsq4) was
+designed around this — its config says camping is answered by the map, not a
+timer. Those two lose it. If it matters in play the fix is a
+`fullMapContacts: true` flag on those entries, not a special case in minimap.js.
+
+### 4. Gates that pinned implementations instead of rules
+Three went red for correct changes, the same failure shape as the Metro `ready`
+assertion:
+- `verify-bots` asserted the literal source text `.practice) return`.
+- `verify-models` assumed every team mode needs a human on each side, which
+  Strike Team Solo breaks by design.
+- `test.js` pinned the exact comma-joined category list, while the comment
+  directly above it said to assert the shape rather than a magic total.
+All three assert invariants now.
+
+`verify-bots` also gained a live 60-second behavioural probe against real Metro
+geometry. It is slower than the rest of that file put together and it is the
+only part that could have caught any of the four defects above.
+
+### Verification
+`test.js` **252 / 0**, three consecutive runs. New gate `verify-fullmap` 49/0.
+`verify-bots` 191/0, `verify-models` 181/0, `verify-untouched` 23/0 (Urban and
+Rural still byte-identical), `verify-map` 1136/0.
+
+Unchanged pre-existing reds: `verify-arch` urban 11 / rural 18 · `verify-climb`
+urban 20/68, rural 7/25 · `verify-access` north block A.
+
+### Open
+- Bots do not use LIFTS, only stairs and ramps. On Metro every building now has
+  a stair so this costs nothing; on Urban a few lift-only positions stay
+  bot-free.
+- Rocket and knife are deliberately absent from the loadout table. A rocket bot
+  is a one-shot kill with splash the probability model does not simulate, and a
+  knife bot needs melee closing behaviour that does not exist.
+- Metro's `ready` flag and the `test.js:69` selectability assertion are still as
+  described in v9.1.
+
+
+### v9.2 sanity pass (pre-push review vs v9.0)
+
+Two gaps found by reviewing rather than by any existing gate:
+
+**BUG FIXED — stale elevated-loot cache.** The bot navigator cached the elevated
+loot subset on the ROOM, but a room outlives its map: play a Strike Team match
+on Urban, return to the lobby, switch to Metro City, and every bot would still
+plan climbs toward Urban's rooftop coordinates. No crash, no red gate — bots
+would simply stop using stairs after the first map change. Cache is keyed by map
+now.
+
+**NEW GATE — `tools/verify-client.js` (62/0).** Nothing in this project loaded
+the browser bundle. Every gate reads the server, the config or the geometry, so
+the only thing between a typo in ui.js and a blank page was `node --check`,
+which proves a file parses and nothing more — it would happily accept
+`CFG.botsAllowd(...)`. This loads every script index.html lists, IN THE ORDER
+index.html lists them, into one shared context and then asserts the globals and
+config helpers the UI depends on actually exist. The script list is read from
+index.html rather than copied, because a copied list drifts (see the v8.9 note
+in verify-lifts.js). It is not a rendering test — no DOM, no WebGL — but it
+catches the whole class of "white screen, undefined is not a function".
+
+**v9.0 REGRESSION BLOCK added to `verify-bots` (now 207/0).** v9.2 replaced the
+bot guard, added a second bot mode family and rewrote the movement layer, so the
+behaviours that have held since v8.38 are now asserted by RUNNING them, not by
+reading source — the source is the thing that changed. Confirmed still true:
+Overrun bots take no side and engage each other; a stale `botCount` of 6 injects
+zero bots into t2/t5/t10/sq2/sq4/ffa/ls/lsq2/lsq4 (the v8.38.1 leak stays
+fixed); `removeBots` leaves humans; ticking a room with no bots is a safe no-op.
