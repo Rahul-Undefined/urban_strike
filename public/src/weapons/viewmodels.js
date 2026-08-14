@@ -405,31 +405,26 @@ var WeaponModels = (function () {
     if (!atts) return;
     var A = (typeof CFG !== 'undefined' && CFG.ATTACH) || {};
 
-    /* SIGHT. A red dot is a small tube with a bright lens; magnified optics get
-       a longer body and a bigger objective, scaled off the attachment's own
-       adsFov so a 8x visibly outsizes a 2x without a per-scope model. */
-    var sName = atts.sight, sDef = sName && A[sName];
-    if (sDef) {
-      var mag = sDef.adsFov ? Math.max(1, 52 / sDef.adsFov) : 1;   // 1 for a red dot
-      var scoped = !!sDef.adsFov;
-      var body = new THREE.Mesh(
-        new THREE.CylinderGeometry(scoped ? 0.028 : 0.024, scoped ? 0.028 : 0.024,
-          scoped ? Math.min(0.30, 0.13 + mag * 0.022) : 0.075, 10), mat(0x15181c));
-      body.rotation.x = Math.PI / 2;
-      body.position.set(0, 0.085, scoped ? -0.10 : -0.02);
-      body.userData.att = true; g.add(body);
-      // objective lens, larger with magnification
-      var lensR = scoped ? Math.min(0.05, 0.026 + mag * 0.004) : 0.019;
-      var lens = new THREE.Mesh(new THREE.CylinderGeometry(lensR, lensR, 0.012, 10),
-        new THREE.MeshBasicMaterial({ color: scoped ? 0x2a4a66 : 0xff3a2a }));
-      lens.rotation.x = Math.PI / 2;
-      lens.position.set(0, 0.085, scoped ? -0.24 : -0.056);
-      lens.userData.att = true; g.add(lens);
-      // riser so the optic sits above the receiver rather than inside it
-      var riser = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.035, 0.05), mat(0x22262b));
-      riser.position.set(0, 0.055, scoped ? -0.06 : -0.02);
-      riser.userData.att = true; g.add(riser);
-    }
+    /* SIGHT: NOT MODELLED. Deliberately.
+       v9.5 fitted a physical optic to answer "the red dot doesn't affect
+       anything on the gun". It did affect it — and that turned out to be the
+       problem: a tube and riser sitting at eye level in front of the receiver
+       occludes the centre of the screen, which is precisely where you are
+       looking when you aim. Rahul: "remove the scope design from the guns it
+       ruining the view, keep it as before."
+
+       Correct call, and worth recording why: on a first-person viewmodel the
+       weapon occupies the lower-right of the frame and anything mounted ON TOP
+       of it grows into the sight line. A rifle's own iron sights are modelled
+       low and thin for the same reason.
+
+       The sight's MECHANICAL effect is untouched — eff() still applies
+       spreadMult and adsFov, the HUD still shows the attachment, and picking one
+       up still changes how the gun shoots. Only the mesh is gone.
+
+       If a visible optic is ever wanted again, it belongs BELOW the barrel line
+       or as a change to the reticle rather than as geometry in front of the
+       camera. */
 
     /* MUZZLE. A suppressor is long and fat; a compensator is short and ported.
        Both read instantly from the corner of the eye, which is the point. */

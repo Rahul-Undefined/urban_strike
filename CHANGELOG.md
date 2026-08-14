@@ -5727,3 +5727,95 @@ verify-stairs-quality **15/0** — green for the first time.
 Draw calls 103/115, triangles 87,396/120,000, casters 57/62. No budget raised.
 `test.js` **272 / 0**, three consecutive runs. All gates green except the two
 documented reds (verify-arch, verify-climb) and verify-access.
+
+---
+
+## v9.7 — SPAWNS AND LOOT DOUBLED, BOTS THAT ACTUALLY HUNT, SCOPE MESH REMOVED
+
+### Spawn and loot density
+| | spawns before | after | loot before | after |
+|---|---|---|---|---|
+| Urban | 22 | **44** | 270 | **360** |
+| Metro City | 24 | **46** | 156 | **246** |
+| Hollow Ridge | 28 | **50** | 74 | **164** |
+
+22 spawn tiles for up to 20 humans PLUS up to 19 bots meant a Strike Team match
+had fewer places to stand than bodies — half of why bots stacked before the v9.6
+crowding fix, and the other half of why respawns felt repetitive.
+
+**New tool: `tools/gen-points.js`.** Generates spawn and loot points FROM THE
+BUILT WORLD, applying exactly the two tests verify-map applies, so nothing it
+emits can float or sit inside a wall. Typed coordinates have failed this project
+in v9.3, v9.5 and v9.6 — each time after the previous one left a comment saying
+not to type them. The comment never prevented it; reading the geometry does.
+
+Two things the tool caught about itself:
+- Scanning centre-out put every new Urban spawn within 40 m of the origin —
+  technically valid and completely useless. Candidates are now scored by
+  distance from the NEAREST EXISTING point and the emptiest ground is taken
+  first.
+- Tagging new spawns by half-map gave Metro a 20:4 a/b split, which would have
+  handed one side three times the choice. All generated spawns are NEUTRAL; the
+  hand-placed a/b lists still encode "teams start on their own side", and
+  pickSpawn's distance scoring does the rest.
+
+### The scope mesh is gone
+v9.5 fitted a physical optic to answer "the red dot doesn't affect anything on
+the gun". It did affect it — and that was the problem. On a first-person
+viewmodel the weapon sits lower-right and anything mounted ON TOP grows into the
+sight line, which is exactly where the player is looking. A rifle's own iron
+sights are modelled low and thin for the same reason.
+
+Only the mesh was removed. eff() still applies spreadMult and adsFov, the HUD
+still shows the attachment, and picking one up still changes how the gun shoots.
+Suppressors, compensators and the stretched magazine stay — none of them are in
+front of the camera.
+
+### The Civic apartment roof was sealed
+The east bulkhead ran the full depth of the stair shaft and stood between the
+arrival landing and the roof deck. The only opening was in the SOUTH bulkhead,
+reachable only by crossing the stair hole — so a player climbed three storeys
+and had nowhere to go. Split, with the gap aligned to the landing.
+
+### Bots: three separate problems
+**Too easy, measured rather than felt.** Time-to-kill on the old veteran numbers
+with an AK-class weapon: 22 m 0.7 s, 40 m 1.6 s, 60 m 4.1 s. Inside knife range
+it was fine; past 30 m it stopped being a fight. Cause: `fall` (range) and `fit`
+(loadout ideal range) MULTIPLIED, and both express the same idea — that distance
+is hard. Falloff softened to 0.55 with a 0.35 floor, fit to 0.38 with a 0.45
+floor, and veteran/extreme sharpened on reaction, rate and aim. Veteran now
+kills in 0.9 s at 40 m. **Recruit and regular are untouched** — the bottom of
+the ladder is meant to be the pre-v9.2 experience.
+
+**Stuck on stairs and in walls.** The v9.2 checkpoint DETECTED it correctly and
+then did the only thing it could: throw the path away. If the bot is wedged, the
+replacement path is behind the same corner and it wedges again immediately,
+which is why they looked frozen rather than confused. A stuck verdict now
+commits to a perpendicular shove for 0.8 s — what a player does when they clip a
+doorframe — and after three failed attempts the bot respawns, because a bot
+standing in a wall for a whole match is worse than one that reappears.
+
+**Never went upstairs.** Climb plans were only ever made while WANDERING, and in
+a match a bot can almost always see somebody. On a map built around fire escapes,
+three of twelve bots left the street in a minute and the highest anything reached
+was 4.4 m. Bots now roll their verticality on spotting a distant enemy and go
+looking for height NEAR THAT ENEMY, shooting the whole way up — which is what a
+person does. Measured after: **9 of 12 climbing, peak 14.0 m.**
+
+### Verification
+`test.js` **272 / 263 / 263, all 0 failed** across three runs. The spread is the
+airdrop pool being random; the drone phase reports SKIPPED rather than pretending
+it flew one. All gates green except the three documented reds.
+
+verify-map **1869 / 0** — every one of the 176 new spawns and 270 new loot points
+proved.
+
+One test brittleness fixed: the armour phase took the first armour spot of any
+tier, which was safe at 270 loot points and not at 360, where two vests can share
+a pickup radius — it collected an L2 while asserting against the L1 it stood on.
+It now picks an isolated spot.
+
+Both fingerprint baselines re-recorded with reasons written in. Note that
+`colliders` and `tris` are UNCHANGED and only the checksum moved: that is the
+signature of geometry that MOVED rather than appeared, matching the single wall
+edited.

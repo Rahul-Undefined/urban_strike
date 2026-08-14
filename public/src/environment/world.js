@@ -991,7 +991,16 @@ World.build = function (sceneRef) {
        so a player who somehow reached the top emerged into a sealed box. */
     seg(24.3, 26.0, 10.2, 11.9, -31.5, -31.25, M.brick);
     seg(28.4, 29.85, 10.2, 11.9, -31.5, -31.25, M.brick);
-    seg(29.6, 29.85, 10.2, 11.9, -36.7, -31.5, M.brick);
+    /* THE EAST BULKHEAD IS SPLIT — this wall sealed the roof.
+       The stair arrives on a landing at the NORTH end of the shaft (z -36.65 to
+       -35.3) and the roof deck it needs is immediately east at x 29.6. This
+       wall ran the full depth of the shaft and stood between the two, so a
+       player climbed three storeys and then had nowhere to go: the only opening
+       was in the south bulkhead, reachable only by crossing the stair hole.
+       Reported as "a wall on top of the roof fully blocking access", which is
+       exactly what it was.
+       The gap is aligned with the landing, so you step out where you arrive. */
+    seg(29.6, 29.85, 10.2, 11.9, -35.3, -31.5, M.brick);
     seg(24.25, 24.5, 10.2, 11.9, -36.7, -31.5, M.brick);
 
     /* ONE STRAIGHT FLIGHT PER FLOOR, ALL CLIMBING NORTH.

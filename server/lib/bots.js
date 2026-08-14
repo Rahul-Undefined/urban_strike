@@ -362,10 +362,21 @@ const SKILLS = {
   regular: { label: 'Regular', react: 580, aimErr: 0.19, fireMs: 460, range: 60, burst: 3, headPct: 0.06, moveMul: 0.88, dmgMul: 0.85,
              crouchPct: 0.18, pronePct: 0.00, sprintPct: 0.25, nadePct: 0.10, minePct: 0.05, verticality: 0.12, nadeCdMs: 18000,
              leash: 70 },
-  veteran: { label: 'Veteran', react: 300, aimErr: 0.10, fireMs: 280, range: 85, burst: 4, headPct: 0.14, moveMul: 1.0,  dmgMul: 1.0,
-             crouchPct: 0.42, pronePct: 0.08, sprintPct: 0.55, nadePct: 0.38, minePct: 0.16, verticality: 0.55, nadeCdMs: 11000 },
-  extreme: { label: 'Extreme', react: 120, aimErr: 0.045, fireMs: 170, range: 130, burst: 6, headPct: 0.28, moveMul: 1.12, dmgMul: 1.0,
-             crouchPct: 0.55, pronePct: 0.12, sprintPct: 0.75, nadePct: 0.60, minePct: 0.26, verticality: 0.85, nadeCdMs: 7000 }
+  /* v9.7: VETERAN AND EXTREME SHARPENED.
+     Reported as "very easy in the veteran mode as well", and the arithmetic
+     agreed. Measured time-to-kill on the old numbers, AK-class weapon:
+         veteran   22 m 0.7 s | 40 m 1.6 s | 60 m 4.1 s
+     Inside knife range it was fine; past 30 m it stopped being a fight because
+     TWO penalties multiplied — the range falloff AND the loadout-fit penalty
+     (see the note at the hit roll). A bot that cannot threaten you at 40 m is a
+     bot you simply walk away from.
+     Reaction and rate come down, aim error comes down, and the falloff itself
+     is gentler below. Recruit and regular are UNCHANGED: the bottom of the
+     ladder is meant to be the pre-v9.2 experience. */
+  veteran: { label: 'Veteran', react: 240, aimErr: 0.075, fireMs: 235, range: 95, burst: 5, headPct: 0.17, moveMul: 1.02, dmgMul: 1.0,
+             crouchPct: 0.42, pronePct: 0.08, sprintPct: 0.60, nadePct: 0.40, minePct: 0.16, verticality: 0.70, nadeCdMs: 10000 },
+  extreme: { label: 'Extreme', react: 95, aimErr: 0.030, fireMs: 145, range: 140, burst: 7, headPct: 0.32, moveMul: 1.15, dmgMul: 1.0,
+             crouchPct: 0.55, pronePct: 0.12, sprintPct: 0.80, nadePct: 0.62, minePct: 0.26, verticality: 0.95, nadeCdMs: 6500 }
 };
 const SKILL_IDS = ['recruit', 'regular', 'veteran', 'extreme'];
 
@@ -489,7 +500,8 @@ module.exports = function initBotsModule(ctx) {
         mines: CFG.GEAR.mine.start, nades: CFG.THROWS.frag.count, lastMolo: {},
         lastShotAt: {}, history: [], respawnAt: 0, out: false,
         ai: { cols, kit, target: null, seenAt: 0, nextFire: 0, wanderTo: null, repath: 0,
-              vy: 0, plan: null, planAge: 0, planApex: 0, posture: 0, postureUntil: 0, nextNade: 0, nextMine: 0,
+              vy: 0, plan: null, planAge: 0, planApex: 0, posture: 0,
+              freeUntil: 0, freeDir: 1, stuckHits: 0, highSeek: 0, postureUntil: 0, nextNade: 0, nextMine: 0,
               stuckFor: 0, lastX: 0, lastZ: 0, sprint: false }
       };
       room.players.set(id, p);
@@ -702,6 +714,17 @@ module.exports = function initBotsModule(ctx) {
       const cols = ai.cols;
       const kit = ai.kit || LOADOUTS[0];
 
+      /* Elevated loot doubles as the map's list of "places that are up" — it is
+         the only registry of reachable height this project has. Cached per room
+         and keyed by map so a map change cannot serve stale coordinates. */
+      const mdNow = mapData(room);
+      const mapKeyNow = room.settings.map || 'urban';
+      if (!room._highLoot || room._highLootMap !== mapKeyNow) {
+        room._highLoot = ((mdNow.LOOT_POINTS) || []).filter(l => l[1] > 1.7);
+        room._highLootMap = mapKeyNow;
+      }
+      const high = room._highLoot;
+
       // --- acquire ---
       const foes = enemiesOf(room, bot);
       let best = null, bestD = Infinity;
@@ -742,6 +765,55 @@ module.exports = function initBotsModule(ctx) {
         const bob = Math.sin(t / 900 + bot.joinOrder) * 0.8;
         wantX += px * bob; wantZ += pz * bob;
         if (bestD > want * 2 && Math.random() < S.sprintPct) ai.sprint = true;
+
+        /* ===== v9.7: TAKE THE HIGH GROUND ON PURPOSE =====
+           Climb plans were only ever made while WANDERING, so a bot that could
+           see anybody never went upstairs — and in a match it can almost always
+           see somebody. Result: three of twelve bots left the street in a
+           minute and the highest anything reached was 4.4 m, on a map built
+           around fire escapes.
+
+           A bot that spots an enemy at range now rolls its verticality and, if
+           it wins, goes looking for a roof NEAR THAT ENEMY rather than walking
+           at them down the street. That is what a person does, and it is the
+           behaviour Rahul asked for: "getting top of the building and going to
+           the roof and killing humans from there."
+
+           Only beyond 1.6x the weapon's ideal range — closing distance is
+           correct when the fight is already close, and a shotgun bot should
+           never break off to find stairs. */
+        if (!ai.plan && bestD > want * 1.6 && t > (ai.highSeek || 0) &&
+            !S.groundOnly && high.length && Math.random() < S.verticality) {
+          ai.highSeek = t + 12000;
+          let plan = null;
+          for (let a = 0; a < 5 && !plan; a++) {
+            /* Pick elevated ground near the TARGET, not near the bot — the
+               point is to look down on them. */
+            const near = high.filter(l =>
+              Math.hypot(l[0] - best.pos[0], l[2] - best.pos[2]) < 55);
+            const pool = near.length ? near : high;
+            const l = pool[(Math.random() * pool.length) | 0];
+            plan = planClimb(room.settings.map || 'urban',
+              bot.pos[0], feetOf(bot), bot.pos[2], l[0], l[1] - 0.55, l[2]);
+          }
+          if (plan) { ai.plan = plan; ai.planAge = 0; ai.planApex = feetOf(bot); }
+        }
+        /* While a climb is running, WALK THE PLAN and keep shooting. Aim is
+           already set above, so the bot fires at the enemy the whole way up. */
+        if (ai.plan && ai.plan.length) {
+          const wp = ai.plan[0];
+          const gx = wp[0] - bot.pos[0], gz = wp[1] - bot.pos[2];
+          const gd = Math.hypot(gx, gz);
+          if (gd < 0.9 && Math.abs(feetOf(bot) - wp[2]) < 0.8) {
+            ai.plan.shift();
+            if (!ai.plan.length) ai.plan = null;
+          } else if (feetOf(bot) < ai.planApex - 2.6) {
+            ai.plan = null;                                  // fell off
+          } else {
+            wantX = gx / (gd || 1); wantZ = gz / (gd || 1);
+            ai.sprint = false;                               // never sprint a staircase
+          }
+        }
       } else {
         /* --- wander ---
            Spawn points are still the only map graph available, but v9.2 also
@@ -761,12 +833,6 @@ module.exports = function initBotsModule(ctx) {
              quietly stop using stairs after the first map change.
              The filter is cheap; caching it is only worth doing if the cache
              cannot go stale. */
-          const mapKey = room.settings.map || 'urban';
-          if (!room._highLoot || room._highLootMap !== mapKey) {
-            room._highLoot = ((md.LOOT_POINTS) || []).filter(l => l[1] > 1.7);
-            room._highLootMap = mapKey;
-          }
-          const high = room._highLoot;
           ai.plan = null; ai.wanderTo = null;
           /* groundOnly is a HARD refusal, not a low roll. A recruit that
              climbs one time in ten still surprises a player who has learned
@@ -877,6 +943,15 @@ module.exports = function initBotsModule(ctx) {
       const speed = base * S.moveMul * dt;
       bot.mv = (wantX || wantZ) ? (ai.sprint && !bot.crouch ? 2 : 1) : 0;
 
+      /* The shove overrides whatever the AI wanted this tick. Perpendicular to
+         the last heading, so it slides ALONG the surface it is caught on rather
+         than reversing into the same corner. */
+      if (ai.freeUntil && t < ai.freeUntil) {
+        const px = -wantZ || Math.cos(bot.ry), pz = wantX || Math.sin(bot.ry);
+        const pm = Math.hypot(px, pz) || 1;
+        wantX = (px / pm) * ai.freeDir; wantZ = (pz / pm) * ai.freeDir;
+        ai.sprint = false;
+      }
       const h = bodyH(bot);
       if (wantX || wantZ) {
         const m = Math.hypot(wantX, wantZ) || 1;
@@ -899,10 +974,36 @@ module.exports = function initBotsModule(ctx) {
            frame and never tripped. Traced: a bot frozen at (-57.0, -18.1) for
            thirty seconds with stuckFor sitting at 0.0.
            Net displacement from a checkpoint cannot be fooled that way. */
+        /* v9.7: STUCK BOTS NOW SHAKE THEMSELVES FREE.
+           Reported as bots "getting stuck on the stairs or in the wall". The
+           v9.2 checkpoint detected it correctly and then did the only thing it
+           could — throw the path away and pick a new destination. If the bot is
+           WEDGED, the new destination is behind the same corner and it wedges
+           again immediately, which is why they looked frozen rather than
+           confused.
+           Detecting it is not enough; the bot has to move differently. On a
+           stuck verdict it now commits to a PERPENDICULAR shove for 0.8 s,
+           ignoring its target entirely — which is what a player does when they
+           clip a doorframe. The threshold is 1.4 m over 1.2 s: at walk speed
+           that is a third of the ground it should have covered, low enough not
+           to fire on a bot merely turning a corner. */
         ai.stuckFor += dt;
-        if (ai.stuckFor >= 1.5) {
+        if (ai.stuckFor >= 1.2) {
           const net = Math.hypot(bot.pos[0] - ai.lastX, bot.pos[2] - ai.lastZ);
-          if (net < 1.0) { ai.wanderTo = null; ai.plan = null; ai.repath = 0; }
+          if (net < 1.4) {
+            ai.wanderTo = null; ai.plan = null; ai.repath = 0;
+            ai.freeUntil = t + 800;
+            ai.freeDir = Math.random() < 0.5 ? 1 : -1;
+            ai.stuckHits = (ai.stuckHits || 0) + 1;
+            /* Three shoves and still nowhere: the bot is in geometry no
+               sidestep escapes. Respawning it is honest — a bot standing in a
+               wall for a whole match is worse than one that reappears. */
+            if (ai.stuckHits >= 3) {
+              ai.stuckHits = 0;
+              spawnPlayer(room, bot);
+              ai.vy = 0; ai.plan = null; ai.wanderTo = null; ai.freeUntil = 0;
+            }
+          } else ai.stuckHits = 0;
           ai.lastX = bot.pos[0]; ai.lastZ = bot.pos[2]; ai.stuckFor = 0;
         }
       }
@@ -946,9 +1047,17 @@ module.exports = function initBotsModule(ctx) {
          v9.2 folds the loadout in: accuracy peaks at the weapon's ideal range
          and decays either side of it, so a shotgun bot really is lethal in a
          corridor and useless across the plaza, without a second code path. */
-      const fall = Math.max(0.25, 1 - (bestD / S.range) * 0.75);
-      const off = Math.abs(bestD - kit.ideal) / Math.max(12, kit.ideal);
-      const fit = Math.max(0.3, 1 - off * 0.55);
+      /* v9.7: BOTH PENALTIES SOFTENED, because they MULTIPLY.
+         `fall` and `fit` were each reasonable alone and together they collapsed
+         everything past 30 m: a veteran at 40 m landed 32% of its shots for a
+         1.6 s kill, and at 60 m one shot in eight. The two were also double-
+         counting the same idea — that distance is hard — since a weapon's ideal
+         range and the skill's sight range both grow with distance.
+         0.55 falloff and a 0.45 floor on fit keep a shotgun bot useless across
+         a plaza without making a rifle bot harmless at the far end of a street. */
+      const fall = Math.max(0.35, 1 - (bestD / S.range) * 0.55);
+      const off = Math.abs(bestD - kit.ideal) / Math.max(16, kit.ideal);
+      const fit = Math.max(0.45, 1 - off * 0.38);
       const posture = bot.crouch ? 1.12 : 1;                 // steadier when set
       const pHit = Math.max(0.05, Math.min(0.95, (1 - S.aimErr) * fall * fit * posture));
       if (Math.random() > pHit) continue;

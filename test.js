@@ -264,7 +264,20 @@ function phase2(done) {
 
   function findLoot(pred) { return loot.find(e => pred(e)); }
   function stepArmor() {
-    const spot = findLoot(e => e.t === 'armor1') || findLoot(e => e.t === 'armor2') || findLoot(e => e.t === 'armor3');
+    /* v9.7: the vest must be ISOLATED.
+       This took the first armor spot of any tier and teleported B onto it. That
+       was safe while loot points were sparse; v9.7 raised urban from 270 to 360
+       and two vests can now sit inside one pickup radius, so B collected an L2
+       while the assertions were derived from the L1 it was standing on —
+       "granted L1" failed with lv 2, du 81.
+       Picking a spot with nothing else within the pickup radius makes the test
+       independent of how densely the map is stocked. */
+    const R = (CFG.MATCH.pickupRadius || 1.25) + 1.5;
+    const isolated = e => !loot.some(o => o.id !== e.id &&
+      Math.hypot(o.p[0] - e.p[0], o.p[2] - e.p[2]) < R);
+    const armorSpot = t => findLoot(e => e.t === t && isolated(e));
+    const spot = armorSpot('armor1') || armorSpot('armor2') || armorSpot('armor3')
+      || findLoot(e => e.t === 'armor1') || findLoot(e => e.t === 'armor2') || findLoot(e => e.t === 'armor3');
     const lvl = CFG.LOOT_ITEMS[spot.t].lvl;
     bPos = [spot.p[0], spot.p[1] - 0.1, spot.p[2]];
     setTimeout(() => {
