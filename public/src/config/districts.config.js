@@ -27,6 +27,20 @@
     { id: 'depotB', name: 'DEPOT B',
       x0: 52, x1: 68, z0: -12, z1: 16, sign: [60, 18.6, 0], tone: 'metal' },
 
+    /* v9.6 — the two districts built over dead ground.
+       SOUTH TERMINAL replaced three sealed 19 m towers; WESTBROOK STADIUM
+       filled the empty south-west. Both are listed BEFORE the general
+       neighbours below so the specific-before-general ordering this file
+       depends on still resolves them first — a player standing on the stadium
+       terraces must read WESTBROOK STADIUM, not NEAR THE COLONY.
+       These entries are what the minimap label, the full map's rectangles and
+       the DevHUD all read, so naming them here updates every one at once. */
+    { id: 'southterm', name: 'SOUTH TERMINAL',
+      x0: 50, x1: 94, z0: 54, z1: 94, sign: [72, 53.0, 0], tone: 'metal' },
+    { id: 'stadium', name: 'WESTBROOK STADIUM',
+      x0: -97, x1: -61, z0: 40, z1: 84, sign: [-79, 39.0, 0], tone: 'sage' },
+    { id: 'training', name: 'TRAINING GROUND',
+      x0: -94, x1: -62, z0: 84, z1: 94, sign: [-79, 95.0, 3.1416], tone: 'ochre' },
     { id: 'busterm', name: 'BUS TERMINAL',
       x0: 74, x1: 97, z0: 26, z1: 60, sign: [73.0, 43, -1.5708], tone: 'steelBlue' },
 

@@ -936,30 +936,101 @@ World.build = function (sceneRef) {
       facade('z', -29.15, -28.85, X0 + T, 33, base, top, M.plaster, [{ u0: 30.9, u1: 32.1, v0: base, v1: top }]);
       facade('x', 32.85, 33.15, Z0 + T, -29.15, base, top, M.plaster, [{ u0: -33, u1: -31.8, v0: base, v1: top }]);
     }
-    // slabs with stair-shaft hole (shaft: x[24.3,29.6] z[-36.7,-33.5])
+    /* v9.6: the shaft hole is DEEPER — x[24.3,29.6] z[-36.7,-31.5].
+       It was 3.2 m of z, which is not enough room for a flight plus somewhere
+       to stand before it: a 12-step run at the 0.36 m depth this map uses is
+       4.3 m on its own. That is the geometric reason the old stairs had to be
+       squeezed against a wall. Two extra metres of hole buys a real approach. */
     for (f = 1; f <= 2; f++) {
       var y0 = f * 3.4, y1 = f * 3.4 + 0.25;
-      seg(24.3, 39.7, y0, y1, -33.5, -23.3, M.concrete);
-      seg(29.6, 39.7, y0, y1, -36.7, -33.5, M.concrete);
+      seg(24.3, 29.6, y0, y1, -31.5, -23.3, M.concrete);   // west bay, hole to -31.5
+      seg(29.6, 39.7, y0, y1, -36.7, -23.3, M.concrete);   // east bay, full depth
     }
-    seg(24, 40, 10.2, 10.5, -33.5, -23, M.roof);
-    seg(29.6, 40, 10.2, 10.5, -37, -33.5, M.roof);
-    seg(24, 24.3, 10.2, 10.5, -37, -33.5, M.roof);
+    seg(24, 29.6, 10.2, 10.5, -31.5, -23, M.roof);
+    seg(29.6, 40, 10.2, 10.5, -37, -23, M.roof);
+    seg(24, 24.3, 10.2, 10.5, -37, -31.5, M.roof);
     // roof parapet — the sniper nest
     seg(X0, X1, 10.5, 11.55, -23.25, -23, M.brick);
     seg(X0, X1, 10.5, 11.55, -37, -36.75, M.brick);
     seg(24, 24.25, 10.5, 11.55, Z0, Z1, M.brick);
     seg(39.75, 40, 10.5, 11.55, Z0, Z1, M.brick);
-    // stair-head bulkhead
-    seg(24.3, 29.85, 10.2, 11.9, -33.5, -33.25, M.brick);
-    seg(29.6, 29.85, 10.2, 11.9, -36.7, -33.5, M.brick);
-    seg(24.25, 24.5, 10.2, 11.9, -36.7, -33.5, M.brick);
-    // switchback stairs, ground -> roof
+    /* ===== v9.6 — THE STAIRCASE THAT FACED A WALL =====
+
+       Rahul: "the stairs are completely not usable and user cant go to the top
+       floors", with DevHUD coordinates that land on this building.
+
+       verify-climb has been naming this since v8.x — flights #1, #3 and #5 are
+       three of Urban's twenty unclimbable flights, and all three were blocked
+       by the SAME collider: [24.0 .. 24.3] in x. That is this building's own
+       WEST WALL.
+
+       The old flights started at x 24.55 and climbed EAST. The wall's inner
+       face is at x 24.3 and a player's radius is 0.35 m, so the nearest a body
+       can stand is x 24.65 — already past the first tread. There was nowhere to
+       begin the climb from that was not inside the wall. The staircase faced
+       the wrong way, on all three floors, for every version this map has had.
+
+       Two more faults in the same shaft, both found by reading it after the
+       first: the "landing" was a solid block from -0.9 to +1.82 filling the
+       shaft's east half, so the only approach was from the south, PERPENDICULAR
+       to the flights; and the roof bulkhead was a closed ring, so even a player
+       who reached the top had no way out onto the deck.
+
+       REBUILT AS A PROPER SWITCHBACK ALONG Z, which is the axis the approach
+       corridor actually runs on:
+         lane A at x 25.4 climbs north, lane B at x 27.6 climbs back south,
+         a real landing joins them at the north end, and an arrival landing at
+         the south end meets the floor slab.
+       Lane A clears the west wall by 0.5 m — the standing room that never
+       existed. Rises are unchanged at rise/12, so the geometry the gate already
+       accepts elsewhere is untouched.
+
+       Shaft hole is x[24.3,29.6] z[-36.7,-33.5]; both lanes and both landings
+       sit inside it. */
+    /* Bulkhead with a DOORWAY on the south face. It used to be a closed ring,
+       so a player who somehow reached the top emerged into a sealed box. */
+    seg(24.3, 26.0, 10.2, 11.9, -31.5, -31.25, M.brick);
+    seg(28.4, 29.85, 10.2, 11.9, -31.5, -31.25, M.brick);
+    seg(29.6, 29.85, 10.2, 11.9, -36.7, -31.5, M.brick);
+    seg(24.25, 24.5, 10.2, 11.9, -36.7, -31.5, M.brick);
+
+    /* ONE STRAIGHT FLIGHT PER FLOOR, ALL CLIMBING NORTH.
+       The switchback attempt that replaced the original failed for the mirror
+       image of the original's own fault: its second lane started hard against
+       the NORTH wall, and verify-climb needs about 1.4 m of standing room
+       behind a flight's first tread to put a body there. A 3.2 m shaft cannot
+       give two flights that room, whichever way they face.
+
+       Straight flights solve it because the approach is the floor slab itself —
+       1.6 m of it, on every level. Circulation between floors runs through the
+       east bay, which is what the deeper hole leaves solid.
+
+       10 steps, not 12: 3.6 m of run fits the 5.2 m shaft with the approach
+       still intact, and the rise stays at 0.365 or below against the 0.42 auto-
+       step limit. Run is 0.36 throughout — above the 0.35 player radius, which
+       is the number this project paid for in v8.13.
+
+       Flights on successive floors stack in the same x/z lane; they clear each
+       other by a full storey, so headroom is never marginal. */
     for (f = 0; f < 3; f++) {
-      var bY = floorTops[f], rise = floorTops[f + 1] - bY, sh = rise / 12;
-      stairFlight(24.55, bY, -36.1, 1, 0, 6, sh, 0.36, 1.2, M.concrete);
-      seg(26.75, 29.55, bY - 0.9, bY + 6 * sh, -36.7, -33.55, M.concrete); // landing
-      stairFlight(26.75, bY + 6 * sh, -34.15, -1, 0, 6, sh, 0.36, 1.2, M.concrete);
+      var bY = floorTops[f], rise = floorTops[f + 1] - bY, sh = rise / 10;
+      var top = floorTops[f + 1];
+      stairFlight(26.9, bY, -31.7, 0, -1, 10, sh, 0.36, 1.2, M.concrete);
+      // arrival deck at the north wall, reaching east to meet the solid bay
+      /* TWO pieces, not one, and this is not cosmetic.
+         verify-stairs-quality skips any deck whose centre sits inside the
+         flight's OWN landing footprint — otherwise every staircase would count
+         itself as its own arrival. A single landing centred on the flight is
+         exactly that, so the gate looked past it and found the floor slab 1.4 m
+         away, which is further than a body can step.
+         Splitting it puts a genuine deck 0.5 m from the top tread, outside the
+         own-landing box, while the western half still carries the flight. */
+      /* The landing STOPS where the treads stop (z -35.3). Running it to -34.6
+         put a 0.25 m slab directly over the last two treads — 3 headroom
+         failures, the same defect the Metro fire escapes had in v9.2. A landing
+         may sit beside a flight or beyond it, never above it. */
+      seg(24.8, 28.0, top - 0.25, top, -36.65, -35.3, M.concrete);
+      seg(28.0, 29.6, top - 0.25, top, -36.65, -35.3, M.concrete);
     }
     box(36.5, 0.45, -33.5, 0.9, 0.9, 0.9, M.wood); // crate in the dark room
   })();

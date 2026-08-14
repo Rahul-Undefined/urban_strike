@@ -99,12 +99,27 @@ function urbanLifts() {
 }
 
 // ---------------------------------------------------------------------------
+/* ===== BASELINE RE-RECORDED FOR v9.6 — A DECISION, NOT A CONVENIENCE =====
+   Urban had been byte-identical since v9.0 and this gate is why. v9.6 changed
+   it deliberately, with sign-off:
+     - three sealed 19.2 m blocks in the south-east demolished and replaced by
+       the South Terminal and its control tower;
+     - the vacant south-west filled with Westbrook Stadium;
+     - the Civic Centre apartment's staircase rebuilt (it faced a wall).
+   Consequences that had to move with it and are part of this record: three
+   lift shafts removed (they served only the demolished blocks), 50 loot points
+   removed from roofs that no longer exist, 33 added across the two new
+   districts, and 3 new district entries.
+   From here the gate protects the NEW Urban. Rural is untouched and its line
+   below is unchanged from v9.0 — that is the half of this gate still doing its
+   original job.
+   Recorded with: node tools/verify-untouched.js --record */
 const BASELINE = {
-  urban: {"colliders":3215,"sum":1253202028,"draws":98,"tris":81660,"casters":57,"lights":7,"minimap":189,"bound":100},
+  urban: {"colliders":3282,"sum":436742038,"draws":103,"tris":87396,"casters":57,"lights":7,"minimap":208,"bound":100},
   rural: {"colliders":1066,"sum":1837205283,"draws":32,"tris":54467,"casters":22,"lights":3,"minimap":210,"bound":150},
-  urbanData: {"loot":287,"spawns":22,"airdrops":10},
+  urbanData: {"loot":270,"spawns":22,"airdrops":10},
   ruralData: {"loot":74,"spawns":28,"airdrops":12},
-  urbanLifts: "54:58:1.6:0.25/3.25/6.25/9.25/12.25/15.25/18.25 | 78:60:1.6:0.25/3.25/6.25/9.25/12.25/15.25/18.25 | 60:80:1.6:0.25/3.25/6.25/9.25/12.25/15.25/18.25 | 84.2:-25.5:1.6:0.25/3.25/6.25 | -76.2:-81.9:1.6:0.25/3.25/6.25"
+  urbanLifts: "84.2:-25.5:1.6:0.25/3.25/6.25 | -76.2:-81.9:1.6:0.25/3.25/6.25"
 };
 // ---------------------------------------------------------------------------
 

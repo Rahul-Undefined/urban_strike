@@ -5646,3 +5646,84 @@ zero in verify-drone's answerability test.
 ### Open
 - Rural still has no districts, by design — it is a valley with landmarks.
 - Metro signs are built; Urban still draws its own the old way.
+
+---
+
+## v9.6 — URBAN: SOUTH TERMINAL, WESTBROOK STADIUM, AND A STAIRCASE THAT FACED A WALL
+
+Urban had been byte-identical since v9.0, guarded by verify-untouched. v9.6
+changes it deliberately, with sign-off, and both fingerprint baselines are
+re-recorded with the decision written into the files.
+
+### The staircase (Civic Centre apartment, x[24,40] z[-37,-23])
+Reported as "stairs completely not usable, can't go to the top floors".
+verify-climb had been naming it since v8.x — flights #1, #3 and #5 were three of
+Urban's twenty unclimbable flights, all blocked by the SAME collider: the
+building's own west wall.
+
+The flights climbed EAST from x 24.55. The wall's inner face is at x 24.3 and a
+player's radius is 0.35 m, so the nearest a body can stand is x 24.65 — already
+past the first tread. There was nowhere to begin the climb that was not inside
+the wall. The staircase faced the wrong way, on all three floors, in every
+version this map has shipped.
+
+Two further faults in the same shaft: the "landing" was a solid block from -0.9
+to +1.82 filling the east half, so the only approach was PERPENDICULAR to the
+flights; and the roof bulkhead was a closed ring, so a player who reached the
+top emerged into a sealed box.
+
+Rebuilt as straight north-climbing flights with the floor slab as the approach,
+the shaft hole deepened to make room for one, and a doorway cut in the bulkhead.
+
+### SOUTH TERMINAL (x 50..94, z 54..94)
+Three 6-floor blocks at 19.2 m removed — sealed towers with no way in and no way
+up, 109 colliders of pure wall. Replaced by bus bays, a canopy on six columns,
+six angled coaches, a maintenance shed with two doors, a fuel island, and a 16 m
+CONTROL TOWER with an internal stair AND an external fire escape on the opposite
+face. Deliberately shorter than what it replaced.
+
+Demolition consequences, all part of this change: three lift shafts removed
+(they served only those blocks — verify-lifts reported 20 stops with NO FLOOR),
+and 50 loot points removed from roofs that no longer exist.
+
+### WESTBROOK STADIUM & TRAINING GROUND (x -97..-61, z 40..94)
+The vacant south-west. Four-tier terraces both sides, roofed west stand, two
+covered players' tunnels, four 14 m floodlight masts, dugouts and practice nets.
+Chosen over more buildings because Urban's west is already all interiors; a
+stadium adds TIERED OPEN GROUND, the one fight texture the map lacked.
+
+### Districts
+SOUTH TERMINAL, WESTBROOK STADIUM and TRAINING GROUND added to
+districts.config.js — the single registry the minimap label, the full map's
+rectangles and the DevHUD all read, so naming them updates every surface at once.
+
+### What the gates caught mid-build
+Six defects that would otherwise have shipped:
+- **The blue area was not vacant.** A structure at x[-60,-46] z[48,86] with its
+  own external stair. The east stand was built through it — 21 seat rows 100%
+  buried. The stadium was narrowed twice before it cleared both.
+- **The sunken pitch was buried in the terrain.** Urban's ground slab is solid
+  from -1.0 to 0.0 across the whole map, so a pitch at -1.2 m is not a bowl.
+  Built upward instead.
+- **Tower decks sat 0.25 m above their own flights**, so the climb walker
+  spawned inside the slab and was pushed out of the building.
+- **Fire-escape treads with `stringers: false` are unsupported props** — thirty
+  of them. On Metro that is a triangle trade against a 26,000 ceiling; Urban has
+  33,000 spare, so the stringers went back on.
+- **Bay markings 6 mm above the apron** are inside verify-zfight's tolerance.
+- **A landing centred on its own flight is not an arrival** — the gate skips it
+  by design, so it had to be split so a genuine deck sits beside the top tread.
+
+### Loot
+50 points removed, 33 added across the two new districts. Every elevated point
+PROBED out of the built collider set: the first pass calculated them from the
+design and six of six floated, because the tower's decks land at 3.44/7.64/11.84
+rather than the 4.20/8.40/12.60 the plan said. Same mistake v9.3 recorded on
+Metro; the note did not prevent it, the probe did.
+
+### Measured
+Unclimbable flights 20/68 -> **16/71**. Dead ground 0.6% -> **0.2%**.
+verify-stairs-quality **15/0** — green for the first time.
+Draw calls 103/115, triangles 87,396/120,000, casters 57/62. No budget raised.
+`test.js` **272 / 0**, three consecutive runs. All gates green except the two
+documented reds (verify-arch, verify-climb) and verify-access.

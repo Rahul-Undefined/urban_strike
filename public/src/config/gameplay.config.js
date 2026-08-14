@@ -39,10 +39,14 @@
     3: { label: 'H3', absorb: 0.70, dur: 150, color: '#f0c040' }
   };
 
-  var LIFTS = [
-    { map: 'urban', x: 54.0, z: 58.0, r: 1.6, stops: [0.25, 3.25, 6.25, 9.25, 12.25, 15.25, 18.25] },  // tower A
-    { map: 'urban', x: 78.0, z: 60.0, r: 1.6, stops: [0.25, 3.25, 6.25, 9.25, 12.25, 15.25, 18.25] },  // tower B
-    { map: 'urban', x: 60.0, z: 80.0, r: 1.6, stops: [0.25, 3.25, 6.25, 9.25, 12.25, 15.25, 18.25] },  // tower C
+  /* v9.6: the three shafts at (54,58), (78,60) and (60,80) are GONE with the
+     buildings they served. They were the only access to the SE high-rise
+     cluster, which the South Terminal replaced — leaving them would have put
+     three lift triggers in an open bus yard, each riding to a nineteen-metre
+     stop with no floor at the top. verify-lifts caught exactly that: 20 stops
+     reporting NO FLOOR. The control tower uses stairs, twice over, so nothing
+     here needs a lift. */
+  var LIFTS = [  // tower A  // tower B  // tower C
     { map: 'urban', x: 84.2, z: -25.5, r: 1.6, stops: [0.25, 3.25, 6.25] },                            // mall
     { map: 'urban', x: -76.2, z: -81.9, r: 1.6, stops: [0.25, 3.25, 6.25] },                           // airport terminal
     /* --- Metro City. Shaft positions DERIVED by searching each structure for

@@ -102,7 +102,11 @@ function fingerprint(map) {
 
 /* ---- BASELINE — v9.0 as shipped. Do not edit to make a build pass. ---- */
 const BASELINE = {
-  urban: { colliders: 3215, draws: 98, tris: 81660, casters: 57, lights: 7, bound: 100, colSig: 517132207, meshSig: -1090348751 },
+  /* v9.6: re-recorded with verify-untouched, same decision and same reasons —
+     the SE high-rise cluster became the South Terminal, the vacant SW became
+     Westbrook Stadium, and the Civic apartment staircase was rebuilt. See the
+     note above BASELINE in tools/verify-untouched.js. */
+  urban: { colliders: 3282, draws: 103, tris: 87396, casters: 57, lights: 7, bound: 100, colSig: 739087098, meshSig: 285427118 },
   rural: { colliders: 1066, draws: 32, tris: 54467, casters: 22, lights: 3, bound: 150, colSig: -956236117, meshSig: -2029443105 }
 };
 

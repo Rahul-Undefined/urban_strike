@@ -515,11 +515,330 @@ World._buildPart5 = function (T) {
     seg(x1 - 0.15, x1, ry, ry + 0.95, z0, z1, M.trim, { cast: false });
   }
 
-  /* ---- HIGH-RISE CLUSTER (SE, x 52..94 / z 50..92) ---- */
-  buildingAt(52, 70, 56, 72, 6, M.concrete, M.roof, 0, true);      // 6 floors, 18m
-  buildingAt(76, 92, 56, 72, 6, M.plaster, M.roof, 0, true);       // 6 floors (clear of the x=74 wall)
-  buildingAt(58, 76, 78, 92, 6, M.brick, M.roof, 0, true);         // 6 floors
-  crates(72, 74); crates(50, 62); barrel(93, 72, true); barrel(56, 90, false);
+  /* ==========================================================================
+     SOUTH TERMINAL — v9.6      x 50..94, z 54..94
+     ==========================================================================
+     WAS three 6-floor blocks at 19.2 m — buildingAt(52,70,56,72),
+     (76,92,56,72) and (58,76,78,92), all `noStair`. Three sealed towers with no
+     way in and no way up: 109 colliders of pure wall that a player could only
+     walk around. Rahul asked for them gone and the bus terminal extended down
+     here instead, with a sniper tower.
+
+     WHAT THIS HAD TO PRESERVE. Those blocks were also the entire south-east
+     corner's cover. Urban's dead ground is 0.6% and stripping them without
+     replacement would have opened a 40 m shooting gallery from the terminal to
+     the map edge. So the replacement is DENSE AND LOW rather than empty: bus
+     bays with parked coaches, a canopy on columns, a maintenance shed and a
+     fuel island. Buses are the same trick containers are on Metro — a 3 m solid
+     you cannot mantle, in a shape that breaks a lane without walling it off.
+
+     WHY IT IS SOUTH OF THE EXISTING TERMINAL. The terminal at z 26..60 already
+     had bays, a canopy and a ticket office; this extends the same district
+     rather than inventing a second one, so the callouts stay coherent —
+     "south bays", "the tower", "fuel island" all read as one place.
+
+     THE CONTROL TOWER is the sniper position Rahul asked for, and it is
+     deliberately SHORTER than what it replaces: 16 m against 19.2 m, so it
+     overlooks the yard without dominating the district the way the old blocks
+     did. It has TWO ways up — an internal stair and an external fire escape on
+     the opposite face — because a sniper nest with one entrance is a camping
+     spot rather than a position that can be contested. That is the same rule
+     the v9.1 Metro fire escapes were built to. */
+  (function southTerminal() {
+    var NCX = { collide: false, cast: false };
+
+    // ---- apron ------------------------------------------------------------
+    seg(50, 94, 0.003, 0.016, 54, 94, M.asphalt, NCX);
+    /* Bay markings. Cheap, and they are what makes an open apron read as a
+       place with a purpose rather than a car park. */
+    for (var b = 0; b < 6; b++) {
+      var bx = 53 + b * 6.5;
+      /* Markings sit 0.04 clear of the apron, not 0.001.
+         The apron's top is 0.016 and these were 0.017-0.022: a six-millimetre
+         gap is INSIDE verify-zfight's tolerance, so all six read as coplanar
+         with the surface they are painted on. Paint needs a real offset for the
+         same reason the Metro avenue grid has one. */
+      seg(bx, bx + 0.25, 0.040, 0.050, 58, 74, M.trim, NCX);
+    }
+
+    // ---- canopy over the bays: cover lane, roof not walkable ---------------
+    [[54, 60], [54, 72], [66, 60], [66, 72], [78, 60], [78, 72]].forEach(function (p) {
+      cyl(p[0], 2.35, p[1], 0.2, 4.7, M.trim);
+    });
+    seg(52, 80, 4.6, 5.0, 58, 74, M.roof);
+
+    /* ---- parked coaches: the cover that replaces the towers ---------------
+       Angled into the bays rather than lined up, so the gaps between them are
+       diagonal and no single position sees down more than two at once. */
+    bus(56, 64, 0.30); bus(63, 66, -0.25); bus(70, 64, 0.30);
+    bus(77, 66, -0.25); bus(58, 80, 0.10); bus(68, 82, -0.15);
+
+    // ---- maintenance shed: a room, with two doors --------------------------
+    (function shed() {
+      var X0 = 50, X1 = 64, Z0 = 84, Z1 = 93, TT = 0.3;
+      facade('z', Z0, Z0 + TT, X0, X1, 0, 4.2, M.plaster,
+        [{ u0: 53, u1: 56, v0: 0, v1: 3.2 }, win(60, 1.6, 1.6, 1.2)]);
+      facade('z', Z1 - TT, Z1, X0, X1, 0, 4.2, M.plaster, [win(57, 1.6, 1.6, 1.2)]);
+      facade('x', X0, X0 + TT, Z0, Z1, 0, 4.2, M.plaster, [{ u0: 87, u1: 89.5, v0: 0, v1: 3.0 }]);
+      seg(X1 - TT, X1, 0, 4.2, Z0, Z1, M.plaster);
+      seg(X0, X1, 4.15, 4.45, Z0, Z1, M.roof);
+      // inside: work bays, so the room is worth entering
+      box(53, 0.55, 88, 2.4, 1.1, 1.2, M.wood);
+      box(60, 0.45, 90, 1.8, 0.9, 1.8, M.rust);
+      crates(56, 91);
+    })();
+
+    // ---- fuel island -------------------------------------------------------
+    [[84, 82], [84, 88]].forEach(function (p) {
+      box(p[0], 0.9, p[1], 1.0, 1.8, 3.6, M.rust);          // pump block
+      /* A post at EACH end. One row left the canopy's east half cantilevered
+         over nothing, which verify-props reads as an unsupported prop — and it
+         is one: a roof floating on air. */
+      cyl(p[0] - 2.2, 1.65, p[1], 0.22, 3.3, M.trim);
+      cyl(p[0] + 4.4, 1.65, p[1], 0.22, 3.3, M.trim);
+    });
+    seg(80, 90, 3.2, 3.5, 79, 91, M.roof);
+    barrel(79, 78, true); barrel(91, 92, false);
+
+    /* ---- CONTROL TOWER  x 84..92, z 60..68  ------------------------------
+       16 m: cab deck at 12.6, open observation rail above it. Two routes up. */
+    (function tower() {
+      /* z 58..70, not 60..68. verify-climb backs its walker roughly 3.8 m
+         behind a flight before it starts walking, and an 8 m tower left only
+         2.8 m of deck there — so the upper flights were judged from OUTSIDE the
+         south wall. Twelve metres gives 4.7 m of approach on every level. */
+      var X0 = 84, X1 = 92, Z0 = 58, Z1 = 70, TT = 0.3;
+      var DECKS = [0, 4.2, 8.4, 12.6];
+      var i;
+      for (i = 0; i < 3; i++) {
+        var y = DECKS[i], top = DECKS[i + 1];
+        // shaft walls, with the stair bay left open on the west face
+        facade('z', Z0, Z0 + TT, X0, X1, y, top, M.concrete, [win(86, y + 1.4, 1.4, 1.3)]);
+        facade('z', Z1 - TT, Z1, X0, X1, y, top, M.concrete, [win(89, y + 1.4, 1.4, 1.3)]);
+        facade('x', X1 - TT, X1, Z0, Z1, y, top, M.concrete, [win(64, y + 1.4, 1.4, 1.3)]);
+        facade('x', X0, X0 + TT, Z0, Z1, y, top, M.concrete,
+          [{ u0: 66.2, u1: 68.0, v0: y, v1: y + 2.3 }]);      // doorway on every level
+        /* Deck slab hangs BELOW its level, not above it — surface at `top`.
+           Built as top..top+0.25 first, which put every walking surface a
+           quarter-metre higher than the flight that arrives at it: the climb
+           walker then spawned with its feet inside the slab and was pushed
+           backwards out of the building before it took a step. The flights and
+           the landings both use `top` as the surface, so the deck must too. */
+        seg(87.6, X1 - TT, top - 0.25, top, Z0 + TT, Z1 - TT, M.concrete);
+        seg(X0 + TT, 87.6, top - 0.25, top, 65.3, Z1 - TT, M.concrete);
+      }
+      /* INTERNAL STAIR: straight flights climbing north, approach on the deck.
+         Same shape as the apartment fix — the lesson generalises, so it is
+         built that way here rather than rediscovered. */
+      for (i = 0; i < 3; i++) {
+        var by = DECKS[i], rise = DECKS[i + 1] - by, sh = rise / 11;
+        /* 11 steps, not 12, and starting at z 64.6.
+           A 12-step run at 0.34 is 4.08 m; from z 63.7 that ended at 59.62,
+           which is INSIDE the tower's own north wall (z 60..60.3) — verify-climb
+           reported 0.35 m of headroom on tread 10 because the tread was under
+           the wall, not under a deck. 11 steps is 3.74 m and stops at 60.86,
+           clear of the wall by half a metre, with the rise still 0.382 against
+           the 0.42 limit. The approach behind it is 3.1 m of deck. */
+        stairFlight(85.9, by, 65.0, 0, -1, 11, sh, 0.34, 1.3, M.metal);
+        seg(84.4, 87.6, DECKS[i + 1] - 0.22, DECKS[i + 1], 60.4, 61.4, M.metal);
+      }
+      // cab: glazed on all four sides, the sniper deck
+      seg(X0 - 0.6, X1 + 0.6, 12.6, 12.85, Z0 - 0.6, Z1 + 0.6, M.concrete);   // overhanging deck
+      seg(X0 - 0.6, X1 + 0.6, 12.85, 13.9, Z0 - 0.6, Z0 - 0.35, M.shopGlass);
+      seg(X0 - 0.6, X1 + 0.6, 12.85, 13.9, Z1 + 0.35, Z1 + 0.6, M.shopGlass);
+      seg(X0 - 0.6, X0 - 0.35, 12.85, 13.9, Z0 - 0.6, Z1 + 0.6, M.shopGlass);
+      seg(X1 + 0.35, X1 + 0.6, 12.85, 13.9, Z0 - 0.6, Z1 + 0.6, M.shopGlass);
+      seg(X0 - 0.6, X1 + 0.6, 15.6, 15.9, Z0 - 0.6, Z1 + 0.6, M.roof);        // cab roof, 16 m
+      [[X0 - 0.4, Z0 - 0.4], [X1 + 0.4, Z0 - 0.4], [X0 - 0.4, Z1 + 0.4], [X1 + 0.4, Z1 + 0.4]]
+        .forEach(function (c) { cyl(c[0], 14.2, c[1], 0.12, 2.7, M.trim); });
+
+      /* EXTERNAL FIRE ESCAPE on the EAST face — the opposite side from the
+         internal stair, so the two routes cannot be watched from one position.
+         Switchback in two lanes, landings beyond each flight, no stringers:
+         all four rules the v9.1 Metro escapes established. */
+      var W = 1.4, RUN = 0.36, LANE = 1.9, PAD = 2.0;
+      for (i = 0; i < 3; i++) {
+        var from = i === 0 ? 0 : DECKS[i], to = DECKS[i + 1];
+        var h = to - from, st = Math.ceil(h / 0.34), rs = h / st, len = st * RUN;
+        var odd = (i % 2) === 1, lx = 93.4 + (odd ? LANE : 0);
+        /* STRINGERS ON, unlike the Metro fire escapes.
+           There they are off to save triangles against a tight 26,000 ceiling.
+           Urban's ceiling is 120,000 with 33,000 spare, and verify-props runs on
+           URBAN only — so the thirty treads of this escape were thirty props
+           with nothing beneath them, which is exactly what an unsupported prop
+           IS when the side plates are missing. The stringers are the support;
+           turning them off is a triangle trade, and here there is nothing to
+           trade for. */
+        stairFlight(lx, from, odd ? 61.0 + len : 61.0, 0, odd ? -1 : 1, st, rs, RUN, W,
+                    M.metal);
+        var lz = odd ? 61.0 - PAD : 61.0 + len;
+        seg(92.0, 93.4 + LANE + W / 2, to - 0.22, to, lz, lz + PAD, M.metal);
+        var nx = odd ? 93.4 - W / 2 : 93.4 + LANE - W / 2;
+        seg(nx, nx + W, to - 0.22, to, odd ? lz + PAD : lz - 0.7, odd ? lz + PAD + 0.7 : lz, M.metal);
+      }
+    })();
+
+    crates(72, 76); crates(51, 79); barrel(93, 56, true);
+  })();
+
+  /* ==========================================================================
+     WESTBROOK STADIUM & TRAINING GROUND — v9.6    x -94..-46, z 40..94
+     ==========================================================================
+     This quadrant was empty. 57 x 63 m with 132 colliders, almost all of them
+     perimeter wall — the district lookup could only call it "NEAR THE COLONY"
+     because there was nothing there to name. Players crossed it to get
+     somewhere else and never fought in it.
+
+     WHY A STADIUM RATHER THAN MORE BUILDINGS. Urban's west is already all
+     interiors: West Works is a yard, Irongate is warehouses, The Colony is
+     decks, Old Town is doorways. A fourth set of rooms would have added floor
+     area and no new kind of fight. A stadium adds the one texture the map does
+     not have — TIERED OPEN GROUND. Sightlines are long but every one of them is
+     down a slope with cover at intervals, which is neither the arcade's flat
+     38 m lane nor the terrace's blind corners.
+
+     Rahul asked for nothing high-end, and this obeys that: the tallest thing is
+     a 14 m floodlight mast, which is a silhouette rather than a position. The
+     stand tops out at 8.4 m — lower than the towers it shares the map with.
+
+       PITCH        x -86..-54, z 50..84   sunken 1.2 m, the killing floor
+       WEST STAND   x -94..-86             four terraced tiers, roofed
+       EAST STAND   x -54..-46             four terraced tiers, open
+       TUNNELS      two, at the halfway line on both stands
+       TRAINING     z 84..94               nets, dugouts, equipment store
+
+     Why a player comes here: the pitch is a 32 x 34 m bowl overlooked from two
+     sides, so crossing it is a commitment — but the tiers are cover the whole
+     way up, and the tunnels let a squad appear at pitch level without being
+     seen crossing. Holding a stand needs someone watching the tunnel mouth.
+
+     Callouts this should produce: "on the terraces", "in the tunnel",
+     "halfway line", "under the floodlight", "the dugouts". */
+  (function stadium() {
+    var NCX = { collide: false, cast: false };
+    /* PITCH x -88..-70, NOT -86..-54.
+       The survey that called this quadrant vacant counted 132 colliders and
+       flagged a cluster at x[-58,-44] z[56,68] — and I read that as part of Old
+       Town rather than as something standing in the middle of the site. It is a
+       real structure, x[-60,-46] z[48,86] y[0.2,3.4], and the first cut built
+       the east stand straight through it: twenty-one seat rows reported 100%
+       buried by verify-props, which is the gate saying "there is already a
+       building here". The stadium is narrower and shifted west so its east
+       stand stops at -61.6, clear of it. */
+    var PX0 = -88, PX1 = -74, PZ0 = 50, PZ1 = 84;
+    /* THE PITCH IS AT STREET LEVEL, NOT SUNK.
+       It was -1.2 m, because a sunken bowl overlooked from two sides is the
+       better shape. Urban's ground slab is SOLID from -1.0 to 0.0 across the
+       whole map, so a pitch below zero is not a bowl, it is a floor buried
+       inside the terrain — verify-climb found it immediately, reporting the
+       tunnel ramp blocked by [-110,-1.0,-110 .. 45.4,0.0,110], which is the
+       ground itself. Sinking it properly would mean cutting a hole in the
+       shared ground slab, and that slab is the one piece of geometry every
+       district on this map stands on.
+       So the bowl is built UP instead: the pitch stays at 0 and the terraces
+       rise from it, which gives the same overlooked-from-two-sides fight and
+       touches nothing outside this district. */
+    var SUNK = 0.0;
+
+    // ---- the bowl ---------------------------------------------------------
+    /* Turf is lifted 4 mm. At exactly SUNK (0.0) its underside was coplanar
+       with the world ground slab's top face, which is the z-fighting flicker
+       verify-zfight exists to prevent — the same trick the avenue grid on Metro
+       uses. */
+    seg(PX0, PX1, SUNK + 0.004, SUNK + 0.14, PZ0, PZ1, M.foliage, NCX);   // turf
+    // pitch markings, flat and non-colliding
+    seg(-81.15, -80.85, SUNK + 0.15, SUNK + 0.19, PZ0 + 2, PZ1 - 2, M.roadPaint, NCX);
+    seg(PX0 + 2, PX1 - 2, SUNK + 0.15, SUNK + 0.19, 66.85, 67.15, M.roadPaint, NCX);
+
+    /* ---- terraced stands -------------------------------------------------
+       Four tiers a side. Each tier is 2.1 m deep and rises 0.7 m — under the
+       0.42 m auto-step twice over, so a player CLIMBS the terraces by jumping
+       one step at a time rather than needing a staircase, which is what makes
+       a stand feel like a stand. The riser faces are the cover. */
+    function stand(x0, dir, roofed) {
+      for (var t = 0; t < 4; t++) {
+        var y = SUNK + t * 0.7, xa = x0 + dir * t * 2.1, xb = xa + dir * 2.1;
+        var lo = Math.min(xa, xb), hi = Math.max(xa, xb);
+        seg(lo, hi, y, y + 0.7, PZ0, PZ1, M.concrete);                 // tier
+        /* Seat rows: waist-high, broken into blocks so the terrace is not one
+           unbroken firing line. */
+        for (var zz = PZ0 + 3; zz < PZ1 - 3; zz += 7.5) {
+          seg(lo + 0.4, hi - 0.4, y + 0.7, y + 1.15, zz, zz + 4.6, M.steelBlue, { cast: false });
+        }
+      }
+      var back = x0 + dir * 8.4;
+      var bl = Math.min(x0, back), bh = Math.max(x0, back);
+      if (roofed) {
+        // roof on columns — cover from above, not a walkable deck
+        /* TWO column rows, front and back. One row meant an 8.4 m cantilever
+           with nothing under its outer edge. */
+        for (var c = 0; c < 5; c++) {
+          var cz = PZ0 + 4 + c * 6.5;
+          cyl(back - dir * 0.9, 4.10, cz, 0.22, 8.2, M.trim);
+          cyl(x0 + dir * 1.2, 4.10, cz, 0.22, 8.2, M.trim);
+        }
+        /* Roof sinks 0.1 into the columns. A slab whose underside sits EXACTLY
+           on its support shares a horizontal plane with it, and two coplanar
+           faces flicker — verify-zfight counts every such pair. Overlapping the
+           support is how every other roof on this map is built. */
+        seg(bl, bh, 8.1, 8.4, PZ0, PZ1, M.roof);
+      }
+      return { lo: bl, hi: bh };
+    }
+    stand(PX0, -1, true);        // west stand, roofed
+    stand(PX1, 1, false);        // east stand, open
+
+    /* ---- players' tunnels ------------------------------------------------
+       The reason the stands are worth taking: a squad can reach pitch level
+       without crossing the terraces in the open. Two of them, at the halfway
+       line, one per side. A ramp rather than steps, because the drop is only
+       1.2 m and a ramp reads as a tunnel mouth. */
+    [[-96.4, -88.0, 1], [-74.0, -65.6, -1]].forEach(function (t) {
+      var x0 = t[0], x1 = t[1];
+      seg(x0, x1, SUNK, SUNK + 0.14, 64.6, 69.4, M.concrete, NCX);
+      seg(x0, x1, SUNK + 2.55, SUNK + 2.9, 64.4, 69.6, M.concrete);     // tunnel roof
+      seg(x0, x1, SUNK, SUNK + 2.6, 64.2, 64.4, M.concrete);            // side walls
+      seg(x0, x1, SUNK, SUNK + 2.6, 69.6, 69.8, M.concrete);
+      /* No ramp: with the pitch at grade the tunnel IS level, so it is a
+         covered walkway under the stand rather than a climb. That removes two
+         flights and the headroom problem they had with their own roof. */
+    });
+
+    /* ---- floodlights: the silhouette that names the district from range --- */
+    [[-92, 46], [-92, 88], [-70, 46], [-70, 88]].forEach(function (p) {
+      cyl(p[0], 7.0, p[1], 0.28, 14.0, M.metal);
+      /* The glow strip is INSIDE the housing — 3.0 x 0.7 x 0.2 sitting in a
+         3.2 x 0.9 x 1.2 box is 100% buried, which is what verify-props reported.
+         Moved to the housing's front face so it is a lamp rather than a filament
+         nobody can see. */
+      box(p[0], 14.4, p[1], 3.2, 0.9, 1.2, M.dark, { cast: false });
+      box(p[0], 14.4, p[1] + 0.68, 3.0, 0.7, 0.14, M.lampGlow, { collide: false, cast: false });
+    });
+
+    /* ---- training ground: low, cluttered, the district's CQB half --------- */
+    seg(-94, -62, 0.003, 0.014, 86, 93, M.dirt, NCX);
+    for (var d = 0; d < 3; d++) {                       // dugouts / equipment bays
+      var dx = -90 + d * 9;
+      seg(dx, dx + 6, 0, 1.9, 86.5, 89, M.plaster);
+      seg(dx - 0.2, dx + 6.2, 1.85, 2.15, 86.3, 89.2, M.roof);
+      box(dx + 3, 0.5, 91, 2.0, 1.0, 1.2, M.wood);      // ball crate
+    }
+    // practice nets — tall, thin, see-through cover
+    [-86, -76, -66].forEach(function (nx) {
+      /* Posts run the full height and the crossbar sits ON them rather than
+         between them — spanning post-centre to post-centre left the bar with
+         nothing beneath its ends. */
+      cyl(nx - 3, 2.15, 91.5, 0.1, 4.3, M.metal);
+      cyl(nx, 2.15, 91.5, 0.1, 4.3, M.metal);
+      cyl(nx + 3, 2.15, 91.5, 0.1, 4.3, M.metal);
+      seg(nx - 3.2, nx + 3.2, 4.3, 4.4, 91.4, 91.6, M.metal, { collide: false, cast: false });
+    });
+    /* Crates moved clear of the structures they were placed against — a stack
+       67-100% inside a dugout wall is a prop nobody can use and a pair
+       verify-props counts. */
+    crates(-96, 46); crates(-64, 93); barrel(-90, 94, true); barrel(-72, 43, false);
+    lamp(-79, 44, 'w'); lamp(-79, 92, 'w');
+  })();
 
   /* ==========================================================================
      IRONGATE DEPOT — WAREHOUSE DISTRICT    x -72..-14, z -50..-12   (v7.9)

@@ -129,7 +129,7 @@ for (const i of props) {
 }
 embedded.sort((a, b) => b.v - a.v);
 console.log(`        embedded: ${embedded.length} prop/structure pairs sharing >${Math.round(EMBED_FRAC * 100)}% of the smaller volume`);
-embedded.slice(0, 10).forEach(e => console.log(
+embedded.slice(0, (process.env.PROPS_ALL ? 999 : 10)).forEach(e => console.log(
   `          [${DIST.nameAt(e.x, e.z)}] (${e.x.toFixed(1)}, ${e.y.toFixed(1)}, ${e.z.toFixed(1)})  ${Math.round(e.frac * 100)}% buried  ` +
   `${e.v.toFixed(2)} m3`));
 
@@ -169,7 +169,7 @@ for (const i of props) {
 }
 floating.sort((a, b) => b.v - a.v);
 console.log(`        floating: ${floating.length} props with nothing beneath and nothing to hang from`);
-floating.slice(0, 10).forEach(f => console.log(
+floating.slice(0, (process.env.PROPS_ALL ? 999 : 10)).forEach(f => console.log(
   `          [${DIST.nameAt(f.x, f.z)}] (${f.x.toFixed(1)}, ${f.z.toFixed(1)}) underside y ${f.y.toFixed(2)}  ${f.v.toFixed(2)} m3`));
 
 /* Ratchets, measured 2026-08-02 against v8.5. Lower is better. */
