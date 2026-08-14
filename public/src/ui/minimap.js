@@ -257,10 +257,18 @@ var Minimap = (function () {
     function sx(x) { return (x + WORLD) * S; }
     function sz(z) { return (z + WORLD) * S; }
 
-    // district rectangles + names (urban only — DISTRICTS describes Urban)
-    if (mapNow === 'urban' && typeof DISTRICTS !== 'undefined') {
+    /* v9.4: districts for WHICHEVER map is loaded, not urban only.
+       This was correct when DISTRICTS held one map's regions — drawing Urban's
+       rectangles over Metro would have been worse than drawing nothing. Metro
+       has its own twelve regions as of v9.3, and `listFor(map)` hands back the
+       right set (or null for Rural, which has landmarks rather than a grid).
+       Without this the map Rahul opened showed named streets on Urban and a
+       blank grid on Metro, which reads as the feature being broken. */
+    var dList = (typeof DISTRICTS !== 'undefined' && DISTRICTS.listFor)
+      ? DISTRICTS.listFor(mapNow) : (mapNow === 'urban' ? DISTRICTS.list : null);
+    if (dList && dList.length) {
       g.lineWidth = 1;
-      DISTRICTS.list.forEach(function (d) {
+      dList.forEach(function (d) {
         g.strokeStyle = 'rgba(240,162,50,0.32)';
         g.strokeRect(sx(d.x0), sz(d.z0), (d.x1 - d.x0) * S, (d.z1 - d.z0) * S);
         var mx = sx((d.x0 + d.x1) / 2), mz = sz((d.z0 + d.z1) / 2);
@@ -325,7 +333,30 @@ var Minimap = (function () {
        advantage from. */
     var modeNow = (Net.getMatch() || {}).mode;
     var modeCfg = CFG.MODES[modeNow] || null;
-    var showContacts = !(modeCfg && modeCfg.teams);
+    /* ===== v9.5 — TWO SWITCHES, NOT ONE =====
+
+       v9.2 hid every contact in team modes; v9.4 let Last Stand opt back in.
+       Both were wrong in the same way: they treated "where is my squad" and
+       "where is the enemy" as one piece of information when they are opposites.
+
+       Rahul: "In the team modes like squad, team battle, bot with teams, team
+       location should show on the big Map ... Enemy location should only show
+       on big Map in free to all matches."
+
+       That is exactly right, and it is a better rule than either of mine:
+         - YOUR OWN TEAM is not intel, it is coordination. A squad that cannot
+           see itself on the map cannot regroup, and hiding it made team modes
+           worse to play without making them fairer.
+         - THE ENEMY is intel, and a live overhead readout of it in a match
+           that never pauses is the thing worth removing.
+       In free-for-all there is no team, so everyone is an enemy and the map is
+       the mode's whole anti-camping mechanic — enemies stay visible there.
+
+       Last Stand keeps `fullMapContacts` and therefore keeps enemies too, for
+       the reason recorded in world.config.js. */
+    var teamMode = !!(modeCfg && modeCfg.teams);
+    var showAllies  = true;                       // your own side, always
+    var showEnemies = !teamMode || !!(modeCfg && modeCfg.fullMapContacts);
 
     var myTeam = Net.getMyTeam();
     var nowMs = performance.now();
@@ -351,8 +382,11 @@ var Minimap = (function () {
       }
     }
 
-    if (showContacts) Net.eachRemote(function (id, r) {
+    Net.eachRemote(function (id, r) {
       var ally = myTeam && r.team === myTeam;
+      /* The one line that splits the two switches. An ally is drawn in every
+         mode; an enemy only where the mode allows it. */
+      if (!(ally ? showAllies : showEnemies)) return;
       if (ally) {
         if (!r.alive) return;
         marker(r.renderPos.x, r.renderPos.z, 5, r.color || '#63d968', true, r.name || '');

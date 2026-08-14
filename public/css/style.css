@@ -517,6 +517,23 @@ button { font-family: var(--disp); cursor: pointer; }
 .mstat span { font-family: var(--mono); font-size: 9px; letter-spacing: 0.24em; color: var(--ink-dim); }
 
 /* ---------- paired form fields ---------- */
+/* v9.4 MODE BRIEFING. Sits at the top of the rules panel and states, in one
+   line, what the selected mode actually is. The staging area used to show an
+   identical control set for every mode and left the host to infer the rules
+   from the variant name. */
+.mode-brief {
+  margin: 0 0 14px; padding: 10px 12px;
+  border-left: 3px solid var(--accent, #f0a232);
+  background: rgba(240, 162, 50, 0.07);
+  font: 500 13px/1.5 Rajdhani, sans-serif; letter-spacing: 0.4px;
+  color: #e6dcc8;
+}
+.mode-brief b { color: #f5e1be; font-weight: 700; }
+.mode-brief .brief-tag {
+  display: inline-block; margin-right: 8px; padding: 1px 7px;
+  border-radius: 3px; background: rgba(240, 162, 50, 0.22);
+  font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+}
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field-row .field { margin-bottom: 16px; }
 .field select { appearance: none; -webkit-appearance: none; padding-right: 30px;

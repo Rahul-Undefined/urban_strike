@@ -13,6 +13,7 @@ var UI = (function () {
       'join-name', 'join-code', 'btn-join',
       'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count', 'lobby-kills', 'lobby-time',
       'lobby-team-a', 'lobby-team-b', 'team-name-row', 'lobby-bots', 'lobby-skill', 'bot-row',
+      'mode-brief', 'kills-row', 'kills-label',
       'lobby-hint', 'btn-start', 'btn-leave',
       'crosshair', 'scope-overlay', 'match-timer', 'kill-target', 'killfeed',
       'hp-fill', 'hp-num', 'armor-fill', 'armor-num',
@@ -233,7 +234,21 @@ var UI = (function () {
         if (inp) pushTeamName(inp.getAttribute('data-team'), inp.value);
       });
     }
-    if (mode.teams) {
+    /* v9.4 STRIKE TEAM IS NOT A TEAM PICKER.
+       `mode.teams` is true for Strike Team because it IS a two-sided match —
+       that is what keeps friendly fire off and the team kill target working.
+       But the second side is machines. Showing the side headers meant the
+       staging area invited the host to arrange operators across two teams, one
+       of which no human can ever join, and offered a rename box for the bots.
+       Rahul: "it is asking me to select team members but this is just human vs
+       bot as one team of human vs one team of bot."
+
+       So a vsBots mode renders ONE roster, flat, exactly like free-for-all —
+       because from the players' point of view that is what it is. The bot side
+       is described by the Strike Team panel further down, not by an empty team
+       header nobody can fill. */
+    var vsBots = !!mode.vsBots;
+    if (mode.teams && !vsBots) {
       /* v8.37: EVERY side the mode fields, not just a and b. Rahul: "All teams
          are currently not showing in the staging area just amber and cobalt."
          Empty squads are still listed, because a host needs to see the empty
@@ -343,8 +358,78 @@ var UI = (function () {
     /* v8.34: the two rename boxes only make sense head-to-head. Squad modes
        field up to ten sides and ten text inputs would swamp the panel, so they
        keep the palette names — which are already distinct and colour-matched. */
+    /* ============ v9.4 — THE STAGING AREA ANSWERS THE MODE ==============
+
+       Rahul: "it is very default for any mode, i need the staging area to be
+       active for the mode selected by the host, only necessary information or
+       questions in the staging area."
+
+       Every mode was shown the same panel: kills, duration, two team-name
+       boxes, and a bot row. In free-for-all the team boxes were dead controls.
+       In Last Stand the KILLS field was worse than dead — that mode ends when
+       one side is left standing, so a kill target is not a setting, it is a
+       misleading one. In Strike Team the host was asked to name the machines.
+
+       So the panel is now assembled per mode from three questions:
+         - does this mode END on kills?      (Last Stand does not)
+         - does it have sides a human picks? (vsBots does not)
+         - does it field bots?
+       Anything a mode cannot use is hidden rather than disabled, because a
+       greyed-out control still asks the host to think about it.
+
+       The briefing line above it exists for the same reason. A host choosing
+       "Squads 5 x 4" had to already know what that meant; now the panel says
+       so, together with the one rule that mode changes. */
+    var mBrief = CFG.MODES[d.settings.mode] || CFG.MODES.ffa;
+    var isElim = !!CFG.isElimination(d.settings.mode);
+    var livesN = CFG.livesFor(d.settings.mode);
+    if (els['mode-brief']) {
+      var tag, line;
+      if (mBrief.vsBots) {
+        tag = 'Strike Team';
+        line = '<b>' + mBrief.maxPlayers + ' operator' + (mBrief.maxPlayers > 1 ? 's' : '') +
+          '</b> against a squad of machines. Set how many bots and how hard they fight.';
+      } else if (isElim) {
+        tag = 'Last Stand';
+        line = '<b>' + (livesN === 1 ? 'One life' : livesN + ' lives') + '.</b> ' +
+          (mBrief.squads ? mBrief.teamCount + ' squads of ' + mBrief.squadSize : 'Everyone for themselves') +
+          ' \u2014 the match ends when one side is left standing, so there is no kill target.';
+      } else if (mBrief.squads) {
+        tag = 'Squads';
+        line = '<b>' + mBrief.teamCount + ' squads of ' + mBrief.squadSize +
+          '.</b> First squad to the kill target wins. Friendly fire is off.';
+      } else if (mBrief.teams) {
+        tag = 'Team Battle';
+        line = '<b>' + mBrief.maxPlayers / 2 + ' v ' + mBrief.maxPlayers / 2 +
+          '.</b> Team kills are pooled. Friendly fire is off.';
+      } else if (mBrief.practice) {
+        tag = 'Overrun';
+        line = '<b>One operator, the whole sector.</b> Choose how many bots come for you and how mean they are.';
+      } else {
+        tag = 'Free For All';
+        line = '<b>Everyone for themselves.</b> First to the kill target wins.';
+      }
+      els['mode-brief'].innerHTML = '<span class="brief-tag">' + tag + '</span>' + line;
+    }
+    /* KILLS is meaningless in an elimination mode. Hidden, not disabled — a
+       greyed control is still a question. DURATION stays, because a time limit
+       is a real backstop in every mode including Last Stand. */
+    if (els['kills-row']) {
+      var killsOff = isElim;
+      var kl = els['kills-label'];
+      if (kl) kl.textContent = mBrief.teams && !mBrief.vsBots ? 'TEAM KILLS' : 'KILLS';
+      var kf = els['lobby-kills'] && els['lobby-kills'].closest ? els['lobby-kills'].closest('.field') : null;
+      if (kf) kf.style.display = killsOff ? 'none' : '';
+      els['kills-row'].style.gridTemplateColumns = killsOff ? '1fr' : '1fr 1fr';
+    }
     var sidesN = CFG.activeTeams(d.settings.mode).length;
-    var teamsOn = !!(CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams) && sidesN === 2;
+    /* v9.4: and NOT in a vsBots mode. Strike Team fields two sides, so this
+       used to offer the host two rename boxes — one for their squad and one for
+       the machines. Renaming the bot team is not a setting anybody wants; it is
+       a control that exists only because the mode happens to satisfy an old
+       shape test. */
+    var teamsOn = !!(CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams)
+      && sidesN === 2 && !CFG.MODES[d.settings.mode].vsBots;
     if (els['team-name-row']) els['team-name-row'].style.display = teamsOn ? '' : 'none';
     ['a', 'b'].forEach(function (t) {
       var el = els['lobby-team-' + t];
@@ -490,7 +575,23 @@ var UI = (function () {
     }
     var mode = CFG.MODES[(Net.getMatch().mode) || 'ffa'] || CFG.MODES.ffa;
     if (mode.teams) {
-      CFG.activeTeams(d.settings.mode).forEach(function (t) {          // v8.37: all sides
+      /* v9.4 CRASH FIX — `d` does not exist here.
+         updateScoreboard's parameters are (roster, myId, code, ping). `d` is
+         the LOBBY PAYLOAD, and it is in scope in the lobby renderer a few
+         hundred lines above, which is where this line was copied from in v8.37
+         when the scoreboard learned to group by side.
+
+         In a free-for-all `mode.teams` is false, so the line never ran and the
+         mistake sat there. In any team mode — Team Battle, Squads, Last Stand
+         Squads, and now Strike Team — every press of TAB threw
+         "d is not defined", which window.onerror surfaced as the `script:`
+         toast Rahul screenshotted. The scoreboard then rendered with no team
+         grouping at all, because the throw aborted the rest of the function.
+
+         The mode is already resolved on the line above from Net.getMatch(),
+         which is the authoritative source here; the lobby payload is not even
+         available at this point in a match. */
+      CFG.activeTeams(Net.getMatch().mode || 'ffa').forEach(function (t) {   // v8.37: all sides
         var members = roster.filter(function (p) { return p.team === t; });
         if (!members.length) return;
         var total = members.reduce(function (s, p) { return s + p.kills; }, 0);
@@ -863,6 +964,32 @@ var UI = (function () {
     showDeath: showDeath, setDeathCountdown: setDeathCountdown, hideDeath: hideDeath,
     showEnd: showEnd, hideEnd: hideEnd,
     showPause: showPause, showClickToPlay: showClickToPlay,
+    /* v9.4 DRONE WARNING. Deliberately loud and deliberately temporary: it
+       fires from the server while a drone is still crossing toward you, and it
+       is the entire reason a lethal auto-targeting weapon is allowed to exist.
+       Distance is shown because "40 m out" and "overhead" are different
+       decisions — the first means run, the second means shoot up or die. */
+    droneWarn: function (dist) {
+      var el = document.getElementById('drone-warn');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'drone-warn';
+        el.style.cssText = 'position:fixed;left:50%;top:16%;transform:translateX(-50%);' +
+          'font:700 20px Rajdhani,sans-serif;letter-spacing:2px;color:#ff3428;' +
+          'text-shadow:0 0 12px rgba(255,52,40,.8),0 2px 4px #000;pointer-events:none;' +
+          'z-index:60;display:none';
+        document.body.appendChild(el);
+      }
+      el.textContent = dist > 0 ? ('\u25B2 DRONE INBOUND \u00b7 ' + dist + 'm') : '\u25B2 DRONE OVERHEAD';
+      el.style.display = 'block';
+      el.style.opacity = dist > 0 ? '0.9' : '1';
+      clearTimeout(el._t);
+      /* Cleared on a timer rather than by a "drone gone" event: the drone may
+         be shot down by a third party, may retarget, or may kill you — and in
+         all three cases nothing would arrive to switch this off. */
+      el._t = setTimeout(function () { el.style.display = 'none'; }, 900);
+    },
+    droneHealth: function () { /* reserved: per-drone health bar */ },
     toast: toast,
     getSensitivity: function () { return sensitivity; },
     el: function (id) { return els[id]; }

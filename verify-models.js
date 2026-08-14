@@ -121,9 +121,19 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
   }
   ok(!leaked, 'airdrop-exclusive items never roll on ground loot' + (leaked ? ' (leaked ' + leaked + ')' : ''));
   ok(sawWeapon, 'ground loot still produces weapons after the drop:1 filter');
+  /* v9.5: crates draw from THREE pools now, not two. The exotic pool was added
+     when the crate went from four items to six, and the drone is drop-only and
+     lives there — so checking only weaponPool and attPool declared a reachable
+     item unreachable. The rule being protected is unchanged: nothing may be
+     marked drop-only and then exist in no crate pool at all, because that is an
+     item no player can ever obtain. */
+  const crateAll = []
+    .concat(CFG.AIRDROP.weaponPool || [], CFG.AIRDROP.attPool || [], CFG.AIRDROP.exoticPool || []);
   const dropOnly = Object.keys(CFG.LOOT_ITEMS).filter(k => CFG.LOOT_ITEMS[k].drop);
-  ok(dropOnly.length > 0 && dropOnly.every(k => CFG.AIRDROP.weaponPool.includes(k) || CFG.AIRDROP.attPool.includes(k)),
-    'every drop-exclusive item is actually reachable from an airdrop crate');
+  const unreachable = dropOnly.filter(k => crateAll.indexOf(k) < 0);
+  ok(dropOnly.length > 0 && unreachable.length === 0,
+    'every drop-exclusive item is actually reachable from an airdrop crate' +
+    (unreachable.length ? ' (unreachable: ' + unreachable.join(', ') + ')' : ''));
 }
 
 /* ---- v5.1 scope ladder ------------------------------------------------ */

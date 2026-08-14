@@ -100,6 +100,7 @@ var Net = (function () {
     s.on('snap', function (d) {
       var tLocal = performance.now();
       if (d.tk) teamKills = d.tk;
+      Pickups.droneSync(d.dr);          // v9.4: undefined when none are airborne
       for (var id in d.players) {
         var st = d.players[id];
         if (id === myIdV) {
@@ -302,6 +303,19 @@ var Net = (function () {
       if (!o || !v) return;
       Weapons.spawnGrenade(d.type, o, v, false, (typeof d.f === 'number') ? d.f : undefined);
     });
+    /* v9.4 STRIKE DRONE. Position comes from the snapshot, not from these —
+       these are the discrete events: launched, destroyed, and the warning to
+       the player being hunted. */
+    socket.on('droneLaunch', function (d) {
+      UI.toast(d.owner === myIdV ? 'Drone away \u00b7 acquiring' : 'Drone in the air');
+    });
+    socket.on('droneBoom', function (d) { Pickups.droneBoom(d); });
+    socket.on('droneHit', function (d) { UI.droneHealth && UI.droneHealth(d.id, d.hp); });
+    socket.on('droneKilled', function () { UI.toast('Drone destroyed'); });
+    /* THE WARNING IS THE WEAPON'S FAIRNESS. Without it a drone is an unblockable
+       kill from a direction nobody looks. With it, dying to one is a decision
+       the victim lost rather than a dice roll they never saw. */
+    socket.on('droneWarn', function (d) { UI.droneWarn && UI.droneWarn(d.d); });
     socket.on('minePlaced', function (d) { Pickups.mineAdd(d); });
     socket.on('mineBoom', function (d) {
       Pickups.mineBoom(d.id);
@@ -502,6 +516,8 @@ var Net = (function () {
     sendState: sendState, sendShoot: sendShoot, sendHit: sendHit,
     sendProj: sendProj, sendThrow: sendThrow, requestRespawn: requestRespawn,
     placeMine: function (d, cb) { if (socket) socket.emit('placeMine', d, cb); },
+    launchDrone: function (cb) { if (socket) socket.emit('launchDrone', {}, cb); },
+    droneHit: function (id, dmg) { if (socket) socket.emit('droneHit', { id: id, dmg: dmg }); },
     setPlayerTeam: function (id, team) { if (socket) socket.emit('setPlayerTeam', { id: id, team: team }); },
     shuffleTeams: function () { if (socket) socket.emit('shuffleTeams'); },   // v8.37
     setReady: function (v) { if (socket) socket.emit('setReady', { v: !!v }); },

@@ -240,8 +240,14 @@ ok(CFG.MODES.bots.teams === false, 'Training is free-for-all shaped: every bot i
     botShoot: () => {}, botExplode: () => {},
     botPlaceMine: (r, b) => { mineCalls++; b.mines--; return { ok: true }; }
   });
+  /* v9.4: the probe runs on EXTREME, not veteran. Difficulty now selects a
+     behaviour generation — a recruit is pinned to the street by design — so a
+     mid-rung probe was measuring a tier whose climbing is deliberately
+     occasional, and it flaked between 4.5 m and 2.85 m run to run. The tier
+     that is REQUIRED to climb is the one worth asserting on, and the recruit
+     contract is asserted separately below. */
   const room = { code: 'PROBE', state: 'playing', players: new Map(),
-    settings: { mode: 'co4', map: 'metro', botCount: 12, botSkill: 'veteran' } };
+    settings: { mode: 'co4', map: 'metro', botCount: 12, botSkill: 'extreme' } };
   room.players.set('H1', { id: 'H1', name: 'HUMAN', bot: false, connected: true, team: 'a',
     joinOrder: 0, alive: true, hp: 100, pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0,
     mv: 0, wp: 0, ln: 0, protUntil: 0, out: false, armorLvl: 0, armorDur: 0 });
@@ -284,6 +290,51 @@ ok(CFG.MODES.bots.teams === false, 'Training is free-for-all shaped: every bot i
   ok(thrown.every(d => d.type === 'frag' && d.o && d.v && d.o.every(isFinite) && d.v.every(isFinite)),
     'every thrown frag carries a finite origin and velocity the client can render');
   ok(mineCalls > 0, 'bots placed ' + mineCalls + ' mine(s)');
+
+  /* ---- v9.4 THE DIFFICULTY LADDER IS A CONTRACT ----
+     Rahul asked for the bottom rung to behave like v9.0 — street level, one
+     rifle, fights what comes to it — and the top rung to play like a person.
+     Those are opposite behaviours from one code path, so both ends are pinned
+     here: a change that makes recruits climb is as much a regression as one
+     that stops extremes climbing. */
+  {
+    const R = Bots.SKILLS.recruit, X = Bots.SKILLS.extreme;
+    ok(R.groundOnly === true, 'a recruit is ground-only — the v9.0 behaviour');
+    ok(!X.groundOnly, 'an extreme is not ground-only');
+    ok(R.oneWeapon === 'ak47', 'a recruit carries the single rifle v8.38 hardcoded');
+    ok(!X.oneWeapon, 'an extreme draws from the whole loadout table');
+    ok(typeof R.leash === 'number' && R.leash < 50,
+      'a recruit is leashed near where it stands [' + R.leash + 'm]');
+    ok(!X.leash, 'an extreme hunts the whole map');
+    ok(X.verticality > R.verticality && X.crouchPct > R.crouchPct &&
+       X.sprintPct > R.sprintPct && X.nadePct > R.nadePct,
+      'every capability dial rises from recruit to extreme');
+
+    /* And the ground-only rule is BEHAVIOURAL, not just a flag: run a recruit
+       lobby and assert nothing left the street. */
+    const rRoom = { code: 'PROBE2', state: 'playing', players: new Map(),
+      settings: { mode: 'co4', map: 'metro', botCount: 8, botSkill: 'recruit' } };
+    rRoom.players.set('H2', { id: 'H2', name: 'H', bot: false, connected: true, team: 'a',
+      joinOrder: 0, alive: true, hp: 100, pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0,
+      mv: 0, wp: 0, ln: 0, protUntil: 0, out: false, armorLvl: 0, armorDur: 0 });
+    P.addBots(rRoom);
+    const rWeapons = new Set();
+    for (const b of rRoom.players.values()) {
+      if (!b.bot) continue;
+      rWeapons.add(CFG.WEAPON_ORDER[b.wp]); b.alive = false; b.respawnAt = 0;
+    }
+    ok(rWeapons.size === 1 && rWeapons.has('ak47'),
+      'every recruit carries the AK-47 and nothing else [' + [...rWeapons].join(',') + ']');
+    let rPeak = -99;
+    for (let i = 0; i < 40 * 30; i++) {
+      T += dt * 1000;
+      const H2 = rRoom.players.get('H2');
+      H2.pos[0] = Math.sin(T / 9000) * 30; H2.pos[2] = Math.cos(T / 7000) * 30;
+      P.tick(rRoom, dt);
+      for (const b of rRoom.players.values()) if (b.bot && b.alive) rPeak = Math.max(rPeak, b.pos[1]);
+    }
+    ok(rPeak < 3.0, 'no recruit left the street in 40 s [peak y ' + rPeak.toFixed(2) + ']');
+  }
 
   let bad = 0, underground = 0;
   for (const b of room.players.values()) {

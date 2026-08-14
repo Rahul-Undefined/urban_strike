@@ -5549,3 +5549,100 @@ Pre-existing reds unchanged: `verify-arch`, `verify-climb`, `verify-access`.
   Urban draws its signs from the same field, so wiring them is a follow-up.
 - Bots do not yet weight their loadouts toward the new weapons; the table in
   bots.js still lists the v9.2 set.
+
+---
+
+## v9.5 — ATTACHMENTS YOU CAN SEE, GUNS ON THE GROUND, AND THE BLACK SCREEN
+
+### Bugs
+
+**Attachments were invisible, not broken.** eff() has applied spreadMult,
+adsFov, magMult and reloadMult since v5.1, and reload has read the effective
+magazine since then too. What was missing is that NOTHING CHANGED ON SCREEN:
+you looted a red dot, got a toast, and then looked down the same iron sights at
+the same gun. A modifier a player cannot see is a modifier they do not believe
+in, and the natural conclusion is that the pickup is broken.
+
+Attachments are now physical — optics with a lens sized by magnification,
+suppressors and compensators at the muzzle, and the magazine stretched by
+reusing the `userData.mag` handle every viewmodel already exposes for its reload
+animation. No model needed editing. The HUD also refreshes on pickup, so an
+extended mag visibly moves the capacity instead of waiting silently for the next
+reload.
+
+**The black screen.** "I can move the screen but everything was black", one
+player only — that is WebGL context loss. Input, networking and the game loop
+are plain JavaScript and keep running; the GPU side has been torn down with
+every texture and buffer on it. Left unhandled the browser NEVER restores it:
+the lost event's default action has to be cancelled for `webglcontextrestored`
+to fire at all, which is why it looked permanent. Now cancelled, the player is
+told, the world is rebuilt on restore, and the render loop stops drawing into a
+dead context. Match-start world building also retries once — a builder that
+throws partway leaves a scene with no ground, which is the other route to black.
+
+**Bot mode took 5-7 s to start.** buildColliders() runs the whole world builder
+inside a vm to get the collision set: measured ~900 ms per map, SYNCHRONOUS, on
+the event loop, inside startMatch between the countdown ending and matchStart.
+The cache made it a first-match-only cost, which is the worst possible shape —
+it never appeared in testing because the second match was always fast. Warmed at
+boot now, where nobody is waiting.
+
+**Bots took 3-4 s to reach the scorecard.** Arithmetic, not a race: the lobby
+payload refreshes every 60 snapshots, which at the configured 15 Hz is four
+seconds exactly. One push after addBots.
+
+### The big map: allies and enemies are different questions
+v9.2 hid every contact in team modes and v9.4 let Last Stand opt back in. Both
+were wrong the same way. Your own squad is COORDINATION and the enemy is INTEL —
+hiding the squad made team modes worse to play without making them fairer.
+Allies now show everywhere; enemies only where there are no sides (and in Last
+Stand, which is built around the map).
+
+### Guns on the ground: ~6 -> ~35 on Metro
+Two causes, and only one was the weights. THE COMMON TIER HELD NO WEAPONS AT
+ALL — bandages, ammo and armour — so the majority of ground rolls could never
+produce a gun, and a gun needed a rare or legendary roll of which most entries
+are attachments and vests. Six workhorse loot guns (SCAR-H, P90, AUG, AKM,
+UMP-9, MP5) moved to common; none is stronger than what a player already spawns
+with, so this changes availability, not power. Empty ground points cut from 25%
+to 8%. Plus 46 new loot points across the edge districts, every one
+support-validated by verify-map.
+
+### Twelve district signboards on Metro
+Edge-lit panels, accent bar keyed to each district's v9.3 ground colour, twin
+masts. Text alignment specifically: the canvas row is drawn at the board's own
+4:1 aspect so nothing stretches, the font shrinks until the name fits the safe
+area so every district sits in the same margins, and it is centred on measured
+metrics with textBaseline 'middle'.
+
+The first cut built five meshes per sign with a unique texture each: sixty loose
+meshes, and draw calls went from 33 to 70 against a budget of 45. StaticMerge
+batches by material, so a unique texture per sign can never merge. Rebuilt as
+ONE atlas and ONE merged geometry whose quads carry UVs into their own row —
+twelve signs, one draw call, 35 total.
+
+### The drone is crate loot and a carried slot
+`drop: 1`, nobody spawns with one. Selectable by scrolling and launched with
+left click, done as a WEAPONS entry rather than a special key so it inherits
+scroll cycling, the viewmodel registry, the HUD label and the `wp` sync field
+instead of needing a parallel path. `gear: 1` marks it as not-a-gun for the
+systems that reason about damage classes; tryFire() intercepts it before any
+ballistics run. The slot disappears when the last one is launched.
+
+### Verification
+`test.js` **263-272 / 0** across three runs — the spread is the crate pool being
+random, and the phase says so rather than pretending. verify-armoury 196/0,
+verify-drone 45/0, verify-fullmap 51/0, verify-client 62/0, verify-undeclared
+36/0, verify-models 225/0, verify-map 1228/0, verify-batch 36/0,
+verify-untouched 23/0. Pre-existing reds unchanged: verify-arch, verify-climb,
+verify-access.
+
+Three gates caught mistakes that would otherwise have shipped: the draw-call
+budget on the signs; `THREE.Float32BufferAttribute` missing from the trimmed
+THREE the map gates run against (the geometry was right, the dependency was
+not); and the drone entering WEAPON_ORDER silently making "the weakest weapon"
+zero in verify-drone's answerability test.
+
+### Open
+- Rural still has no districts, by design — it is a valley with landmarks.
+- Metro signs are built; Urban still draws its own the old way.

@@ -73,7 +73,7 @@
     </div>
     <div class="menu-stats">
       <div class="mstat"><b id="stat-maps">3</b><span>THEATRES</span></div>
-      <div class="mstat"><b>24</b><span>WEAPONS</span></div>
+      <div class="mstat"><b>25</b><span>WEAPONS</span></div>
       <div class="mstat"><b>11</b><span>ATTACHMENTS</span></div>
       <div class="mstat"><b>20</b><span>MAX OPERATORS</span></div>
     </div>
@@ -193,8 +193,12 @@
             <label class="field" id="lobby-var-field"><span>SETUP</span><select id="lobby-mode"></select></label>
             <label class="field"><span>MAP</span><select id="lobby-map"></select></label>
           </div>
-          <div class="field-row">
-            <label class="field"><span>KILLS</span><select id="lobby-kills"></select></label>
+          <!-- v9.4: a one-line briefing for the mode the host has actually
+               chosen, so the staging area opens by saying what this match IS
+               rather than presenting the same eight controls to everybody. -->
+          <div id="mode-brief" class="mode-brief"></div>
+          <div class="field-row" id="kills-row">
+            <label class="field"><span id="kills-label">KILLS</span><select id="lobby-kills"></select></label>
             <label class="field"><span>DURATION</span><select id="lobby-time"></select></label>
           </div>
           <!-- v8.38: bot controls, shown only in Overrun. -->

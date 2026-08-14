@@ -31,9 +31,9 @@
     att_x8:     { kind: 'att', a: 'x8', rar: 'l', drop: 1 },
     wpn_sniper: { kind: 'weapon', w: 'sniper', rar: 'r' },
     wpn_rocket: { kind: 'weapon', w: 'rocket', rar: 'l' },
-    wpn_scarh: { kind: 'weapon', w: 'scarh', rar: 'r' },
+    wpn_scarh: { kind: 'weapon', w: 'scarh', rar: 'c' },
     wpn_mk14:  { kind: 'weapon', w: 'mk14', rar: 'r' },
-    wpn_p90:   { kind: 'weapon', w: 'p90', rar: 'r' },
+    wpn_p90:   { kind: 'weapon', w: 'p90', rar: 'c' },
     wpn_m249:  { kind: 'weapon', w: 'm249', rar: 'l' },
     wpn_awm:   { kind: 'weapon', w: 'awm', rar: 'l' },
     // drop:1 = NEVER rolls on a ground loot point; airdrop crates only.
@@ -58,10 +58,10 @@
        the only silent weapon in the game and putting it airdrop-only would mean
        most matches never see one, which is a waste of the one genuinely novel
        thing in this pass. */
-    wpn_aug:    { kind: 'weapon', w: 'aug', rar: 'r' },
-    wpn_akm:    { kind: 'weapon', w: 'akm', rar: 'r' },
-    wpn_ump9:   { kind: 'weapon', w: 'ump9', rar: 'r' },
-    wpn_mp5:    { kind: 'weapon', w: 'mp5', rar: 'r' },
+    wpn_aug:    { kind: 'weapon', w: 'aug', rar: 'c' },
+    wpn_akm:    { kind: 'weapon', w: 'akm', rar: 'c' },
+    wpn_ump9:   { kind: 'weapon', w: 'ump9', rar: 'c' },
+    wpn_mp5:    { kind: 'weapon', w: 'mp5', rar: 'c' },
     wpn_garand: { kind: 'weapon', w: 'garand', rar: 'r' },
     wpn_famas:  { kind: 'weapon', w: 'famas', rar: 'l' },
     wpn_vector: { kind: 'weapon', w: 'vector', rar: 'l' },
@@ -80,13 +80,47 @@
        so it flows through the existing collect path — a new kind would need
        server handling, client handling, an icon and a HUD line, and would be
        four places to get wrong for something the ammo system already does. */
-    arrows:     { kind: 'ammo', w: 'bow', amount: 15, rar: 'c', label: 'Quiver' }
+    arrows:     { kind: 'ammo', w: 'bow', amount: 15, rar: 'c', label: 'Quiver' },
+    /* v9.5: DROP-ONLY. Rahul: "Keep drone as a drop loot only."
+       `drop: 1` means it never rolls on a ground point and can only come out of
+       an airdrop crate — which is the right home for it. A drone found while
+       running a street is free pressure with no cost; a drone that required
+       someone to contest a crate is a reward. It also fixes the count problem:
+       two per player was already a lot in a twenty-player match, and making it
+       ground-lootable would have put six or seven in the air at once. */
+    drone:      { kind: 'gear', g: 'drone', n: 1, rar: 'l', drop: 1, label: 'Strike Drone' }
   };
   // Spawn-point classes: g ground, h elevated/interior-notable, s signature.
 
+  /* ===== v9.5 — GUNS ON THE GROUND =====
+
+     Rahul, twice: "guns on the ground, there should be good amt of loots on
+     the ground."
+
+     Two things caused the shortage and only one of them was the weights.
+
+     FIRST, THE COMMON TIER HELD NO WEAPONS AT ALL. It was bandages, ammo and
+     armour, so a ground point rolling 'common' — the majority of them — could
+     never produce a gun. A gun needed a rare or legendary roll, which on a
+     ground point was 20% combined, and most of THOSE are attachments and
+     vests. Across Metro's 61 ground points that worked out at roughly six
+     weapons on the whole map. So the six workhorse loot guns (SCAR-H, P90,
+     AUG, AKM, UMP-9, MP5) moved to common. None of them is stronger than what
+     a player already spawns with — they are sidegrades — so making them plentiful
+     changes availability, not power. Rare and legendary keep the guns that
+     actually change a fight: the LMG, the snipers, the Vector, the bow.
+
+     SECOND, A QUARTER OF GROUND POINTS WERE EMPTY. An empty pickup point is
+     not a balancing tool, it is a player walking to a marker and finding
+     nothing. Cut to 8% — enough that the map is not uniformly stocked, low
+     enough that running a street is worth it.
+
+     Elevated points get MORE weight on rare, not more volume: climbing to a
+     roof should pay better than walking, which is the whole argument for the
+     v9.1 stairs. */
   var LOOT_WEIGHTS = {
-    g: { empty: 0.25, c: 0.55, r: 0.17, l: 0.03 },
-    h: { empty: 0.10, c: 0.42, r: 0.36, l: 0.12 },
+    g: { empty: 0.08, c: 0.62, r: 0.25, l: 0.05 },
+    h: { empty: 0.04, c: 0.40, r: 0.42, l: 0.14 },
     s: { empty: 0.00, c: 0.00, r: 0.55, l: 0.45 }
   };
 
@@ -428,7 +462,21 @@
        fight plays rather than how it is won — the fastest gun in the game, the
        longest iron sight, and the only silent one. */
     weaponPool: ['wpn_aa12', 'wpn_awm', 'wpn_m249', 'wpn_vector', 'wpn_k98w', 'wpn_bow'],
-    attPool: ['att_supp', 'att_x4', 'att_x6', 'att_x8', 'att_comp', 'att_quick']
+    attPool: ['att_supp', 'att_x4', 'att_x6', 'att_x8', 'att_comp', 'att_quick'],
+    /* v9.4: SIX ITEMS, NOT FOUR.
+       The crate was one weapon, an L3 vest, a med kit and an attachment — a
+       fixed four that the second player to reach it always found half-looted
+       and never worth contesting. Six with two RANDOM slots means the crate is
+       worth fighting over and worth watching land, because nobody knows what is
+       in it until it opens.
+
+       The two extra draws come from `exoticPool`: the things that are otherwise
+       hard to find. `wpn_bow` and the drones are here because a crate is the
+       right place for the rarest tools in the game, and a helmet because
+       surviving a headshot is what turns a crate into a comeback rather than a
+       consolation. */
+    extraCount: 2,
+    exoticPool: ['wpn_bow', 'drone', 'drone', 'helm_3', 'wpn_rocket', 'molotov', 'medkit', 'att_x8']
   };
 
   return { LOOT_ITEMS: LOOT_ITEMS, LOOT_WEIGHTS: LOOT_WEIGHTS, LOOT_RESPAWN: LOOT_RESPAWN, LOOT_POINTS: LOOT_POINTS, AIRDROP: AIRDROP };

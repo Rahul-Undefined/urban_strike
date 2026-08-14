@@ -322,7 +322,34 @@ function insideAny(cols, x, y, z, r) {
    rounds where it aims. Extreme is deliberately unfair on reaction time — it is
    meant to be the wall you practise against, not a fair duel.
 
-   v9.2 adds the dials for the new abilities, on the same principle. A recruit
+   ===== v9.4 — THE LADDER NOW SPANS TWO GENERATIONS OF AI =====
+
+   Rahul: "when choosed lower difficulty the bot should be functioning like
+   v9.0 where they will not get to the roof, just fight when person are near
+   ... but higher difficulty should have the ability to get in the roof, fight
+   like a human, spawn anywhere, kill anywhere, use any guns, crawl or crouch."
+
+   So difficulty is no longer only a set of numbers — it selects a BEHAVIOUR
+   GENERATION. Three new dials do that, and they only appear on the rungs that
+   need them:
+
+     groundOnly  Recruit only. Refuses climb plans outright, so a recruit lives
+                 on the street exactly as every bot did before v9.2. Not a low
+                 `verticality` roll — a hard switch, because "occasionally
+                 climbs" is not what v9.0 felt like.
+     oneWeapon   Recruit only. Pins the loadout to the AK-47, which is the
+                 single rifle v8.38 hardcoded. A recruit lobby should look like
+                 the old game.
+     leash       How far a bot will travel from where it stands to go looking
+                 for trouble. Recruit 34 m is "fights when someone comes near";
+                 Regular 70 m is a district; Veteran and Extreme have no leash
+                 at all and hunt the whole map.
+
+   Everything else — posture, sprint, grenades, mines, stairs, the full weapon
+   table — stays on the probability dials, so the ladder is a smooth ramp from
+   "the bots you already knew" to "plays like a person".
+
+   v9.2 added the dials for the new abilities, on the same principle. A recruit
    almost never crouches to shoot, rarely sprints, and will not use a grenade;
    an extreme takes cover posture constantly, sprints between fights and cooks
    frags at your position. `verticality` is how willing a bot is to leave the
@@ -330,13 +357,15 @@ function insideAny(cols, x, y, z, r) {
    ground. */
 const SKILLS = {
   recruit: { label: 'Recruit', react: 950, aimErr: 0.34, fireMs: 700, range: 40, burst: 2, headPct: 0.02, moveMul: 0.72, dmgMul: 0.65,
-             crouchPct: 0.08, pronePct: 0.00, sprintPct: 0.15, nadePct: 0.00, minePct: 0.02, verticality: 0.10, nadeCdMs: 22000 },
+             crouchPct: 0.00, pronePct: 0.00, sprintPct: 0.00, nadePct: 0.00, minePct: 0.00, verticality: 0.00, nadeCdMs: 99000,
+             groundOnly: true, oneWeapon: 'ak47', leash: 34 },
   regular: { label: 'Regular', react: 580, aimErr: 0.19, fireMs: 460, range: 60, burst: 3, headPct: 0.06, moveMul: 0.88, dmgMul: 0.85,
-             crouchPct: 0.22, pronePct: 0.03, sprintPct: 0.35, nadePct: 0.18, minePct: 0.08, verticality: 0.28, nadeCdMs: 16000 },
+             crouchPct: 0.18, pronePct: 0.00, sprintPct: 0.25, nadePct: 0.10, minePct: 0.05, verticality: 0.12, nadeCdMs: 18000,
+             leash: 70 },
   veteran: { label: 'Veteran', react: 300, aimErr: 0.10, fireMs: 280, range: 85, burst: 4, headPct: 0.14, moveMul: 1.0,  dmgMul: 1.0,
-             crouchPct: 0.42, pronePct: 0.08, sprintPct: 0.55, nadePct: 0.38, minePct: 0.16, verticality: 0.50, nadeCdMs: 11000 },
+             crouchPct: 0.42, pronePct: 0.08, sprintPct: 0.55, nadePct: 0.38, minePct: 0.16, verticality: 0.55, nadeCdMs: 11000 },
   extreme: { label: 'Extreme', react: 120, aimErr: 0.045, fireMs: 170, range: 130, burst: 6, headPct: 0.28, moveMul: 1.12, dmgMul: 1.0,
-             crouchPct: 0.55, pronePct: 0.12, sprintPct: 0.75, nadePct: 0.60, minePct: 0.26, verticality: 0.72, nadeCdMs: 7000 }
+             crouchPct: 0.55, pronePct: 0.12, sprintPct: 0.75, nadePct: 0.60, minePct: 0.26, verticality: 0.85, nadeCdMs: 7000 }
 };
 const SKILL_IDS = ['recruit', 'regular', 'veteran', 'extreme'];
 
@@ -419,6 +448,7 @@ module.exports = function initBotsModule(ctx) {
       if (!room.settings.botCount) want = Math.max(1, humans);
     }
     if (!want) return;
+    const S = skillOf(room);
     const cols = buildColliders(room.settings.map || 'urban');
     const teams = modeInfo(room).teams;
     const ids = CFG.activeTeams(room.settings.mode);
@@ -439,7 +469,11 @@ module.exports = function initBotsModule(ctx) {
         for (const q of room.players.values()) if (q.team) count[q.team] = (count[q.team] || 0) + 1;
         team = ids.slice().sort((x, y) => count[x] - count[y])[0];
       }
-      const kit = pickLoadout();
+      /* v9.4: a recruit carries the one rifle v8.38 hardcoded, so a recruit
+         lobby looks like the game before the armoury existed. */
+      const kit = S.oneWeapon
+        ? (LOADOUTS.find(l => l.w === S.oneWeapon) || LOADOUTS[0])
+        : pickLoadout();
       const p = {
         id, name: names[i % names.length] + '-' + (i + 1), bot: true, connected: true,
         color: team ? CFG.TEAMS[team].color : CFG.COLORS[(i + 1) % CFG.COLORS.length],
@@ -601,15 +635,20 @@ module.exports = function initBotsModule(ctx) {
     const vy = F.throwVel * up;
     io.to(room.code).emit('throw', { id: bot.id, type: 'frag', o: [ox, oy, oz], v: [vx, vy, vz] });
 
-    // integrate the same arc the client will draw, to find where it goes off
+    /* Integrate the same arc the client draws, and STOP AT FIRST GROUND
+       CONTACT — v9.4 made frags impact-detonated, so a bot whose grenade kept
+       bouncing for the full fuse would blow it up somewhere the players watching
+       the projectile never saw it land. */
     let px = ox, py = oy, pz = oz, wx = vx, wy = vy, wz = vz;
     const step = 1 / 60;
+    let flight = 0;
     for (let i = 0; i < Math.ceil(F.fuse * 60); i++) {
       wy -= 12 * step;
       px += wx * step; py += wy * step; pz += wz * step;
-      if (py <= 0.12) { py = 0.12; wy = 0; wx *= 0.55; wz *= 0.55; }
+      flight += step;
+      if (py <= 0.12) { py = 0.12; break; }
     }
-    ai.pendingNade = { x: px, y: py, z: pz, at: now() + F.fuse * 1000 };
+    ai.pendingNade = { x: px, y: py, z: pz, at: now() + flight * 1000 };
   }
 
   function resolveNades(room, t) {
@@ -625,7 +664,11 @@ module.exports = function initBotsModule(ctx) {
         const dx = q.pos[0] - n.x, dy = q.pos[1] - n.y, dz = q.pos[2] - n.z;
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (dist > F.radius) continue;
-        const dmg = Math.round(F.dmg * (1 - dist / F.radius));
+        /* Flat inside the radius for everyone but the thrower, matching the
+           human path exactly — a bot's grenade and a player's grenade must not
+           be different weapons. */
+        const own = q.id === bot.id;
+        const dmg = Math.round(F.flatDamage && !own ? F.dmg : F.dmg * (1 - dist / F.radius));
         if (dmg > 0) ctx.botExplode(room, bot, q, dmg, 'frag', dmg >= F.dmg - 0.5);
       }
     }
@@ -725,7 +768,11 @@ module.exports = function initBotsModule(ctx) {
           }
           const high = room._highLoot;
           ai.plan = null; ai.wanderTo = null;
-          if (high.length && Math.random() < S.verticality) {
+          /* groundOnly is a HARD refusal, not a low roll. A recruit that
+             climbs one time in ten still surprises a player who has learned
+             that recruits stay on the street, and "mostly like v9.0" is not
+             what was asked for. */
+          if (!S.groundOnly && high.length && Math.random() < S.verticality) {
             /* PICK FROM THE ELEVATED POINTS, AND TRY A FEW.
                The first cut rolled `verticality`, then chose from ALL loot and
                asked for a climb. Most loot is on the pavement and most elevated
@@ -747,7 +794,21 @@ module.exports = function initBotsModule(ctx) {
               if (sp) ai.wanderTo = [sp[0], sp[1]];
             }
           } else {
-            const sp = spawns[(Math.random() * spawns.length) | 0];
+            /* LEASH. A recruit picks only from spawn points within 34 m, so it
+               patrols where it stands and fights whoever comes to it — the v9.0
+               shape. Veteran and Extreme have no leash and roam the whole map.
+               Falling back to the unfiltered list matters: on a big map a tight
+               leash can match nothing, and a bot with no destination is a
+               statue. */
+            let pool = spawns;
+            if (S.leash) {
+              const near = spawns.filter(sp2 => {
+                const dx2 = sp2[0] - bot.pos[0], dz2 = sp2[1] - bot.pos[2];
+                return Math.hypot(dx2, dz2) < S.leash;
+              });
+              if (near.length) pool = near;
+            }
+            const sp = pool[(Math.random() * pool.length) | 0];
             if (sp) ai.wanderTo = [sp[0], sp[1]];
           }
           /* A climb is a longer errand than a stroll, so it gets longer before

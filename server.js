@@ -126,6 +126,41 @@ const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
   endMatch: (...a) => endMatch(...a) });
 const { weaponServerDamage, applyDamage, positionPlausible, fireRateOk } = Combat;
 const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo }); // code -> room
+/* v9.4 STRIKE DRONE. Server-authoritative for the reason recorded in
+   server/lib/drones.js: a drone outlives the moment its owner is watching it,
+   and a third player can shoot it down, so no single client can be trusted with
+   the flight or the kill. */
+const Drones = require('./server/lib/drones.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo, CFG });
+
+/* ===== v9.5 — WARM THE BOT COLLIDER CACHE BEFORE ANYBODY NEEDS IT =====
+
+   Rahul: "Bot mode after the countdown takes a good 5-7 second for the game to
+   start."
+
+   Bots.addBots() calls buildColliders(), which runs the whole world builder
+   inside a vm to get the collision set. Measured cold: ~900 ms per map on this
+   machine, and it is SYNCHRONOUS — so it happens on the event loop, inside
+   startMatch, between the countdown ending and the matchStart emit. Every
+   client sits on a frozen countdown for the duration, and on a slower machine
+   that single call is seconds rather than one.
+
+   The cache made this a first-match-only cost, which is the worst shape for it:
+   it never showed up in testing because the second match was always fast.
+
+   Warming at boot moves the whole cost to server start, where nobody is
+   waiting. Deferred with setTimeout so it cannot delay listen(), and wrapped
+   because a warm failure must never stop the server coming up — buildColliders
+   already falls back to an empty set and logs. */
+setTimeout(() => {
+  const maps = Object.keys(CFG.MAPS || { urban: 1 });
+  let i = 0;
+  (function warmNext() {
+    if (i >= maps.length) return;
+    const m = maps[i++];
+    try { Bots.buildColliders(m); } catch (e) { console.error('[UrbanStrike] collider warm failed for ' + m + ':', e.message); }
+    setTimeout(warmNext, 20);   // one map per turn, so boot stays responsive
+  })();
+}, 250);
 
 /* v8.29: turn the raw counters into the handful of lines worth reading. Every
    field is optional and every consumer must treat it as such — a two-player
@@ -198,8 +233,34 @@ function pickSpawn(room, forP) {
   const all = mapData(room).SPAWNS.map((s, i) => ({ s, i }));
   let candidates = all.filter(c => !teams || c.s[3] === forP.team || c.s[3] === 'n');
   if (!candidates.length) candidates = all;
-  const enemies = [...room.players.values()]
-    .filter(p => p.alive && p.id !== forP.id && (!teams || p.team !== forP.team));
+  const alive = [...room.players.values()].filter(p => p.alive && p.id !== forP.id);
+  const enemies = alive.filter(p => !teams || p.team !== forP.team);
+  const friends = alive.filter(p => teams && p.team === forP.team);
+
+  /* ===== v9.4 — WHY EVERY BOT SPAWNED ON THE SAME TILE =====
+
+     This scored a spawn purely on "how far is the nearest ENEMY", and took the
+     maximum. That is the right instinct and it has one fatal property: it is
+     DETERMINISTIC AND IDENTICAL for everyone on a side. Teammates are not
+     enemies, so they contribute nothing to the score, so the furthest-from-the-
+     other-team tile is the furthest for every single one of them.
+
+     Rahul: "all bot are spawning in the same location." Twelve bots, one tile,
+     stacked inside each other — and the same fault applies to a 5v5 of humans,
+     where an entire team lands on one corner at every respawn. It was invisible
+     in free-for-all (no teams, so the random branch ran) and in Overrun (bots
+     have no side, so every bot is an enemy of every other and they pushed each
+     other apart). Adding a mode where twelve players share one team is what
+     finally made it obvious.
+
+     THE FIX IS TO SCORE CROWDING, NOT TO FORBID IT. A hard "this tile is taken"
+     filter can empty the candidate list — the exact failure the v8.27 comment
+     above exists to prevent — so occupancy DEMOTES a spawn instead. A tile with
+     a team-mate standing on it scores a fiftieth of its distance value, which
+     loses to any free tile anywhere and still wins over nothing at all.
+
+     The jitter matters too: with integer-identical scores the first candidate
+     always won, so two players picking simultaneously still collided. */
   let best = candidates[0], bestScore = -1;
   candidates.forEach(c => {
     let d = 1e9;
@@ -207,8 +268,18 @@ function pickSpawn(room, forP) {
       const dx = c.s[0] - e.pos[0], dz = c.s[1] - e.pos[2];
       d = Math.min(d, dx * dx + dz * dz);
     });
-    if (enemies.length === 0) d = Math.random() * 1000;
-    if (d > bestScore) { bestScore = d; best = c; }
+    if (enemies.length === 0) d = 400 + Math.random() * 1000;
+    // crowding: how close is the nearest team-mate to this tile?
+    let near = 1e9;
+    friends.forEach(f => {
+      const fx = c.s[0] - f.pos[0], fz = c.s[1] - f.pos[2];
+      near = Math.min(near, fx * fx + fz * fz);
+    });
+    let score = d;
+    if (near < 64) score *= 0.02;          // within 8 m of a team-mate
+    else if (near < 400) score *= 0.4;     // within 20 m
+    score *= 0.85 + Math.random() * 0.3;   // break ties so simultaneous picks differ
+    if (score > bestScore) { bestScore = score; best = c; }
   });
   return best.s;
 }
@@ -234,12 +305,28 @@ function startMatch(room) {
     room.insights = null;   // v8.29: insights are per match, never cumulative
     p.att = { sight: null, muzzle: null, mag: null }; p.exW = {}; p.rd = {};
     p.ready = false; p.mines = CFG.GEAR.mine.start; p.lastMolo = {};
+    /* v9.4: drones are per-MATCH, not per-life. Refilling them on respawn
+       would mean an unlimited supply for anybody willing to die. */
+    /* v9.5: NOBODY SPAWNS WITH A DRONE. It is crate loot now, so the starting
+       stock is zero in every mode — otherwise the drop-only rule would be
+       cosmetic and everyone would still open the match with two. */
+    p.drones = 0;
   }
   refreshTeamsAndColors(room);
   initPickups(room);
   /* v8.38: bots must exist BEFORE the matchStart payload is built, or clients
      receive a roster without them and never render the ones they are fighting. */
+  Drones.reset(room);          // v9.4: no drone survives a match boundary
   Bots.addBots(room);
+  /* v9.5: PUSH THE ROSTER THE INSTANT THE BOTS EXIST.
+     Rahul: "bot takes 3-4 sec to join the game and show on the live scorecard."
+     That was exact, and it was arithmetic rather than a race — the lobby
+     payload is refreshed every 60 snapshots, which at the configured snap rate
+     is almost exactly three seconds. Bots were in the match immediately and in
+     the SCOREBOARD three seconds later, so the first thing a player did was
+     look at an incomplete roster and conclude the mode had not filled.
+     One push here costs one message per match. */
+  pushLobby(room);
   io.to(room.code).emit('matchStart', {
     settings: room.settings,
     startedAt: room.startedAt,
@@ -300,6 +387,7 @@ function startSnapshots(room) {
       return;
     }
     Bots.tick(room, 1 / CFG.NET.snapRate);   // v8.38
+    Drones.tick(room, 1 / CFG.NET.snapRate); // v9.4
     respawnPickups(room);
     Mines.tick(room);
     regenTick(room);
@@ -318,6 +406,12 @@ function startSnapshots(room) {
     }
     io.to(room.code).emit('snap', {
       t: now(), players,
+      /* v9.4: drones ride the normal snapshot rather than a channel of their
+         own, so every client renders them and can shoot at them with the code
+         that already interpolates remote entities. Omitted entirely when none
+         are airborne — an empty array every tick for a feature nobody is using
+         is bandwidth spent on nothing. */
+      dr: Drones.snapshot(room),
       tk: modeInfo(room).teams ? room.teamKills : null
     });
   }, 1000 / CFG.NET.snapRate);
@@ -440,6 +534,28 @@ io.on('connection', (socket) => {
     const p = room.players.get(socket.id); if (!p) return;
     p.ready = !!(d && d.v);
     pushLobby(room);   // the START gate is derived from this payload, client-side
+  });
+  /* DRONES ARE NOT AVAILABLE IN BOT MODES.
+     Rahul: "Drone mode should be in Free for all, squad, team battle only.
+     Drone should not be there in Bot fight." The reasoning holds up — a drone
+     that auto-finds a target is aim-free pressure, and against bots there is no
+     opponent for it to be unfair to, so all it does is trivialise a mode whose
+     entire point is practising your aim. The check is CFG.botsAllowed, the same
+     predicate that decides whether a room has bots at all, so Overrun and every
+     Strike Team size are covered by one rule. */
+  socket.on('launchDrone', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    if (CFG.botsAllowed(room.settings.mode)) return ack({ ok: false, err: 'Drones are disabled in bot modes' });
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
+    ack(Drones.launch(room, p));
+  });
+  socket.on('droneHit', (d) => {
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing' || !d) return;
+    Drones.damage(room, d.id | 0, Math.max(0, Math.min(200, +d.dmg || 0)), socket.id);
   });
   socket.on('placeMine', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};

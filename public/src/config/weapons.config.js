@@ -172,6 +172,24 @@
        than the rocket, with a slow flight and gravity drop, so range is a skill
        check rather than a stat. `quiet: 1` keeps the shooter off the radar the
        way a suppressor does. */
+    /* v9.5 STRIKE DRONE AS A CARRIED SLOT.
+       Rahul: "when looted from the drop, it can be activated just by scrolling
+       like a gun and when on screen left click on the mouse basically launches
+       it directly."
+
+       Yes — and doing it as a WEAPONS entry rather than a special key is what
+       makes it cheap. Scroll cycling, the key-9 exclusives cycle, the viewmodel
+       registry, the HUD label and the `wp` field the avatar renders from all
+       work off this table, so the drone inherits every one of them instead of
+       needing a parallel path.
+
+       `gear: 1` marks it as not-a-gun for the systems that reason about damage
+       classes: it fires nothing, has no magazine, and its damage lives in
+       CFG.GEAR.drone where the server reads it. tryFire() intercepts it before
+       any ballistics run. */
+    drone:   { key: 9, ex: 1, gear: 1, label: 'Strike Drone', type: 'drone', dmg: 0, rpm: 60,
+               mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 0, head: 1, legs: 1,
+               speed: 0.94, recoil: 0, drift: 0, adsFov: 62, trc: 0xffb020 },
     bow:     { key: 9, ex: 1, mark: 1, label: 'Recurve Bow', type: 'bow', dmg: 90, rpm: 40, mag: 1, reserve: 29, reload: 1.4, spread: 0.004, ads: 0.0012, range: 999, head: 1.9, legs: 0.6, speed: 0.97, recoil: 0.02, drift: 0.2, adsFov: 38, bullet: true, projSpeed: 88, drop: 9.0, quiet: 1, trc: 0xd8c89a },
   };
 
@@ -181,7 +199,8 @@
   var WEAPON_ORDER = ['ak47', 'm4a1', 'sniper', 'uzi', 'shotgun', 'pistol', 'kar98', 'rocket', 'knife',
     'scarh', 'mk14', 'p90', 'm249', 'awm', 'aa12',
     // v9.3 armoury expansion — appended, never inserted
-    'aug', 'famas', 'akm', 'k98w', 'garand', 'ump9', 'mp5', 'vector', 'bow'];
+    'aug', 'famas', 'akm', 'k98w', 'garand', 'ump9', 'mp5', 'vector', 'bow',
+    'drone'];   // v9.5 — a carried slot, not a firearm
 
   var THROWS = {
     /* v8.17: throwables are now lethal at the centre by definition. Rahul:
@@ -199,15 +218,63 @@
        leaving a clean 5 hp sliver that keeps the damage model observable. A
        flat 100 also removes the victim before the following integration phase
        can test anything on them, which is how the v8.16 attempt broke. */
-    frag:  { label: 'Frag',  dmg: 100, radius: 7.0, fuse: 2.8, count: 2, throwVel: 16, cook: true },
+    /* v9.4: impact-detonated and FLAT across the radius. See the two notes in
+       weapons/system.js for why. `fuse` stays as the cook timer and as the
+       fallback for a grenade that never touches anything. */
+    frag:  { label: 'Frag',  dmg: 100, radius: 7.0, fuse: 2.8, count: 2, throwVel: 16, cook: true, impact: true, flatDamage: true },
     smoke: { label: 'Smoke', dur: 12, radius: 5.5, fuse: 1.4, count: 1, throwVel: 14 },
     molotov: { label: 'Molotov', dmg: 95, burnDps: 12, burnSec: 5, radius: 4.6, tickSec: 0.45, fuse: 99, count: 3, maxCarry: 6, throwVel: 13, impact: true },
     flash: { label: 'Flash', radius: 15, blind: 3.2, fuse: 1.4, count: 1, throwVel: 16 }
   };
 
-  // Deployable gear (mines are fully server-authoritative)
+  // Deployable gear (mines and drones are fully server-authoritative)
   var GEAR = {
-    mine: { label: 'AP Mine', start: 5, maxCarry: 8, dmg: 250, radius: 3.2, trigger: 1.0, armSec: 1.0 }
+    mine: { label: 'AP Mine', start: 5, maxCarry: 8, dmg: 250, radius: 3.2, trigger: 1.0, armSec: 1.0 },
+
+    /* ===================== v9.4 — THE STRIKE DRONE =========================
+
+       Rahul asked for a drone that launches, finds an enemy on its own, and
+       kills them; two per player; more from crates; killable in the air; no
+       friendly fire; and NOT in bot modes.
+
+       ONE DELIBERATE DEPARTURE, and it is the whole design. The request was a
+       guaranteed kill. Two players each holding two guaranteed kills is four
+       dead squadmates per life for no aim and no risk — a squad round would end
+       before anyone fired a rifle, and the counter-play offered (shoot it down)
+       only works if people are looking up, which in practice they are not.
+
+       So the drone is a THREAT YOU MUST ANSWER rather than a button that
+       deletes someone:
+
+         - It takes `cruiseSec` to climb, `hunt` to cross the map, and it flies
+           at a speed you can outrun if you commit to running.
+         - The victim is TOLD. A drone lock puts a warning on their HUD and the
+           drone is audible above them, so dying to one is a decision they lost,
+           not a dice roll they never saw.
+         - It is fragile: `hp` low enough that any weapon in the game kills it
+           in a burst, and shooting it down is worth doing because the blast
+           then harms nobody.
+         - If it connects it IS lethal — `dmg` clears 100 inside a tight radius,
+           so answering it is mandatory rather than optional.
+
+       That keeps everything asked for except the word "guaranteed", and what it
+       buys is that the drone stays interesting on the tenth use instead of
+       being the only thing anybody does.
+
+       TARGETING is random among valid enemies, exactly as asked. Never a
+       team-mate: the server filters by side before choosing, so in Squads and
+       Team Battle a drone cannot be aimed at your own people even by accident. */
+    drone: {
+      label: 'Strike Drone', start: 2, maxCarry: 4,
+      dmg: 140, radius: 4.2,         // lethal, but a much tighter circle than a frag
+      hp: 45,                        // any weapon kills it in a short burst
+      cruiseY: 26,                   // climbs above rooftops before it hunts
+      climbSpeed: 14, hunt: 15.5, dive: 26,
+      armSec: 1.2,                   // cannot be shot down before it has left your hands
+      lockSec: 0.9,                  // pause on target before the dive, so the warning lands
+      maxLifeSec: 22,                // never loiters forever
+      warnRadius: 40                 // how close before the victim's HUD lights up
+    }
   };
 
   var ATTACH = {

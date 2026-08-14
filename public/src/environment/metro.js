@@ -17,6 +17,7 @@
 
   World._buildMetro = function (T) {
     var seg = T.seg, box = T.box, cyl = T.cyl, M = T.M, rnd = T.rnd, stairFlight = T.stairFlight;
+    var scene = T.scene;   /* v9.5: district signboards add meshes directly */
 
     // ---- palette: reuse existing materials, vary by colour only -------------
     function L(c) { return new THREE.MeshLambertMaterial({ color: c }); }
@@ -1054,6 +1055,144 @@
         box(-94, 0.40, bz2, 0.7, 0.80, 2.0, M.wood);
         if (bn % 2) box(-88, 0.40, bz2 + 5, 1.2, 0.80, 1.2, M.rust);
       }
+    })();
+
+    /* ================= v9.5 — DISTRICT SIGNBOARDS =========================
+
+       Metro's twelve districts existed in config and on the map since v9.3, but
+       nothing in the WORLD said where you were. A name you can only read by
+       opening the map is a label; a name on a lit board across the plaza is
+       wayfinding, and it is what makes a callout like "pushing through Union
+       Station" mean anything to the person hearing it.
+
+       MODERN, because the district colours already went that way in v9.3:
+       edge-lit panel, thin brushed frame, a coloured accent bar keyed to the
+       district's own ground colour, and a slim mast. No pole-and-plank.
+
+       TEXT ALIGNMENT IS THE WHOLE JOB and it is where signs usually go wrong.
+       Rahul: "Please ensure text is aligned properly with the board." Three
+       things are done for it, and all three matter:
+
+         1. The canvas is drawn at the board's OWN aspect ratio (4:1), not on a
+            square that then gets stretched — stretching a square canvas onto a
+            wide quad is what squashes letters.
+         2. The text is measured and the font SHRINKS to fit, so OLD QUARTER and
+            CARGO TERMINAL both sit inside the same frame with the same margins
+            instead of one overflowing.
+         3. It is centred on both axes using the measured metrics, with
+            `textBaseline = 'middle'`, rather than by guessing a y offset.
+
+       The panel is `collide: false` throughout: a sign you can walk into is a
+       sign that blocks a doorway, and these sit at head height in the open. */
+    (function districtSigns() {
+      if (typeof DISTRICTS === 'undefined' || !DISTRICTS.metro) return;
+      var list = DISTRICTS.metro.filter(function (d) { return !!d.sign; });
+      if (!list.length) return;
+      var W = 7.2, H = 1.8, POST = 5.4;         // board 4:1, mast height
+
+      /* ONE TEXTURE, ONE MESH, ONE DRAW CALL.
+         The first cut built each sign from five separate meshes with its own
+         canvas material: twelve districts became SIXTY loose meshes and pushed
+         Metro from 33 draw calls to 70 against a budget of 45. StaticMerge
+         batches by material, so a unique texture per sign can never merge.
+
+         So all twelve names are drawn into one vertical ATLAS — 512x128 per
+         row — and the twelve boards are one BufferGeometry whose quads carry
+         UVs into their own row. Twelve signs, one material, one draw call. The
+         posts and lips go through box(), so they join the batches that already
+         exist and cost nothing extra. */
+      var ROW_W = 512, ROW_H = 128;
+      var atlas = document.createElement('canvas');
+      atlas.width = ROW_W; atlas.height = ROW_H * list.length;
+      var g = atlas.getContext('2d');
+      var ACCENT = {
+        m_railyard: '#b08a55', m_cargo: '#3f86ad', m_market: '#c07a4e',
+        m_depot: '#4f7fa0', m_park: '#5aa06a', m_site: '#c08a3a',
+        m_garage: '#8d94a0', m_mall: '#5f9fc4', m_towers: '#c9c2b2',
+        m_resid: '#c08a6a', m_plaza: '#d0655e', m_station: '#7fa8c8'
+      };
+
+      list.forEach(function (d, i) {
+        var y0 = i * ROW_H;
+        var grd = g.createLinearGradient(0, y0, 0, y0 + ROW_H);
+        grd.addColorStop(0, '#1c2126'); grd.addColorStop(1, '#0e1114');
+        g.fillStyle = grd; g.fillRect(0, y0, ROW_W, ROW_H);
+        g.fillStyle = ACCENT[d.id] || '#c9c2b2';
+        g.fillRect(0, y0, 9, ROW_H);                      // accent bar
+        g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 2;
+        g.strokeRect(1, y0 + 1, ROW_W - 2, ROW_H - 2);    // hairline frame
+
+        /* TEXT ALIGNMENT, which is the part that usually goes wrong.
+           Rahul: "ensure text is aligned properly with the board."
+             - the row is drawn at the BOARD's aspect (4:1), so nothing is
+               stretched when it lands on the quad;
+             - the font shrinks until the name fits the safe area, so OLD
+               QUARTER and CARGO TERMINAL sit in the same margins instead of
+               one overflowing;
+             - it is centred with measured metrics and textBaseline 'middle',
+               not by guessing a y offset. */
+        var pad = 26, maxW = ROW_W - pad * 2 - 9;
+        var size = 66;
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        do {
+          g.font = '700 ' + size + 'px Rajdhani, Arial, sans-serif';
+          size -= 2;
+        } while (g.measureText(d.name).width > maxW && size > 20);
+        var cx = 9 + (ROW_W - 9) / 2, cy = y0 + ROW_H / 2;
+        g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillText(d.name, cx, cy + 2);
+        g.fillStyle = '#f2ece0'; g.fillText(d.name, cx, cy);
+      });
+
+      var tex = new THREE.CanvasTexture(atlas);
+      tex.anisotropy = 4;
+
+      var pos = [], uv = [], idx = [];
+      var yMid = POST + H * 0.5 - 0.1;
+      list.forEach(function (d, i) {
+        var x = d.sign[0], z = d.sign[1], ry = d.sign[2] || 0;
+        var ca = Math.cos(ry), sa = Math.sin(ry);
+        var hw = W / 2, hh = H / 2;
+        // quad corners in board space, rotated into the world about Y
+        [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].forEach(function (c) {
+          pos.push(x + c[0] * ca, yMid + c[1], z - c[0] * sa);
+        });
+        /* Rows are laid top-down on the canvas but V runs bottom-up, so row i
+           occupies the band [1-(i+1)/n , 1-i/n]. Getting this backwards puts
+           the wrong name on every board, which is why it is written out. */
+        var n = list.length;
+        var v0 = 1 - (i + 1) / n, v1 = 1 - i / n;
+        uv.push(0, v0, 1, v0, 1, v1, 0, v1);
+        var b = i * 4;
+        idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      });
+      var geo = new THREE.BufferGeometry();
+      /* BufferAttribute + Float32Array, not Float32BufferAttribute. The latter
+         is a convenience subclass and is absent from the trimmed THREE the map
+         gates run against, so using it crashed verify-map while the render
+         gates passed — the geometry was correct and the DEPENDENCY was not.
+         The base class is present in every build. */
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
+      geo.setIndex(idx);
+      var mesh = new THREE.Mesh(geo,
+        new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
+      mesh.matrixAutoUpdate = false; mesh.updateMatrix();
+      scene.add(mesh);
+
+      // masts and lit lips — through box(), so they merge into existing batches
+      list.forEach(function (d) {
+        var x = d.sign[0], z = d.sign[1], ry = d.sign[2] || 0;
+        var ca = Math.cos(ry), sa = Math.sin(ry);
+        [-W * 0.34, W * 0.34].forEach(function (o) {
+          box(x + o * ca, POST / 2, z - o * sa, 0.18, POST, 0.18, M.metal,
+            { collide: false, cast: false });
+        });
+        [-1, 1].forEach(function (sgn) {
+          var ly = yMid + sgn * (H / 2 + 0.05);
+          box(x, ly, z, Math.abs(ca) * (W + 0.2) + 0.12, 0.1,
+            Math.abs(sa) * (W + 0.2) + 0.12, M.trim, { collide: false, cast: false });
+        });
+      });
     })();
 
     // ---- perimeter ---------------------------------------------------------

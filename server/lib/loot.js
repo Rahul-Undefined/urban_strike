@@ -75,7 +75,15 @@ function tryCollect(room, p) {
       if (p.exW[it.w]) grant = { t: 'ammoFor', w: it.w };
       else { p.exW[it.w] = 1; grant = { t: 'weapon', w: it.w }; }
     } else if (it.kind === 'gear') {
-      if (it.g === 'mine') {
+      if (it.g === 'drone') {
+        /* v9.4: a drone pickup in a bot mode is dead weight — drones are
+           disabled there — so it is left on the ground rather than collected,
+           which is more honest than granting a count the player cannot spend. */
+        if (CFG.botsAllowed(room.settings.mode)) continue;
+        if ((p.drones | 0) >= CFG.GEAR.drone.maxCarry) continue;
+        p.drones = Math.min(CFG.GEAR.drone.maxCarry, (p.drones | 0) + it.n);
+        grant = { t: 'gear', g: 'drone', n: p.drones };
+      } else if (it.g === 'mine') {
         if ((p.mines | 0) >= CFG.GEAR.mine.maxCarry) continue;
         p.mines = Math.min(CFG.GEAR.mine.maxCarry, (p.mines | 0) + it.n);
         grant = { t: 'gear', g: 'mine', n: p.mines };
@@ -131,7 +139,21 @@ function dropCrate(room) {
     if (room.state !== 'playing') return;
     const wp = CFG.AIRDROP.weaponPool, ap = CFG.AIRDROP.attPool;
     const types = [wp[(Math.random() * wp.length) | 0], 'armor3', 'medkit', ap[(Math.random() * ap.length) | 0]];
-    const offs = [[0.95, 0], [-0.95, 0], [0, 0.95], [0, -0.95]];
+    /* v9.4: two extra RANDOM slots on top of the guaranteed four. Unknown items
+       are what make a crate worth contesting — see the note in loot.config.js.
+       Drawn without replacement so a crate never contains the same exotic
+       twice, and skipped entirely if a pool entry has gone stale, because a
+       crate that spawns `undefined` is a pickup nobody can collect. */
+    const pool = (CFG.AIRDROP.exoticPool || []).filter(t => CFG.LOOT_ITEMS[t]);
+    for (let e = 0; e < (CFG.AIRDROP.extraCount || 0) && pool.length; e++) {
+      types.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+    }
+    /* A ring, sized to the number of items, so six do not overlap the way four
+       hardcoded offsets would. */
+    const offs = types.map((t, i) => {
+      const a = (i / types.length) * Math.PI * 2;
+      return [Math.cos(a) * 1.15, Math.sin(a) * 1.15];
+    });
     const items = types.map((t, i) => {
       const pk = { id: room.nextLootId++, t, pos: [pt[0] + offs[i][0], 1.35, pt[1] + offs[i][1]], cls: 's', active: true, respawnAt: 0, noRespawn: true };
       room.pickups.push(pk);

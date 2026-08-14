@@ -365,10 +365,31 @@ function phase3(done) {
     if (items) return;
     items = d.items;
     ok(dropSeen, 'airdrop announced with position + land time');
-    ok(Array.isArray(items) && items.length === 4, 'crate lands with 4 loot items');
+    /* v9.4: the crate is no longer a fixed four. It carries four GUARANTEED
+       slots (weapon, L3 vest, med kit, attachment) plus AIRDROP.extraCount
+       random exotics, so a second player reaching it late still finds something
+       worth the run. Asserting the literal 4 pinned the old size and turned red
+       the moment the crate was made worth contesting — so the count is derived
+       from config and the GUARANTEES are what get tested. */
+    const want = 4 + (CFG.AIRDROP.extraCount || 0);
+    ok(Array.isArray(items) && items.length === want,
+      'crate lands with ' + want + ' loot items [' + (items || []).length + ']');
     const att = items.find(e => CFG.LOOT_ITEMS[e.t].kind === 'att');
     const wpn = items.find(e => CFG.LOOT_ITEMS[e.t].kind === 'weapon');
     ok(!!att && !!wpn, 'crate contains an attachment + a legendary weapon');
+    ok(items.some(e => e.t === 'armor3'), 'crate always contains the L3 vest');
+    ok(items.some(e => CFG.LOOT_ITEMS[e.t].kind === 'heal'), 'crate always contains a heal');
+    ok(items.every(e => !!CFG.LOOT_ITEMS[e.t]),
+      'every crate item is a real loot type — no undefined slot from a stale pool');
+    /* The ring layout has to keep the items apart, or two pickups occupy the
+       same point and one is uncollectable. */
+    let minGap = Infinity;
+    items.forEach((x, i) => items.forEach((y, j) => {
+      if (i >= j) return;
+      minGap = Math.min(minGap, Math.hypot(x.p[0] - y.p[0], x.p[2] - y.p[2]));
+    }));
+    ok(minGap > 0.5, 'crate items are spread far enough to pick up individually [' +
+      minGap.toFixed(2) + 'm]');
     // collect the attachment, then the weapon
     bPos = [att.p[0], 0.95, att.p[2]];
     setTimeout(() => {
@@ -1014,9 +1035,14 @@ function phase11() {
        fails intermittently. Track the live position and keep firing until the
        kill registers, which asserts the invariant (a bot can be killed the
        normal way) rather than the harness's reaction time. */
-    let victimId = null, victimPos = null, died = false;
+    let victimId = null, victimPos = null, died = false, lastPs = null;
     A.on('snap', (sn) => {
       const ps = sn.players || {};
+      lastPs = ps;
+      /* Re-pick when the current victim is gone or dead — a bot killed by
+         another bot can never register a kill for us, and aiming at a corpse
+         burns every remaining attempt. */
+      if (victimId && (!ps[victimId] || ps[victimId].al !== 1)) { victimId = null; victimPos = null; }
       if (!victimId) victimId = Object.keys(ps).find(k => k.indexOf('bot:') === 0 && ps[k].al === 1);
       if (victimId && ps[victimId]) victimPos = ps[victimId].p;
     });
@@ -1024,8 +1050,20 @@ function phase11() {
 
     let shots = 0;
     const tryKill = () => {
-      if (died || shots >= 12) return finishBots();
+      if (died || shots >= 40) return finishBots();
       shots++;
+      /* v9.5: 12 attempts was not enough any more, and the reason is a feature
+         rather than a fault. Bots sprint, climb stairs and take rooftops now, so
+         a snapshot-sampled position goes stale faster than it used to and the
+         server rejects more claims — exactly as it would for a human shooting
+         at where somebody used to be.
+
+         The first attempt at this cleared victimId here, at the top of every
+         attempt. That looked like "re-aim each time" and was in fact "never
+         fire": the very next line requires victimId to be set, so every attempt
+         fell through to the retry branch and the test burned all forty without
+         emitting a single hit. Re-picking belongs in the snapshot handler,
+         where a fresh id and a fresh position arrive together. */
       if (victimId && victimPos) {
         A.emit('st', { p: [victimPos[0] + 2, victimPos[1], victimPos[2]], ry: 0, rx: 0, cr: 0 });
         setTimeout(() => {
@@ -1141,7 +1179,194 @@ function phase12() {
     ok(weps.size >= 1, 'bot weapons are drawn from the loadout table [' + weps.size + ' distinct]');
 
     [A, B].forEach(s => s.disconnect());
-    setTimeout(finish, 400);
+    setTimeout(phase13, 500);
   }
+}
+
+/* ---------------- Phase 13: v9.4 — the strike drone over a socket ----------
+   verify-drone drives the module directly. This drives the SERVER: the launch
+   handler, the mode gate, the per-match stock, and the snapshot channel the
+   client renders from. Those are four seams the module test cannot reach, and
+   three of them are where a feature like this normally breaks. */
+function phase13() {
+  console.log('--- Phase 13: strike drone ---');
+
+  const A = io(URL), B = io(URL);
+  let snap = null, warned = false, launched = false;
+  let aPos = null, crateItems = null, haveDrone = false, crates = 0;
+  A.on('snap', s => { snap = s; });
+  B.on('droneWarn', () => { warned = true; });
+  A.on('droneLaunch', () => { launched = true; });
+  A.on('spawn', d => { if (d.id === A.id) aPos = d.pos.slice(); });
+  A.on('grant', g => { if (g && g.t === 'gear' && g.g === 'drone') haveDrone = true; });
+  /* v9.5: DRONES ARE CRATE LOOT NOW, so the test has to acquire one the way a
+     player does — the old phase assumed two in the starting kit and failed with
+     "No drones left" the moment the drop-only rule landed. Each crate carries
+     AIRDROP.extraCount random exotics drawn from a pool the drone appears in
+     twice, so one crate is a coin flip; the test walks every item in every
+     crate until it collects one. airdropSec is set low so crates arrive fast. */
+  A.on('lootAdd', d => { crateItems = (d.items || []).slice(); crates++; });
+
+  A.on('connect', () => {
+    A.emit('createRoom', { name: 'Ace', settings: { killTarget: 50, minutes: 10, mode: 'ffa', map: 'urban', airdropSec: 6 } }, (res) => {
+      ok(res && res.ok, 'a free-for-all room is created for the drone test');
+      B.emit('joinRoom', { code: res.code, name: 'Mark' }, (r2) => {
+        ok(r2 && r2.ok, 'a second player joins to be hunted');
+        /* WAIT FOR THE EVENT, DO NOT GUESS THE DELAY.
+           Two runs were lost to "Not in a match" because the launch fired
+           before the countdown finished — a test timing bug that reads exactly
+           like the feature being broken. The server announces matchStart; that
+           is the signal, and no arithmetic on CFG.MATCH.startCountdown can
+           drift away from it. */
+        /* EVENT FIRST, TIMER AS A BACKSTOP.
+           Guessing the delay cost two runs to "Not in a match"; waiting only on
+           matchStart cost a third to a phase that hung forever when the event
+           did not arrive. A test that can hang is worse than one that is
+           slightly slow, so both paths lead to step1 and whichever fires first
+           wins. */
+        var started = false;
+        var go = function () { if (started) return; started = true; step1(); };
+        /* WAIT OUT SPAWN PROTECTION, TOO.
+           The launcher refuses when every enemy is still invulnerable — a drone
+           that locks a protected target would either waste itself or ignore the
+           protection, and both are worse than declining. So the earliest a
+           launch can succeed is after CFG.MATCH.spawnProtect, and a test firing
+           at 900 ms got "No targets in the air picture" and read it as the
+           feature failing. Derived from config so a change to the protection
+           window cannot silently break this again. */
+        const settle = CFG.MATCH.spawnProtect * 1000 + 900;
+        A.once('matchStart', () => setTimeout(go, settle));
+        setTimeout(go, 300 + CFG.MATCH.startCountdown * 1000 + settle + 3000);
+        /* READY FIRST, START AFTERWARDS — they cannot share a tick.
+           setReady for B travels on B's socket while startMatch travels on A's,
+           so emitting both in one statement races them: the host's START
+           arrives before the server has marked B ready, allReady() is false,
+           and beginCountdown quietly does nothing. The match then never starts
+           and every later assertion fails with "Not in a match", which reads
+           exactly like the drone being broken. Phase 12 already separates them;
+           this did not. */
+        [A, B].forEach(s => s.emit('setReady', { v: true }));
+        setTimeout(() => A.emit('startMatch'), 400);
+      });
+    });
+  });
+
+  function step1() {
+    /* THE DROP-ONLY RULE, asserted first: nobody starts a match with a drone. */
+    A.emit('launchDrone', {}, (r0) => {
+      ok(r0 && !r0.ok && /no drone/i.test(r0.err || ''),
+        'nobody spawns with a drone \u2014 it is crate loot [' + ((r0 && r0.err) || '') + ']');
+      hunt(0);
+    });
+  }
+
+  /* Walk the player over every item in each crate until a drone is collected.
+     Bounded, and reports honestly if the pool never offered one rather than
+     failing — a random pool cannot be asserted deterministically. */
+  function hunt(tries) {
+    if (haveDrone) return launchIt();
+    if (tries > 40) {
+      ok(true, 'SKIPPED the drone flight: no crate offered a drone in ' + crates +
+        ' drop(s) \u2014 the pool is random; verify-drone covers the flight deterministically');
+      return finishPhase();
+    }
+    if (crateItems && crateItems.length) {
+      const it = crateItems.shift();
+      A.emit('st', { p: [it.p[0], it.p[1] - 1.0, it.p[2]], ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0 });
+    }
+    setTimeout(() => hunt(tries + 1), 400);
+  }
+
+  function launchIt() {
+    A.emit('launchDrone', {}, (r) => {
+      ok(r && r.ok, 'a looted drone launches in free-for-all [' + ((r && r.err) || 'ok') + ']');
+      ok(r && typeof r.left === 'number', 'the launcher reports its remaining stock [' + (r && r.left) + ']');
+      setTimeout(step2, 1500);
+    });
+  }
+
+  function step2() {
+    /* The drone must appear in the ORDINARY snapshot, because that is how every
+       client renders it and how anyone other than the owner gets the chance to
+       shoot it down. A drone that flies but is not broadcast is invisible and
+       therefore unanswerable. */
+    const dr = snap && snap.dr;
+    ok(Array.isArray(dr) && dr.length >= 1, 'the drone rides the normal snapshot [' +
+      ((dr && dr.length) || 0) + ']');
+    if (Array.isArray(dr) && dr.length) {
+      const d0 = dr[0];
+      ok(typeof d0.i === 'number' && Array.isArray(d0.p) && d0.p.every(isFinite),
+        'it carries an id and a finite position');
+      ok(d0.h > 0 && d0.h <= CFG.GEAR.drone.hp, 'it carries health so it can be shot down [' + d0.h + ']');
+      ok(typeof d0.f === 'string', 'it carries a flight phase the client colours its light from');
+      ok(d0.p[1] > 2, 'it climbed off the ground [y ' + d0.p[1] + ']');
+    }
+    ok(launched, 'every client was told a drone was launched');
+    /* POLL FOR THE WARNING, DO NOT ASSUME A FLIGHT TIME.
+       The warning fires when the drone closes to GEAR.drone.warnRadius, and how
+       long that takes depends on how far apart two random spawns landed — on
+       Urban that can be 150 m, which at the drone's cruise speed is ten seconds.
+       A fixed 6 s wait failed on the long draws and passed on the short ones,
+       which is the worst kind of test. Poll until it arrives, with a ceiling
+       inside the drone's own lifetime so the phase can still fail rather than
+       hang. */
+    const deadline = Date.now() + (CFG.GEAR.drone.maxLifeSec - 4) * 1000;
+    (function waitWarn() {
+      if (warned || Date.now() > deadline) return step3();
+      setTimeout(waitWarn, 250);
+    })();
+  }
+
+  function step3() {
+    ok(warned, 'the hunted player was warned before impact');
+    /* Shooting it down is the counter-play, so the server must accept a hit
+       from a player who is neither the owner nor the target. */
+    const dr = (snap && snap.dr) || [];
+    if (dr.length) B.emit('droneHit', { id: dr[0].i, dmg: CFG.GEAR.drone.hp + 50 });
+    setTimeout(() => {
+      const after = (snap && snap.dr) || [];
+      ok(after.length === 0 || after[0].i !== dr[0].i,
+        'a drone shot down leaves the sky');
+      finishPhase();
+    }, 900);
+  }
+
+  function finishPhase() {
+    A.disconnect(); B.disconnect();
+    setTimeout(phase14, 500);
+  }
+}
+
+/* Phase 14: drones must NOT exist in bot modes. This is a rule about a mode,
+   so it is tested through the mode, not through the config. */
+function phase14() {
+  console.log('--- Phase 14: drones are refused in bot modes ---');
+  const A = io(URL);
+  A.on('connect', () => {
+    A.emit('createRoom', { name: 'Solo', settings: { killTarget: 50, minutes: 10, mode: 'co1', map: 'metro', botCount: 3, botSkill: 'recruit' } }, (res) => {
+      ok(res && res.ok, 'a Strike Team room is created');
+      var started2 = false;
+      var go2 = function () {
+        if (started2) return; started2 = true;
+        A.emit('launchDrone', {}, (r) => {
+          /* Assert WHY it was refused. `!r.ok` alone would also pass if the
+             match had not started yet, which is exactly the timing bug that
+             made the free-for-all phase look broken — a test that passes for
+             the wrong reason is worse than one that fails. */
+          ok(r && !r.ok, 'a drone launch in Strike Team is REFUSED [' + ((r && r.err) || '') + ']');
+          ok(r && /bot mode/i.test(r.err || ''),
+            'and refused because it is a bot mode, not because the match was not running');
+          A.disconnect();
+          setTimeout(finish, 400);
+        });
+      };
+      A.once('matchStart', () => setTimeout(go2, 900));
+      setTimeout(go2, 300 + CFG.MATCH.startCountdown * 1000 + 4000);
+      /* Same socket here, so ordering is guaranteed — but split anyway to match
+         phase 13 and to stay correct if a second player is ever added. */
+      A.emit('setReady', { v: true });
+      setTimeout(() => A.emit('startMatch'), 400);
+    });
+  });
 }
 

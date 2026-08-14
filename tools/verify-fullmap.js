@@ -38,10 +38,15 @@ const ok = (c, m) => { c ? (pass++, console.log('  PASS  ' + m)) : (fail++, cons
 const src = fs.readFileSync(path.join(ROOT, 'public/src/ui/minimap.js'), 'utf8');
 
 console.log('--- the rule itself ---');
-ok(/var showContacts = !\(modeCfg && modeCfg\.teams\)/.test(src),
-  'contacts are gated on the mode having no sides');
-ok(/if \(showContacts\) Net\.eachRemote/.test(src),
-  'the remote-player draw loop is behind that gate');
+/* v9.5: TWO switches. `showAllies` and `showEnemies` replaced the single
+   `showContacts`, because your own squad and the enemy are opposite kinds of
+   information — one is coordination, the other is intel. */
+ok(/var showEnemies = !teamMode/.test(src),
+  'enemy visibility is gated on the mode having no sides');
+ok(/var showAllies\s*=\s*true/.test(src),
+  'ally visibility is unconditional — a squad can always see itself');
+ok(/if \(!\(ally \? showAllies : showEnemies\)\) return;/.test(src),
+  'the draw loop applies the ally/enemy split per contact');
 
 /* The gate must sit on the FULL map only. If it ever ends up wrapping the dial
    as well, players lose the radar they have always had and the change reads as
@@ -49,7 +54,7 @@ ok(/if \(showContacts\) Net\.eachRemote/.test(src),
 const fullStart = src.indexOf('function drawFull');
 const updStart = src.indexOf('function update');
 ok(fullStart > -1, 'drawFull exists');
-ok(src.indexOf('showContacts') > fullStart,
+ok(src.indexOf('showEnemies') > fullStart,
   'the gate lives inside drawFull, not in the minimap dial');
 if (updStart > -1 && updStart < fullStart) {
   ok(src.slice(updStart, fullStart).indexOf('showContacts') === -1,
@@ -58,22 +63,23 @@ if (updStart > -1 && updStart < fullStart) {
 ok(/g\.rotate\(PlayerCtl\.yaw\)/.test(src),
   'the own-position arrow is still drawn — a map you cannot locate yourself on is not a map');
 const arrowIdx = src.indexOf('g.rotate(PlayerCtl.yaw)');
-const gateIdx = src.indexOf('if (showContacts) Net.eachRemote');
+const gateIdx = src.indexOf('if (!(ally ? showAllies : showEnemies)) return;');
 ok(arrowIdx > gateIdx,
   'the own-position arrow sits outside the contact gate, so it draws in every mode');
 
 console.log('\n--- which modes show contacts ---');
 /* Assert the OUTCOME per mode rather than re-implementing the condition, so a
    new mode is classified by this gate the moment it is registered. */
-const shows = m => !(CFG.MODES[m] && CFG.MODES[m].teams);
-const expectShown = ['ffa', 'ls', 'bots'];
+const shows = m => !(CFG.MODES[m] && CFG.MODES[m].teams) ||
+  !!(CFG.MODES[m] && CFG.MODES[m].fullMapContacts);
+const expectShown = ['ffa', 'ls', 'bots', 'lsq2', 'lsq4'];
 const expectHidden = ['t2', 't3', 't4', 't5', 't6', 't8', 't10',
-  'sq2', 'sq4', 'lsq2', 'lsq4', 'co1', 'co2', 'co3', 'co4', 'co6', 'co10'];
+  'sq2', 'sq4', 'co1', 'co2', 'co3', 'co4', 'co6', 'co10'];
 
 expectShown.forEach(m => ok(CFG.MODES[m] && shows(m),
-  m + ': no sides, so the full map still shows contacts'));
+  m + ': the full map shows ENEMIES'));
 expectHidden.forEach(m => ok(CFG.MODES[m] && !shows(m),
-  m + ': team-shaped, so the full map shows no contacts'));
+  m + ': team-shaped, so the full map hides enemies (allies still show)'));
 
 /* Nothing may fall through the classification. */
 Object.keys(CFG.MODES).forEach(m => {
@@ -91,8 +97,11 @@ Object.keys(CFG.MODES).forEach(m => {
    gate output instead of being rediscovered in a match. */
 console.log('\n--- known cost ---');
 ok(shows('ls'), 'Last Stand Solo keeps its anti-camping map');
-ok(!shows('lsq2') && !shows('lsq4'),
-  'Last Stand Squads LOSES its anti-camping map — deliberate, see the note in this file');
+ok(shows('lsq2') && shows('lsq4'),
+  'Last Stand Squads keeps it too, via fullMapContacts (v9.4)');
+/* And the thing that changed in v9.5: allies are never hidden anywhere. */
+ok(/showAllies\s*=\s*true/.test(src),
+  'no mode hides your own squad — coordination is not intel');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -112,6 +112,79 @@ var Pickups = (function () {
     scene.remove(m.grp);
     delete mines[id];
   }
+  /* ===================== v9.4 — STRIKE DRONE RENDERING ====================
+
+     Drones arrive in the normal snapshot (`snap.dr`) and are drawn here rather
+     than in avatars.js, because they are world objects like mines and airdrop
+     crates, not players — they have no rig, no name plate and no team colour on
+     the body.
+
+     What they DO have is a status light, and it is the whole reason the weapon
+     is fair. Amber while it hunts, red while it locks and dives. A player who
+     looks up can tell the difference between "that is going somewhere" and
+     "that is coming for me", and act accordingly. Making the light purely
+     decorative would have quietly removed the counter-play. */
+  var drones = {};
+  function droneSync(list) {
+    if (!scene) return;
+    var seen = {};
+    (list || []).forEach(function (d) {
+      seen[d.i] = 1;
+      var e = drones[d.i];
+      if (!e) {
+        var grp = new THREE.Group();
+        var body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.34), mat(0x2a3038));
+        grp.add(body);
+        // four rotor booms, so the silhouette reads as a quadcopter from below
+        [[0.26, 0.26], [-0.26, 0.26], [0.26, -0.26], [-0.26, -0.26]].forEach(function (o) {
+          var arm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.05), mat(0x171b20));
+          arm.position.set(o[0] * 0.55, 0.01, o[1] * 0.55);
+          arm.rotation.y = Math.atan2(o[1], o[0]);
+          grp.add(arm);
+          var rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.012, 8), mat(0x39424c));
+          rotor.position.set(o[0], 0.05, o[1]);
+          grp.add(rotor);
+        });
+        var led = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6),
+          new THREE.MeshBasicMaterial({ color: 0xffb020 }));
+        led.position.y = 0.09; grp.add(led);
+        scene.add(grp);
+        e = drones[d.i] = { grp: grp, led: led, spin: 0 };
+      }
+      e.grp.position.set(d.p[0], d.p[1], d.p[2]);
+      e.spin += 0.6;
+      e.grp.rotation.y = e.spin;
+      var hot = (d.f === 'lock' || d.f === 'dive');
+      e.led.material.color.setHex(hot ? 0xff2a24 : 0xffb020);
+      e.led.visible = hot ? (Math.floor(performance.now() / 90) % 2 === 0) : true;
+    });
+    for (var k in drones) {
+      if (!seen[k]) { scene.remove(drones[k].grp); delete drones[k]; }
+    }
+  }
+  function droneBoom(d) {
+    var e = drones[d.id];
+    if (e) { scene.remove(e.grp); delete drones[d.id]; }
+    if (typeof FX !== 'undefined') {
+      /* A harmless airburst still gets an explosion, and a smaller one — the
+         player who shot it down has earned the feedback, and the size tells
+         everyone nearby whether they need to care. */
+      FX.explosion(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.lethal ? CFG.GEAR.drone.radius : 1.6);
+    }
+    if (typeof AudioSys !== 'undefined') AudioSys.explosion(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), !!d.lethal);
+  }
+  function droneReset() {
+    for (var k in drones) { if (scene) scene.remove(drones[k].grp); }
+    drones = {};
+  }
+  /* Exposed so the weapon system can ray-test against drones without owning
+     their meshes: returns id + world position + radius for each live drone. */
+  function droneTargets() {
+    var out = [];
+    for (var k in drones) out.push({ id: Number(k), pos: drones[k].grp.position, r: 0.42 });
+    return out;
+  }
+
   function mineReset() {
     for (var id in mines) scene.remove(mines[id].grp);
     mines = {};
@@ -223,6 +296,7 @@ var Pickups = (function () {
     onCollected: onCollected, onSpawn: onSpawn,
     airdrop: airdrop, getBeacons: getBeacons,
     mineAdd: mineAdd, mineBoom: mineBoom, mineReset: mineReset,
+    droneSync: droneSync, droneBoom: droneBoom, droneReset: droneReset, droneTargets: droneTargets,
     update: update
   };
 })();

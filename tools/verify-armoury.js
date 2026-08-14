@@ -54,7 +54,13 @@ const EXEMPT = {
   knife:   'melee — no range, no ammo, balanced by having to touch the target',
   shotgun: 'pellet spread — 80 at point blank by design, see weapons.config.js',
   aa12:    'pellet spread — 60 per trigger pull, sustained rather than punchy',
-  bow:     'projectile — 90 body is deliberately NOT a one-shot, see weapons.config.js'
+  bow:     'projectile — 90 body is deliberately NOT a one-shot, see weapons.config.js',
+  /* v9.5: the drone is a CARRIED SLOT, not a firearm. It occupies a weapon slot
+     so scrolling, the viewmodel registry and the `wp` sync field all work for
+     free, but it fires nothing — tryFire() intercepts it and calls the launcher.
+     Its damage lives in CFG.GEAR.drone where the server reads it, so testing it
+     against a firearm damage class would be testing the wrong number. */
+  drone:   'gear slot — launches a drone, fires no round; damage lives in CFG.GEAR.drone'
 };
 
 Object.keys(W).forEach(k => {
@@ -107,7 +113,12 @@ Object.keys(W).forEach(k => {
      is a sniper ammo cache. That is a design choice from v8.16, not an
      oversight, and asserting against it would have been a gate telling the game
      it was wrong. Recorded instead of enforced. */
-  if (W[k].ex) ok(lootW.indexOf(k) >= 0, k + ' is loot-only and IS in the loot table');
+  if (W[k].gear) {
+    /* Gear slots are granted by a GEAR pickup, not a weapon pickup, so they are
+       correctly absent from the weapon loot table. */
+    ok(!!CFG.LOOT_ITEMS[k] && CFG.LOOT_ITEMS[k].kind === 'gear',
+      k + ' is a gear slot and has a gear pickup');
+  } else if (W[k].ex) ok(lootW.indexOf(k) >= 0, k + ' is loot-only and IS in the loot table');
   else if (lootW.indexOf(k) >= 0) {
     pass++; console.log('  PASS  ' + k + ' is a spawn weapon that also drops as loot (acts as a resupply)');
   }

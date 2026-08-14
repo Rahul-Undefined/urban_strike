@@ -30,6 +30,9 @@ var Game = (function () {
      frame would otherwise queue sixty toasts a second and make things worse
      than the fault it is reporting. Each distinct message is shown once. */
   var seenErrors = {};
+  var contextLost = false;      // v9.5: set by the WebGL context handlers
+  var currentMapId = 'urban';   // v9.5: needed to rebuild after a context restore
+
   function reportError(where, err) {
     var msg = (err && err.message) ? err.message : String(err);
     var key = where + '|' + msg;
@@ -57,6 +60,53 @@ var Game = (function () {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    /* ===== v9.5 — THE BLACK SCREEN =====
+
+       Rahul: "the screen turned out black but some player can see the match but
+       can't play it, my screen everything was in black mode, I can move the
+       screen but everything was black."
+
+       Every detail there points at one thing: WEBGL CONTEXT LOSS. The camera
+       still moves because input, networking and the game loop are plain
+       JavaScript and keep running perfectly; the world is black because the GPU
+       side has been torn down and every texture, buffer and shader with it. It
+       hits ONE player because it is a driver or GPU-memory event on their
+       machine — a laptop switching graphics chips, a driver reset, another
+       application taking the GPU — not anything the server did.
+
+       Left unhandled, the browser NEVER restores the context: the default
+       action of the lost event has to be cancelled for `webglcontextrestored`
+       to fire at all. That is why it looked permanent and why leaving the match
+       was the only escape.
+
+       So: cancel the default, tell the player what happened instead of leaving
+       them staring at nothing, and rebuild the world when the context comes
+       back. `contextLost` also gates the render loop, because drawing into a
+       dead context throws every frame and buries the console. */
+    canvas.addEventListener('webglcontextlost', function (e) {
+      e.preventDefault();               // REQUIRED, or restore never fires
+      contextLost = true;
+      try { UI.setLoading(true); UI.setLoadingMap('Graphics context lost \u2014 recovering'); } catch (x) {}
+      try { console.warn('[UrbanStrike] WebGL context lost'); } catch (x) {}
+    }, false);
+
+    canvas.addEventListener('webglcontextrestored', function () {
+      contextLost = false;
+      try {
+        /* Everything on the GPU is gone, so the world has to be built again
+           from scratch — reset() first, or the builder appends to a scene graph
+           whose buffers no longer exist. */
+        World.reset();
+        World.buildMap(scene, currentMapId || 'urban');
+        Minimap.invalidate(); Minimap.init();
+        Pickups.build(scene);
+        UI.toast('Graphics restored');
+      } catch (err) {
+        reportError('context restore', err);
+      }
+      try { UI.setLoading(false); } catch (x) {}
+    }, false);
 
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.08, 320);
@@ -177,6 +227,15 @@ var Game = (function () {
       if (e.code === 'KeyX') { PlayerCtl.toggleProne(); return; }
       if (e.code === 'KeyH') { Weapons.throwGrenade('molotov'); return; }
       if (e.code === 'KeyV') { Weapons.placeMine(); return; }
+      /* v9.4 STRIKE DRONE on KeyT.
+         B was the first choice and verify-models refused it: B already throws
+         smoke, and the gate that checks for two actions on one key caught the
+         collision before it ever reached a keyboard. T is free, sits next to R
+         and G so the whole utility cluster stays under the left hand, and is
+         not used by the lift, prone, lean or any throwable.
+         The server rejects the launch in bot modes and the toast says why, so
+         the key never silently does nothing. */
+      if (e.code === 'KeyT') { Weapons.launchDrone(); return; }
       // PTT is registered once, at document level, in ui.js wireV43() — it must
       // work in the lobby too, so it does NOT live here. The old duplicate also
       // shadowed the smoke grenade, which had been unbindable ever since.
@@ -283,6 +342,7 @@ var Game = (function () {
       var built = false;
       try {
         var mapId = (d.settings && d.settings.map) || 'urban';
+        currentMapId = mapId;
         UI.setLoadingMap((CFG.MAPS[mapId] || CFG.MAPS.urban).label);
         World.buildMap(scene, mapId);
         Minimap.invalidate();
@@ -294,7 +354,30 @@ var Game = (function () {
         AudioSys.ambient();
         built = true;
       } catch (err) {
+        /* v9.5 RETRY ONCE. A half-built world is the other way to end up
+           staring at black: the builder threw partway, leaving a scene with
+           some geometry and no ground. reset() clears it and a second attempt
+           usually succeeds, because the common causes (a transient allocation
+           failure, a texture that was not ready) do not repeat. If it fails
+           twice the message stays on screen and says so, which is far better
+           than a silent black screen the player cannot diagnose. */
         reportError('match start', err);
+        try {
+          World.reset();
+          World.buildMap(scene, currentMapId);
+          Minimap.invalidate();
+          Weapons.matchReset();
+          Pickups.build(scene);
+          Pickups.init(d.pickups);
+          Minimap.init();
+          if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
+          AudioSys.ambient();
+          built = true;
+          UI.toast('Recovered after a map build error');
+        } catch (err2) {
+          reportError('match start (retry)', err2);
+          try { UI.toast('The map could not be built \u2014 leave and rejoin the room', true); } catch (x) {}
+        }
       } finally {
         /* These four own the screen. They run whether the build succeeded or
            not, so a failure is a visible, playable-or-leavable state rather
@@ -508,7 +591,10 @@ var Game = (function () {
       });
     }
 
-    renderer.render(scene, camera);
+    /* v9.5: never draw into a dead context. Every call throws while the GPU
+       side is gone, which floods the console and hides the one message that
+       matters — the context-lost warning. */
+    if (!contextLost) renderer.render(scene, camera);
   }
 
   return {

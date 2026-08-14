@@ -12,7 +12,8 @@ var WeaponModels = (function () {
   function build() {
     var models = {};
     var gunmetal = mat(0x2b2f34), dark = mat(0x1e2126), wood = mat(0x6b4a2a), tan = mat(0x4a4438),
-      green = mat(0x36402e), steel = mat(0x54595f), blade = mat(0xb9bfc6), brass = mat(0xb08a3a);
+      green = mat(0x36402e), steel = mat(0x54595f), blade = mat(0xb9bfc6), brass = mat(0xb08a3a),
+      NEONRED = new THREE.MeshBasicMaterial({ color: 0xff3a2a });
     function cylPart(g, x, y, z, r, len, m, alongZ) {
       var c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), m);
       if (alongZ !== false) c.rotation.x = Math.PI / 2;
@@ -338,6 +339,23 @@ var WeaponModels = (function () {
       g.userData.mag = arrow; g.userData.magHome = arrow.position.clone();
       return g;
     })();
+    /* v9.5: the carried drone. Held flat in front of the operator like a
+       launch tray, so it reads as "about to be thrown into the sky" rather than
+       as a weapon being aimed. Rotors are static geometry — it is not spinning
+       until it leaves your hands. */
+    models.drone = (function () {
+      var g = new THREE.Group();
+      part(g, 0, -0.04, -0.10, 0.30, 0.07, 0.30, gunmetal);          // body
+      [[0.20, 0.20], [-0.20, 0.20], [0.20, -0.20], [-0.20, -0.20]].forEach(function (o) {
+        var arm = part(g, o[0] * 0.5, -0.04, -0.10 + o[1] * 0.5, 0.18, 0.03, 0.05, dark);
+        arm.rotation.y = Math.atan2(o[1], o[0]);
+        cylPart(g, o[0], -0.005, -0.10 + o[1], 0.13, 0.012, steel, false);
+      });
+      part(g, 0, 0.01, -0.10, 0.06, 0.03, 0.06, NEONRED);            // status light
+      part(g, 0, -0.10, -0.10, 0.10, 0.05, 0.10, dark);              // payload pod
+      return g;
+    })();
+
     // Registry invariant: EVERY weapon in CFG.WEAPON_ORDER must have a
     // viewmodel. Any future config addition gets a generic rifle instead of
     // invisible hands — an unknown-but-equipped weapon cannot render as nothing.
@@ -351,5 +369,100 @@ var WeaponModels = (function () {
     return models;
   }
 
-  return { build: build };
+  /* ===================== v9.5 — ATTACHMENTS YOU CAN SEE =====================
+
+     Rahul: "red dot sight when looted doesn't effect anything on the gun, it
+     still does the default layout ... when extended mag is looted, it doesn't
+     extend the bullets."
+
+     The mechanics were already there — eff() has applied spreadMult, adsFov,
+     magMult and reloadMult since v5.1, and startReload/finishReload read the
+     effective magazine. What was missing is that NOTHING CHANGED ON SCREEN. You
+     looted a red dot, the toast said "Red Dot equipped", and then you looked
+     down the same iron sights at the same gun. A modifier the player cannot see
+     is a modifier the player does not believe in, and the natural conclusion is
+     that the pickup is broken.
+
+     So attachments are now physical. Every fitted part is tagged
+     `userData.att = true` and stripped before refitting, because a player who
+     swaps a 2x for a 4x must not end up wearing both.
+
+     THE MAGAZINE IS THE INTERESTING ONE. Every viewmodel already exposes its
+     magazine group as `userData.mag` so the reload animation can pull it out —
+     that same handle is reused here to stretch it. No model needs a second
+     magazine mesh and no model needs editing. */
+  function dress(g, atts) {
+    if (!g) return;
+    // strip anything fitted last time, and undo the magazine stretch
+    for (var i = g.children.length - 1; i >= 0; i--) {
+      if (g.children[i].userData && g.children[i].userData.att) g.remove(g.children[i]);
+    }
+    var magG = g.userData.mag;
+    if (magG && magG.userData && magG.userData.baseScaleY !== undefined) {
+      magG.scale.y = magG.userData.baseScaleY;
+      magG.position.y = magG.userData.baseY;
+    }
+    if (!atts) return;
+    var A = (typeof CFG !== 'undefined' && CFG.ATTACH) || {};
+
+    /* SIGHT. A red dot is a small tube with a bright lens; magnified optics get
+       a longer body and a bigger objective, scaled off the attachment's own
+       adsFov so a 8x visibly outsizes a 2x without a per-scope model. */
+    var sName = atts.sight, sDef = sName && A[sName];
+    if (sDef) {
+      var mag = sDef.adsFov ? Math.max(1, 52 / sDef.adsFov) : 1;   // 1 for a red dot
+      var scoped = !!sDef.adsFov;
+      var body = new THREE.Mesh(
+        new THREE.CylinderGeometry(scoped ? 0.028 : 0.024, scoped ? 0.028 : 0.024,
+          scoped ? Math.min(0.30, 0.13 + mag * 0.022) : 0.075, 10), mat(0x15181c));
+      body.rotation.x = Math.PI / 2;
+      body.position.set(0, 0.085, scoped ? -0.10 : -0.02);
+      body.userData.att = true; g.add(body);
+      // objective lens, larger with magnification
+      var lensR = scoped ? Math.min(0.05, 0.026 + mag * 0.004) : 0.019;
+      var lens = new THREE.Mesh(new THREE.CylinderGeometry(lensR, lensR, 0.012, 10),
+        new THREE.MeshBasicMaterial({ color: scoped ? 0x2a4a66 : 0xff3a2a }));
+      lens.rotation.x = Math.PI / 2;
+      lens.position.set(0, 0.085, scoped ? -0.24 : -0.056);
+      lens.userData.att = true; g.add(lens);
+      // riser so the optic sits above the receiver rather than inside it
+      var riser = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.035, 0.05), mat(0x22262b));
+      riser.position.set(0, 0.055, scoped ? -0.06 : -0.02);
+      riser.userData.att = true; g.add(riser);
+    }
+
+    /* MUZZLE. A suppressor is long and fat; a compensator is short and ported.
+       Both read instantly from the corner of the eye, which is the point. */
+    var muName = atts.muzzle, muDef = muName && A[muName];
+    if (muDef) {
+      var supp = !!muDef.quiet;
+      var can = new THREE.Mesh(
+        new THREE.CylinderGeometry(supp ? 0.032 : 0.028, supp ? 0.032 : 0.03,
+          supp ? 0.20 : 0.08, 10), mat(supp ? 0x1c2024 : 0x3a4149));
+      can.rotation.x = Math.PI / 2;
+      can.position.set(0, 0.005, supp ? -0.78 : -0.72);
+      can.userData.att = true; g.add(can);
+      if (!supp) {
+        var port = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.05), mat(0x2a3037));
+        port.position.set(0, 0.028, -0.72); port.userData.att = true; g.add(port);
+      }
+    }
+
+    /* MAGAZINE. Stretched, not replaced — see the note above. The anchor is
+       cached the first time so repeated swaps cannot compound the offset, which
+       is how a magazine ends up hanging a metre below the gun. */
+    var mDef = atts.mag && A[atts.mag];
+    if (mDef && magG && mDef.magMult && mDef.magMult > 1) {
+      if (magG.userData.baseScaleY === undefined) {
+        magG.userData.baseScaleY = magG.scale.y;
+        magG.userData.baseY = magG.position.y;
+      }
+      var k = Math.min(1.9, mDef.magMult);
+      magG.scale.y = magG.userData.baseScaleY * k;
+      // drop it so it grows DOWNWARD out of the well instead of through it
+      magG.position.y = magG.userData.baseY - (k - 1) * 0.055;
+    }
+  }
+
+  return { build: build, dress: dress };
 })();

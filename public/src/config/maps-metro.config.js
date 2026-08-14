@@ -96,7 +96,40 @@
       [55, 12.80, 20.3, "s"],
       [-66.5, 4.00, 25.5, "h"], [-66.5, 10.40, 25.5, "h"],  // residential A
       [-34.5, 4.00, 21.5, "h"], [-34.5, 10.40, 73.1, "h"],  // residential C / D
-      [54.5, 5.05, -79.3, "h"], [54.5, 17.65, -87.1, "s"]   // construction escape
+      [54.5, 5.05, -79.3, "h"], [54.5, 17.65, -87.1, "s"],  // construction escape
+
+      /* ---- v9.5: DENSITY. -------------------------------------------------
+         The four edge districts were built in v9.1 and furnished in v9.3, but
+         they carried 8 loot points between them — so the rim was somewhere to
+         fight and nowhere to loot, and players kept funnelling back to the
+         centre. These fill it out on open ground at y 0.55, the same
+         convention as every ground point above, and verify-map proves each one
+         stands on a real surface rather than in the air or inside a wagon.
+
+         Spacing is roughly 14-18 m: close enough that a street is worth
+         running, far enough that one player cannot stand still and hold four
+         markers at once. */
+      // rail yard — the aisles between the sidings
+      [-84, 0.55, -92, "g"], [-56, 0.55, -92, "g"], [-28, 0.55, -92, "g"],
+      [14, 0.55, -92, "g"], [56, 0.55, -92, "g"], [84, 0.55, -92, "g"],
+      [-70, 0.55, -86, "g"], [-24, 0.55, -86, "g"], [30, 0.55, -86, "g"],
+      // cargo terminal — the aisles, plus the gantry bases
+      [89, 0.55, -76, "g"], [93.3, 0.55, -60, "g"], [89, 0.55, -44, "g"],
+      [93.3, 0.55, -28, "g"], [89, 0.55, -8, "g"], [93.3, 0.55, 8, "g"],
+      [89, 0.55, 30, "g"], [93.3, 0.55, 50, "g"], [89, 0.55, 72, "g"],
+      // bus depot and market street
+      [-86, 0.55, 84, "g"], [-68, 0.55, 84, "g"], [-50, 0.55, 84, "g"],
+      [-32, 0.55, 82, "g"], [6, 0.55, 84, "g"], [24, 0.55, 84, "g"],
+      [52, 0.55, 84, "g"], [78, 0.55, 84, "g"], [90, 0.55, 72, "g"],
+      // park strip
+      [-93, 0.55, -66, "g"], [-93, 0.55, -34, "g"], [-88, 0.55, -22, "g"],
+      [-93, 0.55, 4, "g"], [-88, 0.55, 36, "g"], [-93, 0.55, 48, "g"],
+      [-88, 0.55, 70, "g"],
+      // the avenues themselves — the connective tissue between districts
+      [-60, 0.55, -40, "g"], [-60, 0.55, 40, "g"], [0, 0.55, -40, "g"],
+      [0, 0.55, 44, "g"], [60, 0.55, -30, "g"], [60, 0.55, 62, "g"],
+      [-30, 0.55, 0, "g"], [30, 0.55, 0, "g"], [-30, 0.55, -60, "g"],
+      [30, 0.55, 60, "g"], [-16, 0.55, 30, "g"], [16, 0.55, -30, "g"]
     ],
     SPAWNS: [
       [-70, -70, 0.78, "a"], [-78, -58, 0.78, "a"], [-58, -78, 0.78, "a"],

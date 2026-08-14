@@ -58,8 +58,15 @@
        end condition is elimination, which cannot stall while anyone is alive. */
     ls:   { label: 'Last Stand \u00b7 Solo', vlabel: 'Solo \u00b7 every operator for themselves',
             cat: 'last', teams: false, teamCount: 0, maxPlayers: 20, lives: 1 },
+    /* v9.4 `fullMapContacts` — the escape hatch the v9.2 gate said to use.
+       Hiding contacts on the full map is right for Team Battle and Squads,
+       where the map is a free intel screen in a match that never pauses. Last
+       Stand is the exception BY DESIGN: its whole anti-camping answer is that
+       pressing M shows where everyone is, so hiding buys you position and not
+       safety. Marking the two squad variants restores that without a special
+       case wired into minimap.js. Solo is already free-for-all shaped. */
     lsq2: { label: 'Last Stand \u00b7 Squads 10 \u00d7 2', vlabel: '10 squads of 2',
-            cat: 'last', teams: true, squads: true, teamCount: 10, squadSize: 2, maxPlayers: 20, lives: 1 },
+            cat: 'last', teams: true, squads: true, teamCount: 10, squadSize: 2, maxPlayers: 20, lives: 1, fullMapContacts: true },
     /* v8.38 TRAINING. One human, up to nineteen bots, on any difficulty. It is
        free-for-all shaped so every bot is hostile — a practice room where half
        the room is on your side teaches you nothing. Startable solo, which is
@@ -72,7 +79,7 @@
     bots: { label: 'Overrun', vlabel: 'One operator against the sector',
             cat: 'practice', teams: false, teamCount: 0, maxPlayers: 20, practice: true },
     lsq4: { label: 'Last Stand \u00b7 Squads 5 \u00d7 4',  vlabel: '5 squads of 4',
-            cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20, lives: 1 },
+            cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20, lives: 1, fullMapContacts: true },
 
     /* v9.2 STRIKE TEAM — humans on one side, bots on the other.
 

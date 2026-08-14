@@ -7,6 +7,7 @@ var Weapons = (function () {
   var current = 'ak47';
   var ammo = {};                  // name -> {mag, reserve}
   var throwsLeft = { frag: 2, smoke: 1, flash: 1 };
+  var droneCount = 0;                                    // v9.4, set by the server grant
   var nextFireAt = 0, reloadUntil = 0, boltUntil = 0, switchUntil = 0;
   var reloadingShell = false;
   var triggerDown = false, semiQueued = false;
@@ -92,6 +93,11 @@ var Weapons = (function () {
     BASE_WEAPONS.forEach(function (n) { owned[n] = true; });
     atts = { sight: null, muzzle: null, mag: null };
     mineCount = CFG.GEAR.mine.start;
+    /* v9.4: drones are per-MATCH. The server decides the real number (zero in
+       bot modes) and corrects this on the first grant; starting at the config
+       value keeps the HUD honest for the first second. */
+    droneCount = 0;                 // v9.5: crate loot only, nobody spawns with one
+    owned.drone = false;
     fires = [];
     cooking = null;
     UI.setAttachments(atts);
@@ -144,8 +150,27 @@ var Weapons = (function () {
       atts[def.cat] = d.a;
       UI.toast(def.label + ' equipped');
       UI.setAttachments(atts);
+      /* v9.5: FIT IT TO THE GUN AND UPDATE THE HUD IMMEDIATELY.
+         Neither happened before. The optic was invisible, so a red dot looked
+         like it had done nothing; and the magazine counter kept showing the old
+         capacity until the next reload, so an extended mag looked like it had
+         done nothing either. Both were true modifiers with no feedback, which
+         is indistinguishable from a broken pickup.
+
+         The rounds ALREADY in the gun are not topped up — that would be a free
+         reload — but the cap moves at once, so the counter reads 30/90 -> 42
+         on the next reload and the player can see why. */
+      if (models[current]) WeaponModels.dress(models[current], atts);
+      refreshHud();
     } else if (d.t === 'gear') {
       if (d.g === 'mine') { mineCount = d.n; UI.toast('AP Mines: ' + d.n); }
+      else if (d.g === 'drone') {
+        droneCount = d.n;
+        /* The slot APPEARS when you pick one up, so scrolling reaches it. */
+        owned.drone = droneCount > 0;
+        if (owned.drone) ammo.drone = ammo.drone || { mag: 0, reserve: 0 };
+        UI.toast('Strike Drone \u00b7 ' + d.n + ' carried');
+      }
       else if (d.g === 'molotov') {
         throwsLeft.molotov = Math.min(CFG.THROWS.molotov.maxCarry, throwsLeft.molotov + d.n);
         UI.toast('Molotov +' + d.n);
@@ -160,7 +185,7 @@ var Weapons = (function () {
     if (models[current]) models[current].visible = false;
     current = name;
     zoomFov = null;
-    if (models[current]) models[current].visible = true;
+    if (models[current]) { models[current].visible = true; WeaponModels.dress(models[current], atts); }
     reloadUntil = 0; reloadingShell = false; boltUntil = 0;
     switchUntil = instant ? 0 : performance.now() + 380;
     UI.setWeapon(CFG.WEAPONS[name].label, ammo[name].mag, ammo[name].reserve, throwsLeft);
@@ -185,6 +210,26 @@ var Weapons = (function () {
       i = (i + dir + CFG.WEAPON_ORDER.length) % CFG.WEAPON_ORDER.length;
       if (owned[CFG.WEAPON_ORDER[i]]) { setWeapon(CFG.WEAPON_ORDER[i]); return; }
     }
+  }
+
+  /* v9.5: one implementation, two callers — the T key and a left click while
+     the drone slot is selected. */
+  function launchDrone() {
+    if (!PlayerCtl.alive) return;
+    if (droneCount <= 0) { UI.toast('No drones \u2014 find one in an airdrop'); return; }
+    Net.launchDrone(function (res) {
+      if (res && res.ok) {
+        droneCount = res.left;
+        UI.toast('Drone away \u00b7 ' + res.left + ' left');
+        /* Out of drones means out of the slot: holding an empty launcher you
+           cannot use is worse than being put back on your rifle. */
+        if (droneCount <= 0) {
+          owned.drone = false;
+          if (current === 'drone') cycle(1);
+        }
+      } else UI.toast((res && res.err) || 'Cannot launch drone');
+      refreshHud();
+    });
   }
 
   function startReload() {
@@ -250,6 +295,28 @@ var Weapons = (function () {
     var wh = World.rayHit(o, d, maxDist);
     var best = wh ? wh.t : maxDist;
     var hit = wh ? { type: 'world', t: wh.t, point: wh.point } : null;
+    /* v9.4 DRONES ARE SHOOTABLE, and this is where that has to happen — a
+       separate "shoot at drones" path would drift from the real weapon model
+       the first time spread or falloff changed. They are tested BEFORE players
+       so a drone hovering in front of somebody eats the round, which is the
+       correct outcome and also the one that makes shooting one down feel like a
+       decision rather than an accident.
+
+       Sphere-vs-ray, because a drone is small and roughly round; the box test
+       used for bodies would make the rotors count as a hit surface and turn a
+       0.42 m target into a 0.9 m one. */
+    if (typeof Pickups !== 'undefined' && Pickups.droneTargets) {
+      Pickups.droneTargets().forEach(function (dr) {
+        var ox = dr.pos.x - o.x, oy = dr.pos.y - o.y, oz = dr.pos.z - o.z;
+        var proj = ox * d.x + oy * d.y + oz * d.z;
+        if (proj <= 0 || proj > best) return;
+        var px = o.x + d.x * proj, py = o.y + d.y * proj, pz = o.z + d.z * proj;
+        var dx = px - dr.pos.x, dy = py - dr.pos.y, dz = pz - dr.pos.z;
+        if (dx * dx + dy * dy + dz * dz > dr.r * dr.r) return;
+        best = proj;
+        hit = { type: 'drone', t: proj, id: dr.id, point: new THREE.Vector3(px, py, pz) };
+      });
+    }
     var P = CFG.PLAYER;
     Net.eachRemote(function (id, r) {
       if (!r.alive) return;
@@ -364,6 +431,10 @@ var Weapons = (function () {
       var hit = castRay(o, d, 400);
       var end = hit ? hit.point : o.clone().addScaledVector(d, 120);
       FX.tracer(mz, end, w.trc);
+      if (hit && hit.type === 'drone') {
+        FX.impact(hit.point); AudioSys.impact(hit.point);
+        Net.droneHit(hit.id, CFG.WEAPONS[current].dmg);
+      }
       if (hit && hit.type === 'world') { FX.impact(hit.point); AudioSys.impact(hit.point); }
       if (hit && hit.type === 'player') {
         FX.bloodPuff(hit.point);
@@ -410,6 +481,15 @@ var Weapons = (function () {
     var w = CFG.WEAPONS[current], a = ammo[current];
     var t = performance.now();
     if (t < nextFireAt || t < switchUntil || t < boltUntil || !PlayerCtl.alive) return;
+    /* v9.5: the drone slot launches instead of firing. Intercepted here, before
+       any ammo, spread or recoil logic, because none of it applies — it has no
+       magazine and no bullet. The cooldown stops a held mouse button emptying
+       the whole stock in one frame. */
+    if (w.type === 'drone') {
+      nextFireAt = t + 700;
+      launchDrone();
+      return;
+    }
     if (isReloading()) {
       if (w.shellReload && a.mag > 0) { reloadUntil = 0; reloadingShell = false; UI.setReloading(false); } // pump: interrupt shell reload
       else return;
@@ -562,6 +642,20 @@ var Weapons = (function () {
       if (axis === 1) { p.pos.y += pen[m] * sign; p.vel.y *= -0.38; p.vel.x *= 0.7; p.vel.z *= 0.7; }
       if (axis === 2) { p.pos.z += pen[m] * sign; p.vel.z *= -0.42; p.vel.x *= 0.75; p.vel.y *= 0.75; }
       if (p.vel.lengthSq() > 3) AudioSys.bounce(p.pos);
+      /* v9.4 FRAGS DETONATE ON CONTACT.
+         Rahul: "grenade shot should be instant as soon as dropped and when
+         dropped it should do 100% damage to the area."
+         A 2.8 s fuse meant a frag bounced around a room, gave everyone in it a
+         second and a half to leave, and usually killed nobody — the throw felt
+         like a suggestion. With `impact` it goes off where it lands, which is
+         where the thrower aimed it.
+
+         Cooking still works and is now the ONLY way to airburst: hold G and it
+         detonates in flight at the end of the cook. That is a skill the weapon
+         gains rather than a behaviour it loses. */
+      if (p.type && CFG.THROWS[p.type] && CFG.THROWS[p.type].impact && p.fuse > 0.02) {
+        p.fuse = 0;
+      }
     }
     p.mesh.position.copy(p.pos);
   }
@@ -589,13 +683,29 @@ var Weapons = (function () {
       if (!r.alive) return;
       var d = r.renderPos.distanceTo(center);
       if (d > radius) return;
-      var dmg = maxDmg * (1 - d / radius);
+      /* v9.4 FULL DAMAGE ACROSS THE RADIUS.
+         The linear falloff meant a frag landing at a player's feet killed them
+         and the same frag two metres away did 70 — so the difference between a
+         great throw and an average one was invisible, and the weapon read as
+         weak. Rahul asked for 100% inside the radius, and that is a coherent
+         design: the skill moves entirely into WHERE it lands, and the 7 m
+         circle becomes a place you must not be standing.
+
+         Line of sight still matters — a wall between you and the blast keeps
+         the 0.25 multiplier, so cover is the counter-play rather than distance.
+         Falloff is retained for the ROCKET, which is a direct-fire weapon with
+         its own aiming skill and does not need the same treatment. */
+      var flat = CFG.THROWS[weaponName] && CFG.THROWS[weaponName].flatDamage;
+      var dmg = flat ? maxDmg : maxDmg * (1 - d / radius);
       if (World.losBlocked(center.clone().add(new THREE.Vector3(0, 0.25, 0)), r.renderPos)) dmg *= 0.25;
       if (dmg > 1) Net.sendHit({ victim: id, w: weaponName, dmg: dmg, part: 'body', vp: [r.renderPos.x, r.renderPos.y, r.renderPos.z] });
     });
     // self-damage
     var sd = PlayerCtl.pos.distanceTo(center);
     if (PlayerCtl.alive && sd < radius) {
+      /* Self-damage keeps the falloff even when the weapon is flat. Standing at
+         the edge of your own frag should hurt, not delete you — a flat 100 here
+         would make every close throw a suicide and nobody would ever use it. */
       var dmg2 = maxDmg * (1 - sd / radius);
       if (World.losBlocked(center.clone().add(new THREE.Vector3(0, 0.25, 0)), PlayerCtl.pos)) dmg2 *= 0.25;
       if (dmg2 > 1) Net.sendHit({ victim: Net.myId(), w: weaponName, dmg: dmg2, part: 'body', vp: [PlayerCtl.pos.x, PlayerCtl.pos.y, PlayerCtl.pos.z] });
@@ -669,7 +779,10 @@ var Weapons = (function () {
       var bend = BL.pos.clone().addScaledVector(bdir, bhit ? bhit.t : stepLen);
       FX.tracer(BL.pos, bend, BL.trc);
       if (bhit) {
-        if (bhit.type === 'player') {
+        if (bhit.type === 'drone') {
+          FX.impact(bhit.point); AudioSys.impact(bhit.point);
+          Net.droneHit(bhit.id, CFG.WEAPONS[BL.w].dmg);
+        } else if (bhit.type === 'player') {
           FX.bloodPuff(bhit.point);
           AudioSys.flesh(bhit.point);
           Net.sendHit({ victim: bhit.id, w: BL.w, part: bhit.part, pellets: 1, vp: bhit.vp });
@@ -817,6 +930,12 @@ var Weapons = (function () {
         refreshHud();
       });
     },
+    /* v9.4 STRIKE DRONE — the client's only job is to ASK. Everything about the
+       flight, the target and the kill is decided on the server, because a drone
+       outlives the moment its owner is watching it and a third player can shoot
+       it down; see server/lib/drones.js. */
+    launchDrone: launchDrone,
+    droneCount: function () { return droneCount; },
     getDetectMs: function () { return eff(current).detectMs; },
     selectByKey: selectByKey,
     cycle: cycle,
