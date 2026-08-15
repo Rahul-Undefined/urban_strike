@@ -41,24 +41,24 @@ World._buildPart4 = function (T) {
     // floor-1 walls with front door (south) + windows
     facade('z', Z1 - TT, Z1, X0, X1, 0, 3.4, M.plaster,
       [{ u0: -28.4, u1: -26.6, v0: 0, v1: 2.3 }, win(-32, 1.3, 1.3, 1.2), win(-23.5, 1.3, 1.3, 1.2)]);
-    facade('z', Z0, Z0 + TT, X0, X1, 0, 3.4, M.facadeTeal, [win(-30, 1.3, 1.4, 1.2), win(-24, 1.3, 1.4, 1.2)]);
+    facade('z', Z0, Z0 + TT, X0, X1, 0, 3.4, M.plaster, [win(-30, 1.3, 1.4, 1.2), win(-24, 1.3, 1.4, 1.2)]);
     seg(X0, X0 + TT, 0, 3.4, Z0, Z1, M.plaster);
-    seg(X1 - TT, X1, 0, 3.4, Z0, Z1, M.facadeAmber);
+    seg(X1 - TT, X1, 0, 3.4, Z0, Z1, M.plaster);
     // floor-2 slab with stair hole along the east wall
     seg(X0, -21.6, 3.4, 3.6, Z0, Z1, M.concrete);
     seg(-21.6, X1, 3.4, 3.6, Z0, -85, M.concrete);
     seg(-21.6, X1, 3.4, 3.6, -81, Z1, M.concrete);
     // floor-2 walls + windows
     facade('z', Z1 - TT, Z1, X0, X1, 3.6, 6.9, M.plaster, [win(-31, 4.9, 1.3, 1.2), win(-27, 4.9, 1.3, 1.2), win(-23, 4.9, 1.3, 1.2)]);
-    facade('z', Z0, Z0 + TT, X0, X1, 3.6, 6.9, M.facadeRose, [win(-29, 4.9, 1.4, 1.2)]);
+    facade('z', Z0, Z0 + TT, X0, X1, 3.6, 6.9, M.plaster, [win(-29, 4.9, 1.4, 1.2)]);
     seg(X0, X0 + TT, 3.6, 6.9, Z0, Z1, M.plaster);
-    seg(X1 - TT, X1, 3.6, 6.9, Z0, Z1, M.facadeIndigo);
+    seg(X1 - TT, X1, 3.6, 6.9, Z0, Z1, M.plaster);
     // roof with stair hole + parapet
     seg(X0, -21.6, 6.9, 7.2, Z0, Z1, M.roof);
     seg(-21.6, X1, 6.9, 7.2, Z0, -88.4, M.concrete);
     seg(-21.6, X1, 6.9, 7.2, -84.6, Z1, M.roof);
     seg(X0, X1, 7.2, 8.0, Z0, Z0 + 0.22, M.plaster);
-    seg(X0, X1, 7.2, 8.0, Z1 - 0.22, Z1, M.facadeOlive);
+    seg(X0, X1, 7.2, 8.0, Z1 - 0.22, Z1, M.plaster);
     seg(X0, X0 + 0.22, 7.2, 8.0, Z0, Z1, M.plaster);
     // internal stairs (east lane): ground -> F2 -> roof
     stairFlight(-20.9, 0, -81.0, 0, -1, 11, 0.327, 0.33, 1.2, M.concrete);
@@ -74,9 +74,9 @@ World._buildPart4 = function (T) {
       seg(p[0] - 0.14, p[0] + 0.14, 0, 6.6, p[1] - 0.14, p[1] + 0.14, M.trim);
     });
     // cabin: low walls, open windows
-    seg(-15.3, -11.7, 6.9, 8.0, -86.8, -86.6, M.facadeTeal);
+    seg(-15.3, -11.7, 6.9, 8.0, -86.8, -86.6, M.plaster);
     seg(-15.3, -11.7, 6.9, 8.0, -83.4, -83.2, M.plaster);
-    seg(-15.3, -15.1, 6.9, 8.0, -86.8, -83.2, M.facadeAmber);
+    seg(-15.3, -15.1, 6.9, 8.0, -86.8, -83.2, M.plaster);
     seg(-11.9, -11.7, 6.9, 8.0, -86.8, -83.2, M.plaster);
     // switchback stairs from the south (lane x -14.15..-12.95)
     stairFlight(-13.55, 0, -76.0, 0, -1, 12, 0.29, 0.33, 1.2, M.metal);

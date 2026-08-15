@@ -53,13 +53,6 @@ function makeRoom(hostSocket, name, settings) {
       mode,
       botCount: Math.max(0, Math.min(19, (settings && settings.botCount | 0) || 0)),
       botSkill: (settings && settings.botSkill) || 'regular',
-      /* v9.11: backfill defaults ON. Most of this game's mode list needs ten to
-         twenty humans to exist, and the common case — a host and a friend or
-         two — could not open Team Battle or Last Stand at all. Defaulting off
-         would leave that content exactly as unreachable as before for everyone
-         who does not find the toggle. A host with a full lobby can turn it off,
-         and it does nothing in a room that is already full. */
-      backfill: (settings && typeof settings.backfill === 'boolean') ? !!settings.backfill : true,
       // v8.33: default to the config names until the host renames them
       // v8.34: seed a name for every side this mode could field
       teamNames: (function () {
@@ -87,11 +80,6 @@ function addPlayer(room, socket, name) {
     color: CFG.COLORS[0],
     team: null,
     joinOrder: joinCounter++,
-    /* v9.11: the reconnect token. Issued once, returned to that client alone,
-       and never included in the lobby payload — a token anyone can read is a
-       token anyone can use to take your seat and your score. */
-    token: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
-    connected: true,
     kills: 0, deaths: 0, assists: 0, damage: 0, streak: 0, bestStreak: 0, ping: 0, ready: false,
     hp: CFG.PLAYER.hp, armorLvl: 0, armorDur: 0, helmLvl: 0, helmDur: 0, alive: false,
     protUntil: 0, att: { sight: null, muzzle: null, mag: null }, exW: {}, rd: {},

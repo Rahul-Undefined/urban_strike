@@ -11,26 +11,6 @@ var Net = (function () {
   var roster = [];    // lobby payload players (names/colors/scores)
   var ping = 0;
   var match = { killTarget: 15, minutes: 10, mode: 'ffa', startedAt: 0, serverOffset: 0 };
-  /* v9.8: the delta baseline. snapCache holds the last known state per wire
-     slot; slotToId maps a slot back to the player id everything else uses. */
-  var snapCache = {}, slotToId = {};
-  /* v9.11 RECONNECT. The token is kept in sessionStorage rather than a
-     variable, so a page refresh — the most common way people "lose" a match —
-     can restore the seat too. sessionStorage and not localStorage: the session
-     ends with the tab, which is the right lifetime for a match seat. */
-  var SKEY = 'us.session';
-  function saveSession(code, token) {
-    try { sessionStorage.setItem(SKEY, JSON.stringify({ code: code, token: token, at: Date.now() })); } catch (e) {}
-  }
-  function loadSession() {
-    try {
-      var v = JSON.parse(sessionStorage.getItem(SKEY) || 'null');
-      /* Older than the server's 45 s hold plus slack is not worth trying. */
-      if (!v || Date.now() - v.at > 90000) return null;
-      return v;
-    } catch (e) { return null; }
-  }
-  function clearSession() { try { sessionStorage.removeItem(SKEY); } catch (e) {} }
   var teamKills = {};                // v8.34: sized by the server, not assumed
   var myTeam = null;
   var scene = null;
@@ -69,15 +49,7 @@ var Net = (function () {
   }
 
   function bind(s) {
-    s.on('connect', function () {
-      var wasConnected = !!myIdV;
-      myIdV = s.id;
-      /* First connect is a normal join; a LATER one is a recovery. */
-      if (wasConnected) attemptRejoin(s);
-    });
-    s.on('disconnect', function () {
-      if (phase === 'playing') UI.toast('Connection lost \u2014 reconnecting\u2026', true);
-    });
+    s.on('connect', function () { myIdV = s.id; });
 
     /* The launch countdown fires in the LOBBY, so its handler must exist from
        the moment we connect. It used to live in bindGameplayEvents(), which
@@ -91,8 +63,6 @@ var Net = (function () {
       isHost = (d.hostId === myIdV);
       match.killTarget = d.settings.killTarget;
       match.minutes = d.settings.minutes;
-      snapCache = {}; slotToId = {};   // v9.8: never carry slots across a match
-      Minimap.clearMarks();            // v9.10: markers do not survive a match
       match.mode = d.settings.mode || 'ffa';
       var me = d.players.find(function (p) { return p.id === myIdV; });
       myTeam = me ? (me.team || null) : myTeam;
@@ -117,8 +87,6 @@ var Net = (function () {
       phase = 'playing';
       match.killTarget = d.settings.killTarget;
       match.minutes = d.settings.minutes;
-      snapCache = {}; slotToId = {};   // v9.8: never carry slots across a match
-      Minimap.clearMarks();            // v9.10: markers do not survive a match
       match.mode = d.settings.mode || 'ffa';
       match.startedAt = d.startedAt;
       match.serverOffset = d.serverNow - Date.now();
@@ -129,33 +97,16 @@ var Net = (function () {
       Game.onMatchStart(d);
     });
 
-    /* ===== v9.8 DELTA SNAPSHOTS =====
-       The packet is now `{ e: [[slot, flags, ...changed], ...], k?, tk?, dr? }`
-       and the decode lives in SnapCodec so the server, this file and test.js
-       cannot drift apart. See that file's header for the format and for why
-       nothing was culled to get the saving.
-
-       Two invariants this handler depends on:
-         - every LIVE entity appears in every packet, so a slot that is absent
-           has genuinely left and its avatar must be removed;
-         - a keyframe (`k`) carries every field of every entity including the
-           slot->id mapping, and one is sent on join, so a client that arrives
-           mid-match is never decoding against an empty cache. */
     s.on('snap', function (d) {
       var tLocal = performance.now();
-      if (d.tk !== undefined) teamKills = d.tk || {};
-      Pickups.droneSync(d.dr);          // undefined when none are airborne
-      if (!d.e) return;
-
-      var seen = {};
-      for (var n = 0; n < d.e.length; n++) {
-        var raw = SnapCodec.decodeEntity(d.e[n], snapCache);
-        seen[raw.slot] = 1;
-        if (!raw.id) continue;                       // no identity yet, wait for a keyframe
-        slotToId[raw.slot] = raw.id;
-        var st = SnapCodec.toPlayerState(raw);
-        var id = raw.id;
-        if (id === myIdV) { UI.setVitals(st.hp, st.lv, st.du); continue; }
+      if (d.tk) teamKills = d.tk;
+      Pickups.droneSync(d.dr);          // v9.4: undefined when none are airborne
+      for (var id in d.players) {
+        var st = d.players[id];
+        if (id === myIdV) {
+          UI.setVitals(st.hp, st.lv, st.du);
+          continue;
+        }
         var r = remotes[id];
         if (!r) {
           var known = roster.find(function (p) { return p.id === id; });
@@ -170,14 +121,6 @@ var Net = (function () {
         r.team = st.tm || null;
         if (r.alive && !st.al) r.deadAt = performance.now();
         r.alive = !!st.al;
-      }
-      /* Absence means gone. Without this a player who disconnects mid-match
-         leaves an avatar standing wherever they were last seen. */
-      for (var sl in snapCache) {
-        if (seen[sl]) continue;
-        var goneId = slotToId[sl];
-        delete snapCache[sl]; delete slotToId[sl];
-        if (goneId && remotes[goneId]) removeRemote(goneId);
       }
     });
 
@@ -278,46 +221,14 @@ var Net = (function () {
   }
   function wrapCb(cb) {
     return function (res) {
-      if (res && res.ok) {
-        phase = res.inProgress ? 'playing' : 'lobby'; roomCode = res.code;
-        if (res.token) saveSession(res.code, res.token);   // v9.11
-      }
+      if (res && res.ok) { phase = res.inProgress ? 'playing' : 'lobby'; roomCode = res.code; }
       cb(res);
     };
-  }
-
-  /* ===== v9.11 AUTOMATIC RECONNECT =====
-     socket.io reconnects the TRANSPORT by itself, but the new socket has a new
-     id and the server has no idea it is the same person — which is why a blip
-     used to cost the match. On every reconnect we offer the stored token; the
-     server either restores the seat or says it is gone, and either way the
-     player finds out instead of staring at a frozen world.
-
-     It fires on transport reconnect rather than on a button, because the moment
-     that matters is the one where the player did not do anything. */
-  function attemptRejoin(s) {
-    var sess = loadSession();
-    if (!sess) return;
-    s.emit('rejoin', { code: sess.code, token: sess.token }, function (res) {
-      if (res && res.ok) {
-        myIdV = res.id; roomCode = res.code;
-        phase = res.state === 'playing' ? 'playing' : 'lobby';
-        saveSession(res.code, res.token);
-        snapCache = {}; slotToId = {};     // the old wire slots died with the old id
-        if (res.pickups) Pickups.init(res.pickups);
-        UI.toast('Reconnected');
-        if (typeof Game !== 'undefined' && Game.onRejoin) Game.onRejoin(res);
-      } else {
-        clearSession();
-        UI.toast((res && res.error) || 'Could not rejoin', true);
-      }
-    });
   }
   function leaveRoom() {
     if (socket) socket.disconnect();
     socket = null;
     phase = 'menu'; roomCode = ''; isHost = false;
-    clearSession();          // v9.11: leaving is deliberate; do not auto-rejoin
     for (var id in remotes) removeRemote(id);
     roster = [];
   }
@@ -405,15 +316,6 @@ var Net = (function () {
        kill from a direction nobody looks. With it, dying to one is a decision
        the victim lost rather than a dice roll they never saw. */
     socket.on('droneWarn', function (d) { UI.droneWarn && UI.droneWarn(d.d); });
-    /* v9.10: a team-mate's map marker. Relayed by the server to that side only,
-       so this can be trusted to be from an ally. */
-    socket.on('mark', function (d) {
-      Minimap.addMark(d);
-      if (d && d.id !== myIdV) UI.toast((d.name || 'Squad') + ' marked a position');
-    });
-    /* v9.11: a team-mate's ping. Relayed to this side only, so it can be
-       trusted to be from an ally. */
-    socket.on('ping', function (d) { FX.teamPing(d); });
     socket.on('minePlaced', function (d) { Pickups.mineAdd(d); });
     socket.on('mineBoom', function (d) {
       Pickups.mineBoom(d.id);
@@ -614,8 +516,6 @@ var Net = (function () {
     sendState: sendState, sendShoot: sendShoot, sendHit: sendHit,
     sendProj: sendProj, sendThrow: sendThrow, requestRespawn: requestRespawn,
     placeMine: function (d, cb) { if (socket) socket.emit('placeMine', d, cb); },
-    mark: function (x, z) { if (socket) socket.emit('mark', { x: x, z: z }); },
-    ping: function (kind, x, y, z) { if (socket) socket.emit('ping', { k: kind, x: x, y: y, z: z }); },
     launchDrone: function (cb) { if (socket) socket.emit('launchDrone', {}, cb); },
     droneHit: function (id, dmg) { if (socket) socket.emit('droneHit', { id: id, dmg: dmg }); },
     setPlayerTeam: function (id, team) { if (socket) socket.emit('setPlayerTeam', { id: id, team: team }); },

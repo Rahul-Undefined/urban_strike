@@ -13,7 +13,7 @@ var UI = (function () {
       'join-name', 'join-code', 'btn-join',
       'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count', 'lobby-kills', 'lobby-time',
       'lobby-team-a', 'lobby-team-b', 'team-name-row', 'lobby-bots', 'lobby-skill', 'bot-row',
-      'mode-brief', 'kills-row', 'kills-label', 'backfill-row', 'lobby-backfill', 'lobby-bfskill',
+      'mode-brief', 'kills-row', 'kills-label',
       'lobby-hint', 'btn-start', 'btn-leave',
       'crosshair', 'scope-overlay', 'match-timer', 'kill-target', 'killfeed',
       'hp-fill', 'hp-num', 'armor-fill', 'armor-num',
@@ -26,7 +26,7 @@ var UI = (function () {
       'announce', 'cook-bar', 'cook-fill', 'att-list',
       'tc-mine', 'tc-molotov', 'countdown', 'btn-ready',
       'info-map', 'info-mode', 'info-kills', 'info-time', 'info-slots', 'info-role',
-      'ready-fill', 'ready-text', 'stat-maps'
+      'ready-fill', 'ready-text', 'brand-modes', 'stat-maps'
     ].forEach(function (id) { els[id] = $(id); });
   }
 
@@ -99,32 +99,23 @@ var UI = (function () {
     var botItems = [];
     for (var bi = 1; bi <= 19; bi++) botItems.push({ v: bi, t: bi + (bi === 1 ? ' bot' : ' bots') });
     fillSelect(els['lobby-bots'], botItems, 5);
-    /* Both difficulty selects are filled from ONE list. Overrun uses
-       `lobby-skill`, backfill uses `lobby-bfskill`, and they write the same
-       room setting — two lists would drift the moment a rung is retuned. */
-    var skillItems = [
-      { v: 'recruit', t: 'Recruit \u00b7 stays on the street, one rifle' },
+    fillSelect(els['lobby-skill'], [
+      { v: 'recruit', t: 'Recruit \u00b7 learning the map' },
       { v: 'regular', t: 'Regular \u00b7 a fair fight' },
-      { v: 'veteran', t: 'Veteran \u00b7 they take the high ground' },
-      { v: 'extreme', t: 'Extreme \u00b7 they play like people' }
-    ];
-    fillSelect(els['lobby-skill'], skillItems, 'regular');
-    fillSelect(els['lobby-bfskill'], skillItems, 'regular');
+      { v: 'veteran', t: 'Veteran \u00b7 they shoot back properly' },
+      { v: 'extreme', t: 'Extreme \u00b7 they will not miss much' }
+    ], 'regular');
     fillSelect(els['lobby-cat'], catItems(), catOf(M.defaultMode));
     syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], M.defaultMode);
     fillSelect(els['lobby-map'], mapItems(), 'urban');
     fillSelect(els['lobby-kills'], killItems(), M.defaultKills);
     fillSelect(els['lobby-time'], timeItems(), M.defaultMinutes);
     if (els['stat-maps']) els['stat-maps'].textContent = String(mapItems().length);
-    /* v9.9: THIS was the wall of text.
-       It listed EVERY mode label joined by dots. That read fine at eight modes
-       in v8.x; by v9.7 there are twenty-five, and the welcome screen was
-       carrying a paragraph of comma-soup nobody reads before clicking CREATE
-       ROOM. The stat strip above already says how many theatres, weapons and
-       operators there are, in numbers, which is what a player actually scans.
-       The element is gone from index.html and this block with it. A line that
-       grows every time a feature is added is a line that will be too long
-       again in two versions. */
+    if (els['brand-modes']) {
+      els['brand-modes'].textContent = '2\u201310 player tactical combat \u00b7 ' +
+        Object.keys(CFG.MODES).map(function (k) { return CFG.MODES[k].label; }).join(' \u00b7 ') +
+        ' \u00b7 in your browser';
+    }
   }
 
   // ---------- screens ----------
@@ -350,18 +341,6 @@ var UI = (function () {
     var isPractice = (CFG.MODES[d.settings.mode] || {}).cat === 'practice';
     var hasBots = CFG.botsAllowed(d.settings.mode);
     if (els['bot-row']) els['bot-row'].style.display = hasBots ? '' : 'none';
-    /* v9.11 BACKFILL ROW — the human modes only. A mode that already fields
-       bots must not offer to fill its slots with more of them. */
-    var canFill = CFG.backfillAllowed(d.settings.mode);
-    if (els['backfill-row']) els['backfill-row'].style.display = canFill ? '' : 'none';
-    if (els['lobby-backfill'] && document.activeElement !== els['lobby-backfill']) {
-      els['lobby-backfill'].value = (d.settings.backfill === false) ? '0' : '1';
-      els['lobby-backfill'].disabled = !isHost;
-    }
-    if (els['lobby-bfskill'] && document.activeElement !== els['lobby-bfskill']) {
-      els['lobby-bfskill'].value = d.settings.botSkill || 'regular';
-      els['lobby-bfskill'].disabled = !isHost;
-    }
     if (els['lobby-bots'] && document.activeElement !== els['lobby-bots']) {
       /* Strike Team shows 0 = "match the squad", which is what the server does
          with an unset count. Showing 5 there would be a lie about the default. */
@@ -868,13 +847,7 @@ var UI = (function () {
         killTarget: parseInt(els['lobby-kills'].value, 10),
         minutes: parseInt(els['lobby-time'].value, 10),
         botCount: parseInt(els['lobby-bots'] ? els['lobby-bots'].value : 0, 10) || 0,
-        /* Whichever difficulty select is VISIBLE owns the setting. Reading the
-           hidden one would have the Overrun slider silently override a backfill
-           choice the host just made. */
-        botSkill: (els['backfill-row'] && els['backfill-row'].style.display !== 'none' && els['lobby-bfskill'])
-          ? els['lobby-bfskill'].value
-          : (els['lobby-skill'] ? els['lobby-skill'].value : 'regular'),
-        backfill: els['lobby-backfill'] ? els['lobby-backfill'].value === '1' : true,
+        botSkill: els['lobby-skill'] ? els['lobby-skill'].value : 'regular',
         teamNames: {                                    // v8.33
           a: els['lobby-team-a'] ? els['lobby-team-a'].value : '',
           b: els['lobby-team-b'] ? els['lobby-team-b'].value : ''
@@ -898,8 +871,6 @@ var UI = (function () {
     els['lobby-time'].addEventListener('change', pushSettings);
     if (els['lobby-bots']) els['lobby-bots'].addEventListener('change', pushSettings);
     if (els['lobby-skill']) els['lobby-skill'].addEventListener('change', pushSettings);
-    if (els['lobby-bfskill']) els['lobby-bfskill'].addEventListener('change', pushSettings);
-    if (els['lobby-backfill']) els['lobby-backfill'].addEventListener('change', pushSettings);
     /* Push on blur and on Enter rather than on every keystroke: a rename is a
        whole word, and one socket message per character would be silly. */
     ['lobby-team-a', 'lobby-team-b'].forEach(function (id) {
@@ -1019,45 +990,6 @@ var UI = (function () {
       el._t = setTimeout(function () { el.style.display = 'none'; }, 900);
     },
     droneHealth: function () { /* reserved: per-drone health bar */ },
-    /* v9.11: who the eliminated player is watching. A caption rather than a
-       panel — the point of spectating is the match, not the UI around it. */
-    setSpectateName: function (name) {
-      var el = document.getElementById('spectate-name');
-      if (!el) {
-        el = document.createElement('div');
-        el.id = 'spectate-name';
-        el.style.cssText = 'position:fixed;left:50%;bottom:11%;transform:translateX(-50%);' +
-          'font:600 15px Rajdhani,sans-serif;letter-spacing:1.5px;color:#f0e2c4;' +
-          'text-shadow:0 2px 6px #000;pointer-events:none;z-index:55;opacity:.9';
-        document.body.appendChild(el);
-      }
-      el.textContent = 'SPECTATING  ' + name + '   \u2039 \u203a to change';
-      el.style.display = 'block';
-    },
-    /* v9.11: the ping wheel. A list rather than a radial dial — a radial menu
-       needs the mouse, and the mouse is aiming. Six numbered choices read
-       faster than six sectors you have to sweep to. */
-    setPingWheel: function (on) {
-      var el = document.getElementById('ping-wheel');
-      if (!el) {
-        el = document.createElement('div');
-        el.id = 'ping-wheel';
-        el.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);' +
-          'padding:14px 18px;border:1px solid rgba(240,162,50,.5);border-radius:6px;' +
-          'background:rgba(10,14,20,.86);font:600 14px Rajdhani,sans-serif;' +
-          'letter-spacing:1.2px;color:#f0e2c4;pointer-events:none;z-index:70;line-height:1.9';
-        el.innerHTML = '<b style="color:#f0a232">PING</b><br>' +
-          '1 &nbsp;Enemy spotted<br>2 &nbsp;Here<br>3 &nbsp;On my way<br>' +
-          '4 &nbsp;Need ammo<br>5 &nbsp;Careful<br>6 &nbsp;Loot<br>' +
-          '<span style="opacity:.6">release for ENEMY</span>';
-        document.body.appendChild(el);
-      }
-      el.style.display = on ? 'block' : 'none';
-    },
-    clearSpectateName: function () {
-      var el = document.getElementById('spectate-name');
-      if (el) el.style.display = 'none';
-    },
     toast: toast,
     getSensitivity: function () { return sensitivity; },
     el: function (id) { return els[id]; }

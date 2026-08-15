@@ -447,30 +447,13 @@ module.exports = function initBotsModule(ctx) {
     /* v9.2: the guard is CFG.botsAllowed, not a literal `.practice` read, so
        Strike Team (vsBots) gets bots too and there is exactly one place that
        decides which modes have them. */
-    /* v9.11: two doors into this function, and they must stay separate.
-       BACKFILL is the host asking for empty slots to be filled in a normal
-       human mode; it is bounded by maxPlayers and ignores `botCount` entirely,
-       which is what keeps the v8.38.1 leak fixed — a stale count from a
-       Training session still injects nothing into a 5v5. */
-    const backfill = !CFG.botsAllowed(room.settings.mode) &&
-                     CFG.backfillAllowed(room.settings.mode) &&
-                     !!room.settings.backfill;
-    if (!backfill && !CFG.botsAllowed(room.settings.mode)) return;
+    if (!CFG.botsAllowed(room.settings.mode)) return;
     const botSide = CFG.botSideOf(room.settings.mode);
     /* Strike Team defaults its bot count to the size of the human squad, so a
        host who never touches the slider still gets a fair-shaped fight. They
        can still raise or lower it — a duo that wants six machines is allowed. */
     let want = Math.max(0, Math.min(19, (room.settings.botCount | 0)));
-    if (backfill) {
-      /* Fill to the mode's own seat count, minus whoever is already here.
-         A 10v10 with three humans becomes three humans and seventeen bots; a
-         full room gets none. Capped at 19 for the same reason every other bot
-         path is: beyond that the snapshot and the AI tick both start to hurt. */
-      let humans = 0;
-      for (const q of room.players.values()) if (!q.bot) humans++;
-      const seats = (modeInfo(room).maxPlayers || CFG.MODES[room.settings.mode].maxPlayers || 8);
-      want = Math.max(0, Math.min(19, seats - humans));
-    } else if (botSide) {
+    if (botSide) {
       let humans = 0;
       for (const q of room.players.values()) if (!q.bot) humans++;
       if (!room.settings.botCount) want = Math.max(1, humans);
@@ -528,32 +511,6 @@ module.exports = function initBotsModule(ctx) {
   /* Bots exist only for the duration of a match. Leaving them in the lobby
      would let them count toward the ready gate and the player cap, and a host
      who lowered the bot count would be stuck with the old ones. */
-  /* ===== v9.11 — A HUMAN ALWAYS BEATS A BOT FOR A SEAT =====
-     A backfilled room is FULL by definition, so without this a player who has
-     the room code cannot get in — the feature that makes modes playable would
-     make them unjoinable. One bot leaves, from the largest side so the teams
-     stay balanced, and the arriving human takes the slot.
-     Returns true if room was made. */
-  function yieldSeat(room) {
-    if (!room || !room.players) return false;
-    if (!room.settings || !room.settings.backfill) return false;
-    if (!CFG.backfillAllowed(room.settings.mode)) return false;
-    const bots = [...room.players.values()].filter(p => p.bot);
-    if (!bots.length) return false;
-    /* Prefer a DEAD bot if there is one: removing a live bot mid-firefight
-       makes a body vanish in front of somebody. */
-    const count = {};
-    bots.forEach(b => { count[b.team || '_'] = (count[b.team || '_'] || 0) + 1; });
-    bots.sort((a, b) => {
-      if (a.alive !== b.alive) return a.alive ? 1 : -1;
-      return (count[b.team || '_'] || 0) - (count[a.team || '_'] || 0);
-    });
-    const victim = bots[0];
-    room.players.delete(victim.id);
-    io.to(room.code).emit('playerLeft', { id: victim.id, name: victim.name });
-    return true;
-  }
-
   function removeBots(room) {
     if (!room || !room.players) return;
     for (const [id, p] of [...room.players.entries()]) if (p.bot) room.players.delete(id);
@@ -733,10 +690,7 @@ module.exports = function initBotsModule(ctx) {
 
   function tick(room, dt) {
     if (!room || room.state !== 'playing') return;
-    /* v9.11: backfilled rooms tick too. The guard still refuses a mode that
-       has no bots in it at all, which is the rule it was written for. */
-    if (!CFG.botsAllowed(room.settings.mode) &&
-        !(room.settings.backfill && CFG.backfillAllowed(room.settings.mode))) return;
+    if (!CFG.botsAllowed(room.settings.mode)) return;   // v9.2: one rule, one place
 
     const S = skillOf(room);
     const t = now();
@@ -1112,6 +1066,6 @@ module.exports = function initBotsModule(ctx) {
     }
   }
 
-  return { addBots, removeBots, yieldSeat, tick, anyHumans, SKILLS, SKILL_IDS, LOADOUTS,
+  return { addBots, removeBots, tick, anyHumans, SKILLS, SKILL_IDS, LOADOUTS,
            buildColliders, stairsFor, planClimb, segmentBlocked, groundAt, bodyBlocked };
 };

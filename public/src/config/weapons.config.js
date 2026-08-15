@@ -171,19 +171,7 @@
        `bullet: true` — it is the only travelling projectile in the game other
        than the rocket, with a slow flight and gravity drop, so range is a skill
        check rather than a stat. `quiet: 1` keeps the shooter off the radar the
-       way a suppressor does.
-
-       v9.9 BUG FIX — THE BOW NEVER FIRED. These two keys were `projSpeed` and
-       `drop`, which are the ROCKET's field names. The travelling-bullet path in
-       weapons/system.js reads `bulletSpeed` and `bulletDrop`, so it received
-       undefined: the arrow's velocity became a NaN vector, its speed NaN, the
-       ray cast along it NaN, and nothing was ever hit or drawn. No crash and no
-       error — the string just did nothing, which is why it survived from v9.3.
-       Reported as "bow and arrow doesn't work ... neither the arrow goes
-       anywhere", which is exactly right.
-       Two field names for one concept is the whole cause; see
-       tools/verify-armoury.js, which now asserts a travelling weapon carries
-       the keys its own code path reads. */
+       way a suppressor does. */
     /* v9.5 STRIKE DRONE AS A CARRIED SLOT.
        Rahul: "when looted from the drop, it can be activated just by scrolling
        like a gun and when on screen left click on the mouse basically launches
@@ -202,7 +190,7 @@
     drone:   { key: 9, ex: 1, gear: 1, label: 'Strike Drone', type: 'drone', dmg: 0, rpm: 60,
                mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 0, head: 1, legs: 1,
                speed: 0.94, recoil: 0, drift: 0, adsFov: 62, trc: 0xffb020 },
-    bow:     { key: 9, ex: 1, mark: 1, label: 'Recurve Bow', type: 'bow', dmg: 90, rpm: 40, mag: 1, reserve: 29, reload: 1.4, spread: 0.004, ads: 0.0012, range: 999, head: 1.9, legs: 0.6, speed: 0.97, recoil: 0.02, drift: 0.2, adsFov: 38, bullet: true, bulletSpeed: 88, bulletDrop: 9.0, quiet: 1, trc: 0xd8c89a },
+    bow:     { key: 9, ex: 1, mark: 1, label: 'Recurve Bow', type: 'bow', dmg: 90, rpm: 40, mag: 1, reserve: 29, reload: 1.4, spread: 0.004, ads: 0.0012, range: 999, head: 1.9, legs: 0.6, speed: 0.97, recoil: 0.02, drift: 0.2, adsFov: 38, bullet: true, projSpeed: 88, drop: 9.0, quiet: 1, trc: 0xd8c89a },
   };
 
   /* WEAPON_ORDER is the WIRE FORMAT. `wp` in a snapshot is an index into this

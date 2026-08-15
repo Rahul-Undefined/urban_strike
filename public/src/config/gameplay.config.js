@@ -3,31 +3,11 @@
   else { (root.__CFG_PARTS = root.__CFG_PARTS || []).push(factory()); }
 })(typeof self !== 'undefined' ? self : this, function () {
 
-  /* ===== v9.10 — A TALLER OPERATOR =====
-     standH 1.8 -> 1.92. A 1.8 m capsule in a world of 2.2 m doorways and 4 m
-     storeys reads as a slightly small person in a slightly large city.
-
-     1.92 IS MEASURED, NOT CHOSEN. The tightest doorway on any map is 2.10 m and
-     verify-stairs-quality requires standH + 0.02 of headroom over every flight;
-     1.92 leaves 0.18 m of door clearance and keeps every existing staircase
-     legal. Anything taller starts failing flights that are correct.
-
-     EVERY DERIVED HEIGHT MOVES BY THE SAME 1.0667. Crouch, prone and the three
-     eye offsets are scaled together so the proportions are unchanged — a
-     hand-tuned eye height against a scaled body is how a camera ends up inside
-     a forehead. The avatar RIG in networking/avatars.js is scaled by the same
-     factor in the same version; the two must move together or the visible model
-     and the hit capsule disagree, which is exactly what verify-hitbox caught
-     when only one of them was changed.
-
-     BOTS INHERIT ALL OF IT. server/lib/bots.js reads CFG.PLAYER for bodyH() and
-     for its eye heights, so bot stature tracks the player automatically and
-     cannot drift. */
   var PLAYER = {
     hp: 100,
-    standH: 1.92, crouchH: 1.28, proneH: 0.75, radius: 0.35,
-    eyeStand: 0.768, eyeCrouch: 0.448, eyeProne: 0.192,
-    headR: 0.203
+    standH: 1.8, crouchH: 1.2, proneH: 0.7, radius: 0.35,
+    eyeStand: 0.72, eyeCrouch: 0.42, eyeProne: 0.18,
+    headR: 0.19
   };
 
   var ARMOR = {
@@ -92,15 +72,6 @@
     { map: 'metro', x: -60, z: 69, r: 1.6, stops: [0.25, 3.45, 6.65, 9.85, 13.05] },                   // residential SE
     // --- phase 4: three widely separated street<->subway shafts, so descending
     // at one and surfacing at another is a genuine map-crossing flank ---
-    /* v9.10: four shafts serving the new service tunnels. Without these the
-       tunnels exist and nobody can reach their far ends — the whole point is
-       surfacing INSIDE a district you did not walk to. Each sits in a shaft
-       chamber built at the tunnel end in metro.js; verify-lifts proves every
-       stop has a floor. */
-    { map: 'metro', x: 78, z: -38, r: 1.6, stops: [0, -5.75] },                                        // cargo terminal shaft
-    { map: 'metro', x: -95, z: 12, r: 1.6, stops: [0, -5.75] },                                        // park strip shaft
-    { map: 'metro', x: -6, z: 72, r: 1.6, stops: [0, -5.75] },                                         // market street shaft
-    { map: 'metro', x: -6, z: -92, r: 1.6, stops: [0, -5.75] },                                        // rail yard shaft
     { map: 'metro', x: -20, z: -80, r: 1.6, stops: [0, -5.75] },                                       // ticket hall exit
     { map: 'metro', x: -20, z: -48, r: 1.6, stops: [0, -5.75] },                                       // west service exit
     { map: 'metro', x: -6, z: -20, r: 1.6, stops: [0, -5.75] },                                        // south tunnel exit

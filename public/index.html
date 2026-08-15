@@ -60,15 +60,12 @@
   <!-- MAIN MENU -->
   <section class="screen active" id="screen-main">
     <div class="brand">
-      <!-- v9.9: STRIPPED. This screen carried an eyebrow line, a title, a rule
-           with a subtitle, a two-line pitch and a footer — five separate pieces
-           of copy competing for the same two seconds before a player clicks
-           CREATE ROOM. Reported simply as "too much text", and it was.
-           What survives is the name, one line saying what the game is, and the
-           two buttons. The stat strip stays because it is numbers, not prose,
-           and it is read at a glance. -->
+      <div class="brand-eyebrow"><i class="live"></i>SECTOR 7 // INDUSTRIAL DISTRICT</div>
       <h1>URBAN<span>STRIKE</span></h1>
       <div class="brand-rule"><i></i><b>TACTICAL COMBAT SIMULATION</b><i></i></div>
+      <!-- v8.37: the welcome screen sells the game. The control list moved to
+           the staging area, where a player has a reason to read it. -->
+      <div class="brand-sub" id="brand-modes">Twenty operators drop into one sector.<br>Only the count at the end is remembered.</div>
     </div>
     <div class="menu-actions">
       <button class="btn btn-primary" id="btn-goto-create"><span>CREATE ROOM</span></button>
@@ -80,7 +77,7 @@
       <div class="mstat"><b>11</b><span>ATTACHMENTS</span></div>
       <div class="mstat"><b>20</b><span>MAX OPERATORS</span></div>
     </div>
-    <div class="menu-foot">No download. No account. Just a five-letter code.</div>
+    <div class="menu-foot">No download. No account. A five-letter code and whoever you can talk into joining.</div>
   </section>
 
   <!-- CREATE -->
@@ -205,17 +202,6 @@
             <label class="field"><span>DURATION</span><select id="lobby-time"></select></label>
           </div>
           <!-- v8.38: bot controls, shown only in Overrun. -->
-          <!-- v9.11: backfill. Shown for the human-vs-human modes only; Overrun
-               and Strike Team field their own bots and have the row below. -->
-          <div class="field-row" id="backfill-row">
-            <label class="field"><span>FILL EMPTY SLOTS WITH BOTS</span>
-              <select id="lobby-backfill">
-                <option value="1">Yes — start with any number of players</option>
-                <option value="0">No — humans only</option>
-              </select>
-            </label>
-            <label class="field"><span>BOT DIFFICULTY</span><select id="lobby-bfskill"></select></label>
-          </div>
           <div class="field-row" id="bot-row" style="display:none">
             <label class="field"><span>BOTS</span><select id="lobby-bots"></select></label>
             <label class="field"><span>DIFFICULTY</span><select id="lobby-skill"></select></label>
@@ -362,7 +348,6 @@
   <script src="src/weapons/viewmodels.js"></script>
   <script src="src/weapons/system.js"></script>
   <script src="src/networking/avatars.js"></script>
-  <script src="src/networking/snapcodec.js"></script>
   <script src="src/networking/net.js"></script>
   <script src="src/loot/pickups.js"></script>
   <script src="src/ui/minimap.js"></script>

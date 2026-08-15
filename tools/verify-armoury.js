@@ -129,29 +129,6 @@ ok(CFG.WEAPON_ORDER.length === Object.keys(W).length,
 ok(new Set(CFG.WEAPON_ORDER).size === CFG.WEAPON_ORDER.length,
   'no weapon appears twice in WEAPON_ORDER');
 
-console.log('\n--- travelling projectiles carry the keys their code reads ---');
-/* v9.9. The bow shipped in v9.3 with `projSpeed` and `drop` — the ROCKET's
-   field names — while the travelling-bullet path reads `bulletSpeed` and
-   `bulletDrop`. It received undefined, its velocity became NaN, and the weapon
-   silently did nothing for six versions. No crash, no error, no gate.
-   Two names for one concept is the cause, so both spellings are checked
-   against the path each weapon actually takes. */
-Object.keys(W).forEach(k => {
-  const w = W[k];
-  if (w.bullet) {
-    ok(typeof w.bulletSpeed === 'number' && w.bulletSpeed > 0,
-      k + ' is a travelling bullet and has bulletSpeed [' + w.bulletSpeed + ']');
-    ok(typeof w.bulletDrop === 'number',
-      k + ' has bulletDrop [' + w.bulletDrop + ']');
-    ok(w.projSpeed === undefined,
-      k + ' does NOT use the rocket spelling projSpeed');
-  }
-  if (w.type === 'rocket') {
-    ok(typeof w.projSpeed === 'number' && w.projSpeed > 0,
-      k + ' is a rocket and has projSpeed [' + w.projSpeed + ']');
-  }
-});
-
 console.log('\n--- the bow (v9.3) ---');
 const bow = W.bow;
 ok(!!bow, 'the bow exists');

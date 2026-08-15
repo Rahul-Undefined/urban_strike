@@ -270,7 +270,6 @@ var FX = (function () {
   }
 
   function update(dt) {
-    updatePings();          // v9.11: team pings fade on the same clock
     for (var i = live.length - 1; i >= 0; i--) {
       var e = live[i];
       e.life += dt;
@@ -333,54 +332,7 @@ var FX = (function () {
     }
   }
 
-  /* ===== v9.11 TEAM PING =====
-     A world-anchored marker with a label, visible THROUGH geometry
-     (depthTest false) because the whole value of "enemy that way" is that the
-     wall is between you and it. It fades on its own — a ping is a call-out, not
-     a permanent objective, and a screen accumulating them is a screen nobody
-     reads.
-     Kept in FX rather than in the HUD because it lives in the world: it has a
-     position, it gets closer as you approach, and it disappears behind you. */
-  var PING_STYLE = {
-    enemy:   { c: 0xff4a3c, t: 'ENEMY' },
-    here:    { c: 0xffd166, t: 'HERE' },
-    going:   { c: 0x6fd3ff, t: 'ON MY WAY' },
-    need:    { c: 0x9be36f, t: 'NEED AMMO' },
-    careful: { c: 0xffa64a, t: 'CAREFUL' },
-    loot:    { c: 0xc79bff, t: 'LOOT' }
-  };
-  var pings = [];
-  function teamPing(d) {
-    if (!d || !scene) return;
-    var st = PING_STYLE[d.k] || PING_STYLE.here;
-    var g = new THREE.Group();
-    var mat = new THREE.MeshBasicMaterial({ color: st.c, depthTest: false, transparent: true });
-    var pin = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.9, 6), mat);
-    pin.rotation.x = Math.PI; pin.position.y = 1.1;
-    g.add(pin);
-    var ring = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.62, 20), mat);
-    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06;
-    g.add(ring);
-    g.position.set(d.x, d.y, d.z);
-    g.renderOrder = 999;
-    scene.add(g);
-    pings.push({ g: g, mat: mat, born: performance.now(), label: st.t, name: d.name || '' });
-    if (typeof AudioSys !== 'undefined' && AudioSys.pickup) AudioSys.pickup();
-    if (typeof UI !== 'undefined' && UI.toast) UI.toast((d.name || 'Squad') + ': ' + st.t);
-  }
-  function updatePings() {
-    var t = performance.now();
-    for (var i = pings.length - 1; i >= 0; i--) {
-      var p = pings[i], age = (t - p.born) / 7000;
-      if (age >= 1) { scene.remove(p.g); pings.splice(i, 1); continue; }
-      p.mat.opacity = Math.max(0, 1 - age);
-      p.g.rotation.y += 0.02;
-      p.g.position.y += Math.sin(t / 300) * 0.0015;
-    }
-  }
-
   return {
-    teamPing: teamPing, updatePings: updatePings,
     init: init, initDOM: initDOM, update: update,
     tracer: tracer, impact: impact, bloodPuff: bloodPuff, muzzle: muzzle, shell: shell,
     damageNumber: damageNumber, pickupBurst: pickupBurst, softFlash: softFlash, groundFire: groundFire,

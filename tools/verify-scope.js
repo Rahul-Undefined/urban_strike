@@ -38,10 +38,6 @@ const MODULES = new Set(['CFG', 'THREE', 'World', 'Avatars', 'Net', 'UI', 'FX', 
   'PlayerCtl', 'Weapons', 'WeaponModels', 'Pickups', 'Minimap', 'DevHUD',
   'Game', 'Input', 'Districts', 'Access', 'Deco', 'Merge', 'MetroMap', 'RuralMap', 'io',
   'StaticMerge',
-  /* v9.8: the snapshot wire codec. A genuine cross-IIFE module like the rest —
-     it is loaded by index.html before net.js, and required by server.js and
-     test.js, so one definition serves all three. */
-  'SnapCodec',
   'module', 'exports', 'require', 'define']);
 
 const BUILTINS = new Set(['Math','Date','JSON','Object','Array','String','Number','Boolean','Error',
