@@ -91,6 +91,39 @@ var World = (function () {
       g.fillStyle = 'rgba(60,50,40,0.25)';
       for (var i = 0; i < 8; i++) g.fillRect(Math.random() * s, s - Math.random() * 40, 2 + Math.random() * 3, 20 + Math.random() * 20);
     }) });
+    /* ===== v9.10 — URBAN IS NOT ALL GREY =====
+       Reported as "most are full grey colours". True, and it is one material's
+       fault: M.concrete (#5b5f63) and M.plaster (#8d867a) carry most of the
+       city's wall area between them, and both are desaturated.
+
+       These are FACADE skins only — the same plaster recipe with a colour and a
+       little grime, so they weather like the rest of the map instead of looking
+       painted on. They are applied to building walls, never to slabs, stairs or
+       ground: M.concrete keeps its grey precisely because a staircase that
+       matches its building is the v8.5 defect M.stair exists to prevent.
+
+       Four, not ten. Each new material is a separate merge batch, and Urban
+       sits at 103 draw calls against a budget of 115. Four is what the budget
+       affords with headroom left. */
+    function facadeSkin(base, streak) {
+      return L({ map: canvasTex(256, function (g, s) {
+        noise(g, s, base, 0.26, 900);
+        g.fillStyle = streak;
+        for (var i = 0; i < 9; i++) {
+          g.fillRect(Math.random() * s, s - Math.random() * 48, 2 + Math.random() * 4, 18 + Math.random() * 26);
+        }
+        /* A darker band at the base, where a real wall is dirtiest. Without it
+           a saturated colour reads as flat plastic. */
+        g.fillStyle = 'rgba(0,0,0,0.18)';
+        g.fillRect(0, s - 26, s, 26);
+      }) });
+    }
+    M.facadeTeal  = facadeSkin('#2f6f74', 'rgba(20,45,48,0.28)');
+    M.facadeAmber = facadeSkin('#b5773a', 'rgba(70,40,18,0.26)');
+    M.facadeRose  = facadeSkin('#a85462', 'rgba(64,28,34,0.26)');
+    M.facadeIndigo = facadeSkin('#4a5a91', 'rgba(24,30,54,0.26)');
+    M.facadeOlive = facadeSkin('#6d7a3f', 'rgba(38,44,20,0.26)');
+
     M.metal = L({ map: canvasTex(256, function (g, s) {
       noise(g, s, '#4c5661', 0.3, 800);
       g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 2;

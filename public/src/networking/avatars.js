@@ -170,7 +170,11 @@ var Avatars = (function () {
      THIS DOES NOT CHANGE THE HITBOX. Hit detection uses the CFG.PLAYER capsule,
      which is independent of the visual rig, so aim stays honest — the model is
      easier to SEE, not easier to hit. */
-  var RIG = { x: 1.52, y: 1.22, z: 1.52 };
+  /* v9.10: y 1.22 -> 1.301, tracking CFG.PLAYER.standH from 1.8 to 1.92 by the
+     same 1.0667. The rig is proportioned against the capsule, so scaling one
+     without the other is how a model ends up floating or with its head through
+     the ceiling. x and z are UNCHANGED — a taller operator, not a wider one. */
+  var RIG = { x: 1.52, y: 1.301, z: 1.52 };
 
   /* Growing Y is only safe with a matching lift. The group origin is pinned by
      the network to the CAPSULE CENTRE, and the legs hang half the stance height

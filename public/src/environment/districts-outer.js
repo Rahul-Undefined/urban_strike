@@ -176,9 +176,9 @@ World._buildPart5 = function (T) {
   (function () {
     var X0 = 74, X1 = 82, Z0 = 48, Z1 = 58, TT = 0.3;
     facade('z', Z0, Z0 + TT, X0, X1, 0, 3.8, M.plaster, [{ u0: 77, u1: 78.6, v0: 0, v1: 2.4 }, win(80, 1.5, 1.3, 1.3)]);
-    seg(X0, X1, 0, 3.8, Z1 - TT, Z1, M.plaster);
+    seg(X0, X1, 0, 3.8, Z1 - TT, Z1, M.facadeTeal);
     seg(X0, X0 + TT, 0, 3.8, Z0, Z1, M.plaster);
-    facade('x', X1 - TT, X1, Z0, Z1, 0, 3.8, M.plaster, [win(53, 1.5, 1.6, 1.3)]);
+    facade('x', X1 - TT, X1, Z0, Z1, 0, 3.8, M.facadeAmber, [win(53, 1.5, 1.6, 1.3)]);
     seg(X0, X1, 3.8, 4.05, Z0, 58.66, M.roof);                       // roof extends over stair top
     stairFlight(75.4, 0, 58.7, 1, 0, 12, 0.317, 0.33, 1.2, M.metal);
   })();
@@ -289,15 +289,15 @@ World._buildPart5 = function (T) {
         seg(X1 - TT, X1, B, TOPW, Z0, Z1, M.concrete);
         // spine wall splitting front room from rear room, doorway per flat
         seg(X0 + TT, cx - 4.4, B, TOPW, 85.0, 85.24, M.plaster);
-        seg(cx - 3.2, cx + 3.2, B, TOPW, 85.0, 85.24, M.plaster);
+        seg(cx - 3.2, cx + 3.2, B, TOPW, 85.0, 85.24, M.facadeRose);
         seg(cx + 4.4, X1 - TT, B, TOPW, 85.0, 85.24, M.plaster);
         // party wall between the two flats, with the hall doorway at the deck
-        seg(cx - 0.15, cx + 0.15, B, TOPW, Z0 + 2.6, Z1 - TT, M.plaster);
+        seg(cx - 0.15, cx + 0.15, B, TOPW, Z0 + 2.6, Z1 - TT, M.facadeIndigo);
         // furniture: cover in both rooms of both flats
         box(X0 + 2.4, B + 0.42, 81.4, 2.0, 0.84, 0.9, M.wood); // sofa
         box(X1 - 3.4, B + 0.42, 81.6, 2.0, 0.84, 0.9, M.trim); // sofa
         seg(X0 + TT, X0 + 2.0, B, B + 1.0, 88.6, 89.4, M.plaster); // kitchen run
-        seg(X1 - 2.0, X1 - TT, B, B + 1.0, 88.6, 89.4, M.plaster);
+        seg(X1 - 2.0, X1 - TT, B, B + 1.0, 88.6, 89.4, M.facadeOlive);
         box(X0 + 3.6, B + 0.3, 88.0, 2.0, 0.6, 1.5, M.wood);   // bed
         box(X1 - 4.6, B + 0.3, 88.0, 2.0, 0.6, 1.5, M.wood);
         // floor slab above (or the roof)
@@ -347,7 +347,7 @@ World._buildPart5 = function (T) {
         seg(X1 - TT, X1, B, TOPW, Z0, Z1, M.concrete);
         seg(X0 + TT, X1 - TT, B, TOPW, 85.0, 85.24, M.plaster);
         box(26.6, B + 0.42, 81.6, 2.0, 0.84, 0.9, M.wood);
-        seg(33.0, 36.0, B, B + 1.0, 88.6, 89.4, M.plaster);
+        seg(33.0, 36.0, B, B + 1.0, 88.6, 89.4, M.facadeTeal);
         seg(X0, X1, (g ? W : 3.3) - 0.25, (g ? W : 3.3), Z0, Z1, g ? M.roof : M.concrete);
       }
       seg(X0, X1, W, W + 0.8, Z0 - 0.2, Z0, M.mint);
@@ -578,9 +578,9 @@ World._buildPart5 = function (T) {
       var X0 = 50, X1 = 64, Z0 = 84, Z1 = 93, TT = 0.3;
       facade('z', Z0, Z0 + TT, X0, X1, 0, 4.2, M.plaster,
         [{ u0: 53, u1: 56, v0: 0, v1: 3.2 }, win(60, 1.6, 1.6, 1.2)]);
-      facade('z', Z1 - TT, Z1, X0, X1, 0, 4.2, M.plaster, [win(57, 1.6, 1.6, 1.2)]);
+      facade('z', Z1 - TT, Z1, X0, X1, 0, 4.2, M.facadeAmber, [win(57, 1.6, 1.6, 1.2)]);
       facade('x', X0, X0 + TT, Z0, Z1, 0, 4.2, M.plaster, [{ u0: 87, u1: 89.5, v0: 0, v1: 3.0 }]);
-      seg(X1 - TT, X1, 0, 4.2, Z0, Z1, M.plaster);
+      seg(X1 - TT, X1, 0, 4.2, Z0, Z1, M.facadeRose);
       seg(X0, X1, 4.15, 4.45, Z0, Z1, M.roof);
       // inside: work bays, so the room is worth entering
       box(53, 0.55, 88, 2.4, 1.1, 1.2, M.wood);
@@ -1047,7 +1047,7 @@ World._buildPart5 = function (T) {
       var B = lvl === 0 ? 0.3 : 3.3, H = B + 2.6;
       // unit dividers, north side
       [56, 62, 68, 74, 80].forEach(function (dx) {
-        seg(dx - 0.15, dx + 0.15, B, H, -43.7, AZ0, M.plaster);
+        seg(dx - 0.15, dx + 0.15, B, H, -43.7, AZ0, M.facadeIndigo);
       });
       [56, 62, 68, 74, 80].forEach(function (dx) {
         seg(dx - 0.15, dx + 0.15, B, H, AZ1, -22.3, M.plaster);
@@ -1167,7 +1167,7 @@ World._buildPart5 = function (T) {
   seg(-94, -44, 0.02, 0.05, -78, -62, M.asphalt, NC);                     // runway
   for (var rm = -92; rm < -46; rm += 8)
     seg(rm, rm + 4, 0.05, 0.07, -70.4, -69.6, M.sidewalk, NC);            // centreline
-  building(-92, -74, -92, -80, 2, M.plaster, M.roof);                     // terminal
+  building(-92, -74, -92, -80, 2, M.facadeOlive, M.roof);                     // terminal
   // hangars: open-fronted sheds
   [[-68, -94], [-56, -94]].forEach(function (h) {
     seg(h[0], h[0] + 10, 0, 6.2, h[1], h[1] + 0.3, M.metal);
@@ -1262,9 +1262,9 @@ World._buildPart5 = function (T) {
     }
     function shed(x, z) {
       seg(x - 1.6, x + 1.6, 0, 2.5, z - 1.5, z - 1.35, M.plaster);
-      seg(x - 1.6, x + 1.6, 0, 2.5, z + 1.35, z + 1.5, M.plaster);
+      seg(x - 1.6, x + 1.6, 0, 2.5, z + 1.35, z + 1.5, M.facadeTeal);
       seg(x - 1.6, x - 1.45, 0, 2.5, z - 1.5, z + 1.5, M.plaster);
-      seg(x + 1.45, x + 1.6, 0, 2.5, z - 1.5, z - 0.5, M.plaster);   // doorway gap
+      seg(x + 1.45, x + 1.6, 0, 2.5, z - 1.5, z - 0.5, M.facadeAmber);   // doorway gap
       seg(x - 1.8, x + 1.8, 2.5, 2.72, z - 1.7, z + 1.7, M.roof, { collide: false });
     }
     function pylon(x, z) {

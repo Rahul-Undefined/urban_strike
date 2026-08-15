@@ -236,6 +236,25 @@ var Game = (function () {
          The server rejects the launch in bot modes and the toast says why, so
          the key never silently does nothing. */
       if (e.code === 'KeyT') { Weapons.launchDrone(); return; }
+      /* ===== v9.11 PING WHEEL =====
+         Hold Z for the wheel, or tap it for the default "enemy spotted" — the
+         call you make most often should not cost a menu. The wheel is six
+         choices on the number row while held, which works on a keyboard without
+         needing a mouse gesture that would fight with aiming.
+
+         Y, not Z: Z already rides the lift, and verify-models refuses two
+         actions on one key — the same gate that caught the drone on B in
+         v9.4. The free letters were Y, I, J, K, L, N, O, P and U; Y sits
+         beside T (drone) and R (reload), keeping the utility cluster together
+         under the left hand. */
+      if (e.code === 'KeyY' && !pingWheel) { pingWheel = true; UI.setPingWheel(true); return; }
+      if (pingWheel) {
+        var slot = { Digit1: 'enemy', Digit2: 'here', Digit3: 'going',
+                     Digit4: 'need', Digit5: 'careful', Digit6: 'loot' }[e.code];
+        if (slot) { sendPing(slot); pingWheel = false; UI.setPingWheel(false); return; }
+      }
+      if (spectating && (e.code === 'ArrowRight' || e.code === 'Space')) { e.preventDefault(); cycleSpectate(1); return; }
+      if (spectating && e.code === 'ArrowLeft') { e.preventDefault(); cycleSpectate(-1); return; }
       // PTT is registered once, at document level, in ui.js wireV43() — it must
       // work in the lobby too, so it does NOT live here. The old duplicate also
       // shadowed the smoke grenade, which had been unbindable ever since.
@@ -255,6 +274,7 @@ var Game = (function () {
     document.addEventListener('keyup', function (e) {
       if (e.code === 'Tab') { UI.showScoreboard(false); return; }
       if (e.code === 'KeyG') { Weapons.releaseCook(); return; }
+      if (e.code === 'KeyY' && pingWheel) { pingWheel = false; UI.setPingWheel(false); sendPing('enemy'); return; }
       var map2 = {
         KeyW: 'fwd', KeyS: 'back', KeyA: 'left', KeyD: 'right',
         ShiftLeft: 'sprint', ShiftRight: 'sprint', Space: 'jump',
@@ -422,6 +442,70 @@ var Game = (function () {
     if (deathInterval) { clearInterval(deathInterval); deathInterval = null; }
   }
 
+  /* ===== SPECTATOR CAMERA (v9.11) =====
+     Deliberately a CHASE camera on a real player rather than a free-fly.
+     Free-fly in a live match is a wallhack: an eliminated player on voice comms
+     could read the whole map for their surviving team-mates. Following someone
+     who is still playing shows you only what they can see, which is the same
+     information their team already has.
+     Left click / right arrow cycles to the next survivor. */
+  var spectating = false, specIdx = 0, specId = null;
+
+  /* The ping's world point comes from the player's OWN aim ray, so a call-out
+     lands on the thing being called out rather than at the caller's feet. If
+     the ray hits nothing — pinging the sky — it falls back to a point 40 m
+     ahead, which still gives a usable bearing. */
+  var pingWheel = false;
+  function sendPing(kind) {
+    if (!PlayerCtl.alive) return;
+    var o = camera.position.clone();
+    var d = camera.getWorldDirection(new THREE.Vector3());
+    var hit = World.rayHit(o, d, 200);
+    var pt = hit ? hit.point : o.clone().add(d.multiplyScalar(40));
+    Net.ping(kind, pt.x, pt.y, pt.z);
+  }
+
+  function spectateTargets() {
+    var out = [], myTeam = Net.getMyTeam();
+    Net.eachRemote(function (id, r) { if (r.alive) out.push({ id: id, r: r, ally: myTeam && r.team === myTeam }); });
+    /* Team-mates first: in a squad mode the question you actually have is
+       whether your side is still alive. */
+    out.sort(function (a, b) { return (b.ally ? 1 : 0) - (a.ally ? 1 : 0); });
+    return out;
+  }
+  function startSpectating() {
+    spectating = true; specIdx = 0; specId = null;
+    UI.toast('Spectating \u00b7 click to change view');
+  }
+  function stopSpectating() { spectating = false; specId = null; UI.clearSpectateName(); }
+  function cycleSpectate(dir) {
+    if (!spectating) return;
+    var t = spectateTargets();
+    if (!t.length) return;
+    specIdx = ((specIdx + (dir || 1)) % t.length + t.length) % t.length;
+    specId = t[specIdx].id;
+  }
+  /* Runs from the frame loop while eliminated. The camera sits behind and above
+     the subject and looks where they look, so the view reads as "over their
+     shoulder" rather than as a detached drone. */
+  function updateSpectator(dt) {
+    if (!spectating) return false;
+    var t = spectateTargets();
+    if (!t.length) { UI.setSpectateName('\u2014 no survivors \u2014'); return true; }
+    if (specIdx >= t.length) specIdx = 0;
+    var cur = t[specIdx];
+    specId = cur.id;
+    var r = cur.r;
+    var back = 3.4, up = 1.9;
+    var tx = r.renderPos.x + Math.sin(r.ry) * back;
+    var tz = r.renderPos.z + Math.cos(r.ry) * back;
+    var ty = r.renderPos.y + up;
+    camera.position.lerp(new THREE.Vector3(tx, ty, tz), Math.min(1, dt * 6));
+    camera.lookAt(r.renderPos.x, r.renderPos.y + 1.1, r.renderPos.z);
+    UI.setSpectateName((Net.peerName(cur.id) || 'Operator') + (cur.ally ? '  \u00b7 your side' : ''));
+    return true;
+  }
+
   function onLocalDeath(d) {
     PlayerCtl.alive = false;
     clearInput();
@@ -435,6 +519,15 @@ var Game = (function () {
     if (d && d.out) {
       if (deathInterval) { clearInterval(deathInterval); deathInterval = null; }
       UI.setDeathEliminated();
+      /* ===== v9.11 SPECTATE AFTER ELIMINATION =====
+         Last Stand gives one life. Before this, an eliminated player got a
+         death screen and then sat looking at it for up to eight minutes — the
+         mode's whole tension is watching it come down to the last two, and the
+         player who cared most about that was the one who could not see it.
+         Now the camera follows a survivor: team-mates first, because in squads
+         you want to see whether your side is still in it, and anyone still
+         alive otherwise. */
+      startSpectating();
       return;
     }
     var left = CFG.MATCH.respawnDelay;
@@ -591,6 +684,12 @@ var Game = (function () {
       });
     }
 
+    /* v9.11: while eliminated the camera is driven by the spectator instead of
+       the player controller. Placed here, after everything else has updated, so
+       it follows the subject's INTERPOLATED position for this frame rather than
+       last frame's. */
+    updateSpectator(dt);
+
     /* v9.5: never draw into a dead context. Every call throws while the GPU
        side is gone, which floods the console and hides the one message that
        matters — the context-lost warning. */
@@ -606,6 +705,8 @@ var Game = (function () {
     onMatchStart: onMatchStart,
     onLocalSpawn: onLocalSpawn,
     onLocalDeath: onLocalDeath,
+    cycleSpectate: cycleSpectate,
+    stopSpectating: stopSpectating,
     onMatchEnd: onMatchEnd,
     onBackToLobby: onBackToLobby,
     setShadows: setShadows

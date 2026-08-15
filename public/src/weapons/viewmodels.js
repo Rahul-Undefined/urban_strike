@@ -224,8 +224,16 @@ var WeaponModels = (function () {
       part(g, 0, -0.005, 0.04, 0.066, 0.1, 0.44, green);               // one-piece shell
       cylPart(g, 0, 0.012, -0.34, 0.017, 0.34, dark);                  // barrel
       part(g, 0, -0.075, -0.12, 0.05, 0.09, 0.07, green);              // forward grip
-      cylPart(g, 0, 0.085, -0.02, 0.03, 0.26, gunmetal);               // integral scope tube
-      cylPart(g, 0, 0.085, -0.16, 0.034, 0.028, steel);                // objective
+      /* v9.9: the integral optic is GONE, for the same reason the attachment
+         optics went in v9.7. A 0.26 m tube sitting 0.085 above the receiver is
+         directly in the sight line — reported as "a scope of no use that blocks
+         the shooting". The AUG's real distinguishing features are its bullpup
+         layout and its handling, and it keeps both: the magazine behind the
+         grip, the short overall length, and the tighter hip spread and lower
+         adsFov in weapons.config.js. Its identity was never the tube.
+         A low, flat rail stands in for it — visible, and nowhere near the
+         centre of the screen. */
+      part(g, 0, 0.052, -0.10, 0.026, 0.018, 0.22, dark);              // low rail
       var magA = new THREE.Group(); magA.position.set(0, -0.1, 0.16); g.add(magA);
       part(magA, 0, 0, 0, 0.044, 0.13, 0.06, tan);                     // mag behind the grip
       g.userData.mag = magA; g.userData.magHome = magA.position.clone();
