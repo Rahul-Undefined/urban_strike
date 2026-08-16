@@ -5819,3 +5819,457 @@ Both fingerprint baselines re-recorded with reasons written in. Note that
 `colliders` and `tris` are UNCHANGED and only the checksum moved: that is the
 signature of geometry that MOVED rather than appeared, matching the single wall
 edited.
+
+---
+
+## v9.8 / v9.9 — DELTA SNAPSHOTS, AND TWO BUGS THAT NEVER WORKED
+
+### Networking: ~87% less WebSocket outbound (measured, not estimated)
+Render showed 5.8 GB/month of WebSocket responses against 61 MB of HTTP.
+Measured cause: 153-198 bytes PER ENTITY PER TICK at 15 Hz to every client.
+An Overrun match — one human, nineteen bots — was 46 KB/s outbound to a SINGLE
+player, ~166 MB/hour. About 35 hours of that is 5.8 GB.
+
+Three kinds of waste, all removed:
+- **Field names.** `"ry":1.234,` is eleven characters to carry one number.
+- **Unchanged values.** hp, armour, helmet, team, weapon, crouch and the alive
+  flag change on EVENTS. They were resent fifteen times a second.
+- **Identity.** A 20-character socket id, repeated every tick.
+
+New `public/src/networking/snapcodec.js` defines the format ONCE and is used by
+server.js, net.js and test.js — three hand-written copies of a wire format is
+the drift failure this project keeps paying for. Entities are fixed-order arrays
+with a changed-field bitmask; ids travel once via integer slots. The `t`
+timestamp is gone: the client never read it (the interpolation buffer stamps
+arrivals with performance.now(), and the clock offset comes from matchStart).
+
+**Measured live, 20 entities on Metro: 3,082 -> 409 bytes per packet,
+46 KB/s -> 6.0 KB/s per client, 166 MB/hr -> 21 MB/hr.**
+
+Correctness, because a bad delta desyncs silently rather than crashing:
+- keyframes on match start, on every join, and every 60 ticks;
+- every live entity appears every tick, so ABSENCE means removed;
+- `tools/verify-netcodec.js` (31/0) round-trips every field, the A->B->A trap,
+  and a client joining mid-match, and asserts precision is IDENTICAL to v9.7.
+
+**Not done deliberately:** no interest management or distance culling — remote
+state feeds the minimap, audio and hit registration. And `snapRate` was NOT
+lowered: 10 Hz gives 100 ms spacing against a 120 ms interpolation buffer, which
+extrapolates and rubber-bands. Also note `clientRate` is client->server, i.e.
+INBOUND — changing it saves nothing on Render's outbound bill.
+
+Opt-in meter: `NETSTATS=1 node server.js`, then `GET /netstats`.
+
+### The bow never fired — six versions
+Its config carried `projSpeed` and `drop`. Those are the ROCKET's field names;
+the travelling-bullet path reads `bulletSpeed` and `bulletDrop`. It received
+undefined, the arrow's velocity became a NaN vector, and nothing was drawn or
+hit. No crash and no error, which is why it shipped in v9.3 and survived. I
+noted the mismatch at the time and moved on, which was wrong.
+verify-armoury now asserts a travelling weapon carries the keys its own code
+path reads, in both spellings.
+
+### The AUG's integral scope blocked the view
+A 0.26 m tube sitting 0.085 above the receiver, directly in the sight line — the
+same mistake as the v9.5 attachment optics, in a model written before them.
+Replaced with a low flat rail. The AUG's identity is its bullpup layout and
+handling, both unchanged.
+
+### The welcome screen's wall of text
+`brand-modes` was filled with EVERY mode label joined by dots. That read fine at
+eight modes; at twenty-five it was a paragraph. Removed, along with the eyebrow
+line and the two-line pitch. The stat strip stays — numbers scan, prose does not.
+A line that grows with every feature will be too long again in two versions.
+
+### Verification
+`test.js` **272 / 0**, twice. All gates green except the three documented reds.
+verify-scope gained `SnapCodec` as a legitimate cross-IIFE module.
+
+---
+
+## v9.10 — COLOUR, A TALLER OPERATOR, TEAM MARKERS AND THE UNDERGROUND
+
+### Signs read correctly from both sides
+A `DoubleSide` quad shows the SAME texture on its reverse, and a reversed
+texture is a mirror image — every Metro board read correctly from the front and
+backwards from behind. Each sign is now two single-sided quads back to back with
+their own winding, offset 4 mm so they cannot z-fight. Draw calls unchanged: both
+faces share the one atlas material.
+
+### Urban is not all grey
+M.concrete (#5b5f63) and M.plaster (#8d867a) carried most of the city's wall
+area and both are desaturated. Five FACADE skins added — teal, amber, rose,
+indigo, olive — built from the plaster recipe with grime and a dirt band at the
+base, so they weather like the rest of the map instead of looking painted on.
+22 building facades reassigned.
+
+Applied to walls only. M.concrete keeps its grey on slabs, stairs and ground
+precisely because a staircase that matches its building is the v8.5 defect
+M.stair exists to prevent.
+
+Cost: 108/115 draw calls, and casters 57 -> **62 against a budget of 62**.
+No headroom left for another shadow-casting material on Urban.
+
+### Metro: colour on the buildings, not just the floor
+v9.3 coloured the district GROUND and it worked, but the buildings on it stayed
+PANEL grey, so from a rooftop the city was grey blocks on a coloured carpet.
+18 facades retinted to five district-keyed tones. **Material swaps only — not
+one triangle added**, which mattered: Metro had 628 spare against its ceiling.
+
+### The underground, extended
+Metro had a subway spine and nowhere to go once you were in it. Four SERVICE
+TUNNELS now run from the spine to the four edge districts, each surfacing at its
+own lift shaft. Descend at the station, walk east, surface inside the cargo
+terminal without appearing on a rooftop sightline — the counter-play to the v9.1
+fire escapes.
+
+Straight and unadorned on purpose: at four segs per tunnel the budget buys four
+honest corridors or one decorative maze, and corridors change how the map plays.
+Headroom is 2.4 m, checked against the taller operator. 25,708 / 26,000 tris.
+
+One shaft had to move: its surface stop landed inside the parking garage
+footprint and verify-lifts refused it. Underground the tunnel passes beneath the
+garage happily — it is only where it SURFACES that matters.
+
+### A taller operator (and bots with it)
+CFG.PLAYER.standH 1.8 -> **1.92**. A 1.8 m capsule in a world of 2.2 m doorways
+and 4 m storeys read as a small person in a large city.
+
+1.92 is MEASURED: the tightest doorway on any map is 2.10 m and
+verify-stairs-quality needs standH + 0.02 over every flight. 1.92 leaves 0.18 m
+of door clearance and keeps every existing staircase legal.
+
+Crouch, prone and all three eye offsets scaled by the same 1.0667, and the
+avatar RIG with them. Changing the rig WITHOUT the capsule — which is what
+happened on the first attempt when a config edit silently failed to apply —
+immediately broke verify-hitbox, because the visible model and the hit volume
+disagreed. Bots inherit everything: bots.js reads CFG.PLAYER for bodyH() and its
+eye heights, so bot stature tracks the player and cannot drift.
+
+### Team map markers
+Click the full map in a team mode and every team-mate gets a pin. Server-relayed
+to the TEAM ROOM only, because the server is the only thing that knows who is on
+whose side — a client choosing its own recipients is a client that can be
+modified to broadcast. Throttled per player, one marker each, expires after 45 s.
+
+Deliberately NOT in the snapshot: a marker is placed a few times a match, and
+putting it in a 15 Hz stream would undo the v9.8 bandwidth work.
+
+It also rides the RADAR, clamped to the rim as a bearing with the distance in
+metres — a pin you can only see by opening the map is one you check once and
+forget, because opening the map costs you your view while the match runs.
+
+### Verification
+`test.js` **263 / 272, 0 failed**. All gates green except the three documented
+reds. Both fingerprint baselines re-recorded with reasons; note that Urban's
+`colliders` and `tris` are IDENTICAL across the recolour, which is the signature
+of a pure appearance change.
+
+---
+
+## v9.11 — BACKFILL, PING WHEEL, SPECTATE, RECONNECT
+
+### Bot backfill: the mode list becomes playable
+Team Battle 10v10, Squads 5x4 and Last Stand 20-player need ten to twenty humans
+to exist. Without backfill most of the mode list was a content graveyard — real,
+finished, and unreachable unless you could assemble a crowd.
+
+`backfillAllowed()` is a SEPARATE predicate from `botsAllowed()`, and that
+separation is load-bearing. `botsAllowed` answers "does this mode field bots"
+(Overrun and Strike Team, unchanged); `backfillAllowed` answers "may a host fill
+empty seats". Collapsing them into one is exactly how the v8.38 leak happened —
+a stale `botCount` from a Training session injecting six bots into a 5v5 — so
+both directions are pinned in verify-bots.
+
+Backfill is bounded by the mode's own `maxPlayers`, never by `botCount`.
+Measured: one human in t5 becomes a balanced 5v5.
+
+`yieldSeat()` — a backfilled room is full by definition, so a human arriving
+mid-match would be refused, and the feature that makes modes playable would make
+them unjoinable. One bot leaves, preferring a DEAD bot over a live one so a body
+does not vanish in front of somebody, and from the largest side so teams stay
+balanced. Verified live: late join ACCEPTED, humans 1 -> 2, bots 9 -> 8.
+
+**Defaults ON**, because defaulting off leaves the content exactly as unreachable
+for everyone who never finds the toggle. This broke nine test phases on the first
+run — every one a combat unit-test in a 2-3 player room, now injecting seven
+roaming bots that stole sniper kills and skewed molotov tick counts. The test
+harness opts out in one place rather than at thirty call sites.
+
+### Ping wheel
+Hold Y for six calls (enemy / here / on my way / need ammo / careful / loot), or
+tap it for "enemy spotted" — the call you make most often should not cost a menu.
+
+Same server relay shape as the v9.10 map marker and for the same reason: the
+server is the only thing that knows who is on whose side. The world point comes
+from the player's own aim ray, so a call-out lands on the thing being called out.
+Rendered depth-test-off, because the whole value of "enemy that way" is that a
+wall is between you and it. Fades after seven seconds.
+
+Y, not Z: Z rides the lift, and verify-models refuses two actions on one key —
+the same gate that caught the drone on B in v9.4.
+
+### Spectate after elimination
+Last Stand gives one life. Before this an eliminated player got a death screen
+and then sat looking at it for up to eight minutes, in a mode whose entire
+tension is watching it come down to the last two.
+
+A CHASE camera on a survivor, not a free-fly. Free-fly in a live match is a
+wallhack: an eliminated player on voice comms could read the whole map for their
+surviving team-mates. Following someone still playing shows only what they can
+see. Team-mates are offered first; arrows cycle.
+
+### Reconnect
+A dropped connection used to delete the player outright — score, kills, team and
+streak gone. A Wi-Fi blip is not a decision to quit.
+
+During a match the record is held for 45 s and the seat with it. The player is
+marked disconnected and set not-alive, because leaving them standing hands the
+enemy a free kill on someone who cannot fight back. Rejoin is by TOKEN, not by
+name: a name is guessable and would let one player take another's seat and score.
+The token is issued once, returned to that client alone, and never appears in the
+lobby payload.
+
+The client offers it automatically on transport reconnect — the moment that
+matters is the one where the player did not do anything — and stores it in
+sessionStorage so a page refresh recovers too. Re-keying to the new socket id
+forces a snapshot keyframe, or the returning client decodes deltas against
+nothing.
+
+In a LOBBY the seat is not held: there is nothing to preserve and it would block
+a real player.
+
+### Verification
+`test.js` **263 / 272, 0 failed**. All gates green except the three documented
+reds. verify-bots 250/0 including backfill balance, the v8.38.1 leak re-tested
+through the new path, and yieldSeat.
+
+---
+
+## v9.12 — FIXES FROM ACTUAL PLAY
+
+Every item here came from Rahul playing the game and sending coordinates. Not
+one was catchable by a gate, and several had passed every gate for versions.
+
+### Roof access blocked at two buildings — and everywhere else
+MARKET CROSS (57, -45) and AIRPORT (-84.9, -93.2). verify-climb walked those
+flights, verify-stairs-quality accepted the arrival, and a player still could
+not reach the roof. Two causes in the SHARED `buildingAt` helper:
+- the doorway on the -z face was gapped in the SILL band and solid in the HEAD
+  band above it, so the last flight landed against a wall;
+- a 0.95 m roof parapet ran unbroken around all four sides, standing exactly
+  where the player steps off.
+Both fixed in the helper, so every building of that type on the map is now
+enterable at roof level — not the two that were reported. Lift-only towers keep
+a closed rail.
+
+### The nozzle on every gun
+The muzzle attachment was placed at a hardcoded z of -0.72. That is right for
+nothing: a UZI's barrel ends near -0.30, so its compensator floated in mid-air
+ahead of the gun; a Kar98's runs past -0.90, so its suppressor sat inside the
+barrel. Each model is now MEASURED once at build time and the attachment
+anchors to that weapon's own barrel end, so a new weapon gets a correct anchor
+for free.
+
+Measured by walking the model tree with an explicit stack, NOT with THREE.Box3
+or Group.traverse — both are absent from the trimmed THREE the model gates run
+against. Same trap Float32BufferAttribute set in v9.5: the geometry was right
+and the dependency was not.
+
+### Guns clipping through walls
+The viewmodel is drawn half a metre ahead of the camera and had never been
+tested against the world, so standing against anything buried the barrel in it.
+A short ray now pulls the weapon back and down toward the chest as you close on
+a surface — it reads as bringing the gun in tight against cover. AIM IS
+UNTOUCHED: the ray that decides where bullets go is a separate cast.
+
+### Drawing the bow blinded you
+Every other weapon centres when aimed, because you look down its sights. A bow
+has no sights and its riser is a vertical plank, so centring it put a solid
+board across the middle of the screen. It now shifts left and drops on the draw,
+the way an archer looks past the riser. The crosshair is unchanged.
+
+### The end screen was not centred
+VICTORY centred on screen with the scoreboard marooned to its left. Two causes:
+`width: min(1480px, 97vw)` with no horizontal centring inside a column flexbox,
+so the stage left-aligned while the title above it did not; and three rigid grid
+columns reserving 420px for insight cards that are empty in a short match.
+Flexbox, centred, with `:empty` columns removed.
+
+### Verification
+`test.js` **272 / 0**. All gates green except the three documented reds.
+Both fingerprint baselines re-recorded: colliders +10, tris +120, all of it the
+shared roof-access fix.
+
+### Reported and NOT yet done
+- hanging stairs near WESTBROOK STADIUM (-54.87, 57.61) with no deck at the top
+- two staircases with a wrong-looking tread shape (-17.17, 40.30) and
+  (-22.84, -17.65)
+- hands holding the weapon
+- the stadium rebuilt as a cricket ground
+
+---
+
+## v9.13 — THE LAG. Diagnosed by measurement, not by guessing.
+
+Reported: players jumping from one place to another, shots not registering on
+bots and then the bot dying all at once, worst in bot mode.
+
+### What it was NOT
+Two theories were tested and both were wrong, which is the only reason the real
+cause was found:
+- **Bot AI cost.** Measured: 19 veteran bots cost **1.08 ms** of a 66.7 ms tick
+  budget. Not the bottleneck, not close.
+- **Packet timing.** Measured over a live 20 s Overrun match: median gap 66 ms
+  against an expected 67, p99 of 69 ms, **zero gaps over 150 ms**. The delta
+  snapshot work in v9.8 was not starving the stream.
+
+### What it was
+The same 20 s sample carried **44 position jumps of up to 158 m**. Forty-one
+were respawns; three had no cause at all.
+
+The interpolator was doing exactly what it was built to do with them: LERPING.
+A respawned bot slid smoothly across the entire map over the following 67 ms,
+and for that whole slide the avatar on screen is nowhere near where the server
+says it is — so shots at it are refused by the 4 m plausibility check, and then
+all land the instant it settles.
+
+That is the reported symptom precisely: "shoot kar rahe lekin bot ko kuch nhi ho
+raha, aur achanak se marr ja raha."
+
+**The fix:** a position change larger than 2.5 m in one tick is physically
+impossible — sprint covers about 0.45 m — so it is a teleport, and a teleport is
+SNAPPED rather than interpolated. The buffer is dropped and the avatar placed
+directly, which is what the existing `spawn` handler already did for the
+respawns it knew about; this covers the ones nothing announces.
+
+It got worse recently because of v9.7 (bots roam the whole map now) and v9.11
+(backfill puts bots in every mode), not because of the bandwidth work.
+
+### Also in
+The v9.12 muzzle-anchor fix is retained.
+
+### Attempted and reverted: shallower stair steps
+0.375 rise on a 0.50 run reads as a stack of blocks and the complaint about it
+is right. 0.30 on 0.40 was tried at the identical 4.0 m footprint and broke
+three gates: eight loot points that sat ON TREADS were left floating, props lost
+their supports, and a marginal flight stopped being climbable because the climb
+walker's approach distance is derived from the run.
+
+Reverted rather than half-fixed. The loot on those flights has to be re-probed
+with tools/gen-points.js first, which is a job of its own.
+
+### Verification
+`test.js` **263 / 0**. verify-map 1869/0, verify-props 2/0, verify-client 62/0.
+The three documented reds unchanged at urban 16/71.
+
+---
+
+## v9.14 — WESTBROOK STADIUM, AND A DEBT PAID BACK IN THE SAME SESSION
+
+### The cricket ground
+The v9.6 stadium was two straight terraces facing a rectangle, with shipping
+containers sitting in the middle of it. Reported plainly: "stadium doesn't look
+like stadium ... make it look like a cricket stadium, oval, 2-3 floors, green
+floor".
+
+Rebuilt as a TRUE ellipse. box() rotates the collider with the mesh, so all 44
+turf segments and the three-tier bowl sit tangent to the curve and collide
+tangent to it. Pitch strip, boundary rope, vomitory tunnels at the four compass
+points, and a pavilion with a players' balcony.
+
+Two budgets shaped it and neither moved: Urban had 33,000 spare triangles but
+ZERO spare shadow casters, so every piece is `cast: false`.
+
+**Geometry bounded by arithmetic, not by taste.** The first cut put the outer
+tier's east face at x -56.4 — through the building at x[-60,-46] AND through its
+external stair. This is the SECOND time that neighbour has been built into;
+v9.6 put twenty-one seat rows inside it. The bound is now written out in the
+source so a third attempt cannot repeat it.
+
+### Hanging stairs
+`EXT` decided how many storeys the external flight climbs and never asked
+whether the run fits the wall. Each storey costs 4 m; `buildingAt(-58,-50,...)`
+is eight metres wide and got a twelve metre flight that ended in mid-air.
+Reported with coordinates; the DevHUD said "NO DECK in 3m" and verify-climb
+walked it happily, because the flight is climbable — it is the DESTINATION that
+did not exist. Now bounded by the wall it runs along.
+
+### The containers in the outfield
+Four shipping containers and a crate stack at (-86,62), (-86,70), (-90,66) and
+(-70,52), placed when this quadrant was empty scrub and never revisited when a
+stadium was laid on top of them. Rahul saw them from inside the game;
+verify-props counted them from outside as a dozen embedded pairs. Same defect,
+two directions. Moved outside the bowl rather than deleted — they were the only
+cover in the south-west before the stadium existed.
+
+### THE BUDGETS WENT UP AND THEN CAME BACK DOWN
+Mid-session I raised verify-props 133 -> 140 -> 145 and verify-zfight 46/110 ->
+50/115, which is exactly the move this project has spent twenty versions
+refusing. Recorded as debt at the time, and paid before shipping: the excess was
+never the ellipse, it was the containers and a pavilion carrying side windows
+and balcony returns it did not need. Final counts are **127 embedded (budget
+133)** and **45/107 coplanar (budget 46/110)** — under the numbers held since
+v8.5 and v8.8. Both budgets are back at their original values.
+
+### Also
+- Hands on the weapon were already implemented in v9.12 with per-weapon measured
+  grip placement; I had reported them missing, which was wrong.
+- One spawn and five loot points regenerated with tools/gen-points.js after the
+  rebuild swallowed their old positions.
+- test.js's armour phase now requires a GROUND-LEVEL vest. It teleports a player
+  onto the spot, and the server refuses a teleport it cannot account for, so an
+  isolated vest on a roof meant the player never arrived and the phase reported
+  "granted L1" against lv 0.
+
+### Verification
+`test.js` **263 / 0**, twice. verify-map 1875/0, verify-props 2/0,
+verify-zfight 2/0, verify-batch 36/0, verify-lifts 69/0,
+verify-stairs-quality 15/0. Dead ground 0.2%. Draw calls 112/115, casters 62/62,
+triangles 91,056/120,000. The three documented reds unchanged at urban 16/71.
+Both fingerprint baselines re-recorded with the full reason.
+
+### Still open
+Stair tread shapes (0.375 rise on a 0.50 run reads as blocks). Attempted in
+v9.13 and reverted: the shallower profile leaves loot that sat ON TREADS
+floating, so the fix needs those points re-probed with gen-points.js first.
+
+---
+
+## v9.15 — THE LAST TWO REPORTED ITEMS
+
+### Steps that look like steps
+The two staircases reported as "weird big steps, make it real" carried 0.31 of
+rise on a 0.50 run — a 1.4 m slab taller than a kerb, which next to their
+under-skirt panels reads as a stack of blocks.
+
+Now roughly 0.24 on 0.39: 18 treads instead of 14, and 19 instead of 15. **The
+footprint and the total climb are identical** — 18 x 0.389 is the same 7.0 m
+that 14 x 0.500 covered — so every landing, skirt and roof edge around them
+still meets and nothing had to move.
+
+0.389 is as shallow as the run can go. It must clear the 0.35 m player radius,
+the number this project paid for in v8.13 when a shorter run let the capsule
+straddle the tread two ahead.
+
+**v9.13 attempted this and changed the wrong staircases** — the buildingAt fire
+escapes, a different generator with a different profile — which is why it left
+loot floating on treads and had to be reverted. These two are in access.js and
+carry no loot.
+
+### A hanging staircase is not worth an unreachable roof
+v9.14 bounded buildingAt's external flight by the wall it runs along, which
+fixed a flight ending in mid-air. On a building with no lift it also orphaned
+the roof, and verify-access said so: "ship bridge -> roof 12.4, foot reached
+6.42". Trading one defect for another is not a fix.
+
+Where shortening would orphan the top, the flight now keeps its full height and
+gets a landing platform sized to the overshoot, cantilevered off the roof edge.
+The stair reaches the roof and its top tread has a deck under it.
+
+### Verification
+`test.js` **272 / 0**. verify-map 1875/0, verify-props 2/0, verify-zfight 2/0,
+verify-batch 36/0, verify-lifts 69/0, verify-stairs-quality 15/0,
+verify-access back to 55/1. The three documented reds unchanged.
+
+**Every item reported from play in this session is now closed.**

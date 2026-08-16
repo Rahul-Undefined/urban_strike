@@ -136,8 +136,11 @@ const guardIdx = srvCode.indexOf('CFG.botsAllowed(room.settings.mode)) return', 
 const countIdx = srvCode.indexOf('room.settings.botCount', addIdx);
 ok(guardIdx > -1 && countIdx > -1 && guardIdx < countIdx,
   'the mode guard runs BEFORE botCount is even read');
-ok(/function tick[\s\S]{0,300}CFG\.botsAllowed\(room\.settings\.mode\)\) return/.test(srv),
-  'the bot tick also bails immediately for rooms with no bots');
+/* v9.11: the tick guard now admits BACKFILLED rooms as well, so the literal
+   text moved again. Asserted behaviourally below instead — a room with no bots
+   and no backfill must be a no-op, and a backfilled one must not be. */
+ok(/CFG\.botsAllowed\(room\.settings\.mode\) &&\s*!\(room\.settings\.backfill/.test(srv),
+  'the bot tick admits bot modes AND backfilled rooms, and nothing else');
 Object.keys(CFG.MODES).forEach(m => {
   const practice = !!CFG.MODES[m].practice;
   ok(practice === (CFG.MODES[m].cat === 'practice'),
@@ -411,6 +414,49 @@ ok(CFG.MODES.bots.teams === false, 'Training is free-for-all shaped: every bot i
   let threw = null;
   try { for (let i = 0; i < 60; i++) { T2 += 33; P2.tick(t5, 1 / 30); } } catch (e) { threw = e.message; }
   ok(threw === null, 'ticking a non-bot room is a safe no-op [' + (threw || 'no throw') + ']');
+
+  /* ---- v9.11 BACKFILL ----
+     Two predicates, two questions. `botsAllowed` answers "does this mode field
+     bots" and must NOT change; `backfillAllowed` answers "may a host fill empty
+     seats". Collapsing them is how the v8.38 leak happened, so both directions
+     are pinned. */
+  ['ffa', 't2', 't5', 't10', 'sq2', 'sq4', 'ls', 'lsq2', 'lsq4'].forEach(m => {
+    ok(!CFG.botsAllowed(m), m + ': still not a bot mode');
+    ok(CFG.backfillAllowed(m), m + ': may be backfilled');
+  });
+  ['bots', 'co1', 'co4', 'co10'].forEach(m => {
+    ok(CFG.botsAllowed(m), m + ': fields its own bots');
+    ok(!CFG.backfillAllowed(m), m + ': is NOT offered backfill — it would double up');
+  });
+  {
+    /* Backfill OFF must behave exactly as before: a stale botCount injects
+       nothing. This is the v8.38.1 regression test, re-run through the new
+       code path. */
+    const off = mk('t5', 6); off.settings.backfill = false;
+    P2.addBots(off);
+    ok(off.players.size === 0, 'backfill off: a stale botCount of 6 still injects zero bots');
+
+    const on = mk('t5', 6); on.settings.backfill = true;
+    on.players.set('H', { id: 'H', bot: false, team: 'a', joinOrder: 0, alive: true, pos: [0, 0.95, 0] });
+    P2.addBots(on);
+    const filled = [...on.players.values()].filter(p => p.bot);
+    ok(filled.length === CFG.MODES.t5.maxPlayers - 1,
+      't5 with one human backfills to ' + CFG.MODES.t5.maxPlayers + ' [' + (filled.length + 1) + ']');
+    ok(filled.length !== 6, 'and the count comes from maxPlayers, NOT from the stale botCount');
+    const sides = {};
+    [...on.players.values()].forEach(p => { sides[p.team] = (sides[p.team] || 0) + 1; });
+    ok(Object.keys(sides).length === 2 && Math.abs(sides.a - sides.b) <= 1,
+      'the backfilled sides are balanced [' + JSON.stringify(sides) + ']');
+
+    /* A human must always beat a bot for a seat, or a backfilled room is
+       unjoinable — the feature would defeat itself. */
+    const before = on.players.size;
+    ok(P2.yieldSeat(on) === true, 'yieldSeat frees a slot in a backfilled room');
+    ok(on.players.size === before - 1, 'and exactly one bot left [' + on.players.size + ']');
+    ok([...on.players.values()].some(p => !p.bot), 'the human is untouched');
+    const noFill = mk('t5', 0); noFill.settings.backfill = false;
+    ok(P2.yieldSeat(noFill) === false, 'yieldSeat does nothing in a room that was not backfilled');
+  }
 
   /* And Overrun bots really do fight each other, which is the entire point of
      the practice range. */

@@ -74,6 +74,31 @@ function cancelCountdown(room, silent) {
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/healthz', (req, res) => res.send('ok'));
+/* v9.8 BANDWIDTH METER. Only mounted when NETSTATS=1, so production pays
+   nothing — not even the route. Reports what Render's WebSocket figure is
+   actually made of: packets per second, average and peak packet size, entities
+   per packet, and total outbound bytes across all clients.
+       NETSTATS=1 node server.js     then GET /netstats */
+if (process.env.NETSTATS === '1') {
+  app.get('/netstats', (req, res) => {
+    const secs = Math.max(1, (Date.now() - netTotals.since) / 1000);
+    res.json({
+      windowSec: Math.round(secs),
+      packetsPerSec: +(netTotals.packets / secs).toFixed(1),
+      avgPacketBytes: netTotals.packets ? Math.round(netTotals.bytes / Math.max(1, netTotals.clients)) : 0,
+      maxPacketBytes: netTotals.maxBytes,
+      avgEntitiesPerPacket: netTotals.packets ? +(netTotals.entities / netTotals.packets).toFixed(1) : 0,
+      outBytesTotal: netTotals.bytes,
+      outBytesPerSec: Math.round(netTotals.bytes / secs),
+      projectedGBPerMonthAtThisRate: +((netTotals.bytes / secs) * 2592000 / 1073741824).toFixed(2)
+    });
+  });
+  app.get('/netstats/reset', (req, res) => {
+    netTotals.packets = netTotals.bytes = netTotals.maxBytes = 0;
+    netTotals.entities = netTotals.clients = 0; netTotals.since = Date.now();
+    res.send('reset');
+  });
+}
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
@@ -130,6 +155,33 @@ const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) =>
    server/lib/drones.js: a drone outlives the moment its owner is watching it,
    and a third player can shoot it down, so no single client can be trusted with
    the flight or the kill. */
+/* v9.8 — the snapshot wire format, shared with the browser and test.js.
+   One definition, three consumers; see the header of that file. */
+const SnapCodec = require('./public/src/networking/snapcodec.js');
+/* A keyframe every 60 ticks (4 s at 15 Hz). Deltas are exact over an ordered,
+   reliable transport, so this is a bound on the damage any future bug can do
+   rather than a correctness requirement. */
+const KEYFRAME_EVERY = 60;
+/* v9.11: how long a seat is held for a dropped player. Long enough for a phone
+   changing towers or a laptop resuming from sleep; short enough that a genuine
+   quitter does not hold a slot for a whole round. */
+const RECONNECT_WINDOW = 45000;
+/* Bandwidth instrumentation, off unless NETSTATS=1 is set in the environment.
+   Counting bytes means stringifying the packet a second time, which is real
+   CPU on the hot path — it must never run in production by accident. */
+const NETSTATS = process.env.NETSTATS === '1';
+const netTotals = { packets: 0, bytes: 0, maxBytes: 0, entities: 0, since: Date.now(), clients: 0 };
+function netstat(room, packet) {
+  const n = Buffer.byteLength(JSON.stringify(packet)) + 15;   // + socket.io framing
+  const sockets = io.sockets.adapter.rooms.get(room.code);
+  const recips = sockets ? sockets.size : 0;
+  netTotals.packets++;
+  netTotals.bytes += n * recips;
+  netTotals.entities += packet.e.length;
+  netTotals.clients += recips;
+  if (n > netTotals.maxBytes) netTotals.maxBytes = n;
+}
+
 const Drones = require('./server/lib/drones.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo, CFG });
 
 /* ===== v9.5 — WARM THE BOT COLLIDER CACHE BEFORE ANYBODY NEEDS IT =====
@@ -365,6 +417,10 @@ function regenTick(room) {
 function startSnapshots(room) {
   stopSnapshots(room);
   room.snapN = 0;
+  /* Every match starts from a clean baseline: no slot numbers, no remembered
+     state, and the first packet is a keyframe. */
+  room.snapSlots = new Map(); room.snapPrev = new Map();
+  room.snapSlotNext = 1; room.snapTk = null; room.snapKeyframe = true;
   room.snapTimer = setInterval(() => {
     /* v8.30 THE CLOCK HIT 0:00 AND THE MATCH KEPT GOING.
 
@@ -392,30 +448,72 @@ function startSnapshots(room) {
     Mines.tick(room);
     regenTick(room);
     if (++room.snapN % 60 === 0) pushLobby(room); // live K/D/assists/damage refresh (~4 s)
-    const players = {};
+
+    /* ===== v9.8 DELTA SNAPSHOTS — see public/src/networking/snapcodec.js =====
+
+       The old packet named every field and resent every value fifteen times a
+       second: 153-198 bytes per entity per tick, to every client. An Overrun
+       match — one human, nineteen bots — was 46 KB/s outbound to a single
+       player, about 166 MB an hour, which is where a 5.8 GB month comes from.
+
+       What travels now is what CHANGED. Positions and angles change every tick
+       and still do; hp, armour, weapon, helmet, team and the alive flag change
+       on events and are sent when they do.
+
+       A KEYFRAME is forced on match start, whenever a client joins, and every
+       `KEYFRAME_EVERY` ticks. The periodic one is not strictly required —
+       WebSocket is ordered and reliable — but it bounds the cost of any future
+       bug to a few seconds of drift instead of a whole match, and at one every
+       four seconds it is cheap insurance.
+
+       Every live entity appears every tick, at minimum as [slot, 0]. Absence
+       therefore means REMOVED, which is what lets a client drop a player who
+       left without a separate message. */
+    room.snapSlots = room.snapSlots || new Map();     // player id -> wire slot
+    room.snapPrev = room.snapPrev || new Map();       // slot -> last state SENT
+    room.snapSlotNext = room.snapSlotNext || 1;
+
+    const keyframe = room.snapKeyframe || (room.snapN % KEYFRAME_EVERY === 0);
+    room.snapKeyframe = false;
+
+    const ents = [];
+    const liveSlots = new Set();
     for (const p of room.players.values()) {
-      players[p.id] = {
-        p: [Math.round(p.pos[0] * 100) / 100, Math.round(p.pos[1] * 100) / 100, Math.round(p.pos[2] * 100) / 100],
-        ry: Math.round(p.ry * 1000) / 1000, rx: Math.round(p.rx * 1000) / 1000,
-        cr: p.crouch, mv: p.mv, wp: p.wp, ln: Math.round(p.ln * 100) / 100,
-        hp: Math.round(p.hp), lv: p.armorLvl, du: Math.round(p.armorDur),
-        hl: p.helmLvl | 0,          // v7.9: helmets are VISIBLE on the model now
-        rl: p.rl | 0,
-        al: p.alive ? 1 : 0, tm: p.team
-      };
+      let slot = room.snapSlots.get(p.id);
+      if (slot === undefined) { slot = room.snapSlotNext++; room.snapSlots.set(p.id, slot); }
+      liveSlots.add(slot);
+      const st = SnapCodec.stateOf(p, slot);
+      const prev = keyframe ? null : room.snapPrev.get(slot);
+      ents.push(SnapCodec.encodeEntity(st, prev, keyframe));
+      room.snapPrev.set(slot, st);
     }
-    io.to(room.code).emit('snap', {
-      t: now(), players,
-      /* v9.4: drones ride the normal snapshot rather than a channel of their
-         own, so every client renders them and can shoot at them with the code
-         that already interpolates remote entities. Omitted entirely when none
-         are airborne — an empty array every tick for a feature nobody is using
-         is bandwidth spent on nothing. */
-      dr: Drones.snapshot(room),
-      tk: modeInfo(room).teams ? room.teamKills : null
-    });
+    // a player who left frees their slot, so the map cannot grow without bound
+    for (const slot of room.snapPrev.keys()) if (!liveSlots.has(slot)) room.snapPrev.delete(slot);
+    for (const [id, slot] of room.snapSlots) if (!liveSlots.has(slot)) room.snapSlots.delete(id);
+
+    /* Team kills changed on a kill, not on a tick. Sent when they move. */
+    const tkNow = modeInfo(room).teams ? JSON.stringify(room.teamKills) : null;
+    const tkChanged = tkNow !== (room.snapTk || null);
+    room.snapTk = tkNow;
+
+    const packet = { e: ents };
+    if (keyframe) packet.k = 1;
+    /* v9.4: drones ride the normal snapshot rather than a channel of their own,
+       so every client renders them with the code that already interpolates
+       remote entities. Omitted entirely when none are airborne. */
+    const dr = Drones.snapshot(room);
+    if (dr) packet.dr = dr;
+    if (tkChanged || keyframe) packet.tk = modeInfo(room).teams ? room.teamKills : null;
+    /* `t` is GONE. It carried now() — thirteen digits plus the key, every tick
+       — and the client never read it: the interpolation buffer timestamps
+       arrivals with its own performance.now(), and the clock offset comes from
+       matchStart. Eighteen bytes a tick for a field nothing consumed. */
+    io.to(room.code).emit('snap', packet);
+    if (NETSTATS) netstat(room, packet);
+    return;
   }, 1000 / CFG.NET.snapRate);
 }
+
 function stopSnapshots(room) {
   if (room.snapTimer) { clearInterval(room.snapTimer); room.snapTimer = null; }
 }
@@ -465,7 +563,10 @@ function endMatch(room, winnerId, reason) {
 io.on('connection', (socket) => {
   socket.on('createRoom', (data, cb) => {
     const room = makeRoom(socket, data && data.name, data && data.settings);
-    if (cb) cb({ ok: true, code: room.code, id: socket.id });
+    /* v9.11: the reconnect token, read from the record rather than a local —
+       `p` is not in scope here and makeRoom owns the player it creates. */
+    if (cb) cb({ ok: true, code: room.code, id: socket.id,
+      token: (room.players.get(socket.id) || {}).token });
     pushLobby(room);
   });
 
@@ -478,11 +579,21 @@ io.on('connection', (socket) => {
        real players, so once a Strike Team or Overrun match starts, size is
        humans + bots and a room with a genuinely free slot reports itself full.
        The cap has always meant "how many people", and now it says so. */
+    /* v9.8: a joiner has no delta baseline, so the next snapshot must be a
+       keyframe. Without this they would see an empty world until the periodic
+       one arrived up to four seconds later. */
+    room.snapKeyframe = true;
     let humanCount = 0;
     for (const q of room.players.values()) if (!q.bot) humanCount++;
     if (humanCount >= cap) return cb && cb({ ok: false, error: 'Room is full (' + cap + ' players max for this mode).' });
+    /* v9.11: a backfilled room is full of bots by design. Free a seat so the
+       human can take it — otherwise the feature that makes modes playable is
+       the feature that makes them unjoinable. */
+    if (room.state === 'playing') Bots.yieldSeat(room);
     addPlayer(room, socket, data && data.name);
-    cb && cb({ ok: true, code: room.code, id: socket.id, inProgress: room.state === 'playing' });
+    cb && cb({ ok: true, code: room.code, id: socket.id,
+      token: (room.players.get(socket.id) || {}).token,
+      inProgress: room.state === 'playing' });
     pushLobby(room);
     if (room.state === 'playing') {
       const p = room.players.get(socket.id);
@@ -503,6 +614,10 @@ io.on('connection', (socket) => {
     if (s && s.map && CFG.MAPS[s.map] && CFG.MAPS[s.map].ready !== false) room.settings.map = s.map;
     /* v8.33: only the host may rename a team, and only in the lobby — both
        already guaranteed by the guard at the top of this handler. */
+    /* v9.11: backfill is a host setting like any other, and it is only
+       meaningful in the human-vs-human modes — Overrun and Strike Team field
+       their own bots and would double up. */
+    if (s && typeof s.backfill === 'boolean') room.settings.backfill = !!s.backfill;
     if (s && typeof s.botCount === 'number')
       room.settings.botCount = Math.max(0, Math.min(19, s.botCount | 0));
     if (s && s.botSkill && Bots.SKILL_IDS.indexOf(s.botSkill) >= 0)
@@ -556,6 +671,74 @@ io.on('connection', (socket) => {
     const room = getRoom(socket);
     if (!room || room.state !== 'playing' || !d) return;
     Drones.damage(room, d.id | 0, Math.max(0, Math.min(200, +d.dmg || 0)), socket.id);
+  });
+  /* ===== v9.10 — TEAM MAP MARKERS =====
+     Rahul: "in the team match a team member can mark a place on the map and
+     other fellow team mates can follow the marked location."
+
+     Server-relayed rather than peer-to-peer, because the server is the only
+     thing that knows who is on whose side — a client deciding for itself who
+     to send a marker to is a client that can be modified to send it to
+     everyone. It goes to the TEAM ROOM only, so an opponent never sees it.
+
+     Free-for-all has no team, so a marker there would either go to nobody or
+     to everybody; both are wrong, so the mode simply does not offer it.
+
+     Deliberately NOT part of the snapshot. A marker is placed a handful of
+     times a match — putting it in a 15 Hz stream to save an event would undo
+     the v9.8 bandwidth work for a feature that fires once a minute. */
+  socket.on('mark', (d) => {
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing' || !d) return;
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive || !p.team) return;            // FFA and the dead do not mark
+    if (!modeInfo(room).teams) return;
+    const x = +d.x, z = +d.z;
+    if (!isFinite(x) || !isFinite(z)) return;
+    const B = CFG.MAPS[room.settings.map || 'urban'] ? 110 : 110;
+    if (Math.abs(x) > B || Math.abs(z) > B) return;
+    /* Throttled per player: a marker is a deliberate act, and without this a
+       held mouse button becomes a broadcast loop. */
+    if (now() - (p.lastMark || 0) < 700) return;
+    p.lastMark = now();
+    const payload = { id: socket.id, name: p.name, x: Math.round(x * 10) / 10,
+      z: Math.round(z * 10) / 10, at: now(), team: p.team };
+    for (const q of room.players.values()) {
+      if (q.bot || !q.connected || q.team !== p.team) continue;
+      io.to(q.id).emit('mark', payload);
+    }
+  });
+  /* ===== v9.11 — PING WHEEL =====
+     Same relay shape as the v9.10 map marker and for the same reason: the
+     server is the only thing that knows who is on whose side, so it decides the
+     recipients rather than trusting a client to.
+
+     A ping is a WORLD POINT plus a type. The client supplies the point by
+     casting its aim ray, so "enemy spotted" lands on the wall the enemy is
+     standing next to rather than in the middle of the map — a bearing you can
+     actually push toward.
+
+     Team modes only. In free-for-all there is nobody to tell. */
+  socket.on('ping', (d) => {
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing' || !d) return;
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive || !p.team || !modeInfo(room).teams) return;
+    const kind = String(d.k || '').slice(0, 12);
+    if (['enemy', 'here', 'going', 'need', 'careful', 'loot'].indexOf(kind) < 0) return;
+    const x = +d.x, y = +d.y, z = +d.z;
+    if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return;
+    /* Throttled harder than markers: a ping is one keypress and a held key
+       would otherwise be a broadcast loop with audio attached. */
+    if (now() - (p.lastPing || 0) < 900) return;
+    p.lastPing = now();
+    const payload = { id: socket.id, name: p.name, k: kind,
+      x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, z: Math.round(z * 10) / 10,
+      at: now() };
+    for (const q of room.players.values()) {
+      if (q.bot || !q.connected || q.team !== p.team) continue;
+      io.to(q.id).emit('ping', payload);
+    }
   });
   socket.on('placeMine', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};
@@ -722,6 +905,43 @@ io.on('connection', (socket) => {
 
   socket.on('pingCheck', (t, cb) => { if (cb) cb(t); });
 
+  /* Rejoin by TOKEN, not by name. A name is guessable and a name collision
+     would let one player steal another's seat and score; the token is issued
+     once, on join, and never broadcast in the lobby payload. */
+  socket.on('rejoin', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    if (!d || !d.code || !d.token) return ack({ ok: false, error: 'No session to restore.' });
+    const room = rooms.get(String(d.code).toUpperCase());
+    if (!room) return ack({ ok: false, error: 'That match has ended.' });
+    let oldId = null;
+    for (const [id, q] of room.players) if (q.token === d.token && !q.connected) { oldId = id; break; }
+    if (!oldId) return ack({ ok: false, error: 'That seat is no longer held.' });
+
+    const p = room.players.get(oldId);
+    if (p.purgeTimer) { clearTimeout(p.purgeTimer); p.purgeTimer = null; }
+    /* The player is re-keyed to the NEW socket id, because every emit path in
+       this server addresses a player by id. Everything score-shaped rides on
+       the record itself and moves with it. */
+    room.players.delete(oldId);
+    p.id = socket.id;
+    p.connected = true;
+    p.respawnAt = now() + CFG.MATCH.respawnDelay * 1000;
+    room.players.set(socket.id, p);
+    if (room.hostId === oldId) room.hostId = socket.id;
+    /* The old wire slot dies with the old id, and the next snapshot must be a
+       keyframe or the returning client decodes deltas against nothing. */
+    if (room.snapSlots) room.snapSlots.delete(oldId);
+    room.snapKeyframe = true;
+    socket.join(room.code);
+    io.to(room.code).emit('playerLeft', { id: oldId, name: p.name });
+    io.to(room.code).emit('toast', { msg: p.name + ' reconnected' });
+    ack({ ok: true, code: room.code, id: socket.id, token: p.token,
+          settings: room.settings, state: room.state,
+          startedAt: room.startedAt, serverNow: now(),
+          pickups: room.pickups.filter(k => k.active).map(k => ({ id: k.id, t: k.t, p: k.pos, active: true })) });
+    pushLobby(room);
+  });
+
   /* v8.37: leaving is the same as being eliminated in Last Stand, so a
      disconnect can be the event that ends the match. Without this a room with
      one survivor and one quitter would sit there forever — there is no clock to
@@ -744,6 +964,43 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const room = getRoom(socket); if (!room) return;
     const p = room.players.get(socket.id);
+
+    /* ===== v9.11 RECONNECT =====
+       A dropped connection used to delete the player outright: score, kills,
+       team and streak gone, and rejoining meant arriving as a stranger in a
+       match you were winning. A Wi-Fi blip is not a decision to quit.
+
+       So during a MATCH the record is kept for RECONNECT_WINDOW and the seat is
+       held. The player is marked disconnected and set not-alive — leaving them
+       standing would hand the enemy a free kill on someone who cannot fight
+       back, which is worse than removing them.
+
+       Only during a match. In a lobby there is nothing to preserve and holding
+       a seat would block a real player from taking it. */
+    if (p && room.state === 'playing') {
+      p.connected = false;
+      p.alive = false;
+      p.disconnectedAt = now();
+      p.respawnAt = Infinity;
+      io.to(room.code).emit('toast', { msg: p.name + ' lost connection' });
+      pushLobby(room);
+      /* The purge timer is what stops a held seat becoming a permanent ghost.
+         Cleared on a successful rejoin. */
+      p.purgeTimer = setTimeout(() => {
+        const r2 = rooms.get(room.code);
+        if (!r2) return;
+        const q = r2.players.get(socket.id);
+        if (!q || q.connected) return;
+        r2.players.delete(socket.id);
+        io.to(r2.code).emit('playerLeft', { id: socket.id, name: q.name });
+        if (r2.hostId === socket.id && r2.players.size) {
+          r2.hostId = r2.players.keys().next().value;
+        }
+        pushLobby(r2);
+        lastStandOnLeave(r2);
+      }, RECONNECT_WINDOW);
+      return;
+    }
     room.players.delete(socket.id);
     if (room.players.size === 0) {
       stopSnapshots(room);

@@ -121,6 +121,31 @@
     var m = MODES[modeId];
     return !!(m && (m.practice || m.vsBots));
   }
+
+  /* ===== v9.11 — BOT BACKFILL =====
+
+     `botsAllowed` answers "does this MODE put bots in the room" and it stays
+     exactly as it was: Overrun and Strike Team, nothing else. That guard is
+     load-bearing — it is what stops a stale `botCount` from a Training session
+     leaking six bots into a 5v5, which is a real defect this project shipped in
+     v8.38 and fixed in v8.38.1.
+
+     Backfill is a SEPARATE question with a separate answer: "may the host ask
+     for empty slots to be filled." It is opt-in per room, it applies to the
+     human-vs-human modes only, and it is bounded by maxPlayers rather than by
+     the bot slider. Two questions, two predicates — because collapsing them
+     into one is precisely how the v8.38 leak happened.
+
+     WHY IT MATTERS MORE THAN IT SOUNDS. Team Battle 10v10, Squads 5x4 and Last
+     Stand 20-player need ten to twenty humans to exist at all. Without backfill
+     most of the mode list is unplayable unless you can assemble a crowd, which
+     is a content graveyard rather than a feature set. */
+  function backfillAllowed(modeId) {
+    var m = MODES[modeId];
+    if (!m) return false;
+    if (m.practice || m.vsBots) return false;      // these already field bots
+    return true;
+  }
   /* Which side humans take when the mode fills the other with bots. Null for
      every other mode, so a caller cannot accidentally pin a normal match to one
      team. */
@@ -210,6 +235,7 @@
 
   return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams,
     MODE_CATS: MODE_CATS, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
-    botsAllowed: botsAllowed, humanSideOf: humanSideOf, botSideOf: botSideOf,
+    botsAllowed: botsAllowed, backfillAllowed: backfillAllowed,
+    humanSideOf: humanSideOf, botSideOf: botSideOf,
     MINIMAP: MINIMAP, RENDER: RENDER, MAPS: MAPS };
 });

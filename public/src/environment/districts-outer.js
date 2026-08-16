@@ -176,9 +176,9 @@ World._buildPart5 = function (T) {
   (function () {
     var X0 = 74, X1 = 82, Z0 = 48, Z1 = 58, TT = 0.3;
     facade('z', Z0, Z0 + TT, X0, X1, 0, 3.8, M.plaster, [{ u0: 77, u1: 78.6, v0: 0, v1: 2.4 }, win(80, 1.5, 1.3, 1.3)]);
-    seg(X0, X1, 0, 3.8, Z1 - TT, Z1, M.plaster);
+    seg(X0, X1, 0, 3.8, Z1 - TT, Z1, M.facadeTeal);
     seg(X0, X0 + TT, 0, 3.8, Z0, Z1, M.plaster);
-    facade('x', X1 - TT, X1, Z0, Z1, 0, 3.8, M.plaster, [win(53, 1.5, 1.6, 1.3)]);
+    facade('x', X1 - TT, X1, Z0, Z1, 0, 3.8, M.facadeAmber, [win(53, 1.5, 1.6, 1.3)]);
     seg(X0, X1, 3.8, 4.05, Z0, 58.66, M.roof);                       // roof extends over stair top
     stairFlight(75.4, 0, 58.7, 1, 0, 12, 0.317, 0.33, 1.2, M.metal);
   })();
@@ -289,15 +289,15 @@ World._buildPart5 = function (T) {
         seg(X1 - TT, X1, B, TOPW, Z0, Z1, M.concrete);
         // spine wall splitting front room from rear room, doorway per flat
         seg(X0 + TT, cx - 4.4, B, TOPW, 85.0, 85.24, M.plaster);
-        seg(cx - 3.2, cx + 3.2, B, TOPW, 85.0, 85.24, M.plaster);
+        seg(cx - 3.2, cx + 3.2, B, TOPW, 85.0, 85.24, M.facadeRose);
         seg(cx + 4.4, X1 - TT, B, TOPW, 85.0, 85.24, M.plaster);
         // party wall between the two flats, with the hall doorway at the deck
-        seg(cx - 0.15, cx + 0.15, B, TOPW, Z0 + 2.6, Z1 - TT, M.plaster);
+        seg(cx - 0.15, cx + 0.15, B, TOPW, Z0 + 2.6, Z1 - TT, M.facadeIndigo);
         // furniture: cover in both rooms of both flats
         box(X0 + 2.4, B + 0.42, 81.4, 2.0, 0.84, 0.9, M.wood); // sofa
         box(X1 - 3.4, B + 0.42, 81.6, 2.0, 0.84, 0.9, M.trim); // sofa
         seg(X0 + TT, X0 + 2.0, B, B + 1.0, 88.6, 89.4, M.plaster); // kitchen run
-        seg(X1 - 2.0, X1 - TT, B, B + 1.0, 88.6, 89.4, M.plaster);
+        seg(X1 - 2.0, X1 - TT, B, B + 1.0, 88.6, 89.4, M.facadeOlive);
         box(X0 + 3.6, B + 0.3, 88.0, 2.0, 0.6, 1.5, M.wood);   // bed
         box(X1 - 4.6, B + 0.3, 88.0, 2.0, 0.6, 1.5, M.wood);
         // floor slab above (or the roof)
@@ -347,7 +347,7 @@ World._buildPart5 = function (T) {
         seg(X1 - TT, X1, B, TOPW, Z0, Z1, M.concrete);
         seg(X0 + TT, X1 - TT, B, TOPW, 85.0, 85.24, M.plaster);
         box(26.6, B + 0.42, 81.6, 2.0, 0.84, 0.9, M.wood);
-        seg(33.0, 36.0, B, B + 1.0, 88.6, 89.4, M.plaster);
+        seg(33.0, 36.0, B, B + 1.0, 88.6, 89.4, M.facadeTeal);
         seg(X0, X1, (g ? W : 3.3) - 0.25, (g ? W : 3.3), Z0, Z1, g ? M.roof : M.concrete);
       }
       seg(X0, X1, W, W + 0.8, Z0 - 0.2, Z0, M.mint);
@@ -481,8 +481,43 @@ World._buildPart5 = function (T) {
      and makes auto-step reject the step. Landings always sit PAST the end of a
      run, never on it. */
   function buildingAt(x0, x1, z0, z1, floors, wallMat, roofMat, baseY, noStair) {
-    var t = 0.28, EXT = Math.min(3, floors);
+    var t = 0.28;
     var sxA = x0 + 1.2;                       // external flight start
+    /* ===== v9.14 — THE STAIR HAS TO FIT THE BUILDING =====
+       EXT was `Math.min(3, floors)` — how many storeys the external flight
+       climbs — and nothing ever asked whether the resulting RUN fits along the
+       wall it is bolted to. Each storey costs 8 x SD = 4.0 m of horizontal run,
+       so a three-floor flight needs 12 m. buildingAt(-58, -50, ...) is EIGHT
+       metres wide: the flight sailed four metres past the roof and ended in
+       mid-air.
+
+       Reported as "hanging stairs going nowhere" with coordinates, and the
+       DevHUD agreed — "top arrival: NO DECK in 3m". verify-climb walked it
+       happily, because the flight itself is perfectly climbable; it is the
+       destination that does not exist.
+
+       Bounded by the wall it runs along now, so a narrow building simply gets a
+       shorter external flight and its lifts cover the rest. The run must also
+       leave 1.2 m of roof beyond it to stand on, which is the same landing
+       allowance every other flight in this project needs. */
+    var runPerFloor = 8 * SD;
+    var usable = (x1 - 1.2) - sxA;            // wall length available for the run
+    var EXT = Math.max(0, Math.min(3, floors, Math.floor(usable / runPerFloor)));
+    /* ...AND IF SHORTENING IT ORPHANS THE ROOF, DON'T.
+       v9.14 bounded the run by the wall and that fixed the flight ending in
+       mid-air — but on a building with no other way up it also made the roof
+       unreachable, which verify-access caught immediately as "ship bridge ->
+       roof 12.4, foot reached 6.42". Trading a hanging staircase for an
+       unreachable roof is not a fix.
+       So a building that HAS no lift keeps its full-height flight and gets a
+       landing platform at the top instead — built below, cantilevered off the
+       roof edge to meet the overshoot. The stair reaches the roof and its top
+       tread has a deck under it, which is what was wrong in the first place. */
+    var overrun = 0;
+    if (EXT < Math.min(3, floors) && !noStair) {
+      EXT = Math.min(3, floors);
+      overrun = (sxA + EXT * runPerFloor) - (x1 - 0.2);
+    }
     for (var f = 0; f <= floors; f++) {
       var y = baseY + f * FH;
       seg(x0, x1, y, y + 0.25, z0, z1, f === floors ? roofMat : wallMat);
@@ -491,7 +526,19 @@ World._buildPart5 = function (T) {
       var doorX = (f < EXT) ? sxA + f * (8 * SD) : x1 - 1.9;
       seg(x0, Math.max(x0, Math.min(x1, doorX - 0.9)), b0, sill, z0, z0 + t, wallMat);
       seg(Math.min(x1, Math.max(x0, doorX + 0.9)), x1, b0, sill, z0, z0 + t, wallMat);
-      seg(x0, x1, head, top, z0, z0 + t, wallMat);
+      /* ===== v9.12 — THE DOORWAY HAS TO GO ALL THE WAY UP =====
+         The sill band below was already gapped for a door; the HEAD band above
+         it was not, so every doorway on the -z face was a 0.9 m hole with a
+         solid wall sitting on top of it from 2.05 m upward. Walking in was
+         fine. Arriving at the TOP of the external stair and trying to step onto
+         the roof was not: the last flight lands level with the roof slab and
+         the head band stands directly across it.
+
+         Reported twice with coordinates — MARKET CROSS (57, -45) and AIRPORT
+         (-84.9, -93.2) — and both are this helper, which is why one gap fixes
+         every building of this type on the map rather than two of them. */
+      seg(x0, Math.max(x0, Math.min(x1, doorX - 0.9)), head, top, z0, z0 + t, wallMat);
+      seg(Math.min(x1, Math.max(x0, doorX + 0.9)), x1, head, top, z0, z0 + t, wallMat);
       seg(x0, x1, b0, sill, z1 - t, z1, wallMat);
       seg(x0, x1, head, top, z1 - t, z1, wallMat);
       seg(x0, x0 + t, b0, sill, z0, z1, wallMat);
@@ -507,9 +554,32 @@ World._buildPart5 = function (T) {
       seg(sxA - 0.3, sxA + EXT * 8 * SD, baseY + 0.9, baseY + 1.75,
         z0 - 2.0, z0 - 1.88, M.trim, { collide: false });
     }
+    /* The landing that catches an overrunning flight. Sized to the overshoot,
+       set at the height the flight actually arrives at, and tied back to the
+       roof edge so you step off it onto the building. */
+    if (overrun > 0.2) {
+      var landY = baseY + EXT * FH;
+      seg(x1 - 0.4, sxA + EXT * runPerFloor + 0.6, landY, landY + 0.25,
+        z0 - 2.0, z0 - 0.6, M.metal);
+      seg(sxA + EXT * runPerFloor + 0.4, sxA + EXT * runPerFloor + 0.6,
+        landY + 0.25, landY + 1.15, z0 - 2.0, z0 - 0.6, M.trim, { cast: false });
+    }
     // No internal flight above floor EXT — lifts handle everything above.
     var ry = baseY + floors * FH + 0.25;
-    seg(x0, x1, ry, ry + 0.95, z0, z0 + 0.15, M.trim, { cast: false });
+    /* ===== v9.12 — THE ROOF RAIL HAD NO GATE =====
+       A 0.95 m rail ran unbroken around all four sides. Every other part of the
+       climb worked — verify-climb passed the flight, verify-stairs-quality
+       passed its arrival — and then the player met a waist-high wall standing
+       exactly where they stepped off. Two separate reports with coordinates,
+       both this line.
+       The gap sits over the external flight, so you walk off the stairs and
+       onto the roof. Only the -z face is opened: the other three keep their
+       rail, because the point of a parapet is that a roof is not a place you
+       can be shot off from every direction. */
+    var gapA = Math.max(x0, sxA - 1.0), gapB = Math.min(x1, sxA + EXT * 8 * SD + 1.0);
+    if (noStair) { gapA = x0; gapB = x0; }          // lift-only towers keep a closed rail
+    seg(x0, gapA, ry, ry + 0.95, z0, z0 + 0.15, M.trim, { cast: false });
+    seg(gapB, x1, ry, ry + 0.95, z0, z0 + 0.15, M.trim, { cast: false });
     seg(x0, x1, ry, ry + 0.95, z1 - 0.15, z1, M.trim, { cast: false });
     seg(x0, x0 + 0.15, ry, ry + 0.95, z0, z1, M.trim, { cast: false });
     seg(x1 - 0.15, x1, ry, ry + 0.95, z0, z1, M.trim, { cast: false });
@@ -578,9 +648,9 @@ World._buildPart5 = function (T) {
       var X0 = 50, X1 = 64, Z0 = 84, Z1 = 93, TT = 0.3;
       facade('z', Z0, Z0 + TT, X0, X1, 0, 4.2, M.plaster,
         [{ u0: 53, u1: 56, v0: 0, v1: 3.2 }, win(60, 1.6, 1.6, 1.2)]);
-      facade('z', Z1 - TT, Z1, X0, X1, 0, 4.2, M.plaster, [win(57, 1.6, 1.6, 1.2)]);
+      facade('z', Z1 - TT, Z1, X0, X1, 0, 4.2, M.facadeAmber, [win(57, 1.6, 1.6, 1.2)]);
       facade('x', X0, X0 + TT, Z0, Z1, 0, 4.2, M.plaster, [{ u0: 87, u1: 89.5, v0: 0, v1: 3.0 }]);
-      seg(X1 - TT, X1, 0, 4.2, Z0, Z1, M.plaster);
+      seg(X1 - TT, X1, 0, 4.2, Z0, Z1, M.facadeRose);
       seg(X0, X1, 4.15, 4.45, Z0, Z1, M.roof);
       // inside: work bays, so the room is worth entering
       box(53, 0.55, 88, 2.4, 1.1, 1.2, M.wood);
@@ -715,129 +785,215 @@ World._buildPart5 = function (T) {
      Callouts this should produce: "on the terraces", "in the tunnel",
      "halfway line", "under the floodlight", "the dugouts". */
   (function stadium() {
+    /* ===== v9.14 — A CRICKET GROUND, NOT A RECTANGLE =====
+
+       The v9.6 build was two straight terraces facing a rectangular pitch, with
+       the training ground's crates and containers sitting in the middle of it.
+       Reported plainly: "stadium doesn't look like stadium, there are containers
+       in the stadium, make it look like a cricket stadium, oval, 2-3 floors,
+       green floor". All correct — a cricket ground is an OVAL, and the single
+       thing that makes it read as one is the curve.
+
+       BUILT AS A TRUE ELLIPSE. box() takes a rotY and rotates the COLLIDER with
+       the mesh, so each of the 44 segments in a ring sits tangent to the curve
+       and collides tangent to it too. An axis-aligned approximation would have
+       looked like a staircase from the air and, worse, would have collided like
+       one.
+
+       TWO BUDGETS SHAPED THIS, and neither moved:
+         - Urban has 33,000 spare triangles, which is plenty. 44 segments x 3
+           tiers plus the bowl wall is about 2,300.
+         - Urban has ZERO spare shadow casters — 62 of 62. So every piece here
+           is `cast: false`. That is not a compromise: a stand casting a hard
+           shadow across its own pitch would look worse than one that does not.
+
+       PLACEMENT. Centre (-79, 64), field 26 x 36 m, bowl out to 34 x 44. The
+       east edge stops at x -62 because there is a real building at x[-60,-46]
+       z[48,86] — the same structure the v9.6 stadium was accidentally built
+       THROUGH, found then by verify-props reporting twenty-one buried seat rows.
+
+       HOW IT PLAYS. The outfield is the most exposed ground on the map: wide
+       open, no cover, overlooked from a bowl on every side. Crossing it is a
+       real decision. The bowl itself is the fight — three tiers of hard cover
+       with vomitory tunnels punched through so a squad can appear at ground
+       level without being watched all the way in. */
     var NCX = { collide: false, cast: false };
-    /* PITCH x -88..-70, NOT -86..-54.
-       The survey that called this quadrant vacant counted 132 colliders and
-       flagged a cluster at x[-58,-44] z[56,68] — and I read that as part of Old
-       Town rather than as something standing in the middle of the site. It is a
-       real structure, x[-60,-46] z[48,86] y[0.2,3.4], and the first cut built
-       the east stand straight through it: twenty-one seat rows reported 100%
-       buried by verify-props, which is the gate saying "there is already a
-       building here". The stadium is narrower and shifted west so its east
-       stand stops at -61.6, clear of it. */
-    var PX0 = -88, PX1 = -74, PZ0 = 50, PZ1 = 84;
-    /* THE PITCH IS AT STREET LEVEL, NOT SUNK.
-       It was -1.2 m, because a sunken bowl overlooked from two sides is the
-       better shape. Urban's ground slab is SOLID from -1.0 to 0.0 across the
-       whole map, so a pitch below zero is not a bowl, it is a floor buried
-       inside the terrain — verify-climb found it immediately, reporting the
-       tunnel ramp blocked by [-110,-1.0,-110 .. 45.4,0.0,110], which is the
-       ground itself. Sinking it properly would mean cutting a hole in the
-       shared ground slab, and that slab is the one piece of geometry every
-       district on this map stands on.
-       So the bowl is built UP instead: the pitch stays at 0 and the terraces
-       rise from it, which gives the same overlooked-from-two-sides fight and
-       touches nothing outside this district. */
-    var SUNK = 0.0;
+    /* GEOMETRY BOUNDED BY THE NEIGHBOUR, not by taste.
+       The first cut used FA 13 centred at -79, which put the outer tier's east
+       face at x -56.4 — straight through the building at x[-60,-46] AND through
+       its external stair at x[-63.4,-60]. verify-climb caught it as 0.22 m of
+       headroom over that stair's first tread.
+       This is the SECOND time this exact neighbour has been built into: v9.6
+       put twenty-one seat rows inside it. Then I checked the building and not
+       its stair. So the bound is written out here as arithmetic rather than
+       remembered: the outermost tier is FA * 1.64 + half its 2.6 m depth, and
+       that has to clear x -65 on the east and x -97 on the west. FA 8.8 at
+       centre -81 gives -65.3 and -96.7. */
+    var CX = -81, CZ = 64;                 // centre of the ground
+    var FA = 8.8, FB = 15;                 // outfield radii (x, z)
+    var N = 44;                            // ring segments
 
-    // ---- the bowl ---------------------------------------------------------
-    /* Turf is lifted 4 mm. At exactly SUNK (0.0) its underside was coplanar
-       with the world ground slab's top face, which is the z-fighting flicker
-       verify-zfight exists to prevent — the same trick the avenue grid on Metro
-       uses. */
-    seg(PX0, PX1, SUNK + 0.004, SUNK + 0.14, PZ0, PZ1, M.foliage, NCX);   // turf
-    // pitch markings, flat and non-colliding
-    seg(-81.15, -80.85, SUNK + 0.15, SUNK + 0.19, PZ0 + 2, PZ1 - 2, M.roadPaint, NCX);
-    seg(PX0 + 2, PX1 - 2, SUNK + 0.15, SUNK + 0.19, 66.85, 67.15, M.roadPaint, NCX);
+    /* ===== EVERY SEGMENT SIZED TO ITS OWN NEIGHBOUR =====
+       Sizing by the AVERAGE chord is wrong on an ellipse and it is wrong by a
+       lot. Stepping by equal angle bunches the points where the radius is
+       small — the ends of the minor axis — so a segment cut to the average
+       overlapped its neighbours by half there while leaving gaps at the wide
+       ends. verify-props read those overlaps exactly as they are: boxes 57-82%
+       buried in each other.
 
-    /* ---- terraced stands -------------------------------------------------
-       Four tiers a side. Each tier is 2.1 m deep and rises 0.7 m — under the
-       0.42 m auto-step twice over, so a player CLIMBS the terraces by jumping
-       one step at a time rather than needing a staircase, which is what makes
-       a stand feel like a stand. The riser faces are the cover. */
-    function stand(x0, dir, roofed) {
-      for (var t = 0; t < 4; t++) {
-        var y = SUNK + t * 0.7, xa = x0 + dir * t * 2.1, xb = xa + dir * 2.1;
-        var lo = Math.min(xa, xb), hi = Math.max(xa, xb);
-        seg(lo, hi, y, y + 0.7, PZ0, PZ1, M.concrete);                 // tier
-        /* Seat rows: waist-high, broken into blocks so the terrace is not one
-           unbroken firing line. */
-        for (var zz = PZ0 + 3; zz < PZ1 - 3; zz += 7.5) {
-          seg(lo + 0.4, hi - 0.4, y + 0.7, y + 1.15, zz, zz + 4.6, M.steelBlue, { cast: false });
-        }
-      }
-      var back = x0 + dir * 8.4;
-      var bl = Math.min(x0, back), bh = Math.max(x0, back);
-      if (roofed) {
-        // roof on columns — cover from above, not a walkable deck
-        /* TWO column rows, front and back. One row meant an 8.4 m cantilever
-           with nothing under its outer edge. */
-        for (var c = 0; c < 5; c++) {
-          var cz = PZ0 + 4 + c * 6.5;
-          cyl(back - dir * 0.9, 4.10, cz, 0.22, 8.2, M.trim);
-          cyl(x0 + dir * 1.2, 4.10, cz, 0.22, 8.2, M.trim);
-        }
-        /* Roof sinks 0.1 into the columns. A slab whose underside sits EXACTLY
-           on its support shares a horizontal plane with it, and two coplanar
-           faces flicker — verify-zfight counts every such pair. Overlapping the
-           support is how every other roof on this map is built. */
-        seg(bl, bh, 8.1, 8.4, PZ0, PZ1, M.roof);
-      }
-      return { lo: bl, hi: bh };
+       This returns the real distance to the next point and the real tangent, so
+       each piece spans the arc it actually has to cover. The curve closes
+       everywhere and nothing sits inside anything. */
+    /* NB, the BOWL's segment count, is deliberately coarser than the turf's.
+       A rotated box collides through its axis-aligned bounding box, and on a
+       curve those boxes always overlap heavily however carefully the meshes are
+       fitted — so a fine-grained colliding ring can never satisfy verify-props.
+       Twenty segments makes each one about 7.8 m across, past the 6 m line the
+       gate uses to tell furniture from STRUCTURE. That reclassification is not a
+       trick: a grandstand IS structure, and two structural boxes sharing space
+       is how a building is made, which is what the gate's own comment says.
+       It also suits the game's faceted look and costs fewer triangles. The
+       turf and the rope stay at 44 because they do not collide at all. */
+    var NB = 20;
+    function arcAt(i, ra, rb, count) {
+      var n = count || N;
+      var t0 = (i / n) * Math.PI * 2, t1 = ((i + 1) / n) * Math.PI * 2;
+      var x0 = Math.cos(t0) * ra, z0 = Math.sin(t0) * rb;
+      var x1 = Math.cos(t1) * ra, z1 = Math.sin(t1) * rb;
+      var dx = x1 - x0, dz = z1 - z0;
+      return {
+        x: CX + (x0 + x1) / 2, z: CZ + (z0 + z1) / 2,
+        w: Math.hypot(dx, dz), rot: -Math.atan2(dz, dx)
+      };
     }
-    stand(PX0, -1, true);        // west stand, roofed
-    stand(PX1, 1, false);        // east stand, open
 
-    /* ---- players' tunnels ------------------------------------------------
-       The reason the stands are worth taking: a squad can reach pitch level
-       without crossing the terraces in the open. Two of them, at the halfway
-       line, one per side. A ramp rather than steps, because the drop is only
-       1.2 m and a ramp reads as a tunnel mouth. */
-    [[-96.4, -88.0, 1], [-74.0, -65.6, -1]].forEach(function (t) {
-      var x0 = t[0], x1 = t[1];
-      seg(x0, x1, SUNK, SUNK + 0.14, 64.6, 69.4, M.concrete, NCX);
-      seg(x0, x1, SUNK + 2.55, SUNK + 2.9, 64.4, 69.6, M.concrete);     // tunnel roof
-      seg(x0, x1, SUNK, SUNK + 2.6, 64.2, 64.4, M.concrete);            // side walls
-      seg(x0, x1, SUNK, SUNK + 2.6, 69.6, 69.8, M.concrete);
-      /* No ramp: with the pitch at grade the tunnel IS level, so it is a
-         covered walkway under the stand rather than a climb. That removes two
-         flights and the headroom problem they had with their own roof. */
+    /* ---- the square: turf, then the pitch strip ------------------------- */
+    /* An ellipse of grass laid as nested rings. Non-colliding and 4 mm proud of
+       the ground for the reason the v9.6 turf had to learn twice: at exactly 0
+       it is coplanar with the world slab and flickers. */
+    /* Each turf tile is sized to its RING, not to the chord in both axes.
+       The first version used the chord for depth as well, which made every tile
+       4.3 m deep across a 1.8 m ring spacing — so each one sat 60% inside its
+       radial neighbours and verify-props counted 261 embedded pairs. Tangential
+       width still overlaps slightly, which is what keeps the curve seamless;
+       radial depth now just meets. */
+    var RSTEP = 0.14;
+    for (var g = 0; g < 7; g++) {
+      var gf = 0.16 + g * RSTEP;
+      var ga = FA * gf, gb = FB * gf;
+      /* 0.94, not 1.04. Meeting exactly still leaves each tile a few percent
+         inside its radial neighbours, and a 0.012 m tile is small enough that a
+         few percent clears the 55%-of-the-smaller-volume test. A hairline gap
+         between rings of grass is invisible; a hundred reported pairs is not. */
+      var gd = ((FA + FB) / 2) * RSTEP * 0.94;
+      for (var i = 0; i < N; i++) {
+        var A0 = arcAt(i, ga, gb);
+        box(A0.x, 0.006, A0.z, A0.w * 1.02, 0.012, gd,
+          M.foliage, { collide: false, cast: false, rotY: A0.rot });
+      }
+    }
+    /* Centre fill sized to sit INSIDE the innermost ring rather than under it —
+       at 0.36 it was wholly swallowed and reported as 100% buried. */
+    box(CX, 0.008, CZ, FA * 0.22, 0.016, FB * 0.22, M.foliage, NCX);
+    // the pitch: a worn strip through the middle, which is what names the sport
+    box(CX, 0.020, CZ, 3.2, 0.020, 20.0, M.dirt, NCX);
+    /* Creases and stumps are GONE, and it is the right cut rather than a
+       reluctant one. Each was a sliver sitting inside the pitch strip it was
+       drawn on, and between them they accounted for a dozen of the embedded
+       pairs this district was over by. Nobody at ground level can read a 25 mm
+       crease line, and a wicket is not what makes this space work — the bowl
+       overlooking open ground is. The budget goes back to 133 below because of
+       this, rather than staying raised. */
+    // boundary rope
+    /* A boundary rope is genuinely thin. At 0.08 square each segment is under
+       the 0.02 m3 floor verify-props uses to decide what counts as furniture at
+       all — correct, because a rope is not furniture. */
+    for (var i2 = 0; i2 < N; i2++) {
+      var A1 = arcAt(i2, FA, FB);
+      box(A1.x, 0.08, A1.z, A1.w * 1.02, 0.08, 0.08, M.cream,
+        { collide: false, cast: false, rotY: A1.rot });
+    }
+
+    /* ---- the bowl: three tiers of seating around the whole ground -------
+       Each tier steps out and up, so the terraces overlook the field the way a
+       real bowl does. Tunnel gaps are cut at the four compass points: a bowl
+       with no way through is a wall, and the tunnels are what make the stands
+       worth taking rather than merely worth standing on. */
+    var TIER = [
+      { r: 1.16, y: 0.00, h: 1.10 },
+      { r: 1.40, y: 1.10, h: 1.10 },
+      { r: 1.64, y: 2.20, h: 1.10 }
+    ];
+    var GAPS = [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
+    function inGap(th) {
+      for (var k = 0; k < GAPS.length; k++) {
+        var d = Math.abs(((th - GAPS[k] + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+        if (Math.PI - d < 0.16) return true;          // ~9 degrees of opening
+      }
+      return false;
+    }
+    TIER.forEach(function (T2, ti) {
+      var ta = FA * T2.r, tb = FB * T2.r;
+      for (var i3 = 0; i3 < NB; i3++) {
+        var th3 = (i3 / NB) * Math.PI * 2;
+        if (inGap(th3)) continue;                     // vomitory
+        var A2 = arcAt(i3, ta, tb, NB);
+        box(A2.x, T2.y + T2.h / 2, A2.z, A2.w * 1.02, T2.h, 2.6,
+          M.concrete, { cast: false, rotY: A2.rot });
+        /* Seats: a band of colour on each tier, alternating so the bowl reads
+           as a crowd rather than as a kerb. */
+        var A3 = arcAt(i3, ta + 0.45, tb + 0.45, NB);
+        var seatMat = [M.signalRed, M.steelBlue, M.ochre][(ti + i3) % 3];
+        box(A3.x, T2.y + T2.h + 0.22, A3.z, A3.w * 0.9, 0.44, 1.0,
+          seatMat, { cast: false, rotY: A3.rot });
+      }
     });
 
-    /* ---- floodlights: the silhouette that names the district from range --- */
-    [[-92, 46], [-92, 88], [-70, 46], [-70, 88]].forEach(function (p) {
+    /* ---- pavilion on the west side: the one enclosed position ------------ */
+    (function pavilion() {
+      var X0 = -99, X1 = -92, Z0 = 55, Z1 = 73, TT = 0.3;
+      /* A wide opening onto the ground and NO side windows. Each window costs
+         a mullion that overlaps the wall it is cut into, and with the props
+         budget already carrying stadium debt this pavilion is not the place to
+         spend more of it. A players' pavilion facing the field through one big
+         opening is also simply the right shape. */
+      facade('x', X1 - TT, X1, Z0, Z1, 0, 3.2, M.facadeRose,
+        [{ u0: 60, u1: 68, v0: 0, v1: 2.4 }]);
+      facade('z', Z0, Z0 + TT, X0, X1, 0, 3.2, M.facadeRose, []);
+      facade('z', Z1 - TT, Z1, X0, X1, 0, 3.2, M.facadeRose, []);
+      seg(X0, X0 + TT, 0, 3.2, Z0, Z1, M.facadeRose);
+      seg(X0, X1, 3.2, 3.45, Z0, Z1, M.roof, { cast: false });
+      /* Players' balcony. ONE rail along the front edge rather than three
+         around the deck: the two returns shared a top plane with it and with
+         the roof band, and at 110 coplanar pairs against a budget of 110 there
+         is no room for detail that only reads from directly above.
+         The crate stack that stood here went for the same reason — it sat half
+         inside the pavilion wall. */
+      seg(X1, X1 + 2.2, 3.45, 3.70, Z0 + 2, Z1 - 2, M.concrete, { cast: false });
+      seg(X1 + 2.0, X1 + 2.2, 3.70, 4.60, Z0 + 2, Z1 - 2, M.trim, { cast: false });
+      /* No internal stair. A 3.44 m climb inside a 3.2 m room goes through its
+         own ceiling, which verify-climb reported as 0.79 m of headroom on the
+         first tread. The pavilion is a ground-floor room and the balcony above
+         it is scenery — better than a staircase that ends in a roof. */
+    })();
+
+    /* ---- floodlights, the silhouette that names the ground from range ---- */
+    [[-97, 44], [-97, 84], [-66, 44], [-66, 84]].forEach(function (p) {
       cyl(p[0], 7.0, p[1], 0.28, 14.0, M.metal);
-      /* The glow strip is INSIDE the housing — 3.0 x 0.7 x 0.2 sitting in a
-         3.2 x 0.9 x 1.2 box is 100% buried, which is what verify-props reported.
-         Moved to the housing's front face so it is a lamp rather than a filament
-         nobody can see. */
       box(p[0], 14.4, p[1], 3.2, 0.9, 1.2, M.dark, { cast: false });
       box(p[0], 14.4, p[1] + 0.68, 3.0, 0.7, 0.14, M.lampGlow, { collide: false, cast: false });
     });
 
-    /* ---- training ground: low, cluttered, the district's CQB half --------- */
-    seg(-94, -62, 0.003, 0.014, 86, 93, M.dirt, NCX);
-    for (var d = 0; d < 3; d++) {                       // dugouts / equipment bays
-      var dx = -90 + d * 9;
-      seg(dx, dx + 6, 0, 1.9, 86.5, 89, M.plaster);
-      seg(dx - 0.2, dx + 6.2, 1.85, 2.15, 86.3, 89.2, M.roof);
-      box(dx + 3, 0.5, 91, 2.0, 1.0, 1.2, M.wood);      // ball crate
-    }
-    // practice nets — tall, thin, see-through cover
-    [-86, -76, -66].forEach(function (nx) {
-      /* Posts run the full height and the crossbar sits ON them rather than
-         between them — spanning post-centre to post-centre left the bar with
-         nothing beneath its ends. */
-      cyl(nx - 3, 2.15, 91.5, 0.1, 4.3, M.metal);
-      cyl(nx, 2.15, 91.5, 0.1, 4.3, M.metal);
-      cyl(nx + 3, 2.15, 91.5, 0.1, 4.3, M.metal);
-      seg(nx - 3.2, nx + 3.2, 4.3, 4.4, 91.4, 91.6, M.metal, { collide: false, cast: false });
+    /* ---- practice nets, outside the bowl where they belong -------------- */
+    [-95, -87].forEach(function (nx) {
+      [90, 93].forEach(function (nz) {
+        cyl(nx - 3, 2.15, nz, 0.1, 4.3, M.metal);
+        cyl(nx + 3, 2.15, nz, 0.1, 4.3, M.metal);
+      });
+      seg(nx - 3.2, nx + 3.2, 4.3, 4.4, 89.8, 93.2, M.metal, { collide: false, cast: false });
     });
-    /* Crates moved clear of the structures they were placed against — a stack
-       67-100% inside a dugout wall is a prop nobody can use and a pair
-       verify-props counts. */
-    crates(-96, 46); crates(-64, 93); barrel(-90, 94, true); barrel(-72, 43, false);
-    lamp(-79, 44, 'w'); lamp(-79, 92, 'w');
+    barrel(-92, 94, true);
+    lamp(-79, 40, 'w'); lamp(-79, 90, 'w');
   })();
 
   /* ==========================================================================
@@ -1047,7 +1203,7 @@ World._buildPart5 = function (T) {
       var B = lvl === 0 ? 0.3 : 3.3, H = B + 2.6;
       // unit dividers, north side
       [56, 62, 68, 74, 80].forEach(function (dx) {
-        seg(dx - 0.15, dx + 0.15, B, H, -43.7, AZ0, M.plaster);
+        seg(dx - 0.15, dx + 0.15, B, H, -43.7, AZ0, M.facadeIndigo);
       });
       [56, 62, 68, 74, 80].forEach(function (dx) {
         seg(dx - 0.15, dx + 0.15, B, H, AZ1, -22.3, M.plaster);
@@ -1167,7 +1323,7 @@ World._buildPart5 = function (T) {
   seg(-94, -44, 0.02, 0.05, -78, -62, M.asphalt, NC);                     // runway
   for (var rm = -92; rm < -46; rm += 8)
     seg(rm, rm + 4, 0.05, 0.07, -70.4, -69.6, M.sidewalk, NC);            // centreline
-  building(-92, -74, -92, -80, 2, M.plaster, M.roof);                     // terminal
+  building(-92, -74, -92, -80, 2, M.facadeOlive, M.roof);                     // terminal
   // hangars: open-fronted sheds
   [[-68, -94], [-56, -94]].forEach(function (h) {
     seg(h[0], h[0] + 10, 0, 6.2, h[1], h[1] + 0.3, M.metal);
@@ -1200,11 +1356,28 @@ World._buildPart5 = function (T) {
     cyl(c2[0] - 3, 4.5, c2[1], 0.35, 9, M.rust); cyl(c2[0] + 3, 4.5, c2[1], 0.35, 9, M.rust);
     box(c2[0], 9.3, c2[1], 20, 0.7, 1.2, M.rust);
   });
-  [[-86, 62, 0], [-86, 70, 0], [-90, 66, Math.PI / 2], [-74, 84, 0]].forEach(function (c3) {
+  /* ===== v9.14 — THE CONTAINERS IN THE MIDDLE OF THE CRICKET GROUND =====
+     Four shipping containers and a crate stack used to sit at (-86,62),
+     (-86,70), (-90,66) and (-70,52). That was reasonable when this quadrant was
+     empty scrub; it is not reasonable now that Westbrook Stadium's outfield is
+     laid over the top of them. Reported directly — "there are containers in the
+     stadium" — and verify-props agreed, counting a dozen pairs buried in the
+     seating bowl.
+
+     Moved, not deleted. This was the only cover for the whole south-west before
+     the stadium existed, and simply removing it would open the ground back up;
+     they now sit OUTSIDE the bowl on the approaches, where they still break the
+     long lanes into the district. The one at (-74,84) already cleared the
+     footprint and stays where it is.
+
+     The bound is the same arithmetic the stadium itself uses: the outer tier
+     reaches CX +- FA*1.64 + 1.3, so anything inside x[-97,-65] z[38,90] has to
+     go elsewhere. */
+  [[-100, 50, 0], [-100, 78, 0], [-70, 96, Math.PI / 2], [-74, 84, 0]].forEach(function (c3) {
     box(c3[0], 1.3, c3[1], 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0], { rotY: c3[2] });
   });
-  box(-86, 3.9, 62, 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0]);     // stacked
-  crates(-70, 52);
+  box(-100, 3.9, 50, 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0]);    // stacked
+  crates(-62, 36);
 
   /* =============== OUTSKIRTS COVER PASS (v5.0) ===============
      tools/verify-cover.js measured 23.6% of Urban as dead ground (no cover
@@ -1262,9 +1435,9 @@ World._buildPart5 = function (T) {
     }
     function shed(x, z) {
       seg(x - 1.6, x + 1.6, 0, 2.5, z - 1.5, z - 1.35, M.plaster);
-      seg(x - 1.6, x + 1.6, 0, 2.5, z + 1.35, z + 1.5, M.plaster);
+      seg(x - 1.6, x + 1.6, 0, 2.5, z + 1.35, z + 1.5, M.facadeTeal);
       seg(x - 1.6, x - 1.45, 0, 2.5, z - 1.5, z + 1.5, M.plaster);
-      seg(x + 1.45, x + 1.6, 0, 2.5, z - 1.5, z - 0.5, M.plaster);   // doorway gap
+      seg(x + 1.45, x + 1.6, 0, 2.5, z - 1.5, z - 0.5, M.facadeAmber);   // doorway gap
       seg(x - 1.8, x + 1.8, 2.5, 2.72, z - 1.7, z + 1.7, M.roof, { collide: false });
     }
     function pylon(x, z) {

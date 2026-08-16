@@ -162,6 +162,38 @@ var Minimap = (function () {
     ctx.fill(); ctx.stroke();
     ctx.restore();
 
+    /* ===== v9.10: THE MARKER BEARING, ON THE DIAL =====
+       A pin you can only see by opening the full map is a pin you check once
+       and then forget, because opening the map costs you your view of the
+       world while the match keeps running. So a team marker also rides the
+       radar: inside its range it sits where it really is, and beyond that it
+       clamps to the rim as a BEARING with the distance in metres. That turns
+       "someone marked a spot" into something you can act on while moving. */
+    liveMarks().forEach(function (m) {
+      var dxw = m.x - PlayerCtl.pos.x, dzw = m.z - PlayerCtl.pos.z;
+      var dist = Math.hypot(dxw, dzw);
+      var sn = Math.sin(-PlayerCtl.yaw), cs = Math.cos(-PlayerCtl.yaw);
+      var lx = dxw * cs - dzw * sn, lz = dxw * sn + dzw * cs;
+      var px = lx * SCALE, py = lz * SCALE;
+      var rad = Math.hypot(px, py);
+      var clamped = rad > R - 8;
+      if (clamped) { var k = (R - 8) / (rad || 1); px *= k; py *= k; }
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.translate(cx + px, cy + py);
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath();
+      ctx.moveTo(0, -6); ctx.lineTo(5, 4); ctx.lineTo(-5, 4);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1.2; ctx.stroke();
+      if (clamped) {
+        ctx.fillStyle = '#ffd166';
+        ctx.font = '600 9px Rajdhani, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(Math.round(dist) + 'm', 0, 14);
+      }
+      ctx.restore();
+    });
+
     // rim + north marker
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, 6.2832);
@@ -229,11 +261,72 @@ var Minimap = (function () {
      than player-up because a memorised map has to have a fixed orientation.
      Pure 2D canvas: no WebGL, no geometry, nothing added to any budget. */
   var fullOn = false, fullCv = null, fullCtx = null;
+
+  /* ===== v9.10 — TEAM MAP MARKERS =====
+     Click the full map in a team mode and every team-mate gets a pin, with a
+     bearing arrow on their compass so it is useful with the map CLOSED — which
+     is where it matters, because the map does not pause the match.
+
+     Only one marker per player is kept: the point is "go here", and a map that
+     accumulates eleven pins is a map nobody reads. A marker expires after
+     MARK_TTL so a stale call-out does not outlive the fight it was about. */
+  var MARK_TTL = 45000;
+  var marks = {};                    // player id -> { x, z, at, name }
+
+  function addMark(m) {
+    if (!m) return;
+    marks[m.id] = { x: m.x, z: m.z, at: performance.now(), name: m.name || 'Squad' };
+  }
+  function liveMarks() {
+    var out = [], t = performance.now();
+    for (var k in marks) {
+      if (t - marks[k].at > MARK_TTL) { delete marks[k]; continue; }
+      out.push(marks[k]);
+    }
+    return out;
+  }
+  function clearMarks() { marks = {}; }
   var lastSeen = {};          // id -> {x, z, t} for the LAST KNOWN rings
+
+  /* Placing one. The map is drawn north-up over the whole world, so the screen
+     -> world transform is the exact inverse of sx/sz in drawFull; deriving it
+     from the same W and WORLD is what keeps a pin under the cursor when the
+     window is resized. */
+  function markAt(clientX, clientY) {
+    if (!fullOn || !fullCv) return;
+    var modeCfg = CFG.MODES[(Net.getMatch() || {}).mode];
+    if (!modeCfg || !modeCfg.teams) return;          // no sides, no shared marker
+    var r = fullCv.getBoundingClientRect();
+    var W = r.width, S = W / (WORLD * 2);
+    var x = (clientX - r.left) / S - WORLD;
+    var z = (clientY - r.top) / S - WORLD;
+    if (Math.abs(x) > WORLD || Math.abs(z) > WORLD) return;
+    Net.mark(x, z);
+    /* Shown immediately rather than waiting for the round trip. The server
+       relays to the whole team including the sender, so this is replaced by the
+       authoritative copy a moment later. */
+    addMark({ id: 'self', x: x, z: z, name: 'You' });
+  }
 
   function toggleFull() {
     fullCv = fullCv || document.getElementById('fullmap');
     if (!fullCv) return;
+    if (!fullCv._markBound) {
+      fullCv._markBound = 1;
+      fullCv.addEventListener('mousedown', function (e) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        markAt(e.clientX, e.clientY);
+      });
+      /* Touch too: the map is the one screen a phone player can realistically
+         aim at, and a marker is the one thing they can contribute without
+         precise aim. */
+      fullCv.addEventListener('touchstart', function (e) {
+        if (!e.touches || !e.touches[0]) return;
+        e.preventDefault();
+        markAt(e.touches[0].clientX, e.touches[0].clientY);
+      }, { passive: false });
+    }
     fullOn = !fullOn;
     fullCv.style.display = fullOn ? 'block' : 'none';
     if (fullOn) drawFull();
@@ -411,6 +504,27 @@ var Minimap = (function () {
     });
 
     var pxw = sx(PlayerCtl.pos.x), pzw = sz(PlayerCtl.pos.z);
+    /* MARKERS. Drawn last so they sit over the terrain and the contacts, with
+       a pulse keyed to age — a fresh call-out should catch the eye and a minute
+       old one should not. */
+    liveMarks().forEach(function (m) {
+      var age = (performance.now() - m.at) / MARK_TTL;
+      var mx = sx(m.x), mz = sz(m.z);
+      var pulse = 1 + Math.sin(performance.now() / 220) * 0.12;
+      g.save();
+      g.globalAlpha = Math.max(0.35, 1 - age);
+      g.strokeStyle = '#ffd166'; g.lineWidth = 2.5;
+      g.beginPath(); g.arc(mx, mz, 9 * pulse, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.moveTo(mx - 14, mz); g.lineTo(mx - 5, mz);
+      g.moveTo(mx + 5, mz); g.lineTo(mx + 14, mz);
+      g.moveTo(mx, mz - 14); g.lineTo(mx, mz - 5);
+      g.moveTo(mx, mz + 5); g.lineTo(mx, mz + 14); g.stroke();
+      g.fillStyle = '#ffd166';
+      g.font = '600 11px Rajdhani, sans-serif'; g.textAlign = 'center';
+      g.fillText(m.name, mx, mz - 18);
+      g.restore();
+    });
+
     g.save();
     g.translate(pxw, pzw);
     g.rotate(PlayerCtl.yaw);
@@ -432,5 +546,6 @@ var Minimap = (function () {
   }
 
   return { init: init, update: update, invalidate: invalidate,
+           addMark: addMark, clearMarks: clearMarks, liveMarks: liveMarks,
            toggleFull: toggleFull, drawFull: drawFull, isFullOpen: isFullOpen };
 })();

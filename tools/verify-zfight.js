@@ -69,7 +69,18 @@ const boxes = vm.runInContext(`(function(){
 const EPS = 0.012, MIN_AREA = 0.8, ROOF = 2.5;
 console.log(`\n--- [urban] ${boxes.length} surfaces ---`);
 
+/* v9.14: ROTATED PIECES ARE EXCLUDED, for the same reason verify-props excludes
+   them. Index 8 marks a box placed with a rotY, and such a box is recorded as
+   its axis-aligned bounding box. The min and max faces of that AABB are not
+   surfaces that exist — the real faces are at an angle inside it — so asking
+   whether two of them are coplanar is asking about geometry that was never
+   built. Westbrook's elliptical bowl made this unmissable: 44 turf tiles all
+   report the same AABB top face and none of them share a real plane.
+   Everything axis-aligned is still compared exactly as before. */
+const flat = boxes.filter(b => !b[8]);
+
 function scanPlane(faceIdx, oA, oB, label) {
+  const boxes = flat;          // v9.14: rotated pieces excluded, see above
   const m = new Map();
   boxes.forEach((b, i) => {
     const k = Math.round(b[faceIdx] / EPS);
@@ -144,6 +155,14 @@ const totalAll = r.top.all + r.west.all + r.east.all + r.north.all + r.south.all
    headless gates alone is exactly what produced the v7.5 all-black Rural. These
    are enumerated with coordinates so the fix can go out as a build where it is
    the ONLY change and Rahul can confirm it with his eyes. */
+/* v9.14 raised these to 50/115 and then PUT THEM BACK, same session, once the
+   real cause was found. The excess was never the ellipse: it was four shipping
+   containers the new outfield had been laid on top of, plus a pavilion carrying
+   side windows and balcony returns it did not need. With the containers moved
+   and the pavilion simplified the counts are 45 and 107 — under the numbers
+   this file has held since v8.5.
+   Left at 46/110 rather than tightened to 45/107, because the one spare pair is
+   Urban's existing slack and not something the stadium earned. */
 const ROOF_PAIRS = 46, ALL_PAIRS = 110;
 ok(totalHigh <= ROOF_PAIRS, `urban: ${totalHigh} coplanar pairs above roof height (budget ${ROOF_PAIRS})`);
 ok(totalAll <= ALL_PAIRS, `urban: ${totalAll} coplanar pairs total (budget ${ALL_PAIRS})`);

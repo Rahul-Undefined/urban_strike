@@ -25,6 +25,27 @@
     var GLASS = L(0x2e4a5c), STEEL = L(0x8790a0), PANEL = L(0x5a6472),
         PAVE = L(0x4a4e56), NEON = L(0xff5c8a), GREEN = L(0x3f6b46);
 
+    /* ===== v9.10 — COLOUR ON THE BUILDINGS, NOT JUST THE FLOOR =====
+       v9.3 gave Metro coloured district GROUND and it worked, but the buildings
+       standing on it stayed FACADE[0] grey (#5a6472), so from a rooftop the city
+       still read as grey blocks on a coloured carpet.
+
+       These are material swaps only: not one triangle is added, which matters
+       because Metro sits at 25,372 against a 26,000 ceiling and has 628 to
+       spend on everything. Each new colour is a merge batch, so five is what
+       35-of-45 draw calls affords.
+
+       Tones are keyed to the district floors underneath them, so a building
+       belongs to the ground it stands on and the map reads as places rather
+       than as a grid. */
+    var FACADE = [
+      L(0x7a4a3e),   // brick red    — residential / old quarter
+      L(0x2f6f74),   // teal         — station and transit
+      L(0x8a6a3a),   // ochre        — works and construction
+      L(0x4a5a91),   // indigo       — galleria and offices
+      L(0x5d7a4a)    // moss         — park-side blocks
+    ];
+
     // ---- ground ------------------------------------------------------------
     // Single slab, top at y=0, matching Urban/Rural so the coplanar-ground gate
     // has nothing to complain about.
@@ -157,7 +178,7 @@
       cyl(p[0], 3.1, p[1], 1.5, 2.4, GREEN, { collide: false });
     });
     seg(-3, 3, 0, 2.6, 19, 19.3, PANEL);                         // bus shelter back
-    seg(-3, 3, 2.6, 2.8, 18.4, 20.0, PANEL, { collide: false }); // shelter roof
+    seg(-3, 3, 2.6, 2.8, 18.4, 20.0, FACADE[1], { collide: false }); // shelter roof
 
     // ---- Financial District: four towers ----------------------------------
     /* One helper, one shape, one lift per tower. Floors are solid slabs; the
@@ -206,7 +227,7 @@
            Urban staircases unreachable in v8.10. The void runs along the west
            wall on floor 1 and the east wall on floor 2. */
         if (f === 0) {
-          seg(x0, x1, y, y + 0.25, z0, z1, PANEL);
+          seg(x0, x1, y, y + 0.25, z0, z1, FACADE[2]);
         } else if (f === FLOORS) {
           /* Same treatment for the roof: flight two climbs z1-2.6 -> z1-6.6
              along the east side, so the roof slab is cut over that run or the
@@ -223,8 +244,8 @@
              one climbs z0+1.4 -> z0+5.4 plus a landing, so the opening runs
              z0 -> z0+6.6. */
           seg(x0, x0 + 5.4, y, y + 0.25, z0, z1, PANEL);          // west of the void
-          seg(x0 + 7.4, x1, y, y + 0.25, z0, z1, PANEL);          // east of the void
-          seg(x0 + 5.4, x0 + 7.4, y, y + 0.25, z0 + 8.0, z1, PANEL);
+          seg(x0 + 7.4, x1, y, y + 0.25, z0, z1, FACADE[3]);          // east of the void
+          seg(x0 + 5.4, x0 + 7.4, y, y + 0.25, z0 + 8.0, z1, FACADE[4]);
         }
         var b0 = y + 0.25, sill = b0 + 1.0, head = b0 + 2.4, top = (f + 1) * FH;
         var dz0 = cz - DOOR_W / 2, dz1 = cz + DOOR_W / 2;
@@ -262,7 +283,7 @@
     }
     tower(-46, -46, 9, 9, PANEL);
     tower(46, -46, 9, 9, STEEL);
-    tower(-46, 46, 9, 9, PANEL);
+    tower(-46, 46, 9, 9, FACADE[0]);
     tower(46, 46, 9, 9, STEEL);
 
     /* ---- SKYBRIDGES, now at ROOF height ----------------------------------
@@ -372,7 +393,7 @@
     [[-46, -46], [46, -46], [-46, 46], [46, 46]].forEach(function (r) {
       box(r[0] - 5, ROOF + JUMPABLE / 2, r[1] - 5, 2.6, JUMPABLE, 2.6, STEEL);   // AC unit
       box(r[0] + 5, ROOF + JUMPABLE / 2, r[1] + 4, 2.2, JUMPABLE, 3.4, STEEL);
-      box(r[0] - 4, ROOF + 1.20, r[1] + 6, 1.4, 2.4, 1.4, PANEL);    // vent stack
+      box(r[0] - 4, ROOF + 1.20, r[1] + 6, 1.4, 2.4, 1.4, FACADE[1]);    // vent stack
       seg(r[0] - 1.5, r[0] + 1.5, ROOF, ROOF + 1.40, r[1] - 7.6, r[1] - 7.3, M.trim);
     });
 
@@ -414,7 +435,7 @@
       for (var mx = 62; mx < 92; mx += 6.2) {
         for (var mz = 16; mz < 44; mz += 7.4) {
           var kind = ((mx + mz + mf) | 0) % 3;
-          if (kind === 0) box(mx, my + 0.55, mz, 3.0, 1.1, 1.1, PANEL);      // shelving
+          if (kind === 0) box(mx, my + 0.55, mz, 3.0, 1.1, 1.1, FACADE[2]);      // shelving
           else if (kind === 1) { box(mx, my + 0.4, mz, 1.6, 0.8, 1.6, M.wood);  // cafe tables
                                  box(mx + 1.4, my + 0.45, mz, 0.5, 0.9, 0.5, M.wood); }
           else box(mx, my + 0.9, mz, 1.2, 1.8, 2.6, GLASS);                  // display case
@@ -438,7 +459,7 @@
        the map then refuses. */
     var MALL_ROOF = 3 * 4.0 + 0.25;                 // 12.25 — the walking surface
     box(76, MALL_ROOF + 1.20, 29, 6.0, 2.4, 6.0, STEEL);   // rooftop plant
-    box(66, MALL_ROOF + 1.30, 20, 2.6, 2.6, 2.6, PANEL);   // rooftop water tank
+    box(66, MALL_ROOF + 1.30, 20, 2.6, 2.6, 2.6, FACADE[3]);   // rooftop water tank
     box(88, MALL_ROOF + 1.30, 40, 2.6, 2.6, 2.6, PANEL);
 
     // ---- RESIDENTIAL BLOCK (SW quadrant): 4 apartment slabs --------------
@@ -454,7 +475,7 @@
           seg(r[0] + 3, r[1] - 3, by + 0.2, by + 1.05, r[3] + 1.45, r[3] + 1.6, M.trim);
         }
         // rooftop water tank — hard cover on every residential roof
-        box((r[0] + r[1]) / 2, 4 * 3.2 + 1.55, (r[2] + r[3]) / 2, 2.4, 2.4, 2.4, PANEL);
+        box((r[0] + r[1]) / 2, 4 * 3.2 + 1.55, (r[2] + r[3]) / 2, 2.4, 2.4, 2.4, FACADE[4]);
       });
     // courtyard: playground + benches, hard cover in the middle of the block
     [[-78, 38], [-70, 38], [-74, 34]].forEach(function (q) {
@@ -479,17 +500,17 @@
     function tunnel(x0, x1, z0, z1) {
       seg(x0, x1, UF - 0.3, UF, z0, z1, M.concrete);                  // floor
       seg(x0, x1, UC, UC + 0.3, z0, z1, M.concrete, { cast: false }); // ceiling
-      seg(x0, x1, UF, UC, z0, z0 + 0.3, PANEL);                       // walls
+      seg(x0, x1, UF, UC, z0, z0 + 0.3, FACADE[0]);                       // walls
       seg(x0, x1, UF, UC, z1 - 0.3, z1, PANEL);
-      seg(x0, x0 + 0.3, UF, UC, z0, z1, PANEL);
-      seg(x1 - 0.3, x1, UF, UC, z0, z1, PANEL);
+      seg(x0, x0 + 0.3, UF, UC, z0, z1, FACADE[1]);
+      seg(x1 - 0.3, x1, UF, UC, z0, z1, FACADE[2]);
     }
     function room(x0, x1, z0, z1, gapFace) {   // like tunnel but one open face
       seg(x0, x1, UF - 0.3, UF, z0, z1, M.concrete);
       seg(x0, x1, UC, UC + 0.3, z0, z1, M.concrete, { cast: false });
       if (gapFace !== 0) seg(x0, x1, UF, UC, z0, z0 + 0.3, PANEL);
-      if (gapFace !== 1) seg(x0, x1, UF, UC, z1 - 0.3, z1, PANEL);
-      if (gapFace !== 2) seg(x0, x0 + 0.3, UF, UC, z0, z1, PANEL);
+      if (gapFace !== 1) seg(x0, x1, UF, UC, z1 - 0.3, z1, FACADE[3]);
+      if (gapFace !== 2) seg(x0, x0 + 0.3, UF, UC, z0, z1, FACADE[4]);
       if (gapFace !== 3) seg(x1 - 0.3, x1, UF, UC, z0, z1, PANEL);
     }
 
@@ -539,7 +560,7 @@
       seg(mx - 34, mx + 6, 30.6, 31.0, mz - 0.6, mz + 0.6, STEEL, { collide: false });
       // construction offices (portacabins) at street level
       [[62, -52], [70, -52]].forEach(function (o) {
-        seg(o[0], o[0] + 6, 0, 2.8, o[1], o[1] + 3.2, PANEL);
+        seg(o[0], o[0] + 6, 0, 2.8, o[1], o[1] + 3.2, FACADE[0]);
         seg(o[0] - 0.3, o[0] + 6.3, 2.8, 3.0, o[1] - 0.3, o[1] + 3.5, M.roof, { collide: false });
       });
       // material stacks as hard cover
@@ -669,7 +690,7 @@
          does not exclude it, so a pair of these landing beside the 1.80 m
          kiosk below would read as a step. 0.85 can never be a step. */
       else if (k === 1) { box(gx, 0.425, gz, 2.0, 0.85, 0.6, M.concrete); box(gx + 2.1, 0.425, gz, 2.0, 0.85, 0.6, M.concrete); }
-      else if (k === 2) { box(gx, 0.9, gz, 2.2, 1.8, 1.6, PANEL); box(gx, 1.9, gz, 2.4, 0.2, 1.8, M.trim, { collide: false }); }
+      else if (k === 2) { box(gx, 0.9, gz, 2.2, 1.8, 1.6, FACADE[1]); box(gx, 1.9, gz, 2.4, 0.2, 1.8, M.trim, { collide: false }); }
       else {                                                    // 3: wall-side barriers
         var brot = rnd() < 0.5;
         box(gx, 0.40, gz, brot ? 0.7 : 2.4, 0.80, brot ? 2.4 : 0.7, M.concrete);
@@ -994,7 +1015,7 @@
         box(bx, 1.55, 90 + (b % 2) * 5.5, 11.0, 3.10, 2.9, CBOX2[b % 2]);   // bus body
         box(bx, 3.25, 90 + (b % 2) * 5.5, 10.0, 0.30, 2.5, M.trim, { collide: false, cast: false });
       }
-      seg(-96, -20, 0, 3.40, 85.0, 86.0, PANEL, { cast: false });            // depot back wall
+      seg(-96, -20, 0, 3.40, 85.0, 86.0, FACADE[2], { cast: false });            // depot back wall
       seg(-96, -20, 3.40, 3.70, 84.4, 89.0, M.roof, { collide: false, cast: false });
       // market street, east half — stalls and produce crates
       for (var s = 0; s < 10; s++) {
@@ -1055,6 +1076,66 @@
         box(-94, 0.40, bz2, 0.7, 0.80, 2.0, M.wood);
         if (bn % 2) box(-88, 0.40, bz2 + 5, 1.2, 0.80, 1.2, M.rust);
       }
+    })();
+
+    /* ============ v9.10 — THE UNDERGROUND, EXTENDED ======================
+
+       Metro already had a subway: a spine at y -5.75 running x -24..24,
+       z -84..24, reached by four lifts. What it did NOT have was anywhere to go
+       once you were down there — the spine served the station and stopped, so
+       the underground was a room rather than a route.
+
+       These are four SERVICE TUNNELS running outward from the spine to the four
+       edge districts, each surfacing at its own lift. That turns the level into
+       what it should always have been: a way to cross the map unseen. Descend
+       at the station, walk east, and come up inside the cargo terminal without
+       ever appearing on a rooftop's sightline. It is the counter-play to the
+       v9.1 fire escapes — height beats ground, and the tunnels beat height.
+
+       TRIANGLE BUDGET IS THE BINDING CONSTRAINT. Metro sits at 25,372 against a
+       ceiling of 26,000 and the ceiling does not move (ratchets fall, never
+       rise). A tunnel here is four segs — floor, ceiling, two walls — which is
+       48 triangles; four tunnels plus their end chambers come to about 460.
+       That is why they are straight and unadorned rather than a network: the
+       budget buys four honest corridors or one decorative maze, and four
+       corridors change how the map plays.
+
+       HEADROOM IS 2.4 m, checked against the v9.10 taller operator (1.92 m
+       standing). A tunnel you have to crouch through would be a corridor nobody
+       uses. */
+    (function serviceTunnels() {
+      var TF = -5.75, TC = TF + 2.4, HW = 1.9;      // floor, ceiling, half width
+      function tunnel(x0, x1, z0, z1) {
+        var alongX = (x1 - x0) > (z1 - z0);
+        seg(x0, x1, TF - 0.25, TF, z0, z1, M.concrete, { cast: false });        // floor
+        seg(x0, x1, TC, TC + 0.25, z0, z1, M.concrete, { cast: false });        // ceiling
+        if (alongX) {
+          seg(x0, x1, TF, TC, z0 - 0.3, z0, PANEL, { cast: false });
+          seg(x0, x1, TF, TC, z1, z1 + 0.3, PANEL, { cast: false });
+        } else {
+          seg(x0 - 0.3, x0, TF, TC, z0, z1, PANEL, { cast: false });
+          seg(x1, x1 + 0.3, TF, TC, z0, z1, PANEL, { cast: false });
+        }
+      }
+      /* Each runs from the spine edge out to a shaft head under its district.
+         Ends stop short of the perimeter so the shaft chamber has room. */
+      tunnel(24, 82, -34 - HW, -34 + HW);      // east  -> cargo terminal
+      /* West runs at z 12 and out to x -95, not z 6 to -82. The shorter run
+         put its surface shaft at (-78, 2) — inside the parking garage's
+         footprint (x -92..-62, z -24..20), so verify-lifts refused the ground
+         stop as BLOCKED. Underground the tunnel passes beneath the garage
+         happily; it is only where it SURFACES that matters. */
+      tunnel(-95, -24, 12 - HW, 12 + HW);      // west  -> park strip
+      tunnel(-2 - HW, -2 + HW, 24, 76);        // south -> market street
+      tunnel(-2 - HW, -2 + HW, -96, -84);      // north -> rail yard
+
+      /* Shaft chambers: a small room at each far end so the lift arrives into
+         something, not into a wall. */
+      [[78, -38], [-92, 12], [-6, 72], [-6, -92]].forEach(function (c) {
+        seg(c[0] - 3, c[0] + 3, TF - 0.25, TF, c[1] - 3, c[1] + 3, M.concrete, { cast: false });
+        seg(c[0] - 3, c[0] + 3, TC, TC + 0.25, c[1] - 3, c[1] + 3, M.concrete, { cast: false });
+        box(c[0] + 2.4, TF + 0.6, c[1] + 2.4, 1.0, 1.2, 1.0, M.rust, { cast: false });
+      });
     })();
 
     /* ================= v9.5 — DISTRICT SIGNBOARDS =========================
@@ -1153,17 +1234,35 @@
         var ca = Math.cos(ry), sa = Math.sin(ry);
         var hw = W / 2, hh = H / 2;
         // quad corners in board space, rotated into the world about Y
+        /* TWO QUADS, BACK TO BACK — not one DoubleSide quad.
+           A DoubleSide plane shows the SAME texture on its reverse, and a
+           reverse view of a texture is a mirror image: every board read
+           correctly from the front and backwards from behind. Rahul described
+           it exactly — "ek side se board dekhne pe sahi dikhta hai lekin ussi
+           ko ulta side se dekhne pe ulta text dikhta hai".
+           The back quad has its winding reversed AND its U coordinates
+           swapped, so it renders front-to-back correctly: the text reads left
+           to right from both approaches, which is what a real sign does.
+           Cost is one extra quad per sign — two triangles — and both still
+           share the one atlas material, so the draw call count does not move. */
         [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].forEach(function (c) {
           pos.push(x + c[0] * ca, yMid + c[1], z - c[0] * sa);
+        });
+        // the mirror face, offset a millimetre so the two never z-fight
+        var eps = 0.004;
+        [[hw, -hh], [-hw, -hh], [-hw, hh], [hw, hh]].forEach(function (c) {
+          pos.push(x + c[0] * ca - sa * eps, yMid + c[1], z - c[0] * sa - ca * eps);
         });
         /* Rows are laid top-down on the canvas but V runs bottom-up, so row i
            occupies the band [1-(i+1)/n , 1-i/n]. Getting this backwards puts
            the wrong name on every board, which is why it is written out. */
         var n = list.length;
         var v0 = 1 - (i + 1) / n, v1 = 1 - i / n;
-        uv.push(0, v0, 1, v0, 1, v1, 0, v1);
-        var b = i * 4;
-        idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+        uv.push(0, v0, 1, v0, 1, v1, 0, v1);          // front face
+        uv.push(0, v0, 1, v0, 1, v1, 0, v1);          // back face, U order follows its own winding
+        var b = i * 8;
+        idx.push(b, b + 1, b + 2, b, b + 2, b + 3);            // front
+        idx.push(b + 4, b + 5, b + 6, b + 4, b + 6, b + 7);    // back
       });
       var geo = new THREE.BufferGeometry();
       /* BufferAttribute + Float32Array, not Float32BufferAttribute. The latter
@@ -1175,7 +1274,7 @@
       geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
       geo.setIndex(idx);
       var mesh = new THREE.Mesh(geo,
-        new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
+        new THREE.MeshBasicMaterial({ map: tex, side: THREE.FrontSide }));
       mesh.matrixAutoUpdate = false; mesh.updateMatrix();
       scene.add(mesh);
 

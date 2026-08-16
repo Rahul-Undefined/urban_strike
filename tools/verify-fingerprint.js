@@ -102,7 +102,24 @@ function fingerprint(map) {
 
 /* ---- BASELINE — v9.0 as shipped. Do not edit to make a build pass. ---- */
 const BASELINE = {
-  /* v9.7: colSig only. The Civic apartment's roof bulkhead was split to open
+  /* v9.15: colliders +30, tris +1032 — two fire escapes reshaped to a realistic
+     tread profile at an unchanged footprint (more, smaller steps over the same
+     ground), plus landing platforms where an external flight would otherwise
+     have left its roof unreachable. Draws are UNCHANGED, which is the signature
+     of geometry added in materials that were already batched.
+     v9.14: Westbrook Stadium rebuilt as a true ellipse — see the note above
+     BASELINE in tools/verify-untouched.js for the full record, including the
+     containers moved out of the outfield and the stair helper that never
+     checked whether its run fitted the building.
+     v9.12: colliders +10, tris +120 — the shared buildingAt helper now gaps its
+     roof parapet over the external stair and carries its doorway through the
+     head band, so two reported roofs (and every building of that type) became
+     reachable. Reported from PLAY with coordinates; every gate had passed them.
+     v9.10: draws 103->108, casters 57->62, meshSig moved — 22 Urban facades
+     recoloured. `colliders` and `tris` are UNCHANGED, which is what tells you
+     this was materials and not geometry. Casters now sit exactly on their
+     budget of 62; the next shadow-casting material has to free a batch first.
+     v9.7: colSig only. The Civic apartment's roof bulkhead was split to open
      the stairwell exit — one wall became a shorter wall, so the checksum moves
      while the collider count and triangle total do not. That pattern is worth
      recognising: a changed sum with unchanged counts means geometry MOVED
@@ -111,7 +128,7 @@ const BASELINE = {
      the SE high-rise cluster became the South Terminal, the vacant SW became
      Westbrook Stadium, and the Civic apartment staircase was rebuilt. See the
      note above BASELINE in tools/verify-untouched.js. */
-  urban: { colliders: 3282, draws: 103, tris: 87396, casters: 57, lights: 7, bound: 100, colSig: 812696814, meshSig: 285427118 },
+  urban: { colliders: 3334, draws: 112, tris: 92088, casters: 62, lights: 7, bound: 100, colSig: -1276668319, meshSig: -450224149 },
   rural: { colliders: 1066, draws: 32, tris: 54467, casters: 22, lights: 3, bound: 150, colSig: -956236117, meshSig: -2029443105 }
 };
 

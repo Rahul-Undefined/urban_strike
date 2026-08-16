@@ -224,8 +224,16 @@ var WeaponModels = (function () {
       part(g, 0, -0.005, 0.04, 0.066, 0.1, 0.44, green);               // one-piece shell
       cylPart(g, 0, 0.012, -0.34, 0.017, 0.34, dark);                  // barrel
       part(g, 0, -0.075, -0.12, 0.05, 0.09, 0.07, green);              // forward grip
-      cylPart(g, 0, 0.085, -0.02, 0.03, 0.26, gunmetal);               // integral scope tube
-      cylPart(g, 0, 0.085, -0.16, 0.034, 0.028, steel);                // objective
+      /* v9.9: the integral optic is GONE, for the same reason the attachment
+         optics went in v9.7. A 0.26 m tube sitting 0.085 above the receiver is
+         directly in the sight line — reported as "a scope of no use that blocks
+         the shooting". The AUG's real distinguishing features are its bullpup
+         layout and its handling, and it keeps both: the magazine behind the
+         grip, the short overall length, and the tighter hip spread and lower
+         adsFov in weapons.config.js. Its identity was never the tube.
+         A low, flat rail stands in for it — visible, and nowhere near the
+         centre of the screen. */
+      part(g, 0, 0.052, -0.10, 0.026, 0.018, 0.22, dark);              // low rail
       var magA = new THREE.Group(); magA.position.set(0, -0.1, 0.16); g.add(magA);
       part(magA, 0, 0, 0, 0.044, 0.13, 0.06, tan);                     // mag behind the grip
       g.userData.mag = magA; g.userData.magHome = magA.position.clone();
@@ -366,6 +374,85 @@ var WeaponModels = (function () {
         models[n] = g;
       }
     });
+    /* ===== v9.12 — WHERE EACH GUN'S MUZZLE ACTUALLY IS =====
+       Reported as "a weird nozzle at the front of every gun". The muzzle
+       attachment was placed at a HARDCODED z of -0.72, which is right for
+       nothing: an UZI's barrel ends around -0.30 so its compensator floated in
+       mid-air ahead of the gun, and a Kar98's runs past -0.90 so its suppressor
+       sat buried inside the barrel.
+
+       One number cannot fit twenty-five weapons of different lengths. Each
+       model is measured once, here, and the forward-most point of its geometry
+       becomes its muzzle anchor. A new weapon gets a correct anchor for free,
+       which is the only version of this that stays correct. */
+    /* ===== v9.13 — HANDS ON THE WEAPON =====
+       Rahul asked for hands, with reference images. Every gun until now floated
+       unheld in the corner of the screen, which is the single thing that most
+       reads as "unfinished" in a first-person shooter — the reference shots he
+       sent are all hands first, gun second.
+
+       Fitted here, once, for EVERY weapon rather than modelled into each of the
+       twenty-five: a trigger hand at the grip and a support hand forward on the
+       handguard, positioned from the model's OWN measured length. A hand drawn
+       at a fixed offset would sit on the magazine of a short SMG and halfway
+       down the barrel of a bolt rifle — the same mistake the muzzle attachment
+       made until v9.12, and the reason both are measured now.
+
+       Knuckles and a thumb rather than a plain box: at viewmodel distance the
+       silhouette is all the player reads, and an unbroken cuboid reads as a
+       block of wood. Skipped for the bow, which is drawn already nocked and
+       whose own limbs occupy those positions. */
+    var SKIN = mat(0xb98a63), CUFF = mat(0x2f3a33);
+    function hand(g, x, y, z, rot) {
+      var h = new THREE.Group();
+      h.position.set(x, y, z);
+      if (rot) h.rotation.z = rot;
+      part(h, 0, 0, 0, 0.075, 0.095, 0.115, SKIN);              // palm
+      part(h, 0.012, -0.055, 0.012, 0.060, 0.045, 0.095, SKIN); // curled fingers
+      part(h, -0.042, -0.012, 0.020, 0.030, 0.055, 0.045, SKIN);// thumb
+      part(h, 0, 0.055, -0.010, 0.085, 0.045, 0.125, CUFF);     // glove cuff
+      g.add(h);
+      return h;
+    }
+
+    /* Bounds computed by WALKING THE CHILDREN, not with THREE.Box3.
+       Box3 is a convenience class and is absent from the trimmed THREE the
+       model gates run against — exactly the trap Float32BufferAttribute set in
+       v9.5, where the geometry was right and the DEPENDENCY was not. Positions
+       and the box sizes are all this needs, and both are on every part. */
+    Object.keys(models).forEach(function (n) {
+      var m = models[n], minZ = Infinity, minY = Infinity, maxY = -Infinity;
+      /* Walked with an explicit stack rather than Group.traverse: the model
+         gates run against a trimmed THREE whose Group has children but no
+         traverse, and a helper that only works in a browser is a helper the
+         gates cannot check. */
+      var stack = (m.children || []).slice(), o;
+      while (stack.length) {
+        o = stack.pop();
+        if (o.children && o.children.length) stack.push.apply(stack, o.children);
+        (function (o) {
+        if (!o.geometry || !o.geometry.parameters) return;
+        var p = o.geometry.parameters;
+        var hz = (p.depth !== undefined ? p.depth : (p.height || 0)) / 2;
+        var hy = (p.height !== undefined ? p.height : 0) / 2;
+        if (o.rotation && Math.abs(o.rotation.x) > 1) { var t = hz; hz = hy; hy = t; }
+        minZ = Math.min(minZ, o.position.z - hz);
+        minY = Math.min(minY, o.position.y - hy);
+        maxY = Math.max(maxY, o.position.y + hy);
+        })(o);
+      }
+      m.userData.muzzleZ = isFinite(minZ) ? minZ : -0.7;
+      m.userData.muzzleY = (isFinite(minY) && isFinite(maxY)) ? (minY + maxY) / 2 : 0.005;
+
+      /* Both hands are placed from this weapon's measured length: the trigger
+         hand just behind the receiver, the support hand two thirds of the way
+         out along the barrel — which is where a person actually holds one. */
+      if (n === 'bow' || n === 'drone' || n === 'knife') return;
+      var muz = m.userData.muzzleZ, mid = m.userData.muzzleY;
+      hand(m, 0.005, mid - 0.10, Math.min(-0.02, muz * 0.18));            // trigger hand
+      hand(m, -0.010, mid - 0.085, Math.max(muz + 0.14, muz * 0.62), 0.22); // support hand
+    });
+
     return models;
   }
 
@@ -434,12 +521,18 @@ var WeaponModels = (function () {
       var can = new THREE.Mesh(
         new THREE.CylinderGeometry(supp ? 0.032 : 0.028, supp ? 0.032 : 0.03,
           supp ? 0.20 : 0.08, 10), mat(supp ? 0x1c2024 : 0x3a4149));
+      /* Anchored to THIS gun's measured muzzle, not to a constant. The can
+         sits just beyond the barrel end and the ports just behind it, so a
+         short SMG and a long bolt rifle both look like the part was fitted
+         rather than floated. */
+      var mz = (g.userData.muzzleZ !== undefined ? g.userData.muzzleZ : -0.70);
+      var my = (g.userData.muzzleY !== undefined ? g.userData.muzzleY : 0.005);
       can.rotation.x = Math.PI / 2;
-      can.position.set(0, 0.005, supp ? -0.78 : -0.72);
+      can.position.set(0, my, mz - (supp ? 0.10 : 0.04));
       can.userData.att = true; g.add(can);
       if (!supp) {
         var port = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.05), mat(0x2a3037));
-        port.position.set(0, 0.028, -0.72); port.userData.att = true; g.add(port);
+        port.position.set(0, my + 0.023, mz + 0.02); port.userData.att = true; g.add(port);
       }
     }
 

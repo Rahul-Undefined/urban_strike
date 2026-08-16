@@ -58,6 +58,7 @@ var Weapons = (function () {
     UI.setGear(mineCount, throwsLeft.molotov);
   }
   var projectiles = [];           // rockets + grenades (local sim on every client)
+  var _vmDir = new THREE.Vector3();   // v9.12: reused for the viewmodel wall probe
   var tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpQ = new THREE.Quaternion();
 
   function init(cam, sc) {
@@ -859,7 +860,51 @@ var Weapons = (function () {
     var tx = aiming ? 0 : 0.26;
     var ty = aiming ? -0.115 : -0.22;
     var tz = aiming ? -0.34 : -0.5;
+    /* ===== v9.12 — DRAWING A BOW DOES NOT BLIND YOU =====
+       Reported: "when bow is locked to shoot, it doesn't let the player see
+       where to shoot." Correct — every other weapon centres on the screen when
+       aimed, because you look down its sights. A bow has no sights and its
+       riser is a vertical plank: centring it puts a solid board across the
+       middle of the view, which is what the screenshot shows.
+
+       An archer looks PAST the riser, not through it. So the bow shifts left
+       and drops when drawn, the way a real anchor point works, leaving the
+       aim point clear. The crosshair is unchanged, so where you shoot is
+       exactly where you shot before — only the obstruction moves. */
+    if (aiming && w.type === 'bow') { tx = -0.20; ty = -0.30; tz = -0.46; }
     if (isReloading()) { ty -= 0.1; }
+
+    /* ===== v9.12 — THE GUN STOPS GOING THROUGH WALLS =====
+       Reported as "guns go blank and look inserted in the container or the
+       walls", with a screenshot of an MP5 buried in a shipping container.
+
+       The viewmodel is drawn half a metre in front of the camera and has never
+       been tested against the world, so standing against anything put the
+       barrel inside it — and because the model is drawn after the wall, the
+       visible result is a gun that appears to be embedded in geometry.
+
+       The standard fix, and the one every shooter uses: cast a short ray along
+       the view direction and, if something is closer than the muzzle, pull the
+       weapon back and down toward the chest. It reads as bringing the gun in
+       tight against cover, which is what a person does, rather than as the
+       weapon clipping. Aim is untouched — the ray that decides where bullets
+       go is a separate cast from the camera, so what you hit does not change. */
+    var CLEAR = 1.05;                       // how far ahead the barrel reaches
+    var wallT = 1;
+    if (World.isBuilt && World.isBuilt()) {
+      var fwd = camera.getWorldDirection(_vmDir);
+      var wh = World.rayHit(camera.position, fwd, CLEAR);
+      if (wh) wallT = Math.max(0, Math.min(1, wh.t / CLEAR));
+    }
+    if (wallT < 1) {
+      /* Fully pressed against a surface the gun sits at the chest; at arm's
+         length it is untouched, and it moves smoothly between the two. */
+      var press = 1 - wallT;
+      tx += (aiming ? 0.10 : 0.06) * press;
+      ty -= 0.16 * press;
+      tz += 0.30 * press;
+    }
+
     var lerp = Math.min(1, dt * 10);
     rig.position.x += (tx - rig.position.x) * lerp;
     rig.position.y += (ty - rig.position.y) * lerp;

@@ -188,7 +188,7 @@ World._buildPart3 = function (T) {
          wall and walled the staircase off at the bottom. The ascent gate found
          all three houses; nothing about it was visible in the geometry. */
       seg(X0 + TT, cx - 0.9, 0, GF, MID, MID + 0.22, M.plaster);
-      seg(cx + 0.9, eLane0 - 0.15, 0, GF, MID, MID + 0.22, M.plaster);
+      seg(cx + 0.9, eLane0 - 0.15, 0, GF, MID, MID + 0.22, M.facadeRose);
 
       // ---- furniture: cover first, decoration second ----
       box(X0 + 1.9, 0.42, 55.4, 2.1, 0.84, 0.95, M.wood);    // sofa, front room
@@ -211,7 +211,7 @@ World._buildPart3 = function (T) {
       seg(X0, X0 + TT, SLAB, F2, Z0, Z1, M.brick);
       seg(X1 - TT, X1, SLAB, F2, Z0, Z1, M.brick);
       // two bedrooms with a landing doorway
-      seg(roofStair ? wLane1 + 0.15 : X0 + TT, cx - 0.9, SLAB, F2, MID, MID + 0.22, M.plaster);
+      seg(roofStair ? wLane1 + 0.15 : X0 + TT, cx - 0.9, SLAB, F2, MID, MID + 0.22, M.facadeIndigo);
       seg(cx + 0.9, eLane0 - 0.1, SLAB, F2, MID, MID + 0.22, M.plaster);
       box(X0 + 2.0, SLAB + 0.28, 55.6, 2.0, 0.56, 1.5, M.wood); // bed
       box(roofStair ? X0 + 2.6 : X0 + 0.9, SLAB + 0.95, 61.0, 0.7, 1.9, 1.4, M.wood);  // wardrobe, clear of the roof stair
@@ -362,7 +362,7 @@ World._buildPart3 = function (T) {
     stairFlight(-37.7, 3.62, 24.35, 0, -1, 10, 0.308, 0.33, 1.2, M.metal);  // landing -> roof height
     seg(-38.35, -36.75, 6.7, 6.92, 20.85, 22.3, M.metal);                    // arrival platform onto roof
     seg(-38.28, -38.16, 0, 3.4, 25.1, 25.3, M.trim);                         // support post
-    seg(-37, -36.75, 6.7, 7.55, 22.6, 31, M.plaster);                        // west parapet (gap at arrival)
+    seg(-37, -36.75, 6.7, 7.55, 22.6, 31, M.facadeOlive);                        // west parapet (gap at arrival)
     seg(-23.25, -23, 6.7, 7.55, 21, 31, M.plaster);                          // east parapet
     box(-30, 7.15, 27.6, 1.8, 0.9, 1.4, M.metal);                            // roof AC cover
     box(-25.6, 7.1, 29, 1.4, 0.8, 1.2, M.rust);

@@ -210,16 +210,41 @@ button { font-family: var(--disp); cursor: pointer; }
 .end-title.lose { color: var(--ink-dim); }
 .end-sub { font-size: 15px; color: var(--ink-dim); letter-spacing: 0.12em; text-align: center; }
 
-.end-stage { display: grid; gap: 14px; width: min(1480px, 97vw); align-items: start;
-  grid-template-columns: minmax(210px, 1fr) minmax(500px, 1.9fr) minmax(210px, 1fr); }
-.end-center { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; }
-.end-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+/* ===== v9.12 — THE END SCREEN WAS NOT CENTRED =====
+   Reported as a broken layout, and the screenshot showed it: VICTORY centred on
+   the screen with the scoreboard sitting well to its left, marooned in a sea of
+   empty space.
+
+   Two causes, both invisible until a real match ended.
+
+   1. `width: min(1480px, 97vw)` with NO horizontal centring. The parent is a
+      column flexbox, so a child with a fixed width aligns to the start — the
+      whole stage was left-aligned while the title above it, being full width
+      with text-align:center, was not. The two never agreed.
+   2. THREE RIGID COLUMNS. The flanking insight cards are empty in a short or
+      solo match, and `minmax(210px, 1fr)` reserves their space anyway. Over
+      four hundred pixels of nothing pushed the scoreboard off centre even once
+      the stage itself was centred.
+
+   Flexbox with `justify-content: center` and `:empty` columns removed solves
+   both: with cards the layout is three across as designed, without them the
+   scoreboard is simply centred. */
+.end-stage { display: flex; flex-wrap: wrap; gap: 14px; width: min(1480px, 97vw);
+  margin: 0 auto; align-items: flex-start; justify-content: center; }
+.end-center { display: flex; flex-direction: column; align-items: center; gap: 12px;
+  flex: 2 1 520px; max-width: 760px; min-width: 0; }
+.end-col { display: flex; flex-direction: column; gap: 8px; flex: 1 1 240px;
+  max-width: 340px; min-width: 0; }
+/* An insight column with nothing in it must not reserve a third of the stage. */
+.end-col:empty { display: none; }
 .end-table { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
 
 /* Narrow screens: stack the columns under the board rather than crushing them. */
 @media (max-width: 1180px) {
-  .end-stage { grid-template-columns: 1fr; width: min(760px, 96vw); }
-  .end-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .end-stage { width: min(760px, 96vw); }
+  .end-center { flex: 1 1 100%; }
+  .end-col { flex: 1 1 100%; max-width: none;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
   .end-title { font-size: 34px; }
 }
 

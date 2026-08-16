@@ -61,12 +61,23 @@ ok(/classList\.remove\('end-active'\)/.test(ui), 'hideEnd switches the HUD back 
 });
 
 /* ---------- the table must be bounded ---------- */
-ok(/\.end-stage\s*\{[^}]*grid-template-columns/.test(css),
-  'the stage uses a fixed grid so the table cannot stretch edge to edge');
+/* v9.12: the stage is FLEX now, not grid — three rigid columns reserved 420px
+   for insight cards that are empty in a short match, which pushed the
+   scoreboard off centre. The RULE being protected is unchanged and is what is
+   asserted here: the table must be bounded so it cannot stretch edge to edge,
+   and the stage must be centred so it agrees with the title above it. */
+ok(/\.end-center\s*\{[^}]*max-width:/.test(css),
+  'the scoreboard column is bounded so the table cannot stretch edge to edge');
+ok(/\.end-stage\s*\{[^}]*margin:\s*0 auto/.test(css),
+  'the stage is horizontally centred, so it lines up with the title');
+ok(/\.end-stage\s*\{[^}]*justify-content:\s*center/.test(css),
+  'its columns are centred rather than left-packed');
+ok(/\.end-col:empty\s*\{[^}]*display:\s*none/.test(css),
+  'an EMPTY insight column reserves no space — the defect that marooned the board');
 ok(/\.end-stage\s*\{[^}]*width:\s*min\(/.test(css),
   'the stage has a bounded max width');
-ok(/@media \(max-width: 1180px\)[\s\S]*\.end-stage\s*\{[^}]*grid-template-columns:\s*1fr/.test(css),
-  'narrow screens collapse to a single column instead of crushing three');
+ok(/@media \(max-width: 1180px\)[\s\S]*\.end-center\s*\{[^}]*flex:\s*1 1 100%/.test(css),
+  'narrow screens stack to a single column instead of crushing three');
 
 /* ---------- insights split across both columns ---------- */
 ok(/end-ins-left/.test(ui) && /end-ins-right/.test(ui),

@@ -3,7 +3,70 @@
    Phase 2: 3v3 teams, FF block, armor soak math, heals, assists, team score.
    Phase 3: fast airdrop -> crate loot -> attachment + exclusive weapon grants.
    Run:  npm start   then   npm test                                        */
-const { io } = require('socket.io-client');
+const { io: rawIo } = require('socket.io-client');
+const SnapCodec = require('./public/src/networking/snapcodec.js');
+
+/* ===== v9.8: SNAPSHOTS ARE DELTAS NOW =====
+   Nineteen assertions in this file read `snap.players` as a map of id -> state.
+   Rather than rewrite all of them — and risk changing what they assert while
+   changing how they read it — every test socket gets a decoder that rebuilds
+   that exact shape from the delta stream.
+
+   It uses the SAME SnapCodec the server encodes with and the browser decodes
+   with, which is deliberate: if the format and the decoder ever disagree, the
+   failure shows up here as well as in play, instead of a second hand-written
+   decoder quietly agreeing with a bug. */
+function io(url) {
+  const sock = rawIo(url);
+  const cache = {}, slotToId = {};
+  let tkCache = null;
+  /* Registered FIRST, and it mutates the packet in place. socket.io hands the
+     same object to every listener in registration order, so by the time a test
+     handler runs the old `players` map is already on it.
+     The first attempt replaced sock.on() instead and broke sock.once(), which
+     calls this.off() internally on an emitter whose `this` the wrapper had
+     rebound — the suite died on the first `once` with "this.off is not a
+     function". Adding a listener is the change that touches nothing else. */
+  /* ===== v9.11: THESE ROOMS OPT OUT OF BACKFILL =====
+     Backfill defaults ON, which is right for players — most of this game's mode
+     list needs ten to twenty humans to exist, and the common case is a host and
+     a friend or two. It is wrong for a test suite: nearly every phase below is
+     unit-testing COMBAT in a two- or three-player room, and injecting seven
+     roaming bots breaks molotov tick counts, steals sniper kills, and credits
+     squad scores to squads the test never created. Nine phases failed exactly
+     that way on the first run.
+
+     Injected here rather than at thirty call sites so a new phase cannot forget
+     it. A phase that WANTS backfill sets it explicitly and this leaves it
+     alone; verify-bots covers the feature itself, balance and seat-yielding
+     included. */
+  const origEmit = sock.emit.bind(sock);
+  sock.emit = function (ev, a, b) {
+    if (ev === 'createRoom' && a && a.settings && a.settings.backfill === undefined) {
+      a.settings.backfill = false;
+    }
+    return origEmit.apply(null, arguments);
+  };
+
+  sock.on('snap', (d) => {
+    const players = {}, seen = {};
+    (d.e || []).forEach((arr) => {
+      const raw = SnapCodec.decodeEntity(arr, cache);
+      seen[raw.slot] = 1;
+      if (raw.id) slotToId[raw.slot] = raw.id;
+      const id = slotToId[raw.slot];
+      if (id) players[id] = SnapCodec.toPlayerState(raw);
+    });
+    for (const sl in cache) if (!seen[sl]) { delete cache[sl]; delete slotToId[sl]; }
+    d.players = players;
+    /* Team kills move on a kill, not on a tick, so they are sent when they
+       change. The browser holds them in a variable across packets; the adapter
+       does the same so `snap.tk` still reads as a live total. */
+    if (d.tk !== undefined) tkCache = d.tk;
+    if (d.tk === undefined && tkCache !== null) d.tk = tkCache;
+  });
+  return sock;
+}
 const URL = 'http://localhost:3000';
 const CFG = require('./public/src/config/index.js');
 
@@ -275,7 +338,15 @@ function phase2(done) {
     const R = (CFG.MATCH.pickupRadius || 1.25) + 1.5;
     const isolated = e => !loot.some(o => o.id !== e.id &&
       Math.hypot(o.p[0] - e.p[0], o.p[2] - e.p[2]) < R);
-    const armorSpot = t => findLoot(e => e.t === t && isolated(e));
+    /* v9.14: and it has to be at GROUND level.
+       The spot is reached by writing B's position directly, and the server
+       refuses a teleport it cannot account for — so an isolated vest that
+       happens to sit on a roof or a stand means B never arrives and the phase
+       reports "granted L1" against lv 0. That is what the Westbrook rebuild
+       exposed: it moved enough loot for the first isolated vest to become an
+       elevated one. A test that walks onto a vest should pick a vest you can
+       walk onto. */
+    const armorSpot = t => findLoot(e => e.t === t && e.p[1] < 1.0 && isolated(e));
     const spot = armorSpot('armor1') || armorSpot('armor2') || armorSpot('armor3')
       || findLoot(e => e.t === 'armor1') || findLoot(e => e.t === 'armor2') || findLoot(e => e.t === 'armor3');
     const lvl = CFG.LOOT_ITEMS[spot.t].lvl;

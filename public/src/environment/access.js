@@ -7,7 +7,26 @@ World._buildAccess = function (T) {
 
   /* ---- GARAGE (roof slab x[-16.5,-7.5] z[34,42], top 4.30) ---- */
   // exterior stair up the west face, landing bridges onto the roof edge
-  stairFlight(-17.6, 0, 41.5, 0, -1, 14, 0.31, 0.5, 1.4, M.metal);
+  /* ===== v9.15 — STEPS THAT LOOK LIKE STEPS =====
+     Reported twice with coordinates: "weird big steps, make it real". 0.31 of
+     rise on a 0.50 run is a 1.4 m-wide slab taller than a kerb, and next to the
+     under-skirt panels it reads as a stack of blocks.
+
+     18 steps of 0.241 x 0.389 instead of 14 of 0.310 x 0.500. The FOOTPRINT IS
+     IDENTICAL — 18 x 0.389 = 7.0 m, exactly what 14 x 0.500 covered — and the
+     total climb is unchanged at 4.34 m, so the landing, the skirts and the roof
+     edge all still meet it. Nothing around the stair had to move.
+
+     0.389 is as shallow as the run can go: it must clear the 0.35 m player
+     radius, the number this project paid for in v8.13 when a shorter run let
+     the capsule straddle the tread two ahead. Rise 0.241 is well under the
+     0.42 auto-step.
+
+     v9.13 attempted this and changed the wrong staircases — the buildingAt fire
+     escapes, which are a different generator with a different profile — and
+     left loot floating on their treads. These are the two that were actually
+     reported, and they carry no loot. */
+  stairFlight(-17.6, 0, 41.5, 0, -1, 18, 0.2411, 0.389, 1.4, M.metal);
   seg(-18.3, -16.9, 0, 1.5, 39.2, 41.6, M.metal, { collide: false });
   seg(-18.3, -16.9, 0, 2.95, 36.9, 39.2, M.metal, { collide: false });
   seg(-18.3, -16.9, 0, 4.3, 34.5, 36.9, M.metal, { collide: false });
@@ -21,13 +40,13 @@ World._buildAccess = function (T) {
 
   /* ---- WAREHOUSE (roof x[-46,-18] z[-37,-19], top 9.15) ---- */
   // two-flight fire escape on the south face with a mid landing
-  stairFlight(-19.0, 0, -17.3, -1, 0, 15, 0.31, 0.5, 1.4, M.metal);
+  stairFlight(-19.0, 0, -17.3, -1, 0, 19, 0.2447, 0.395, 1.4, M.metal);   // 19 x 0.395 = 7.5 m, as before
   seg(-21.6, -19.1, 0, 1.6, -18.0, -16.6, M.metal, { collide: false });
   seg(-24.1, -21.6, 0, 3.15, -18.0, -16.6, M.metal, { collide: false });
   seg(-26.6, -24.1, 0, 4.65, -18.0, -16.6, M.metal, { collide: false });
   seg(-28.4, -26.4, 4.65, 4.8, -18.2, -16.4, M.metal);          // mid landing
   seg(-28.5, -26.3, 4.8, 5.7, -16.5, -16.4, M.metal);           // mid landing rail
-  stairFlight(-28.6, 4.65, -17.3, -1, 0, 15, 0.31, 0.5, 1.4, M.metal);
+  stairFlight(-28.6, 4.65, -17.3, -1, 0, 19, 0.2368, 0.395, 1.4, M.metal); // 19 x 0.395 = 7.5 m, as before
   seg(-31.2, -28.7, 4.65, 6.25, -18.0, -16.6, M.metal, { collide: false });
   seg(-33.7, -31.2, 4.65, 7.8, -18.0, -16.6, M.metal, { collide: false });
   seg(-36.2, -33.7, 4.65, 9.15, -18.0, -16.6, M.metal, { collide: false });
