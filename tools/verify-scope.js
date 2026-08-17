@@ -48,7 +48,12 @@ const BUILTINS = new Set(['Math','Date','JSON','Object','Array','String','Number
   'TypeError','RangeError','isNaN','isFinite','parseInt','parseFloat','setTimeout','setInterval',
   'clearTimeout','clearInterval','requestAnimationFrame','cancelAnimationFrame','document','window',
   'navigator','console','performance','Float32Array','Float64Array','Uint8Array','Uint16Array',
-  'Uint32Array','Int32Array','Uint8ClampedArray','Map','Set','WeakMap','WeakSet','Promise','Symbol',
+  'Uint32Array','Int32Array','Uint8ClampedArray','Int8Array','Int16Array','Uint8Array',
+  /* v10.3: DataView and ArrayBuffer are browser builtins like the typed arrays
+     already listed here, and snapcodec reads binary snapshots through them. They
+     were simply missing from a list that predates any binary wire format. */
+  'DataView','ArrayBuffer','SharedArrayBuffer','TextEncoder','TextDecoder',
+  'Map','Set','WeakMap','WeakSet','Promise','Symbol',
   'Proxy','Reflect','RegExp','Function','BigInt','encodeURIComponent','decodeURIComponent',
   'localStorage','sessionStorage','alert','confirm','fetch','Image','Audio','AudioContext',
   'webkitAudioContext','RTCPeerConnection','RTCSessionDescription','RTCIceCandidate','MediaStream',
@@ -103,11 +108,37 @@ for (const file of FILES) {
   // object literal keys are not identifiers we read
   for (const m of code.matchAll(/\b([A-Za-z_$][\w$]*)\s*:/g)) add(m[1]);
 
+  /* v10.3 - AN IDENTIFIER GUARDED BY `typeof` IS NOT A LEAK.
+
+     The point of this gate is to catch a client module reaching for something
+     that will be undefined in a browser and throwing a ReferenceError. Reading
+     a name inside `typeof X !== 'undefined'` cannot throw - that is the one
+     construct in JavaScript that is safe on an undeclared identifier, and it is
+     the standard way a module runs in both Node and a browser.
+
+     snapcodec does exactly that for `Buffer`, to allocate a Node Buffer on the
+     server and fall back to a Uint8Array in the browser. Flagging it would have
+     forced either a fake declaration or a suppression comment, both of which
+     make the gate less honest rather than the code safer.
+
+     Only names that are ALWAYS guarded count. A file that tests `typeof X` once
+     and then reads X bare somewhere else is still a leak, so the count of
+     guarded reads has to cover every read. */
+  const guarded = new Set();
+  for (const m of code.matchAll(/typeof\s+([A-Za-z_$][\w$]*)/g)) {
+    const n = m[1];
+    const guards = (code.match(new RegExp('typeof\\s+' + n.replace(/\$/g, '\\$') + '(?![\\w$])', 'g')) || []).length;
+    const reads = (code.match(new RegExp('(^|[^\\w$.])' + n.replace(/\$/g, '\\$') + '(?![\\w$])', 'gm')) || []).length;
+    // each guard is itself one read; anything beyond that must also be guarded
+    if (reads <= guards * 2) guarded.add(n);
+  }
+
   // Every identifier READ: not preceded by a dot, not a property key.
   const suspects = new Map();
   for (const m of code.matchAll(/(^|[^\w$.'"])([A-Za-z_$][\w$]*)/gm)) {
     const n = m[2];
     if (KEYWORDS.has(n) || BUILTINS.has(n) || MODULES.has(n) || declared.has(n)) continue;
+    if (guarded.has(n)) continue;
     if (/^[A-Z][A-Z0-9_]*$/.test(n) && n.length > 3) continue;   // SHOUTY consts declared elsewhere in-file
     suspects.set(n, (suspects.get(n) || 0) + 1);
   }

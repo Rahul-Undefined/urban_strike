@@ -145,11 +145,25 @@ var Net = (function () {
       var tLocal = performance.now();
       if (d.tk !== undefined) teamKills = d.tk || {};
       Pickups.droneSync(d.dr);          // undefined when none are airborne
-      if (!d.e) return;
+
+      /* v10.3: the entity block arrives as a BINARY attachment (`b`) rather
+         than a JSON array (`e`). Both are accepted - `e` costs nothing to keep
+         and means a client can outlive a server rollback, which matters because
+         this game deploys as a cumulative upload and a half-old client is a
+         real possibility for a few minutes after every push.
+
+         In the browser socket.io hands binary over as an ArrayBuffer; under
+         Node (test.js) it is a Buffer. decodeEntities normalises both. */
+      var ents = d.e;
+      if (!ents && d.b) {
+        try { ents = SnapCodec.decodeEntities(d.b); }
+        catch (err) { return; }        // a malformed frame is dropped, not fatal
+      }
+      if (!ents) return;
 
       var seen = {};
-      for (var n = 0; n < d.e.length; n++) {
-        var raw = SnapCodec.decodeEntity(d.e[n], snapCache);
+      for (var n = 0; n < ents.length; n++) {
+        var raw = SnapCodec.decodeEntity(ents[n], snapCache);
         seen[raw.slot] = 1;
         if (!raw.id) continue;                       // no identity yet, wait for a keyframe
         slotToId[raw.slot] = raw.id;
@@ -197,6 +211,13 @@ var Net = (function () {
         }
         r.buf.push({ t: tLocal, p: st.p, ry: st.ry, rx: st.rx, cr: st.cr, mv: st.mv, ln: st.ln });
         Avatars.setRemoteGun(r, st.wp); // replicate equipped weapon (switches, pickups, late sync)
+        /* v10.2: KEEP the index, not just hand it to the avatar. The compact
+           shoot event (see the note below) resolves the gunshot SOUND from
+           r.wp, and without this line it was undefined - every bot would have
+           fired with the sound of WEAPON_ORDER[0] regardless of what it was
+           carrying. Caught before shipping only by checking that the field it
+           read actually existed. */
+        r.wp = st.wp | 0;
         if (r.buf.length > 40) r.buf.shift();
         if (st.hp < r.hp) r.lastDamagedAt = tLocal;
         r.hp = st.hp;
@@ -388,10 +409,47 @@ var Net = (function () {
   // Remote fire/projectile events → local visuals
   function bindGameplayEvents() {
     socket.on('shoot', function (d) {
-      var o = new THREE.Vector3(d.o[0], d.o[1], d.o[2]);
-      AudioSys.shot(d.w, o, { supp: !!d.sup });
-      if (!d.sup) FX.muzzle(o, false);
       var r = remotes[d.id];
+      /* ===== v10.2 - THE COMPACT FORM =====
+
+         A human's shoot event carries an explicit origin and weapon name,
+         because the shooter's client knows its muzzle position more precisely
+         than any snapshot does and the extra bytes are one player's worth.
+
+         Bot gunfire is different. v10 made bots emit this event so they stop
+         firing invisibly and silently, and at twelve bots that is roughly
+         fifteen events a second TO EVERY CLIENT IN RANGE - measured at 5.7 MB
+         per player-hour, a 27% increase on top of snapshots, against a 5 GB
+         monthly budget worth about 240 player-hours.
+
+         Almost all of those bytes were already on the wire. Every snapshot
+         carries each entity's position AND its weapon index `wp`, so `o` and
+         `w` in a bot's shoot event were duplicating data the client had
+         received milliseconds earlier. The server sends `{ id }` alone now and
+         this fills the rest in from the interpolated remote.
+
+         Both shapes are accepted. The human path is untouched, an older client
+         still understands the long form, and if a remote is not yet known the
+         event is simply dropped - a muzzle flash for somebody you cannot see
+         is not worth guessing a position for. */
+      var o, wName;
+      if (d.o) {
+        o = new THREE.Vector3(d.o[0], d.o[1], d.o[2]);
+      } else {
+        if (!r) return;                       // no known shooter, nothing to place
+        o = r.renderPos ? r.renderPos.clone() : (r.group ? r.group.position.clone() : null);
+        if (!o) return;
+        o.y += 0.35;                          // roughly muzzle height off the capsule centre
+      }
+      if (typeof d.w === 'number') {
+        wName = CFG.WEAPON_ORDER[d.w] || CFG.WEAPON_ORDER[0];
+      } else if (d.w) {
+        wName = d.w;
+      } else {
+        wName = (r && CFG.WEAPON_ORDER[r.wp]) || CFG.WEAPON_ORDER[0];
+      }
+      AudioSys.shot(wName, o, { supp: !!d.sup });
+      if (!d.sup) FX.muzzle(o, false);
       if (r) {
         // suppressed fire pings the minimap for ~1.2 s instead of 3.5 s
         r.lastShotAt = performance.now() - (d.sup ? (CFG.NET.detectMs - CFG.ATTACH.supp.detectMs) : 0);

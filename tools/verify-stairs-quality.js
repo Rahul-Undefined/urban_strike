@@ -99,12 +99,52 @@ const PR = CFG.PLAYER.radius;
    floor slab a flight climbs into. These may never rise again. floating 9 and
    arrival 1 are unchanged and diagnosed: see the STAIR CONNECTORS comment in
    world.js for why the CIVIC CENTRE switchback cannot be landing-fixed. */
-const BUDGET = {
-  urban: { floating: 9, rise: 0, narrow: 0, headroom: 0, arrival: 1 },
-  rural: { floating: 0, rise: 0, narrow: 0, headroom: 0, arrival: 0 },
-  metro: { floating: 0, rise: 0, narrow: 0, headroom: 0, arrival: 0 }
-};
+/* v10 - A BUDGET MUST NAME WHAT IT IS EXCUSING.
 
+   This was a count. `arrival: 1` meant "one flight may fail", and the comment
+   above it said that one was the CIVIC CENTRE switchback. By v9.15 the Civic
+   Centre flight had been repaired and a completely different flight - the ship
+   bridge at NEAR WESTBROOK STADIUM, overshooting its building by 5.4 m and
+   landing on a cantilevered pier over open water - had silently inherited the
+   slot. The gate reported "1 flights fail arrival (budget 1)" and went green,
+   for versions, while Rahul kept sending recordings of a hanging staircase.
+   That is defect 1.3 in the v9.15 handoff, and the reason it survived two
+   fixes aimed at it is that nothing ever went red.
+
+   A count cannot express "this one, for this reason". A LIST can. Each entry
+   is a coordinate and the reason it is tolerated, so:
+     - a NEW failure is red immediately, because it is not in the list;
+     - a FIXED failure is red too, because its entry is now stale and the gate
+       says so - which is how you find out you can delete an excuse.
+   The second half matters as much as the first. An allowlist that silently
+   tolerates its own obsolescence is just a count again.
+
+   Ratchets still fall and never rise: removing an entry is always fine,
+   adding one needs a reason written next to it. */
+const TOL = 0.6;                      // metres, matching a flight to an entry
+const ALLOW = {
+  urban: {
+    /* Stairwells whose flights stack directly on one another with no landing
+       slab between them. Each flight begins on the last tread of the one
+       below, which is sound to climb and reads as floating. Fixing it means
+       inventing landings during the build, which makes the result depend on
+       district build ORDER - the non-determinism the v7.8 PRNG fix removed.
+       District geometry, not a generator change. */
+    floating: [
+      { x: 26.9, z: -31.7, why: 'CIVIC CENTRE switchback, lower flight - stacked, no landing slab' },
+      { x: 26.9, z: -31.7, why: 'CIVIC CENTRE switchback, upper flight' },
+      { x: 13.7, z: -62.2, why: 'CONSTRUCTION SITE - starts on the flight below' },
+      { x: 60.4, z: 16.9, why: 'NEAR DEPOT B - shop row B upper run' },
+      { x: -37.7, z: 24.4, why: 'NEAR CIVIC CENTRE - west apartments upper run' },
+      { x: 85.9, z: 65.0, why: 'SOUTH TERMINAL lower flight' },
+      { x: 85.9, z: 65.0, why: 'SOUTH TERMINAL upper flight' },
+      { x: -28.6, z: -17.3, why: 'IRONGATE DEPOT - warehouse fire escape upper run' }
+    ],
+    rise: [], narrow: [], headroom: [], arrival: []
+  },
+  rural: { floating: [], rise: [], narrow: [], headroom: [], arrival: [] },
+  metro: { floating: [], rise: [], narrow: [], headroom: [], arrival: [] }
+};
 /* ARRIVAL replaced LANDING in v8.4 and the numbers are not comparable.
 
    The old check asked "is there something to stand on near the top", which the
@@ -274,15 +314,32 @@ for (const map of ["urban", "rural", "metro"]) {
     if (!arrived) { f._miss = nearMiss; bad.arrival.push(f); }
   }
 
-  const B = BUDGET[map];
+  const A = ALLOW[map];
   for (const k of ["floating", "rise", "narrow", "headroom", "arrival"]) {
-    ok(bad[k].length <= B[k], `${map}: ${bad[k].length} flights fail ${k} (budget ${B[k]})`);
-    if (VERBOSE || bad[k].length > B[k]) {
-      bad[k].slice(0, 8).forEach(f => console.log(
-        `        ${k}  [${DIST.nameAt(f.sx, f.sz)}] start (${f.sx.toFixed(1)}, ${f.sy.toFixed(2)}, ${f.sz.toFixed(1)}) ` +
-        `-> top (${f.endX.toFixed(1)}, ${f.topY.toFixed(2)}, ${f.endZ.toFixed(1)})  ${f.steps} steps` +
-        (f._miss ? `  nearest deck ${f._miss.gap.toFixed(2)}m away, ${f._miss.rise >= 0 ? "+" : ""}${f._miss.rise.toFixed(2)}m up` : "")));
+    const allow = (A[k] || []).map(e => Object.assign({ used: false }, e));
+    const unexcused = [];
+    for (const f of bad[k]) {
+      const hit = allow.find(e => !e.used &&
+        Math.abs(e.x - f.sx) <= TOL && Math.abs(e.z - f.sz) <= TOL);
+      if (hit) hit.used = true; else unexcused.push(f);
     }
+    ok(unexcused.length === 0,
+      `${map}: ${bad[k].length} flights fail ${k}, ${allow.length} named as known` +
+      (unexcused.length ? ` - ${unexcused.length} NOT on the list` : ''));
+    unexcused.slice(0, 8).forEach(f => console.log(
+      `        NEW ${k}  [${DIST.nameAt(f.sx, f.sz)}] start (${f.sx.toFixed(1)}, ${f.sy.toFixed(2)}, ${f.sz.toFixed(1)}) ` +
+      `-> top (${f.endX.toFixed(1)}, ${f.topY.toFixed(2)}, ${f.endZ.toFixed(1)})  ${f.steps} steps` +
+      (f._miss ? `  nearest deck ${f._miss.gap.toFixed(2)}m away, ${f._miss.rise >= 0 ? "+" : ""}${f._miss.rise.toFixed(2)}m up` : "")));
+
+    /* THE HALF THAT WOULD HAVE CAUGHT DEFECT 1.3. An entry nobody matched is
+       an excuse for a flight that no longer fails - either it was repaired, or
+       it moved and a different flight is now failing in its place. Both are
+       things the reader needs told. */
+    const stale = allow.filter(e => !e.used);
+    ok(stale.length === 0,
+      `${map}: every ${k} exception still applies` +
+      (stale.length ? ` - ${stale.length} STALE, delete them` : ''));
+    stale.forEach(e => console.log(`        STALE ${k}  (${e.x}, ${e.z})  ${e.why}`));
   }
 }
 

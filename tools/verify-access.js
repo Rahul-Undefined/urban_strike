@@ -96,6 +96,55 @@ function climber(cols) {
        rise+0.02 clear, and the next vertical move only falls gravity*dt), so
        auto-step is NOT available every frame. That made this gate pass six
        staircases the real game cannot climb. */
+    /* v10 — OPTIONAL WAYPOINTS, so a SWITCHBACK can be tested.
+
+       This walker took one fixed heading and held it for a tick count, which
+       is right for a straight flight and cannot express a stair that turns. It
+       reported the ship bridge unreachable the moment that building got the
+       switchback it needs — the gate was pinning the IMPLEMENTATION (a
+       straight flight) rather than the INVARIANT (a player can get from the
+       deck to the roof). HANDOFF §4.2 says which way to fix that: change the
+       gate to test the rule.
+
+       The first attempt expressed the route as headings with tick counts and
+       the walker sailed 20 m past the building, because a tick count is a
+       DURATION and what the route actually needs is a DESTINATION. Tuning the
+       ticks would have worked and would have gone stale the first time a
+       tread moved — failure mode §4.4, numbers typed instead of measured.
+
+       So a route is a list of [x, z] waypoints. The walker steers at each in
+       turn and advances when it gets within STEP_TO metres, which is what a
+       player climbing a switchback does and what a bot's climb plan already
+       does (see planClimb in server/lib/bots.js). Capsule physics are
+       untouched; only the steering changed. Cases with a plain dx/dz still run
+       through the original single-heading path, byte for byte. */
+    walkRoute(sx, sy, sz, route, ticks) {
+      pos = { x: sx, y: sy, z: sz }; grounded = false; blockers.clear();
+      let peak = sy, velY = 0, velH = 0, wp = 0;
+      const dt = 1 / 60, speed = 4.4, STEP_TO = 0.75;
+      for (let i = 0; i < ticks; i++) {
+        let dx = 0, dz = 0;
+        if (wp < route.length) {
+          const tx = route[wp][0] - pos.x, tz = route[wp][1] - pos.z;
+          const d = Math.hypot(tx, tz);
+          if (d < STEP_TO) { wp++; }
+          else { dx = tx / d; dz = tz / d; }
+        }
+        const acc = (grounded ? 42 : 9) * dt;
+        velH += Math.max(-acc, Math.min(acc, speed - velH));
+        velY -= 15.5 * dt;                       // MV.gravity
+        if (velY < -30) velY = -30;
+        moveAxis(0, dx * velH * dt);
+        moveAxis(2, dz * velH * dt);
+        grounded = false;
+        moveAxis(1, velY * dt);
+        if (grounded) velY = 0;
+        if (pos.y > peak) peak = pos.y;
+      }
+      const rTop = [...blockers.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2)
+        .map(e => '[' + e[0].split(',').map(n => (+n).toFixed(1)).join(' ') + ']x' + e[1]);
+      return { y: pos.y - HY, peak: peak - HY, x: pos.x, z: pos.z, blockers: rTop, wp: wp };
+    },
     walk(sx, sy, sz, dx, dz, ticks) {
       pos = { x: sx, y: sy, z: sz }; grounded = false; blockers.clear();
       let peak = sy, velY = 0, velH = 0;
@@ -133,7 +182,8 @@ function run(map, cases) {
   const C = climber(cols);
   console.log(`\n--- [${map}] stair ascent (${cols.length} colliders) ---`);
   for (const t of cases) {
-    const r = C.walk(t.x, t.y + HY + 0.05, t.z, t.dx, t.dz, t.ticks || 220);
+    const r = t.route ? C.walkRoute(t.x, t.y + HY + 0.05, t.z, t.route, t.ticks || 900)
+                      : C.walk(t.x, t.y + HY + 0.05, t.z, t.dx, t.dz, t.ticks || 220);
     const good = r.peak >= t.top - 0.12;
     ok(good, `${t.name}: foot reached ${r.peak.toFixed(2)}m (need >= ${t.top.toFixed(2)}m)`);
     if (!good) console.log('        stopped at x=' + r.x.toFixed(1) + ' z=' + r.z.toFixed(1)
@@ -175,7 +225,21 @@ run("urban", [
   { name: "mall (2f) -> roof 6.0", x: 50.4, y: 0, z: -45.0, dx: 1, dz: 0, top: 6.0, ticks: 400 },
   { name: "airport terminal (2f) -> roof 6.0", x: -91.6, y: 0, z: -93.0, dx: 1, dz: 0, top: 6.0, ticks: 400 },
   { name: "quay -> ship deck 3.40", x: -64.4, y: 0.6, z: 62.0, dx: 1, dz: 0, top: 3.40, ticks: 400 },
-  { name: "ship bridge (3f) -> roof 12.4", x: -58.4, y: 3.4, z: 57.0, dx: 1, dz: 0, top: 12.4, ticks: 700 },
+  /* v10: the ship's superstructure is 8 m wide and its three-storey stair does
+     not fit as a straight run - see buildingAt in districts-outer.js. It is a
+     three-leg switchback now, so the route turns at each landing, which is what
+     a player actually does. Reaching 12.4 m still means what it always meant:
+     the bridge roof is accessible. The waypoints are the LANDING CENTRES, read
+     off the generator rather than typed by eye - lane A is z0-1.1 = 56.9, lane
+     B is z0-2.65 = 55.35, and the turns are at x -52.0 and -56.0. */
+  { name: "ship bridge (3f) -> roof 12.4 (switchback)", x: -58.4, y: 3.4, z: 57.0, top: 12.4,
+    ticks: 1200,
+    route: [[-51.35, 56.9],     // up leg A, onto the clear pad of landing 1
+            [-51.35, 55.35],    // across the pad into lane B (no treads above)
+            [-57.3, 55.35],     // up leg B, onto the clear pad of landing 2
+            [-57.3, 56.9],      // across into lane A, clear of leg C's first tread
+            [-52.0, 56.9],      // up leg C to roof level
+            [-52.0, 60.0]] },   // and step onto the roof itself   // and step onto the roof itself   // and step onto the roof itself    // leg C: +x in lane A, up to 12.4
 
   /* OLD TOWN TERRACE — rebuilt v7.8. The three houses this replaced had
      staircases that were NEVER gate-tested; they happened to work. Every

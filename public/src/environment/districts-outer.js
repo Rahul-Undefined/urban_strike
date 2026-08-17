@@ -501,29 +501,102 @@ World._buildPart5 = function (T) {
        leave 1.2 m of roof beyond it to stand on, which is the same landing
        allowance every other flight in this project needs. */
     var runPerFloor = 8 * SD;
+    /* LANDING is the whole turn platform; TURN_IN is how far along it the next
+       leg begins. The difference between them is a CLEAR PAD with no treads
+       overhead, and it is not optional: the first cut had the next leg start at
+       the landing's far edge, which put its lowest treads over every square
+       metre of the platform. A 1.8 m capsule standing on a 6.4 m landing with a
+       6.775 m tread above it is not standing anywhere - verify-access reported
+       the roof unreachable and was right. The pad is what a player turns around
+       on. */
+    var LANDING = 1.8, TURN_IN = 0.8;
+    /* The RUN needs 1.2 m of wall left beyond it; a LANDING may reach the
+       building's own edge, because it is bolted to the wall rather than
+       cantilevered off the end of it. Measuring both against the same 1.2 m
+       margin is what made the ship look 0.2 m too narrow for a stair that
+       actually fits. */
     var usable = (x1 - 1.2) - sxA;            // wall length available for the run
-    var EXT = Math.max(0, Math.min(3, floors, Math.floor(usable / runPerFloor)));
-    /* ...AND IF SHORTENING IT ORPHANS THE ROOF, DON'T.
-       v9.14 bounded the run by the wall and that fixed the flight ending in
-       mid-air — but on a building with no other way up it also made the roof
-       unreachable, which verify-access caught immediately as "ship bridge ->
-       roof 12.4, foot reached 6.42". Trading a hanging staircase for an
-       unreachable roof is not a fix.
-       So a building that HAS no lift keeps its full-height flight and gets a
-       landing platform at the top instead — built below, cantilevered off the
-       roof edge to meet the overshoot. The stair reaches the roof and its top
-       tread has a deck under it, which is what was wrong in the first place. */
-    var overrun = 0;
-    if (EXT < Math.min(3, floors) && !noStair) {
-      EXT = Math.min(3, floors);
-      overrun = (sxA + EXT * runPerFloor) - (x1 - 0.2);
+    var usableWithLanding = (x1 - 0.2) - sxA;
+    var WANT = Math.min(3, floors);
+    var EXT = Math.max(0, Math.min(WANT, Math.floor(usable / runPerFloor)));
+
+    /* ===== v10 - A NARROW BUILDING GETS A SWITCHBACK, NOT A PIER =====
+
+       v9.14 bounded the run by the wall, which orphaned the roof. v9.15 then
+       restored the full height and cantilevered a landing out to catch the
+       overshoot. Both were aimed at the right flight and both were the wrong
+       shape, because the problem was framed as "short stair OR unreachable
+       roof" when architecture has a third answer.
+
+       The ship's superstructure - buildingAt(-58, -50, 58, 68, 3) - is EIGHT
+       metres wide, with 5.6 m of usable wall, and three storeys at this pitch
+       need 12 m of run. v9.15's landing therefore hung 5.4 m PAST the end of
+       the building, twelve metres up, over open water. Rahul, correctly, still
+       called it hanging stairs (Recording_105733, "a long external flight
+       climbing to nothing against a tall building"). It had become a longer
+       hanging stair with a hanging platform on the end.
+
+       A real building solves this with a SWITCHBACK: run as far as the wall
+       allows, land, turn, run back. Any height fits any wall long enough for
+       one leg plus one landing, and 5.6 m is exactly one 4.0 m leg plus one
+       1.6 m landing. Nothing cantilevers and the roof stays reachable.
+
+       THIS ONLY ENGAGES WHERE THE STRAIGHT RUN DOES NOT FIT. HANDOFF section
+       4.3 - "a shared helper edited for one caller" - cost Rural two thirds of
+       its loot when World.BOUND was set for Urban. Measured across the three
+       buildings that use this helper: the ship is the only one that overshoots
+       (the others have 35.6 m and 15.6 m of wall against an 8 m need). The
+       wide buildings therefore take the identical straight flight they always
+       have, and only the broken one changes shape.
+
+       THE PLAN IS COMPUTED HERE, BEFORE THE WALLS ARE BUILT, because the
+       DOORWAYS have to line up with the landings. The old code placed door f
+       at `sxA + f * runPerFloor`, which is only correct for a straight flight;
+       on a switchback, floor 2's landing is back at the START of the wall and
+       that formula puts its door 8 m outside the building. A door you cannot
+       reach from the stair is the same defect as a stair that reaches no door. */
+    var legs = null, doorAtFloor = null;
+    if (EXT < WANT && !noStair) {
+      var perLeg = Math.max(1, Math.floor((usableWithLanding - LANDING) / runPerFloor));
+      var nLegs = Math.ceil(WANT / perLeg);
+      /* Two or three legs is a switchback. More than that is a spiral this
+         helper has no business inventing unreviewed, so it falls back to the
+         bounded straight run rather than building something nobody has seen. */
+      if (nLegs <= 3 && perLeg >= 1) {
+        EXT = WANT;
+        legs = [];
+        doorAtFloor = {};
+        var cursor = sxA, dir = 1, doneFloors = 0;
+        for (var L = 0; L < nLegs; L++) {
+          var flCount = Math.min(perLeg, WANT - doneFloors);
+          if (flCount <= 0) break;
+          var run = flCount * runPerFloor;
+          var endX = cursor + dir * run;
+          legs.push({ floors: flCount, dir: dir, y0: baseY + doneFloors * FH,
+                      startX: cursor, endX: endX });
+          doneFloors += flCount;
+          /* The landing sits PAST the end of the run, never on it - HANDOFF
+             section 6. The next leg starts from its far edge and runs back. */
+          var landFar = endX + dir * LANDING;
+          doorAtFloor[doneFloors] = (endX + landFar) / 2;
+          cursor = endX + dir * TURN_IN;        // next leg starts INSIDE the pad
+          dir = -dir;
+        }
+      }
     }
+
     for (var f = 0; f <= floors; f++) {
       var y = baseY + f * FH;
       seg(x0, x1, y, y + 0.25, z0, z1, f === floors ? roofMat : wallMat);
       if (f === floors) break;
       var b0 = y + 0.25, sill = b0 + 0.9, head = b0 + 2.05, top = baseY + (f + 1) * FH;
-      var doorX = (f < EXT) ? sxA + f * (8 * SD) : x1 - 1.9;
+      var doorX = (doorAtFloor && doorAtFloor[f] !== undefined) ? doorAtFloor[f]
+                : (f < EXT) ? sxA + f * (8 * SD) : x1 - 1.9;
+      /* Floor 0's door is always at the foot of the first leg. On a switchback
+         doorAtFloor is keyed by the floor a landing ARRIVES at, so floor 0 has
+         no entry and falls through to the straight-run formula, which at f = 0
+         is sxA — the right answer either way. */
+      doorX = Math.max(x0 + 1.0, Math.min(x1 - 1.0, doorX));
       seg(x0, Math.max(x0, Math.min(x1, doorX - 0.9)), b0, sill, z0, z0 + t, wallMat);
       seg(Math.min(x1, Math.max(x0, doorX + 0.9)), x1, b0, sill, z0, z0 + t, wallMat);
       /* ===== v9.12 — THE DOORWAY HAS TO GO ALL THE WAY UP =====
@@ -550,19 +623,66 @@ World._buildPart5 = function (T) {
     // flight could not be made reliable and one working mechanism beats two
     // half-working ones, so the towers are lift-only.
     if (!noStair) {
-      stairFlight(sxA, baseY, z0 - 1.1, 1, 0, EXT * 8, SH, SD, 1.5, M.metal);
-      seg(sxA - 0.3, sxA + EXT * 8 * SD, baseY + 0.9, baseY + 1.75,
-        z0 - 2.0, z0 - 1.88, M.trim, { collide: false });
-    }
-    /* The landing that catches an overrunning flight. Sized to the overshoot,
-       set at the height the flight actually arrives at, and tied back to the
-       roof edge so you step off it onto the building. */
-    if (overrun > 0.2) {
-      var landY = baseY + EXT * FH;
-      seg(x1 - 0.4, sxA + EXT * runPerFloor + 0.6, landY, landY + 0.25,
-        z0 - 2.0, z0 - 0.6, M.metal);
-      seg(sxA + EXT * runPerFloor + 0.4, sxA + EXT * runPerFloor + 0.6,
-        landY + 0.25, landY + 1.15, z0 - 2.0, z0 - 0.6, M.trim, { cast: false });
+      if (legs) {
+        /* SWITCHBACK, IN TWO LANES.
+
+           The first cut of this turned in a SINGLE lane, leg 2 running back
+           directly over leg 1, and verify-stairs-quality reported two headroom
+           failures on the next run. It was right: at the turn the foot of the
+           upper leg sits 0.375 m above the head of the lower one, and a
+           standing capsule needs 1.9 m. A switchback that turns in place is a
+           staircase you cannot walk up - a worse defect than the hanging
+           flight it replaced. Recorded because it is an easy mistake to repeat
+           and the gate caught it in one run.
+
+           So the legs alternate between two parallel lanes, the way an actual
+           external fire escape does: the return leg runs BESIDE the one below,
+           never above it. Lane A hugs the wall, lane B sits 1.55 m further
+           out. With one floor per leg the next flight in the same lane is two
+           floors - 6.0 m - higher, which clears 1.9 m with room to spare.
+
+           Each landing spans BOTH lanes and reaches back to the wall, so the
+           turn is one continuous surface and there is no gap between the top
+           of the stair and the building. "A gap between the stairs and the
+           wall which doesn't let the player go to the roof" is a defect this
+           project has already shipped twice. */
+        var LANE_A = z0 - 1.1, LANE_B = z0 - 2.65, FW = 1.5;
+        var LZ0 = LANE_B - FW / 2, LZ1 = z0;      // landings run out to the wall
+        for (var Li = 0; Li < legs.length; Li++) {
+          var lg = legs[Li];
+          var steps = lg.floors * 8;
+          var laneZ = (lg.dir > 0) ? LANE_A : LANE_B;
+          stairFlight(lg.startX, lg.y0, laneZ, lg.dir, 0, steps, SH, SD, FW, M.metal);
+          /* NO RAKING HANDRAIL ON A LEG. The straight-flight version below
+             draws one as a single horizontal band, which works there only
+             because the flight is long and the band disappears into the
+             building. On a 4 m leg the band sits at a constant height while the
+             treads climb past it, so its far end hangs in open air -
+             verify-props counted two new unsupported props the first time this
+             ran. A raking rail needs one box per tread, and eight boxes per leg
+             on a map with ZERO shadow-caster headroom is not worth it. The
+             stringers stairFlight already emits give the flight its visual
+             mass, and the landing rail below is real. */
+
+          /* The landing at the top of this leg, PAST the end of the run. It
+             abuts the last tread rather than overlapping it: a landing laid ON
+             a tread is two coplanar faces, which is a z-fight, and it is also
+             the "a landing goes beside or beyond a flight, never above it"
+             rule from HANDOFF section 6. */
+          var lY = lg.y0 + steps * SH;
+          var t0 = (lg.dir > 0) ? lg.endX : (lg.endX - LANDING);
+          var t1 = (lg.dir > 0) ? (lg.endX + LANDING) : lg.endX;
+          t0 = Math.max(t0, x0 - 0.2); t1 = Math.min(t1, x1 + 0.2);
+          seg(t0, t1, lY - 0.25, lY, LZ0, LZ1, M.metal);
+          // outboard rail on the landing so it does not read as a diving board
+          seg(t0, t1, lY, lY + 0.95, LZ0, LZ0 + 0.1, M.trim, { collide: false, cast: false });
+        }
+      } else {
+        // straight flight — unchanged for every building whose wall fits it
+        stairFlight(sxA, baseY, z0 - 1.1, 1, 0, EXT * 8, SH, SD, 1.5, M.metal);
+        seg(sxA - 0.3, sxA + EXT * 8 * SD, baseY + 0.9, baseY + 1.75,
+          z0 - 2.0, z0 - 1.88, M.trim, { collide: false });
+      }
     }
     // No internal flight above floor EXT — lifts handle everything above.
     var ry = baseY + floors * FH + 0.25;
@@ -878,16 +998,50 @@ World._buildPart5 = function (T) {
        width still overlaps slightly, which is what keeps the curve seamless;
        radial depth now just meets. */
     var RSTEP = 0.14;
+
+    /* ===== v10 - THE OUTFIELD WAS STRIPED GREY, NOT GREEN =====
+
+       Reported from screenshots and confirmed by measurement: the turf tiles
+       all existed - 310 of them - and the grey ground showed through between
+       the rings in concentric bands.
+
+       The cause is the same mistake the TANGENTIAL width already fixed, left
+       standing in the RADIAL direction. Each tile was given a constant depth:
+
+           gd = ((FA + FB) / 2) * RSTEP * 0.94      // 1.566 m
+
+       An average. But ring spacing is not constant around an ellipse - it is
+       FA * RSTEP = 1.23 m along the x axis and FB * RSTEP = 2.10 m along z.
+       Measured against the real step at each angle, that 1.566 m tile OVERLAPS
+       by 0.33 m near the x axis and leaves a 0.53 m GAP near the z axis. Half a
+       metre of bare ground, all the way round, seven times over: green stripes
+       on grey, which is precisely what the screenshots show.
+
+       arcAt already solves this problem for width - it returns the real
+       distance to the actual next point rather than an average chord, and its
+       own comment says sizing by the average "is wrong on an ellipse and it is
+       wrong by a lot". This does the same thing one axis over: measure the
+       distance from this tile's ring to the next one AT THIS ANGLE, and cut the
+       tile to that.
+
+       Kept at 1.04 rather than 0.94. Radial neighbours must now overlap
+       slightly for the same reason tangential ones do - meeting exactly leaves
+       a hairline of ground visible at a grazing view angle, and these tiles are
+       12 mm thick and do not collide, so overlap costs nothing. The 0.94 was
+       there to keep verify-props quiet about embedded pairs, and at 12 mm the
+       volumes are far under that gate's furniture floor anyway. */
+    function radialStep(i, f0, f1) {
+      /* Midpoint of the segment, which is where the tile is actually centred. */
+      var t = ((i + 0.5) / N) * Math.PI * 2;
+      var c = Math.cos(t), sn = Math.sin(t);
+      return Math.hypot((FA * f1 - FA * f0) * c, (FB * f1 - FB * f0) * sn);
+    }
     for (var g = 0; g < 7; g++) {
       var gf = 0.16 + g * RSTEP;
       var ga = FA * gf, gb = FB * gf;
-      /* 0.94, not 1.04. Meeting exactly still leaves each tile a few percent
-         inside its radial neighbours, and a 0.012 m tile is small enough that a
-         few percent clears the 55%-of-the-smaller-volume test. A hairline gap
-         between rings of grass is invisible; a hundred reported pairs is not. */
-      var gd = ((FA + FB) / 2) * RSTEP * 0.94;
       for (var i = 0; i < N; i++) {
         var A0 = arcAt(i, ga, gb);
+        var gd = radialStep(i, gf, gf + RSTEP) * 1.04;
         box(A0.x, 0.006, A0.z, A0.w * 1.02, 0.012, gd,
           M.foliage, { collide: false, cast: false, rotY: A0.rot });
       }
@@ -943,7 +1097,7 @@ World._buildPart5 = function (T) {
         /* Seats: a band of colour on each tier, alternating so the bowl reads
            as a crowd rather than as a kerb. */
         var A3 = arcAt(i3, ta + 0.45, tb + 0.45, NB);
-        var seatMat = [M.signalRed, M.steelBlue, M.ochre][(ti + i3) % 3];
+        var seatMat = [M.seatRed, M.seatBlue, M.seatSand][(ti + i3) % 3];
         box(A3.x, T2.y + T2.h + 0.22, A3.z, A3.w * 0.9, 0.44, 1.0,
           seatMat, { cast: false, rotY: A3.rot });
       }
@@ -969,8 +1123,13 @@ World._buildPart5 = function (T) {
          is no room for detail that only reads from directly above.
          The crate stack that stood here went for the same reason — it sat half
          inside the pavilion wall. */
-      seg(X1, X1 + 2.2, 3.45, 3.70, Z0 + 2, Z1 - 2, M.concrete, { cast: false });
-      seg(X1 + 2.0, X1 + 2.2, 3.70, 4.60, Z0 + 2, Z1 - 2, M.trim, { cast: false });
+      /* v10: the balcony slab and its rail both reached 2.2 m out from the
+         pavilion face, which put the rail at x -89.8 - just inside the outfield
+         ellipse, where tools/verify-pitch.js now counts it. Pulled back to
+         1.6 m. The balcony is scenery overlooking the ground; it does not need
+         to stand ON the ground. */
+      seg(X1, X1 + 1.6, 3.45, 3.70, Z0 + 2, Z1 - 2, M.concrete, { cast: false });
+      seg(X1 + 1.4, X1 + 1.6, 3.70, 4.60, Z0 + 2, Z1 - 2, M.trim, { cast: false });
       /* No internal stair. A 3.44 m climb inside a 3.2 m room goes through its
          own ceiling, which verify-climb reported as 0.79 m of headroom on the
          first tread. The pavilion is a ground-floor room and the balcony above
@@ -1351,11 +1510,38 @@ World._buildPart5 = function (T) {
   // air in front, so the hull is split to leave a well at z 56..58.
   buildingAt(-58, -50, 58, 68, 3, M.metal, M.roof, 3.4);
   seg(-56, -48, 3.4, 3.7, 70, 84, M.metal);                               // aft deck
-  // gantry cranes on the quay
-  [[-78, 58], [-78, 78]].forEach(function (c2) {
-    cyl(c2[0] - 3, 4.5, c2[1], 0.35, 9, M.rust); cyl(c2[0] + 3, 4.5, c2[1], 0.35, 9, M.rust);
-    box(c2[0], 9.3, c2[1], 20, 0.7, 1.2, M.rust);
-  });
+  /* ===== v10 - THE "PERGOLA" ACROSS THE CRICKET GROUND =====
+
+     Rahul's screenshots showed brown poles and overhead timber standing in the
+     middle of the outfield. Measured, they were two 20 m beams at 9 m height
+     with their columns:
+
+         x[-88,-68] y[8.95,9.65] z[57.4,58.6]
+         x[-88,-68] y[8.95,9.65] z[77.4,78.6]
+
+     Not a pergola - the HARBOUR GANTRY CRANES, at (-78, 58) and (-78, 78),
+     each throwing a 20 m boom straight across the ground. They predate the
+     stadium by three versions and nobody moved them when Westbrook was laid
+     over the top of the quay. This is the same mistake as the shipping
+     containers in v9.14 and the twenty-one buried seat rows in v9.6: the
+     stadium was built through what was already there, THREE TIMES, each time
+     found from a screenshot rather than from a gate.
+
+     Rebuilt as ONE gantry, turned through 90 degrees so its boom runs along z
+     rather than across the ground, and moved into the strip between the
+     stadium's outer tier (east face x -65.3, written out as arithmetic where
+     the ellipse is defined) and the quay edge at x -60. At x -63 with a 1.2 m
+     boom it clears both by a comfortable margin, and it now straddles the
+     docked ship, which is what a quay crane is actually for.
+
+     tools/verify-pitch.js asserts the outfield stays empty from now on, so the
+     fourth instance of this cannot ship. */
+  (function quayCrane() {
+    var GX = -63;                          // between tier face -65.3 and quay edge -60
+    cyl(GX, 4.5, 58, 0.35, 9, M.rust);
+    cyl(GX, 4.5, 78, 0.35, 9, M.rust);
+    box(GX, 9.3, 68, 1.2, 0.7, 20, M.rust);
+  })();
   /* ===== v9.14 — THE CONTAINERS IN THE MIDDLE OF THE CRICKET GROUND =====
      Four shipping containers and a crate stack used to sit at (-86,62),
      (-86,70), (-90,66) and (-70,52). That was reasonable when this quadrant was

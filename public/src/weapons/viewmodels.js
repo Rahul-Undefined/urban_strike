@@ -444,6 +444,24 @@ var WeaponModels = (function () {
       m.userData.muzzleZ = isFinite(minZ) ? minZ : -0.7;
       m.userData.muzzleY = (isFinite(minY) && isFinite(maxY)) ? (minY + maxY) / 2 : 0.005;
 
+      /* v10 — THE MODEL CARRIES ITS OWN TYPE.
+
+         Rahul, from a screenshot: a knife lying on the ground with a black
+         cylinder on its tip. dress() fitted the muzzle can to whatever model
+         was current, with no test for whether that model has a barrel. The
+         knife measures a muzzleZ like everything else — the loop above cannot
+         tell a blade tip from a bore — so the suppressor anchored to the point
+         of the blade and looked, correctly, insane. The bow, the drone and the
+         RPG had the same bug; nobody had happened to screenshot those.
+
+         The type is stamped ON THE MODEL rather than passed in by the caller.
+         A parameter is something a future call site can forget to pass —
+         there are two today and a third would silently reintroduce this. A
+         model that knows what it is cannot be dressed wrongly by anyone. */
+      var wdef = (typeof CFG !== 'undefined' && CFG.WEAPONS && CFG.WEAPONS[n]) || null;
+      m.userData.wname = n;
+      m.userData.wtype = wdef ? wdef.type : 'auto';
+
       /* Both hands are placed from this weapon's measured length: the trigger
          hand just behind the receiver, the support hand two thirds of the way
          out along the barrel — which is where a person actually holds one. */
@@ -491,6 +509,16 @@ var WeaponModels = (function () {
     }
     if (!atts) return;
     var A = (typeof CFG !== 'undefined' && CFG.ATTACH) || {};
+
+    /* v10 — ONLY A FIREARM WEARS FIREARM PARTS.
+       auto / bolt / semi have a barrel and a magazine well. melee, bow, drone
+       and rocket have neither, and every part below anchors to a measured
+       muzzleZ that, on those four, is not a muzzle at all. Read from the type
+       rather than a name list so a weapon added later is covered by declaring
+       its type, which weapons.config.js already requires. */
+    var wt = g.userData.wtype;
+    var isGun = (wt === 'auto' || wt === 'bolt' || wt === 'semi');
+    if (!isGun) return;
 
     /* SIGHT: NOT MODELLED. Deliberately.
        v9.5 fitted a physical optic to answer "the red dot doesn't affect

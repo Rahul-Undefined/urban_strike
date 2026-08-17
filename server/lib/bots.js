@@ -1083,6 +1083,35 @@ module.exports = function initBotsModule(ctx) {
       if (t < ai.nextFire) continue;
       ai.nextFire = t + Math.round(S.fireMs * kit.rateMul);
 
+      /* ===== v10 - A BOT'S SHOT IS NOW SEEN AND HEARD =====
+
+         Until now botShoot() applied damage and broadcast NOTHING. Bots fired
+         with no muzzle flash, no tracer, no gunshot and no minimap ping: your
+         health dropped and there was no cause anywhere on screen. Grep for
+         emit('shoot') and the only sender was the human socket handler.
+
+         That is not lag, but it is INDISTINGUISHABLE FROM LAG to whoever is
+         playing - damage from nowhere is exactly what a desync feels like, and
+         "lag, specially in bot mode" is how it was reported. Worth stating
+         plainly because the v9.13 investigation measured the server tick, found
+         it clean, and stopped; measured again in v10 it is still clean (mean
+         1.08 ms, p99 5.08 ms against a 66.7 ms budget, tools/prof-bots.js), so
+         the tick was never the thing.
+
+         IT GOES HERE, NOT IN botShoot(). botShoot is only reached when the hit
+         roll succeeds, so putting the event there would make a bot audible only
+         when it hits you - which is worse than silence, because then every shot
+         you hear has already landed.
+
+         RANGE-GATED, one recipient at a time. v9.8 cut outbound traffic by 87%
+         and a blanket broadcast would hand a chunk of that back: twelve bots at
+         this cadence is roughly 96 events a second, times every client. Almost
+         all of it is waste - a shot 200 m away on the far side of Urban draws a
+         tracer nobody can see and plays a sound nobody can hear. Sending only
+         to players within earshot keeps the cost proportional to what is
+         actually happening near each person. */
+      if (ctx.botFired) ctx.botFired(room, bot, kit.w);
+
       /* Hit resolution is a probability rather than a simulated bullet. A bot
          that raycast every shot would need the full weapon model — spread,
          recoil, drop, penetration — reimplemented server-side and kept in sync

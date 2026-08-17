@@ -1,5 +1,664 @@
 # Urban Strike — Changelog & Deployment Ledger
 
+# v10.3 - THE BILL WAS BOT MOTION, NOT PACKET DESIGN
+
+Render billed 5.8 GB, essentially all WebSocket responses. Measured on the shape
+that produced it - 1 human + 19 bots on Urban - before changing anything:
+
+    entities per packet   20.0
+    average packet        459 B      (handoff section 8 quotes 409 B)
+    outbound              5,403 B/s  =  18.5 MB per player-HOUR
+    projected             13.0 GB/month at this rate
+
+## WHY THE DELTA ENCODER STOPPED WORKING
+
+v9.8 cut outbound by 87% by sending only fields that CHANGED, and that
+measurement was honest. It was taken against a room of HUMANS, who spend most of
+a match standing still, walking in straight lines, or dead.
+
+A BOT NEVER STOPS. Nineteen of them move, turn and look on every single tick, so
+POS, RY and RX are dirty on every entity on every tick and the delta test
+rejects nothing. Bot mode is close to the worst case this format has, and it is
+exactly the mode that ran up the bill. The 409 B figure was never wrong; it was
+measured on a different game than the one being played.
+
+That reframes the problem. There was nothing left to REMOVE - every field going
+out was a field that had genuinely changed. What was wasteful was how it was
+WRITTEN.
+
+## THE ENTITY BLOCK IS BINARY
+
+    [5,99,1234,95,-4567,-3141,120]
+
+Thirteen bytes of information, typed out as twenty-nine characters of JSON:
+brackets, commas, minus signs, and decimal digits carrying about 3.3 bits each
+in a byte that holds 8.
+
+The entity block now travels as a Buffer beside the packet rather than inside
+its JSON. Measured on the real packet shape: 32.5 B/entity becomes 12.1 B.
+
+WHAT DELIBERATELY DID NOT CHANGE:
+  - the quantisation. POS_Q, ANG_Q and LN_Q are untouched, so a decoded value
+    is bit-identical to what the JSON path produced. This is an ENCODING
+    change, not a precision change.
+  - the delta logic, flags, field order, slot assignment, keyframe cadence, and
+    "absence means removed".
+  - the client-facing shape. toPlayerState returns exactly what it returned.
+  - snapRate, which stays at 15 - the documented floor before rubber-banding.
+  - drones and team kills, which still ride as ordinary JSON keys.
+
+NOTHING IS CULLED BY DISTANCE OR RELEVANCE. The rule at the top of snapcodec.js
+still holds: culling trades a bandwidth number against gameplay correctness,
+which is the wrong way round. Every player still receives every player.
+
+## HEIGHT SPLIT OUT OF POSITION
+
+POS was one flag covering x, y and z. A bot running across flat ground changes
+px and pz every tick - twenty-nine centimetre-units at walking speed, always
+dirty - while py sits at the SAME quantised value for hundreds of ticks. Under
+the combined flag its two unchanging bytes rode along with every position
+update, nineteen times a tick, all match.
+
+Split, PY only goes out when a player actually changes height: stairs, jumps,
+ramps, lifts, falling. It is the first field in this format that a moving bot
+leaves clean, and it is worth 13% on its own.
+
+PY took bit 14 rather than renumbering the existing flags, for the same reason
+CFG.WEAPON_ORDER is append-only: a renumbered flag is a silent misread of every
+field after it.
+
+## PERMESSAGE-DEFLATE
+
+socket.io leaves WebSocket compression OFF by default. The payload is now a run
+of quantised little-endian integers, which compresses well - neighbouring
+entities share high bytes and most flag words are identical tick to tick.
+Enabled with a 256-byte threshold so small frames skip the deflate header, and a
+concurrency limit so it cannot eat the frame budget on a small instance.
+
+## RESULT
+
+    average packet   459 B      ->  210 B
+    outbound         5,403 B/s  ->  2,469 B/s
+    projected        13.0 GB/mo ->  5.96 GB/mo        -54%
+
+The 210 B figure is measured BEFORE deflate - the meter counts the buffer, not
+the compressed frame - so the real wire number is lower again.
+
+It is also FASTER. encodeEntities runs at 2.1 us per 20-entity packet against
+2.9 us for the JSON.stringify it replaced, and the client parses a fixed-width
+buffer instead of allocating twenty arrays of numbers per tick. Bot AI at
+nineteen bots measured p99 6.62 ms against a 66.7 ms budget, zero ticks over.
+
+## A BUG I INTRODUCED, CAUGHT BY A TEST
+
+TEAM IS A STRING. It is a side id like "a" or "b" from CFG.botSideOf, null in
+free-for-all. The first cut of the encoder wrote it as a uint8, so `'b' & 255`
+became 0 and every player on the wire collapsed onto one side. test.js caught it
+at once - "every bot is on side B", "no bot shares a side with an operator" -
+but only because a test happened to check sides.
+
+Written as a length-prefixed string now, and verify-bandwidth round-trips all
+32,768 flag combinations with realistic per-field ranges rather than trusting
+that the obvious cases work.
+
+That is the FOURTH time this project has been bitten by the type of a field
+somebody assumed they knew: muzzleZ was a fallback, SPAWNS[1] was a rotation,
+r.wp was never stored, team is a string.
+
+## TWO GATES ADJUSTED
+
+verify-scope flagged `DataView` and `Buffer` in snapcodec. DataView is a browser
+builtin that was simply missing from a list predating any binary format. Buffer
+genuinely does not exist in a browser and is read inside
+`typeof Buffer !== 'undefined'` - the one construct in JavaScript that cannot
+throw on an undeclared name, and the standard way a module runs in both Node and
+a browser. The gate now understands that guard, and only when EVERY read of a
+name is guarded. Verified by planting an unguarded leak: still caught.
+
+test.js reads the entity block directly and needed teaching about `b`. Both it
+and the browser client accept either shape, so a client can outlive a server
+rollback - this game deploys as a cumulative upload.
+
+## GATE BOARD
+
+  test.js 263/0. verify-bandwidth 19 -> 32/0.
+  Unchanged reds, all three pre-existing and documented:
+  verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+
+## IF IT IS STILL TOO MUCH
+
+In order of size, and each one costs something:
+  1. snapRate 15 -> 12. Linear on the whole bill, ~20% off. Costs smoothness;
+     15 is documented as the floor before rubber-banding against the 120 ms
+     buffer. MEASURE by playing, not by reasoning.
+  2. Fewer bots. Cost is linear in entity count and 19 is the cap.
+  3. Relevance filtering - only send entities near the viewer. The largest
+     remaining win by far, and the only one that changes what a player receives.
+     It needs per-client baselines and it can make an enemy pop into existence.
+     Not done deliberately.
+
+
+# v10.2 - RENDER BANDWIDTH: 5 GB IS THE BUDGET, AND IT IS NOT DISK
+
+Asked to reduce usage against Render's 5 GB limit. Measured first, because the
+fix for each candidate is completely different and only one of them mattered.
+
+## WHAT WAS ACTUALLY AT RISK
+
+    disk            2.1 MB source + 41 MB node_modules = 43 MB
+                    UNDER 1% OF THE LIMIT. Not the constraint, and never was.
+
+    static assets   855 KB RAW per fresh page load, 35 files,
+                    NO compression and NO cache headers at all
+
+    snapshots       21.1 MB per player-HOUR (409 B x 15 Hz, handoff section 8)
+
+    bot gunfire     5.7 MB per player-hour at twelve bots - a 27% increase
+                    that v10 itself had introduced three sessions earlier
+
+At 21 MB per player-hour, 5 GB is about 240 player-hours: an eight-player match
+burns the entire month in roughly 30 hours. Anyone shrinking files on disk to
+protect this budget is solving the wrong problem, which is why the numbers above
+are recorded in tools/verify-bandwidth.js rather than in a commit message.
+
+## GZIP AND CACHE HEADERS  -  66% off every page load
+
+express.static was mounted bare: no compression, and maxAge defaulting to 0 so a
+returning player re-requested all 35 files and collected 35 conditional 304s.
+
+The source is heavily commented JavaScript, which is close to ideal for a text
+compressor:
+
+    first load    855 KB  ->  293 KB gzipped      66% saved
+    per 5 GB      6,132 loads  ->  17,875 loads
+
+Two details that are easy to get wrong and silent when they are:
+
+  - compression must be mounted BEFORE express.static, or the static handler
+    answers first and nothing is compressed. Correct files, full size, no error.
+  - index.html is excluded from caching. This project ships as a cumulative
+    upload, and a client holding a stale index that names last build's files
+    while the server serves this build's is a bug nobody could reproduce. It is
+    20 KB and it names every other file, so it is not worth caching anyway.
+
+three.js (600 KB) and the fonts come from CDNs and were never on our bill. The
+gate now asserts that stays true - serving three.js ourselves would nearly
+triple a page load.
+
+## THE BOT SHOOT EVENT  -  71% smaller, and it was my own regression
+
+v10 made bots emit a shoot event so they stop firing invisibly and silently.
+Correct fix, careless payload:
+
+    {"id":"bot:AbCdEf","w":"ak47","o":[12.3456,1.35,-45.678],"sup":0}   65 B
+    {"id":"bot:AbCdEf"}                                                 19 B
+
+Almost every byte was already on the wire. snapcodec carries each entity's
+POSITION and its WEAPON INDEX `wp` in every snapshot, so `o` and `w` were
+duplicating data the client had received milliseconds earlier. The client fills
+both in from the interpolated remote now.
+
+    4.3 MB/player-hour  ->  1.9 MB/player-hour
+
+Both shapes are accepted. The human path is untouched - a player's own client
+knows its muzzle position better than any snapshot does, and that is one
+player's worth of bytes rather than twelve bots' worth. An older client still
+understands the long form.
+
+ONE BUG CAUGHT BEFORE SHIPPING. The compact form resolves the gunshot SOUND
+from `r.wp`, and `r.wp` was never stored - net.js passed `st.wp` straight to
+Avatars.setRemoteGun and dropped it. Every bot would have fired with the sound
+of WEAPON_ORDER[0] regardless of what it was carrying. Found only by checking
+that the field being read actually existed, which is the same class of mistake
+as the muzzleZ fallback in v10 and the SPAWNS format in v10.1.
+
+## NET EFFECT
+
+    fresh page load      855 KB  ->  293 KB          -66%
+    loads per 5 GB       6,132   ->  17,875
+    per player-hour      26.8 MB ->  23.0 MB         -14%
+    player-hours per 5 GB  191   ->  222
+
+The static saving is the large one in percentage terms; the per-hour saving is
+the one that decides whether a long match is affordable. Snapshots themselves
+are untouched - they were already delta-encoded and 87% smaller since v9.8, and
+snapRate 15 is documented as the floor before rubber-banding.
+
+## GATE
+
+tools/verify-bandwidth.js, 19/0. Bandwidth regressions are INVISIBLE: nothing
+crashes, no gate reddens, the game plays identically, and the bill arrives four
+weeks later. Every assertion in it is something that was actually wrong here -
+compression missing, mounted in the wrong order, maxAge unset, a payload
+duplicating the snapshot, a dependency served from our own origin.
+
+It went red twice on its own regexes first: `[^)]*` could not cross the
+`path.join(__dirname, 'public')` argument, and the "no local three.js" pattern
+matched the CDN URL, which ends in /three.min.js. Both fixed and both noted in
+place - the same failure as v10.1's sign gate reading its own comments.
+
+## GATE BOARD
+
+  test.js 272/0. New: verify-bandwidth 19/0.
+  Unchanged reds, all three pre-existing and documented:
+  verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+
+## DEPENDENCY ADDED
+
+  compression ^1.x  -  express middleware, ~30 KB, standard.
+
+
+# v10.1 - BROADPHASE, SIGN ATLAS, AND THE FOG MEASURED
+
+Four handoff section 9 items. Three closed, one investigated and deliberately
+not acted on.
+
+## THE BROADPHASE  -  a 140 m ray cast is 19.5x faster
+
+Every spatial query in world.js walked the WHOLE collider array: rayHit,
+rayDist2, losBlocked and fits(). Urban has 3,332 colliders, and rayHit runs at
+least once per frame from the viewmodel wall probe, once per remote shot, and
+once per grenade step. None of it ever showed up as a gate failure, because a
+linear scan is CORRECT and correctness is all the board can see.
+
+Colliders are now bucketed into a uniform 8 m grid on x/z. Y is deliberately
+not bucketed - the maps are 200 m across and under 32 m tall, so a third axis
+would add bookkeeping for almost no rejection. Ray queries walk the cells with
+a 2D DDA, nearest first; box queries take the overlapping cells directly.
+Average bucket is 8.6 colliders on Urban instead of 3,332.
+
+Measured, 20,000 casts at 140 m on Urban:
+
+    linear scan   296.48 us per cast
+    with grid      15.17 us per cast      19.5x
+
+THE ENTIRE RISK IS CORRECTNESS. A broadphase that is ten times faster and one
+part in a thousand different is not an optimisation, it is a physics bug - it
+surfaces as a shot passing through a wall once an hour, which nobody can
+reproduce and nobody can attribute. So tools/verify-broadphase.js compares
+against an INDEPENDENTLY WRITTEN linear scan - not the same code path with a
+flag flipped - over 25,500 queries on all three maps, and requires BIT
+EQUALITY rather than a tolerance. It targets the cases where a DDA goes wrong:
+axis-aligned rays where a step is Infinity, vertical rays with a single-cell
+footprint, origins outside the map, and rays that leave the grid partway.
+
+Two details worth keeping:
+
+  - rayHit does NOT stop at the first cell containing a hit. Cells are visited
+    nearest-first, but a long wall clipped by the near cell can be hit at t=40
+    while a crate wholly inside the next cell is hit at t=9. It keeps the
+    nearest across the whole walk. losBlocked CAN stop early, because it is a
+    boolean and order does not matter.
+  - The grid is built once in _markBuilt(), not incrementally in addCollider().
+    A district builder querying mid-build would otherwise see a half-populated
+    grid and get a different answer from the linear scan - the exact
+    build-order dependence the v7.8 PRNG fix existed to remove. Until it is
+    built, grid is null and every query falls back to the scan.
+
+Geometry is untouched: colliders, casters, lights, triangles and both
+fingerprint signatures are all unchanged. That is what proves this is a speed
+change and not a physics one.
+
+## THE SIGN ATLAS  -  Urban draws 112 -> 98
+
+districtSigns() in world.js built a separate CanvasTexture and a separate
+MeshLambertMaterial for EVERY district. A unique material cannot batch, so
+fifteen signposts held fifteen of Urban's 112 draw calls - 13% of the budget,
+on the map with THREE calls of headroom against its 115 ceiling and zero
+shadow-caster headroom. Counted in the built scene, not assumed: fifteen meshes
+carrying an emissiveMap.
+
+Metro fixed this in v9.5 (handoff item 9.4) and Urban never got it. Ported
+rather than re-invented, including both details Metro paid for:
+
+  - BufferAttribute + Float32Array, NOT Float32BufferAttribute. The latter is a
+    convenience subclass absent from the trimmed THREE the map gates run
+    against, so it crashes verify-map while the render gates pass.
+  - Two quads back to back, not one DoubleSide quad. A DoubleSide plane shows
+    its texture mirrored from behind, so every board read backwards from one
+    approach.
+
+Placement, clearance and posts are unchanged; only how the BOARD is drawn moved.
+Placement now runs for all districts BEFORE the canvas is built, because the
+atlas rows must match the signs that actually got placed - building the canvas
+first would put the wrong name on every board after the first skipped district.
+
+    draws     112 -> 98      (headroom 3 -> 17)
+    triangles 92,212 -> 92,092
+    colliders, casters, lights  UNCHANGED
+
+verify-batch now asserts the SHAPE of the fix rather than the count, so it
+survives a district being added: however many signs exist, they share one
+material and one texture.
+
+That gate went red on its own documentation first time out - the comments
+explaining why Float32BufferAttribute and DoubleSide are forbidden made the
+"is it forbidden" regex match. It strips comments before testing now. A gate
+that reads prose is testing the wrong artefact.
+
+## THE METRO FOG  -  symptom confirmed, magnitude wrong, atmosphere untouched
+
+Handoff item 9.3 said "snipers reach 999 m but night fog leaves a 250 m target
+~97% obscured. Confirm the symptom before changing the atmosphere."
+
+Confirmed, and the instruction earned its place. The 97% figure is correct
+arithmetic - FogExp2 keeps exp(-(0.0075*250)^2) = 0.030 at 250 m - but MEASURED,
+Metro has no 250 m sightlines to obscure. tools/audit-sightlines.js walks every
+spawn pair on every map and asks losBlocked whether the line is actually clear:
+
+    map     longest CLEAR line   fog      visibility   obscured
+    metro          196.3 m       0.0075      0.114        89%
+    urban          175.8 m       0.0040      0.610        39%
+    rural          301.0 m       0.0040      0.235        77%
+
+So the real worst case on Metro is 89%, not 97%. It is still roughly twice as
+hard to read a maximum-range shot there as on Urban, and five weapons out-range
+what the map can show, which is why a miss reads as "the bullet did not reach".
+
+NOTHING HERE CHANGES THE ATMOSPHERE. Whether a night map SHOULD be hard to see
+across is a look-at-it decision, and it should be made by somebody who has seen
+the game against these numbers rather than by arithmetic alone.
+
+THE UNEXPECTED FINDING IS RURAL, not Metro. 301 m sightlines and 161 clear
+lines over 150 m, against Metro's 12, on daylight fog that still obscures 77%
+at maximum range. Rural is where long shots actually happen and nobody has
+looked at its fog at all.
+
+A NOTE ON HOW THAT TABLE WAS NEARLY WRONG. The first cut of the tool read
+SPAWNS entries as [x, y, z]. They are [x, z, rotationY, tag] - so it was
+measuring the distance to a rotation in radians and printing it as metres.
+Caught only because Urban's "longest line" came back ending at z = 1.5707963,
+which is pi/2. Failure mode section 4.4, from the inside: a number that looks
+entirely plausible until you read what it is.
+
+## LIFTS  -  reported as absent, they are not
+
+Asked to remove the "bots do not use lifts" item on the grounds that the game
+has none. It has 21, all on Urban:
+
+    13 upward, to stops between 6.25 m and 30.3 m
+     7 downward to -5.75 m, WITH NO STAIRS AT ALL
+     1 tower lift
+
+Metro and Rural have none, which is very likely where the impression came from.
+buildingAt passes noStair for the towers with the comment "the towers are
+lift-only", so deleting lifts orphans those roofs and every underground stop.
+Left in place; the handoff wording is corrected instead.
+
+## GATE BOARD
+
+  test.js 272/0. New: verify-broadphase 20/0. verify-batch 36 -> 43/0.
+  Unchanged reds, all three pre-existing and documented:
+  verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+
+## NEW TOOLS
+
+  tools/verify-broadphase.js   grid vs linear scan, bit equality, 25,500 queries
+  tools/prof-rays.js           ray throughput with and without the grid
+  tools/audit-sightlines.js    longest clear line per map, against fog density
+
+
+# v10 - THE SIX DEFECTS, AND THE REASONS THE GATES DID NOT SEE THEM
+
+All six open defects from the v9.15 handoff are closed, plus item 1.7. Four
+things were found along the way that were not on the list, and two of them
+matter more than any single defect.
+
+## THE TWO STRUCTURAL FINDINGS
+
+### 1. The gates were measuring a constant, not a barrel
+
+viewmodels.js measures each weapon's muzzle by walking its parts and reading
+`o.geometry.parameters.depth`, behind this guard:
+
+    if (!o.geometry || !o.geometry.parameters) return;
+
+The trimmed THREE the gates run under had no `.parameters`. So the guard skipped
+EVERY part, minZ stayed Infinity, and the -0.700 fallback fired - for all 25
+weapons, in every gate, for as long as the stub has existed. Every assertion
+about barrel length, muzzle position or hand placement was vacuously true.
+
+This is why defect 1.2 could not be caught: the wall probe was set to 1.05 m
+against barrels the gates believed were 0.70 m and are actually up to 1.64 m.
+
+Fixed with tools/_three-stub.js, which stores constructor arguments on
+`.parameters` the way real THREE does. verify-barrel.js now ASSERTS the fallback
+is not in use, so this failure announces itself instead of passing quietly.
+
+### 2. A budget was excusing a different defect from the one it named
+
+verify-stairs-quality carried `arrival: 1` with a comment saying the one
+permitted failure was the CIVIC CENTRE switchback. By v9.15 that flight had been
+repaired and a completely different one - the ship bridge at NEAR WESTBROOK
+STADIUM, overshooting its building by 5.4 m onto a pier over open water - had
+silently inherited the slot. The gate printed "1 flights fail arrival (budget 1)"
+and went green, for versions, while the recordings kept coming.
+
+That is defect 1.3, and it is why two fixes aimed at it did not land: nothing
+ever went red.
+
+Budgets are now NAMED ALLOWLISTS. Each entry is a coordinate and a reason, and
+the gate fails in BOTH directions - an unlisted failure is red, and so is an
+entry nobody matched, because a stale excuse means either the flight was fixed
+or a different one has taken its place. Verified by deliberately corrupting an
+entry: both halves reported. `floating` had 8 failures against a budget of 9,
+which is one free slot a future defect could have hidden in.
+
+## THE SIX DEFECTS
+
+### 1.1 The knife has a suppressor on it  -  FIXED, gated 97/0
+
+Not a knife problem. dress() fitted the muzzle can to whatever model was
+current, anchored to that model's measured `userData.muzzleZ` - and every model
+has one, because it is the frontmost point of the geometry. On a rifle that is
+the bore; on a knife it is the tip of the blade.
+
+THE BOW, THE DRONE AND THE RPG WERE ALL WEARING SUPPRESSORS TOO. Only the knife
+had been photographed.
+
+Fixed by stamping the config weapon type onto the model in build() and gating
+the muzzle and magazine blocks on it. Stamped on the model rather than passed in
+by the caller: a parameter is something a third call site can forget, and a
+model that knows what it is cannot be dressed wrongly by anyone.
+
+tools/verify-attach.js tests the full cross product of every weapon against
+every attachment, both ways - a knife fits nothing, and a rifle still fits
+everything, so a fix that suppresses the knife by suppressing everything fails.
+
+### 1.2 Guns still go through walls  -  FIXED, gated 53/0
+
+Three faults, not one.
+
+  TOO SHORT.  CLEAR was 1.05 m. Measured with a stub that can actually see
+              geometry: reach is 0.72 m (pistol) to 1.64 m (AWM) hip-firing,
+              and a suppressor adds 0.20 m more, for 1.84 m. A fixed 1.05 m
+              probe stranded 15 OF 25 WEAPONS. No constant can serve both a
+              pistol and an AWM; it is derived from the model now.
+
+  WRONG PLACE. The ray started at camera.position. The hip-fire rig is 0.26 m
+              to the RIGHT of it.
+
+  WRONG HEIGHT. And 0.22 m BELOW the eye. This is why the reported case was a
+              container rather than a wall: you look over the top of a
+              chest-high crate, the eye ray sails clean over it, and the gun is
+              inside it. Nobody had accounted for the vertical offset at all.
+
+Two rays now - from the eye and from the gun - resolved in ONE pass over the
+colliders via the new World.rayDist2. Two rays cost what one cost, because
+walking the array is the expensive part.
+
+Aim is untouched. The ray that decides where bullets go is a separate cast in
+fire(); moving the viewmodel cannot move a shot.
+
+ALSO FIXED HERE: raySlab built two arrays per collider tested. Urban has 3,332
+colliders, so a single rayHit produced 6,664 short-lived arrays, every frame,
+from the wall probe alone - roughly 400,000 allocations a second from one call
+site. Unrolled; it allocates nothing now. A GC pause mid-frame is what a player
+calls a stutter.
+
+### 1.3 Stairs still hang in mid-air  -  FIXED, gated 30/0
+
+The handoff's guess was "a different generator". It is not. tools/audit-stairs.js
+was written to find unregistered flights by chaining stair-shaped colliders, and
+reports ZERO on all three maps - every flight in the game is in the registry.
+
+The real cause is the budget described above, and underneath it a building that
+cannot hold its own staircase: the ship's superstructure,
+buildingAt(-58, -50, 58, 68, 3), is EIGHT metres wide with 5.6 m of usable wall,
+and three storeys at this pitch need 12 m of run.
+
+v9.14 bounded the run and orphaned the roof. v9.15 restored the height and
+cantilevered a landing out to catch the overshoot - which left a longer hanging
+stair with a hanging platform on the end, 12 m up over open water. Both framed
+the problem as "short stair OR unreachable roof" when architecture has a third
+answer: a SWITCHBACK. Run as far as the wall allows, land, turn, run back.
+
+It engages ONLY where a straight run does not fit. All three buildings using the
+helper were measured; the ship is the only one that overshoots (the others have
+35.6 m and 15.6 m of wall against an 8 m need), so the wide ones take the
+identical straight flight they always have. HANDOFF section 4.3 - a shared
+helper edited for one caller - is the reason that check was done first.
+
+TWO MISTAKES ON THE WAY, both caught by a gate on the first run after the change,
+both now written into the code:
+
+  - The first cut turned in a SINGLE lane, putting leg 2 directly over leg 1
+    with 0.375 m of headroom where a capsule needs 1.9 m. A switchback that
+    turns in place is a staircase you cannot walk up. Fixed with two lanes: the
+    return leg runs BESIDE the one below, as a real fire escape does.
+
+  - The landing then sat entirely UNDER leg 2's treads, so there was nowhere on
+    it a 1.8 m capsule could stand, and verify-access correctly called the roof
+    unreachable. Fixed by starting the next leg partway along the landing, which
+    leaves a CLEAR PAD with nothing overhead - the bit you actually turn around
+    on.
+
+The doorways were moved to follow the landings. The old formula placed door f at
+`sxA + f * runPerFloor`, correct only for a straight flight; on a switchback it
+put floor 2's door eight metres outside the building.
+
+verify-access could not test any of this, because its walker took one fixed
+heading and cannot turn. That gate was pinning the IMPLEMENTATION rather than
+the invariant, so it now steers to WAYPOINTS. An intermediate version used
+headings plus tick counts and sailed 20 m past the building - a tick count is a
+duration, and what a route needs is a destination. Every existing case still
+runs through the original single-heading path unchanged.
+
+Result: the ship bridge reaches 12.67 m against a 12.40 m roof.
+
+### 1.4 The "weird big steps" are not steps  -  FIXED
+
+Confirmed: v9.15 reshaped the treads and Rahul still sent the same photograph.
+The treads were fine. What is in the picture is what was UNDER them - three
+stacked SOLID slabs per flight, 1.50 m, 2.95 m and 4.30 m tall. Three blocks of
+increasing height beside a stair do not read as support; they read as a second,
+giant, three-step staircase. Nine of them across the garage and warehouse.
+
+They were also redundant: stairFlight has emitted proper stringers since v8.4,
+so these predate the generator having its own support and nobody removed them
+when it gained one.
+
+Replaced with a raking stringer that follows the tread line down, which is what
+the underside of an external stair looks like. collide:false and cast:false, so
+it cannot affect climbing and cannot touch Urban's zero caster headroom. Both
+flights still climb (garage 4.47 m, warehouse 9.32 m).
+
+### 1.5 The cricket outfield is striped grey  -  FIXED, gated 9/0
+
+The tiles all existed. Each was cut to an AVERAGE radial depth:
+
+    gd = ((FA + FB) / 2) * RSTEP * 0.94        // 1.566 m
+
+Ring spacing on an ellipse is not constant: FA * RSTEP = 1.23 m along x and
+FB * RSTEP = 2.10 m along z. Measured against the real step at each angle, that
+tile OVERLAPS by 0.33 m near the x axis and leaves a 0.53 M GAP near the z axis -
+half a metre of bare ground, seven rings deep, all the way round.
+
+arcAt already solved exactly this for tangential width, and its own comment says
+sizing by the average "is wrong on an ellipse and it is wrong by a lot". Depth is
+now measured per tile the same way. Minimum coverage margin is +0.050 m at every
+one of the 308 tiles; the old formula's worst case was -0.534 m.
+
+### 1.6 There is a pergola across the cricket ground  -  FIXED, gated 9/0
+
+Not a pergola. The HARBOUR GANTRY CRANES at (-78, 58) and (-78, 78), each
+throwing a 20 m boom at 9 m height straight across the ground, with 9 m columns
+standing in the outfield. They predate the stadium and nobody moved them when
+Westbrook was laid over the quay.
+
+Rebuilt as one gantry turned through 90 degrees so its boom runs along z, moved
+to x -63 - between the stadium's outer tier face at -65.3 and the quay edge at
+-60 - where it straddles the docked ship, which is what a quay crane is for.
+The pavilion balcony rail was pulled back from 2.2 m to 1.6 m for the same
+reason.
+
+Probe result: 6 obstructions before, 0 after.
+
+THIS IS THE THIRD TIME the stadium has been built through pre-existing harbour
+structure - seat rows in v9.6, containers in v9.14, cranes now - and all three
+were found from a screenshot rather than a gate. Three instances of one mistake
+is a missing gate, so tools/verify-pitch.js asserts the outfield stays clear
+both at ground level and overhead, and that the turf covers.
+
+### 1.7 The stadium seats read as neon  -  FIXED
+
+Not taste - the palette. M.signalRed is E(0xff3a2a), an EMISSIVE railway signal
+lamp meant to be a glowing dot the size of a fist at 40 m. Three tiers of
+grandstand were built from it, so the bowl lit up like a sign. Three muted
+non-emissive tones added (seatRed, seatBlue, seatSand). Triangles went DOWN 92.
+
+## BOTS FIRED SILENTLY  -  FIXED
+
+Not on the list, and the likeliest explanation for "lag, specially in bot mode".
+
+botShoot() applied damage and broadcast NOTHING. Grep for emit('shoot') and the
+only sender was the human socket handler. Bots therefore fired with no muzzle
+flash, no tracer, no gunshot and no minimap ping: your health dropped and there
+was no cause anywhere on screen.
+
+That is not lag. It is INDISTINGUISHABLE FROM LAG to whoever is playing, because
+damage from nowhere is exactly what a desync feels like.
+
+Worth stating plainly: the v9.13 investigation measured the server tick, found
+it clean and stopped there. Re-measured in v10 with PERCENTILES rather than a
+mean (tools/prof-bots.js, 12 bots, 600 ticks, Urban): mean 1.08 ms, p50 0.88,
+p99 5.08, max 5.75, against a 66.7 ms budget, zero ticks over. The tick was
+never the thing. A mean of 1.08 ms would have been consistent with 40 ms spikes,
+which is why the distribution was worth measuring.
+
+The event is emitted where the bot COMMITS TO FIRING, not inside botShoot -
+botShoot is only reached when the hit roll succeeds, so putting it there would
+make a bot audible only when it hits you, which is worse than silence.
+
+RANGE-GATED at 90 m, sent per recipient. v9.8 cut outbound traffic 87% and a
+blanket broadcast would hand a chunk of it back - twelve bots is roughly 96
+events a second, times every client, most of them tracers nobody can see.
+Measured firing rate: 10.5 shots/sec across 8 bots.
+
+## BUDGETS
+
+Draw calls 112 and shadow casters 62/62 are UNCHANGED on Urban - the number that
+actually matters, since section 7 records zero caster headroom. Colliders 3334 ->
+3332 (net -2). Triangles 92,088 -> 92,212 (+124 of a 120,000 budget).
+
+## GATE BOARD
+
+  test.js 263/0. New: verify-attach 97/0, verify-barrel 53/0, verify-pitch 9/0.
+  verify-stairs-quality 15 -> 30/0 (allowlists test twice as much).
+  verify-devhud 13/1 -> 14/0, verify-props 1/1 -> 2/0.
+  Unchanged reds, all three documented and pre-existing:
+  verify-access 55/1 (north block A), verify-arch 4/2, verify-climb 1/2.
+
+## NEW TOOLS
+
+  tools/_three-stub.js       THREE stub that carries geometry.parameters
+  tools/verify-attach.js     attachments only fit weapons that have the part
+  tools/verify-barrel.js     the wall probe reaches every real muzzle
+  tools/verify-pitch.js      the cricket ground stays empty and the turf covers
+  tools/audit-stairs.js      finds flights by collider shape, registered or not
+  tools/prof-bots.js         bot tick cost as a distribution, not a mean
+
+
 Every release ships as a cumulative zip (the full game, not a patch).
 Deploy ritual: local 2-tab smoke test -> GitHub **delete-then-upload** (uploads never
 remove old files) -> Render auto-deploys (`npm install` / `node server.js`, never changed).

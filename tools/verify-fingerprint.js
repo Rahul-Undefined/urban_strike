@@ -128,7 +128,20 @@ const BASELINE = {
      the SE high-rise cluster became the South Terminal, the vacant SW became
      Westbrook Stadium, and the Civic apartment staircase was rebuilt. See the
      note above BASELINE in tools/verify-untouched.js. */
-  urban: { colliders: 3334, draws: 112, tris: 92088, casters: 62, lights: 7, bound: 100, colSig: -1276668319, meshSig: -450224149 },
+/* v10 BASELINE MOVE - the ship bridge switchback (districts-outer buildingAt).
+   Urban +1 collider and +36 triangles, from replacing one overshooting flight
+   plus a cantilevered landing with three shorter legs and three landings.
+   CASTERS AND DRAW CALLS ARE UNCHANGED at 62 and 112, which is the number that
+   actually matters - HANDOFF section 7 records Urban at ZERO caster headroom.
+   Recorded rather than silently rebaselined so the next reader can tell a
+   deliberate geometry change from a leak. */
+/* v10 SIGN ATLAS - Urban draws 112 -> 98, triangles 92,212 -> 92,092.
+   districtSigns() built one CanvasTexture and one material per district, so
+   fifteen signposts held fifteen unbatchable draw calls - 13% of Urban's
+   budget against a 115 ceiling with 3 spare. Merged into one atlas mesh, the
+   way Metro has done since v9.5. Colliders, casters and lights all UNCHANGED,
+   which is what proves this is a batching change and not a geometry one. */
+  urban: { colliders: 3332, draws: 98, tris: 92092, casters: 62, lights: 7, bound: 100, colSig: 459507278, meshSig: -25152539 },
   rural: { colliders: 1066, draws: 32, tris: 54467, casters: 22, lights: 3, bound: 150, colSig: -956236117, meshSig: -2029443105 }
 };
 

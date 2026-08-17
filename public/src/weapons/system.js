@@ -889,12 +889,75 @@ var Weapons = (function () {
        tight against cover, which is what a person does, rather than as the
        weapon clipping. Aim is untouched — the ray that decides where bullets
        go is a separate cast from the camera, so what you hit does not change. */
-    var CLEAR = 1.05;                       // how far ahead the barrel reaches
+    /* ===== v10 — THE PROBE NOW MEASURES THE RIGHT LINE, AND ALL OF IT =====
+       Still happening in v9.15. Confirmed from Recording_105559: the AK's
+       barrel buried in a blue container while the player faces it. The v9.12
+       probe above was right in principle and wrong in all three of its
+       specifics.
+
+       ONE — IT WAS TOO SHORT. `CLEAR = 1.05` was a typed number, and the
+       barrels were never measured. Measured for real (tools/verify-barrel.js):
+       the rig sits at z -0.5 hip-firing and muzzleZ runs from -0.22 on the
+       pistol to -1.14 on the AWM, so reach is 0.72 m to 1.64 m — and a
+       suppressor adds another 0.20 m on top, for 1.84 m. Every wall between
+       1.05 m and 1.84 m was invisible to the probe. A constant could not have
+       been right for both the pistol and the AWM anyway: one number is either
+       too short for the rifle or shoves the pistol back off walls it is
+       nowhere near.
+
+       Worth recording WHY the number was never caught: the gates measure
+       muzzleZ under a trimmed THREE whose geometries carry no `.parameters`,
+       so the measuring loop in viewmodels.js skipped every part and returned
+       its -0.7 fallback for all 25 weapons. The gates were reading a constant
+       and reporting it as a measurement. tools/_three-stub.js exists to stop
+       that recurring.
+
+       TWO — IT POINTED AT THE WRONG PLACE. The cast started at
+       `camera.position` and the hip-fire rig is 0.26 m to the RIGHT of it.
+       Strafing along a wall on your right put the whole gun inside the wall
+       while the ray sailed down the corridor beside it.
+
+       THREE — AND AT THE WRONG HEIGHT. The rig is also 0.22 m BELOW the eye.
+       A chest-high container is the exact case in the recording: you look over
+       the top of it, the eye ray passes clean above, and the gun is inside it.
+       This is why the reported symptom was a container rather than a wall.
+
+       So: two rays, from the eye and from the gun, in a single pass over the
+       colliders (World.rayDist2). Two rays cost what one cost before, because
+       the array walk is the expensive part and it is now shared.
+
+       Aim is untouched, exactly as in v9.12 — the ray that decides where
+       bullets go is a separate cast from the camera in fire(). Moving the
+       viewmodel cannot move a shot. */
     var wallT = 1;
-    if (World.isBuilt && World.isBuilt()) {
+    if (World.isBuilt && World.isBuilt() && World.rayDist2) {
+      var mdlNow = models[current];
+      /* Derived, not typed. |muzzleZ| is this weapon's barrel measured from
+         the geometry it is actually built from, |tz| is where the rig sits
+         this frame, SUPP is the length a fitted can adds beyond the bore, and
+         0.12 is honest margin so the gun stops just short rather than exactly
+         flush. A weapon added later is covered without touching this line. */
+      var muz = (mdlNow && mdlNow.userData.muzzleZ !== undefined) ? Math.abs(mdlNow.userData.muzzleZ) : 0.70;
+      var SUPP = (atts && atts.muzzle) ? 0.20 : 0;
+      var CLEAR = Math.abs(tz) + muz + SUPP + 0.12;
+
       var fwd = camera.getWorldDirection(_vmDir);
-      var wh = World.rayHit(camera.position, fwd, CLEAR);
-      if (wh) wallT = Math.max(0, Math.min(1, wh.t / CLEAR));
+      /* Right-hand vector from the view direction. The world's up is +y, so
+         right = forward x up, which for a y-up world reduces to this. No
+         allocation and no trig — the camera's own basis would need a matrix
+         read to get at. */
+      var rl = Math.sqrt(fwd.x * fwd.x + fwd.z * fwd.z) || 1;
+      var rx = -fwd.z / rl, rz = fwd.x / rl;
+
+      var gx = camera.position.x + rx * tx;
+      var gy = camera.position.y + ty;
+      var gz = camera.position.z + rz * tx;
+
+      var d = World.rayDist2(
+        camera.position.x, camera.position.y, camera.position.z,
+        gx, gy, gz,
+        fwd.x, fwd.y, fwd.z, CLEAR);
+      if (d >= 0) wallT = Math.max(0, Math.min(1, d / CLEAR));
     }
     if (wallT < 1) {
       /* Fully pressed against a surface the gun sits at the chest; at arm's

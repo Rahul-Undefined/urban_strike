@@ -196,6 +196,22 @@ var World = (function () {
     /* RESIDENTIAL: warm render over brick, terracotta pantiles, painted doors.
        Four colours across six houses so a terrace reads as individual homes
        and a callout can be "the ochre house" rather than "the brick one". */
+    /* ---- STADIUM SEATING (v10) -----------------------------------------
+       The Westbrook terraces were built from M.signalRed, M.steelBlue and
+       M.ochre, and Rahul's screenshots showed them as saturated neon bars. The
+       cause was not taste, it was the palette: M.signalRed is E(0xff3a2a), an
+       EMISSIVE railway signal lamp. It is meant to be a glowing dot the size of
+       a fist at 40 m, and it was being used for three tiers of grandstand
+       seating, so the bowl lit up like a sign.
+
+       Three muted, non-emissive tones instead - the reds, blues and sand of
+       moulded plastic seating that has been in weather for a decade. They still
+       alternate, so the bowl still reads as a crowd rather than a kerb, which
+       is what the alternation was for. Costs nothing: three materials in, and
+       the emissive ones stay where they belong on the railway signals. */
+    M.seatRed = L({ color: 0x8c3b34 });
+    M.seatBlue = L({ color: 0x3c556b });
+    M.seatSand = L({ color: 0x9a8558 });
     M.terracotta = L({ color: 0x9c4f32 });
     M.ochre = L({ color: 0xb8894a });
     M.sage = L({ color: 0x76856a });
@@ -500,34 +516,264 @@ var World = (function () {
        check deterministic rather than dependent on district build order. */
   }
 
+  /* ===== v10 - UNIFORM GRID BROADPHASE =====
+
+     Every spatial query in this file walked the WHOLE collider array. Urban has
+     3,332 of them, and rayHit runs at least once per frame from the viewmodel
+     wall probe, plus once per remote shot, plus once per grenade step. losBlocked
+     runs per explosion victim. fits() runs on every loot placement.
+
+     None of that was ever measured because it never showed up as a gate
+     failure - a linear scan is CORRECT, just slow, and correctness is all the
+     board can see.
+
+     This buckets colliders into a 2D grid on x/z. Y is deliberately not
+     bucketed: the maps are 200 m across and under 32 m tall, so a third axis
+     would add bookkeeping for almost no rejection.
+
+     THE ONLY THING THAT MATTERS HERE IS THAT RESULTS ARE IDENTICAL. A
+     broadphase that is 10x faster and 0.1% different is a physics bug that
+     will surface as a shot passing through a wall once an hour, which is far
+     worse than the cost it saved. So:
+
+       - every query keeps its exact original arithmetic on the candidates;
+       - the grid only decides WHICH boxes get tested, never the outcome;
+       - a box spanning many cells is registered in all of them, and a `seen`
+         stamp stops it being tested twice;
+       - tools/verify-broadphase.js compares accelerated against brute force
+         over thousands of random rays and boxes on all three maps and requires
+         EXACT equality, not a tolerance.
+
+     If the grid is not built - a caller querying mid-build, or a test harness
+     poking colliders directly - every function below falls back to the linear
+     scan automatically. That is why `grid === null` is checked rather than
+     assumed. */
+  var CELL = 8;                    // metres. See the note in buildGrid().
+  var grid = null, gW = 0, gD = 0, gX0 = 0, gZ0 = 0;
+  var seen = null, seenTick = 0;
+
+  function buildGrid() {
+    grid = null;
+    if (!colliders.length) return;
+    var minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity, i, c;
+    for (i = 0; i < colliders.length; i++) {
+      c = colliders[i];
+      if (c[0] < minX) minX = c[0];
+      if (c[2] < minZ) minZ = c[2];
+      if (c[3] > maxX) maxX = c[3];
+      if (c[5] > maxZ) maxZ = c[5];
+    }
+    /* One cell of padding each side so a query just outside the map still has
+       a cell to land in rather than needing a bounds special-case. */
+    gX0 = minX - CELL; gZ0 = minZ - CELL;
+    gW = Math.ceil((maxX - minX) / CELL) + 3;
+    gD = Math.ceil((maxZ - minZ) / CELL) + 3;
+    if (gW * gD > 200000) return;            // implausible extent; stay linear
+    grid = new Array(gW * gD);
+    for (i = 0; i < colliders.length; i++) {
+      c = colliders[i];
+      var cx0 = ((c[0] - gX0) / CELL) | 0, cx1 = ((c[3] - gX0) / CELL) | 0;
+      var cz0 = ((c[2] - gZ0) / CELL) | 0, cz1 = ((c[5] - gZ0) / CELL) | 0;
+      if (cx0 < 0) cx0 = 0; if (cz0 < 0) cz0 = 0;
+      if (cx1 >= gW) cx1 = gW - 1; if (cz1 >= gD) cz1 = gD - 1;
+      for (var gx = cx0; gx <= cx1; gx++) {
+        for (var gz = cz0; gz <= cz1; gz++) {
+          var k = gz * gW + gx;
+          (grid[k] || (grid[k] = [])).push(i);
+        }
+      }
+    }
+    seen = new Int32Array(colliders.length);
+    seenTick = 0;
+  }
+
+  /* Walk the cells a ray crosses, nearest first, and hand each candidate to
+     `test`. Returns as soon as `test` says stop.
+
+     Nearest-first matters: rayHit wants the closest hit, and visiting cells in
+     order lets it stop early instead of testing everything within maxDist. The
+     traversal is a standard 2D DDA on the x/z plane.
+
+     `test(index)` returns true to stop the walk. */
+  function walkRay(ox, oz, dx, dz, maxDist, test) {
+    var gx = ((ox - gX0) / CELL) | 0, gz = ((oz - gZ0) / CELL) | 0;
+    if (gx < 0) gx = 0; else if (gx >= gW) gx = gW - 1;
+    if (gz < 0) gz = 0; else if (gz >= gD) gz = gD - 1;
+
+    var stepX = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+    var stepZ = dz > 0 ? 1 : (dz < 0 ? -1 : 0);
+    var tDX = stepX === 0 ? Infinity : Math.abs(CELL / dx);
+    var tDZ = stepZ === 0 ? Infinity : Math.abs(CELL / dz);
+    var nx = gX0 + (gx + (stepX > 0 ? 1 : 0)) * CELL;
+    var nz = gZ0 + (gz + (stepZ > 0 ? 1 : 0)) * CELL;
+    var tMX = stepX === 0 ? Infinity : (nx - ox) / dx;
+    var tMZ = stepZ === 0 ? Infinity : (nz - oz) / dz;
+
+    seenTick++;
+    /* Int32Array wraps at 2^31; restamping is cheaper than checking every
+       frame, and this only happens after two billion queries. */
+    if (seenTick >= 2147483647) { seen.fill(0); seenTick = 1; }
+
+    var travelled = 0, guard = 0;
+    while (travelled <= maxDist && guard++ < 4096) {
+      var bucket = grid[gz * gW + gx];
+      if (bucket) {
+        for (var b = 0; b < bucket.length; b++) {
+          var idx = bucket[b];
+          if (seen[idx] === seenTick) continue;
+          seen[idx] = seenTick;
+          if (test(idx)) return;
+        }
+      }
+      if (tMX < tMZ) {
+        travelled = tMX; tMX += tDX; gx += stepX;
+        if (gx < 0 || gx >= gW) return;
+      } else {
+        travelled = tMZ; tMZ += tDZ; gz += stepZ;
+        if (gz < 0 || gz >= gD) return;
+      }
+    }
+  }
+
+  /* Candidate indices for an axis-aligned box query. */
+  function walkBox(x0, z0, x1, z1, test) {
+    var cx0 = ((x0 - gX0) / CELL) | 0, cx1 = ((x1 - gX0) / CELL) | 0;
+    var cz0 = ((z0 - gZ0) / CELL) | 0, cz1 = ((z1 - gZ0) / CELL) | 0;
+    if (cx0 < 0) cx0 = 0; if (cz0 < 0) cz0 = 0;
+    if (cx1 >= gW) cx1 = gW - 1; if (cz1 >= gD) cz1 = gD - 1;
+    if (cx1 < 0 || cz1 < 0 || cx0 >= gW || cz0 >= gD) return;
+    seenTick++;
+    if (seenTick >= 2147483647) { seen.fill(0); seenTick = 1; }
+    for (var gx = cx0; gx <= cx1; gx++) {
+      for (var gz = cz0; gz <= cz1; gz++) {
+        var bucket = grid[gz * gW + gx];
+        if (!bucket) continue;
+        for (var b = 0; b < bucket.length; b++) {
+          var idx = bucket[b];
+          if (seen[idx] === seenTick) continue;
+          seen[idx] = seenTick;
+          if (test(idx)) return;
+        }
+      }
+    }
+  }
+
   // ---------- physics queries ----------
   function overlap(cx, cy, cz, hx, hy, hz, c) {
     return cx - hx < c[3] && cx + hx > c[0] && cy - hy < c[4] && cy + hy > c[1] && cz - hz < c[5] && cz + hz > c[2];
   }
   function fits(cx, cy, cz, hx, hy, hz) {
+    if (grid) {
+      var bad = false;
+      walkBox(cx - hx, cz - hz, cx + hx, cz + hz, function (i) {
+        if (overlap(cx, cy, cz, hx, hy, hz, colliders[i])) { bad = true; return true; }
+        return false;
+      });
+      return !bad;
+    }
     for (var i = 0; i < colliders.length; i++) if (overlap(cx, cy, cz, hx, hy, hz, colliders[i])) return false;
     return true;
   }
+  /* v10 — UNROLLED, AND IT ALLOCATES NOTHING.
+
+     This was `var o = [ox, oy, oz], d = [dx, dy, dz]` followed by a three-step
+     loop. Correct, readable, and it built TWO ARRAYS PER COLLIDER TESTED.
+     Urban has 3,304 colliders, so one rayHit produced 6,608 short-lived arrays,
+     and rayHit runs every frame from the viewmodel wall probe alone. That is
+     roughly 400,000 allocations a second at 60 fps from one call site, all of
+     it garbage the collector has to sweep — and a GC pause in the middle of a
+     frame is precisely what a player calls a stutter.
+
+     Unrolling the three axes is uglier and costs nothing to read once you know
+     why. The arithmetic is identical; only the garbage is gone. */
   function raySlab(ox, oy, oz, dx, dy, dz, c) {
-    var tmin = 0, tmax = Infinity, o = [ox, oy, oz], d = [dx, dy, dz];
-    for (var i = 0; i < 3; i++) {
-      var lo = c[i], hi = c[i + 3];
-      if (Math.abs(d[i]) < 1e-9) { if (o[i] < lo || o[i] > hi) return -1; }
-      else {
-        var t1 = (lo - o[i]) / d[i], t2 = (hi - o[i]) / d[i];
-        if (t1 > t2) { var tt = t1; t1 = t2; t2 = tt; }
-        if (t1 > tmin) tmin = t1;
-        if (t2 < tmax) tmax = t2;
-        if (tmax < tmin) return -1;
-      }
+    var tmin = 0, tmax = Infinity, t1, t2, tt;
+    // x
+    if (dx > -1e-9 && dx < 1e-9) { if (ox < c[0] || ox > c[3]) return -1; }
+    else {
+      t1 = (c[0] - ox) / dx; t2 = (c[3] - ox) / dx;
+      if (t1 > t2) { tt = t1; t1 = t2; t2 = tt; }
+      if (t1 > tmin) tmin = t1;
+      if (t2 < tmax) tmax = t2;
+      if (tmax < tmin) return -1;
+    }
+    // y
+    if (dy > -1e-9 && dy < 1e-9) { if (oy < c[1] || oy > c[4]) return -1; }
+    else {
+      t1 = (c[1] - oy) / dy; t2 = (c[4] - oy) / dy;
+      if (t1 > t2) { tt = t1; t1 = t2; t2 = tt; }
+      if (t1 > tmin) tmin = t1;
+      if (t2 < tmax) tmax = t2;
+      if (tmax < tmin) return -1;
+    }
+    // z
+    if (dz > -1e-9 && dz < 1e-9) { if (oz < c[2] || oz > c[5]) return -1; }
+    else {
+      t1 = (c[2] - oz) / dz; t2 = (c[5] - oz) / dz;
+      if (t1 > t2) { tt = t1; t1 = t2; t2 = tt; }
+      if (t1 > tmin) tmin = t1;
+      if (t2 < tmax) tmax = t2;
+      if (tmax < tmin) return -1;
     }
     return tmin;
   }
-  function rayHit(origin, dir, maxDist) {
-    var best = maxDist, found = false;
-    for (var i = 0; i < colliders.length; i++) {
-      var t = raySlab(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, colliders[i]);
+
+  /* v10 — NEAREST OF TWO PARALLEL RAYS, IN ONE PASS.
+
+     The viewmodel wall probe needs to test the line the GUN occupies, not the
+     line the eye looks along — see weapons/system.js. Those are different by
+     0.26 m to the right and 0.22 m down when hip-firing, which is why strafing
+     along a wall on your right never registered.
+
+     Testing both by calling rayHit twice would walk the collider array twice.
+     This walks it once and tests both origins per collider, which is the same
+     memory traffic as the single ray it replaces — the array is the expensive
+     part, not the arithmetic. Returns the nearer distance, or -1 for a clear
+     path, and allocates nothing.
+
+     Deliberately returns a number rather than a {t, point} object: the caller
+     wants a fraction, and a per-frame object is the same garbage problem the
+     unrolled raySlab above just removed. */
+  function rayDist2(ax, ay, az, bx, by, bz, dx, dy, dz, maxDist) {
+    var best = maxDist, found = false, t;
+    function consider(c) {
+      t = raySlab(ax, ay, az, dx, dy, dz, c);
       if (t >= 0 && t < best) { best = t; found = true; }
+      t = raySlab(bx, by, bz, dx, dy, dz, c);
+      if (t >= 0 && t < best) { best = t; found = true; }
+    }
+    if (grid) {
+      /* Two origins 0.26 m apart can cross different cells, so BOTH are walked
+         and the `seen` stamp keeps a box shared by the two walks from being
+         tested twice. The stamp is bumped per walk, so the second walk retests
+         boxes the first already saw - correct, because `consider` tests both
+         origins each time and is idempotent on `best`. */
+      walkRay(ax, az, dx, dz, maxDist, function (i) { consider(colliders[i]); return false; });
+      walkRay(bx, bz, dx, dz, maxDist, function (i) { consider(colliders[i]); return false; });
+      return found ? best : -1;
+    }
+    for (var i = 0; i < colliders.length; i++) consider(colliders[i]);
+    return found ? best : -1;
+  }
+  function rayHit(origin, dir, maxDist) {
+    var best = maxDist, found = false, t;
+    if (grid) {
+      /* Cells are visited nearest-first, but a box registered in a far cell can
+         still be reached through a near one, so `best` is NOT used to stop the
+         walk early - only to keep the nearest hit. Stopping at the first cell
+         with any hit would be wrong: a long wall clipped by cell 1 may be hit
+         at t=40 while a crate wholly inside cell 2 is hit at t=9. Same answer
+         as the linear scan, every time. */
+      walkRay(origin.x, origin.z, dir.x, dir.z, maxDist, function (i) {
+        var tt = raySlab(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, colliders[i]);
+        if (tt >= 0 && tt < best) { best = tt; found = true; }
+        return false;
+      });
+    } else {
+      for (var i = 0; i < colliders.length; i++) {
+        t = raySlab(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, colliders[i]);
+        if (t >= 0 && t < best) { best = t; found = true; }
+      }
     }
     if (!found) return null;
     return { t: best, point: new THREE.Vector3(origin.x + dir.x * best, origin.y + dir.y * best, origin.z + dir.z * best) };
@@ -538,6 +784,17 @@ var World = (function () {
     var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (len < 0.001) return false;
     dx /= len; dy /= len; dz /= len;
+    if (grid) {
+      /* This one CAN stop early: it is a boolean, so the first blocker found
+         anywhere along the ray is the answer regardless of order. */
+      var hit = false;
+      walkRay(a.x, a.z, dx, dz, len, function (i) {
+        var tt = raySlab(a.x, a.y, a.z, dx, dy, dz, colliders[i]);
+        if (tt >= 0 && tt < len - 0.05) { hit = true; return true; }
+        return false;
+      });
+      return hit;
+    }
     for (var i = 0; i < colliders.length; i++) {
       var t = raySlab(a.x, a.y, a.z, dx, dy, dz, colliders[i]);
       if (t >= 0 && t < len - 0.05) return true;
@@ -800,7 +1057,7 @@ var World = (function () {
     if (report.cut) {
       var keep = [];
       for (var n = 0; n < colliders.length; n++) if (colliders[n]) keep.push(colliders[n]);
-      colliders.length = 0;
+      colliders.length = 0; grid = null;   // v10: a stale grid indexes a dead map
       for (var n2 = 0; n2 < keep.length; n2++) colliders.push(keep[n2]);
       // indices in `solids` are stale after compaction; nothing reads them again
       // this build, and reset() clears the array.
@@ -846,10 +1103,32 @@ var World = (function () {
     flickers: flickers,
     fits: fits,
     rayHit: rayHit,
+    rayDist2: rayDist2,
     losBlocked: losBlocked,
     getSun: function () { return sun; },
     isBuilt: function () { return built; },
-    _markBuilt: function () { built = true; },
+    /* The grid is built HERE, once, when the whole map is finished - not
+       incrementally in addCollider. A district builder that queries mid-build
+       would otherwise see a half-populated grid and get a different answer from
+       the linear scan, which is exactly the class of build-order dependence the
+       v7.8 PRNG fix existed to remove. Until this runs, grid is null and every
+       query falls back to the linear scan, so mid-build queries stay correct. */
+    _markBuilt: function () { built = true; buildGrid(); },
+    _rebuildGrid: function () { buildGrid(); },
+    /* Test-only: drop the grid so the linear fallback can be benchmarked and
+       compared against on the SAME built map. Never called by the game. */
+    _forceLinear: function () { grid = null; },
+    _gridStats: function () {
+      if (!grid) return { built: false };
+      var used = 0, total = 0, max = 0;
+      for (var i = 0; i < grid.length; i++) {
+        if (!grid[i]) continue;
+        used++; total += grid[i].length;
+        if (grid[i].length > max) max = grid[i].length;
+      }
+      return { built: true, cell: CELL, cells: grid.length, used: used,
+               avg: used ? total / used : 0, max: max, colliders: colliders.length };
+    },
     builtMap: null,
     reset: function () {
       /* Reseed FIRST, and unconditionally. rnd() is a running PRNG shared by
@@ -868,7 +1147,7 @@ var World = (function () {
          buildMap APPENDED to them: solid geometry you collide with and cannot
          see. Not reachable from the menu flow today, but it silently corrupted
          verify-collision the first time that gate reset a map twice. */
-      colliders.length = 0;
+      colliders.length = 0; grid = null;   // v10: a stale grid indexes a dead map
       stairs.length = 0;
       minimapShapes.length = 0;
       if (World._lampSpots) World._lampSpots.length = 0;
@@ -1411,51 +1690,132 @@ World.build = function (sceneRef) {
     var list = DISTRICTS.list;
     var PW = 0.17, PH = 2.55;                      // post thickness / height
     var BW = 5.2, BH = 1.20;                       // board width / height
+
+    /* ===== v10 - ONE ATLAS, ONE DRAW CALL =====
+
+       This built a separate 512x512 CanvasTexture and a separate
+       MeshLambertMaterial for EVERY district sign. Fifteen districts, fifteen
+       unique materials, and a unique material cannot batch - so fifteen of
+       Urban's 112 draw calls, 13% of the budget, were signposts. Measured, not
+       assumed: counting meshes carrying an emissiveMap in the built scene
+       returns exactly 15.
+
+       Urban has 3 draw calls of headroom against its 115 ceiling and ZERO
+       shadow-caster headroom, so 15 recoverable calls is the largest single
+       saving available anywhere in this map.
+
+       Metro solved this in v9.5 and Urban never got it (handoff item 9.4). The
+       technique is one canvas with the names stacked as rows, one material, and
+       a hand-built quad per sign whose UVs select its row. Ported here rather
+       than re-invented, including its two hard-won details:
+
+         - BufferAttribute + Float32Array, NOT Float32BufferAttribute. The
+           latter is a convenience subclass absent from the trimmed THREE the
+           map gates run against, so using it crashes verify-map while the
+           render gates pass.
+         - TWO QUADS BACK TO BACK, not one DoubleSide quad. A DoubleSide plane
+           shows the same texture reversed from behind, so every board read
+           backwards from one approach. The back quad has its winding reversed
+           and sits 4 mm behind so the two never z-fight.
+
+       The placement search, the clearance test and the posts are unchanged -
+       only how the BOARD is drawn has moved. */
+
+    /* Placement first, for every sign, before any geometry: the atlas rows have
+       to match the boards that actually got placed, and a district with nowhere
+       clear to stand is skipped. Building the canvas before knowing that would
+       put the wrong name on every board after the first skip. */
+    var placed = [];
     for (var i = 0; i < list.length; i++) {
       var d = list[i], face = d.sign[2] || 0;
-      var dx = Math.cos(face), dz = Math.sin(face);
-      var px = -dz, pz = dx;
-
-      // walk outward from the anchor until the whole sign fits in open ground
-      var sx = null, sz = null;
       var RING = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [4, 0], [-4, 0], [0, 4], [0, -4],
                   [3, 3], [-3, 3], [3, -3], [-3, -3], [6, 0], [-6, 0], [0, 6], [0, -6],
                   [8, 0], [-8, 0], [0, 8], [0, -8], [6, 6], [-6, 6], [6, -6], [-6, -6]];
+      var sx = null, sz = null;
       for (var r = 0; r < RING.length; r++) {
         var tx = d.sign[0] + RING[r][0], tz = d.sign[1] + RING[r][1];
         if (signClear(tx, tz, face, BW, BH, PH)) { sx = tx; sz = tz; break; }
       }
       if (sx === null) continue;                   // nowhere clear: no sign beats a buried one
       d.placed = [sx, sz];
+      placed.push({ d: d, x: sx, z: sz, face: face });
+    }
+    if (!placed.length) return;
 
-      var faceTex = canvasTex(512, (function (label) {
-        return function (g, S) {
-          var bandH = S / 4, y0 = (S - bandH) / 2;
-          g.fillStyle = '#0d2033'; g.fillRect(0, 0, S, S);
-          g.fillStyle = '#12304a'; g.fillRect(0, y0, S, bandH);
-          g.fillStyle = '#e8eef4';
-          g.fillRect(0, y0 + 4, S, 4); g.fillRect(0, y0 + bandH - 8, S, 4);
-          g.fillStyle = '#ffffff';
-          g.textAlign = 'center'; g.textBaseline = 'middle';
-          var size = 82;
-          g.font = 'bold ' + size + 'px sans-serif';
-          while (size > 30 && g.measureText(label).width > S - 36) {
-            size -= 3; g.font = 'bold ' + size + 'px sans-serif';
-          }
-          g.fillText(label, S / 2, y0 + bandH / 2);
-        };
-      })(d.name));
-      var boardMat = new THREE.MeshLambertMaterial(
-        { map: faceTex, color: 0x000000, emissive: 0xffffff, emissiveMap: faceTex });
+    /* The atlas. Rows are drawn at the BOARD's aspect ratio (5.2 x 1.20, so
+       roughly 4.3:1) which is why nothing stretches when a row lands on a
+       quad. */
+    var ROW_W = 1024, ROW_H = 236;
+    var atlas = document.createElement('canvas');
+    atlas.width = ROW_W; atlas.height = ROW_H * placed.length;
+    var g = atlas.getContext('2d');
+    for (var k = 0; k < placed.length; k++) {
+      var name = placed[k].d.name, y0 = k * ROW_H;
+      g.fillStyle = '#0d2033'; g.fillRect(0, y0, ROW_W, ROW_H);
+      g.fillStyle = '#12304a'; g.fillRect(0, y0 + ROW_H * 0.18, ROW_W, ROW_H * 0.64);
+      g.fillStyle = '#e8eef4';
+      g.fillRect(0, y0 + ROW_H * 0.18, ROW_W, 5);
+      g.fillRect(0, y0 + ROW_H * 0.82 - 5, ROW_W, 5);
+      /* Shrink to fit rather than letting a long name overflow: IRONGATE DEPOT
+         and THE COLONY have to sit in the same margins. */
+      var size = 108, pad = 44;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      do {
+        g.font = 'bold ' + size + 'px Arial, sans-serif';
+        size -= 3;
+      } while (g.measureText(name).width > ROW_W - pad * 2 && size > 28);
+      g.fillStyle = '#ffffff';
+      g.fillText(name, ROW_W / 2, y0 + ROW_H / 2);
+    }
+    var tex = new THREE.CanvasTexture(atlas);
+    tex.anisotropy = 4;
 
-      // posts at the ends, stopping BELOW the board so nothing crosses the text
+    var pos = [], uv = [], idx = [];
+    var yMid = PH + BH / 2;
+    for (var q = 0; q < placed.length; q++) {
+      var P = placed[q];
+      /* The board faces along `face`; its width runs along the perpendicular,
+         which matches how the posts below are positioned. */
+      var ca = Math.cos(P.face), sa = Math.sin(P.face);
+      var hw = BW / 2, hh = BH / 2;
+      [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].forEach(function (c) {
+        pos.push(P.x - sa * c[0], yMid + c[1], P.z + ca * c[0]);
+      });
+      var eps = 0.004;                             // keeps the two faces apart
+      [[hw, -hh], [-hw, -hh], [-hw, hh], [hw, hh]].forEach(function (c) {
+        pos.push(P.x - sa * c[0] + ca * eps, yMid + c[1], P.z + ca * c[0] + sa * eps);
+      });
+      /* Rows are laid top-down on the canvas but V runs bottom-up, so row q
+         occupies [1-(q+1)/n , 1-q/n]. Getting this backwards puts the wrong
+         name on every board, which is why it is written out. */
+      var n = placed.length;
+      var v0 = 1 - (q + 1) / n, v1 = 1 - q / n;
+      uv.push(0, v0, 1, v0, 1, v1, 0, v1);
+      uv.push(0, v0, 1, v0, 1, v1, 0, v1);
+      var b = q * 8;
+      idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      idx.push(b + 4, b + 5, b + 6, b + 4, b + 6, b + 7);
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
+    geo.setIndex(idx);
+    var mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, side: THREE.FrontSide }));
+    mesh.matrixAutoUpdate = false; mesh.updateMatrix();
+    /* H.sceneRef(), not a bare `scene`: this half of world.js is a separate
+       closure from the one holding the scene variable, and every other raw-mesh
+       add in this section goes through the same accessor. */
+    H.sceneRef().add(mesh);
+
+    /* Posts go through box() exactly as before, so they merge into the existing
+       M.trim batch and cost nothing extra. */
+    for (var q2 = 0; q2 < placed.length; q2++) {
+      var P2 = placed[q2];
+      var px = -Math.sin(P2.face), pz = Math.cos(P2.face);
       for (var s2 = -1; s2 <= 1; s2 += 2) {
-        var ox = px * s2 * (BW / 2 - 0.35), oz = pz * s2 * (BW / 2 - 0.35);
-        box(sx + ox, PH / 2, sz + oz, PW, PH, PW, M.trim, { cast: false });
+        box(P2.x + px * s2 * (BW / 2 - 0.35), PH / 2, P2.z + pz * s2 * (BW / 2 - 0.35),
+          PW, PH, PW, M.trim, { cast: false });
       }
-      var bw = Math.abs(px) * BW + Math.abs(dx) * 0.14;
-      var bd = Math.abs(pz) * BW + Math.abs(dz) * 0.14;
-      box(sx, PH + BH / 2, sz, bw, BH, bd, boardMat, { collide: false, cast: false, tile: false });
     }
   }
 

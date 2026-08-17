@@ -7,6 +7,7 @@
 
 const path = require('path');
 const express = require('express');
+const compression = require('compression');
 const http = require('http');
 const { Server } = require('socket.io');
 
@@ -72,7 +73,40 @@ function cancelCountdown(room, silent) {
 }
 
 const app = express();
-app.use(express.static(path.join(__dirname, 'public')));
+
+/* ===== v10.2 - RENDER BANDWIDTH =====
+
+   Measured against a 5 GB monthly budget before changing anything:
+
+     static assets   855 KB RAW per fresh page load, 35 files, no compression
+                     and no cache headers at all
+     snapshots       21.1 MB per player-HOUR (409 B x 15 Hz, handoff section 8)
+
+   So the budget is roughly 243 player-hours, and an eight-player match burns
+   the whole 5 GB in about 30 hours. Disk is irrelevant by comparison - the
+   whole tree is 2.1 MB and node_modules is 41 MB, under 1% of the limit.
+
+   Two fixes here, neither of which touches the game:
+
+   GZIP. Our own assets are 855 KB raw and 293 KB gzipped - the source is
+   heavily commented JavaScript, which is close to ideal for a text compressor.
+   A 66% cut on every fresh load, for one line. three.js and the fonts come
+   from CDNs and were never our bandwidth to begin with.
+
+   CACHE HEADERS. express.static defaults to maxAge 0, so a returning player
+   re-requested all 35 files and got 35 conditional 304s. With a max-age they
+   are not requested at all. One hour is deliberately short: this game ships as
+   a cumulative upload and a stale client that has half of one build and half of
+   another is a bug nobody could reproduce. index.html is excluded entirely so a
+   deploy is always picked up immediately - it is 20 KB and it is the file that
+   names every other one. */
+app.use(compression({ level: 6, threshold: 1024 }));
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1h',
+  setHeaders: function (res, filePath) {
+    if (/index\.html$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+  }
+}));
 app.get('/healthz', (req, res) => res.send('ok'));
 /* v9.8 BANDWIDTH METER. Only mounted when NETSTATS=1, so production pays
    nothing — not even the route. Reports what Render's WebSocket figure is
@@ -101,7 +135,25 @@ if (process.env.NETSTATS === '1') {
 }
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+/* v10.3: PER-MESSAGE DEFLATE, which socket.io leaves OFF by default.
+
+   The snapshot payload is now a run of quantised little-endian integers, and
+   those compress well: neighbouring entities share high bytes, most flag words
+   are identical tick to tick, and half the position bytes barely move. Measured
+   on a real 19-bot match it takes another slice off an already-halved packet.
+
+   `threshold` keeps it off small frames, where the deflate header costs more
+   than it saves - lobby chatter, hit events, the bot shoot event that is now
+   nineteen bytes. Only snapshots are big enough to qualify.
+
+   concurrencyLimit bounds the CPU this can take on a small Render instance;
+   compression happens per message per client, and a bandwidth fix that turns
+   into a frame-time problem is not a fix. Measured after enabling: bot tick
+   p99 was unchanged. */
+const io = new Server(server, {
+  cors: { origin: '*' },
+  perMessageDeflate: { threshold: 256, concurrencyLimit: 10 }
+});
 
 const rooms = new Map();
 
@@ -142,7 +194,35 @@ const Bots = require('./server/lib/bots.js')({
   botExplode: (room, bot, victim, dmg, weapon, pointBlank) => {
     Combat.applyDamage(room, victim, dmg, bot.id, weapon || 'frag', false, !!pointBlank);
   },
-  botPlaceMine: (room, bot, pos) => Mines.place(room, bot, pos)
+  botPlaceMine: (room, bot, pos) => Mines.place(room, bot, pos),
+
+  /* v10: tell nearby clients a bot pulled the trigger, so it produces the same
+     muzzle flash, tracer, gunshot and minimap ping a human's shot does. The
+     client's existing 'shoot' handler needs nothing new - it already derives
+     the tracer direction from the shooter's rx/ry in the snapshot, so only the
+     origin and the weapon travel.
+
+     GUNSHOT_RANGE is 90 m. It is not a taste number: the client draws a bot
+     tracer with World.rayHit(o, dir, 140) and Urban's longest sightline is the
+     38 m arcade, so 90 m covers every shot a player could plausibly witness
+     with margin, while cutting the far half of the map that would only ever
+     produce invisible tracers and inaudible bangs. Squared throughout to keep a
+     sqrt out of a path that runs ~96 times a second at twelve bots. */
+  botFired: (room, bot) => {
+    const R2 = 90 * 90;
+    /* v10.2: `{ id }` ONLY. The position and the weapon are already in every
+       snapshot (snapcodec carries `wp` per entity), so sending them here was
+       duplicating data the client received milliseconds ago - measured at 5.7 MB
+       per player-hour at twelve bots, 27% on top of snapshots, against a 5 GB
+       month. The client fills both in from the interpolated remote. See the
+       compact-form note in networking/net.js. */
+    for (const p of room.players.values()) {
+      if (p.bot || !p.id) continue;
+      const dx = p.pos[0] - bot.pos[0], dy = p.pos[1] - bot.pos[1], dz = p.pos[2] - bot.pos[2];
+      if (dx * dx + dy * dy + dz * dz > R2) continue;
+      io.to(p.id).emit('shoot', { id: bot.id });
+    }
+  }
 });
 const Loot = require('./server/lib/loot.js')({ io, now, mapData });
 const { initPickups, pickupList, tryCollect, respawnPickups,
@@ -172,12 +252,18 @@ const RECONNECT_WINDOW = 45000;
 const NETSTATS = process.env.NETSTATS === '1';
 const netTotals = { packets: 0, bytes: 0, maxBytes: 0, entities: 0, since: Date.now(), clients: 0 };
 function netstat(room, packet) {
-  const n = Buffer.byteLength(JSON.stringify(packet)) + 15;   // + socket.io framing
+  /* v10.3: the entity block is a Buffer now, and JSON.stringify would render it
+     as {"type":"Buffer","data":[...]} - roughly six times its real size - and
+     report a bandwidth INCREASE for a change that halved it. Counted properly:
+     the buffer's own length plus the JSON of everything else. */
+  const bin = packet.b ? packet.b.length : 0;
+  const rest = { ...packet }; delete rest.b;
+  const n = bin + Buffer.byteLength(JSON.stringify(rest)) + 15;   // + socket.io framing
   const sockets = io.sockets.adapter.rooms.get(room.code);
   const recips = sockets ? sockets.size : 0;
   netTotals.packets++;
   netTotals.bytes += n * recips;
-  netTotals.entities += packet.e.length;
+  netTotals.entities += packet.e ? packet.e.length : (packet.n || 0);
   netTotals.clients += recips;
   if (n > netTotals.maxBytes) netTotals.maxBytes = n;
 }
@@ -496,7 +582,13 @@ function startSnapshots(room) {
     const tkChanged = tkNow !== (room.snapTk || null);
     room.snapTk = tkNow;
 
-    const packet = { e: ents };
+    /* v10.3: the entity block goes out as a BINARY attachment, not as JSON.
+       socket.io carries a Buffer natively. Everything about WHAT is sent is
+       unchanged - same fields, same deltas, same quantisation - only how it is
+       written. See the note in snapcodec.js: 1 human + 19 bots measured 459 B a
+       packet because a bot is never still, so the delta test rejects nothing
+       and the whole cost is JSON's digits and commas. */
+    const packet = { b: SnapCodec.encodeEntities(ents), n: ents.length };
     if (keyframe) packet.k = 1;
     /* v9.4: drones ride the normal snapshot rather than a channel of their own,
        so every client renders them with the code that already interpolates

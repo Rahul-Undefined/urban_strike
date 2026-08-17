@@ -50,7 +50,11 @@ function io(url) {
 
   sock.on('snap', (d) => {
     const players = {}, seen = {};
-    (d.e || []).forEach((arr) => {
+    /* v10.3: the entity block arrives as a binary attachment (`b`). The JSON
+       array (`e`) is still accepted so this harness can be pointed at an older
+       server, which is the same both-shapes rule the browser client follows. */
+    const ents = d.e || (d.b ? SnapCodec.decodeEntities(d.b) : []);
+    ents.forEach((arr) => {
       const raw = SnapCodec.decodeEntity(arr, cache);
       seen[raw.slot] = 1;
       if (raw.id) slotToId[raw.slot] = raw.id;

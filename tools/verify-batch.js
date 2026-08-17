@@ -23,6 +23,8 @@ let THREE;
 try { THREE = require("three"); } catch (e) { console.log("SKIP: npm install first"); process.exit(0); }
 const vm = require("vm");
 const fs = require("fs");
+const path = require("path");
+const ROOT = path.join(__dirname, '..');
 
 let pass = 0, fail = 0;
 function ok(cond, label) {
@@ -256,6 +258,46 @@ for (const map of ["urban", "rural", "metro"]) {
       .forEach(k => console.log("          " + String(by[k].length).padStart(3) + "  " + k));
   }
 }
+
+
+/* ===== v10 - DISTRICT SIGNS SHARE ONE ATLAS =====
+
+   districtSigns() in world.js built a CanvasTexture and a MeshLambertMaterial
+   PER DISTRICT. A unique material cannot batch, so fifteen signposts held
+   fifteen of Urban's 112 draw calls - 13% of the budget, on a map with three
+   calls of headroom against its 115 ceiling and ZERO shadow-caster headroom.
+
+   Metro fixed this in v9.5 and Urban did not get it until v10. This asserts the
+   shape of the fix rather than the count, so it survives a district being added
+   or removed: however many signs there are, they share ONE material. */
+(function signAtlas() {
+  const src = fs.readFileSync(path.join(ROOT, 'public/src/environment/world.js'), 'utf8');
+  const raw = src.slice(src.indexOf('function districtSigns()'),
+                        src.indexOf('/* ===== PERIMETER + SKYLINE ====='));
+  /* COMMENTS STRIPPED FIRST. The first cut of this gate went red on its own
+     documentation: the comments in districtSigns explain WHY it must not use
+     Float32BufferAttribute or DoubleSide, and naming a thing to forbid it made
+     the "is it forbidden" regex match. A gate that reads prose is testing the
+     wrong artefact - it would also pass a file that did the wrong thing under a
+     different name. */
+  const fn = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  ok(fn.length > 200, 'districtSigns() is still present');
+  const mats = (fn.match(/new THREE\.Mesh[A-Za-z]*Material/g) || []).length;
+  ok(mats <= 1, 'districtSigns builds at most ONE material [' + mats + ']');
+  const texes = (fn.match(/new THREE\.CanvasTexture|canvasTex\(/g) || []).length;
+  ok(texes <= 1, 'and at most ONE texture [' + texes + ']');
+  ok(!/for[\s\S]{0,400}new THREE\.MeshLambertMaterial/.test(fn),
+    'no material is constructed inside the per-sign loop');
+  /* The trimmed THREE the map gates run against has no Float32BufferAttribute -
+     using it crashes verify-map while the render gates pass. */
+  ok(!/Float32BufferAttribute/.test(fn),
+    'the atlas uses BufferAttribute, not the Float32BufferAttribute subclass');
+  ok(/BufferAttribute\(new Float32Array/.test(fn),
+    'geometry is built with BufferAttribute + Float32Array');
+  /* A DoubleSide quad shows its texture mirrored from behind, so every board
+     read backwards from one approach. Two quads, opposite winding. */
+  ok(!/DoubleSide/.test(fn), 'boards are not DoubleSide (that mirrors the text)');
+})();
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

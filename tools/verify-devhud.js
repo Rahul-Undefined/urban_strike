@@ -142,15 +142,32 @@ for (let i = 0; i < 10 && !sawBlocked; i++) {
 ok(!sawBlocked, "the stairwell-cut flight at (-37.7, 3.62, 24.35) is now clear all the way up (" +
   (sawBlocked || "no low ceiling on any tread") + ")");
 
-/* Known arrival defect, handoff 5b: flight (-56.8, 3.40, 56.9) -> (-44.8, 12.40).
-   verify-stairs-quality says no deck within 3 m of its top. The panel must
-   independently reach the same verdict standing on that flight. */
+/* v10 - THIS ASSERTION WAS PINNED TO A DEFECT, NOT TO A RULE.
+
+   It read: stand on the flight at (-56.8, 3.40, 56.9) and require the panel to
+   report NO DECK at its top. That was a faithful description of the map on the
+   day it was written - the ship's external stair overshot its building by 5.4 m
+   and arrived nowhere. It is also a gate that goes RED the moment somebody
+   fixes the thing it describes, which is exactly what happened in v10 when
+   that flight became a switchback. A gate that fails on repair is worse than
+   no gate: the honest response looks identical to a regression.
+
+   What the panel is actually for is telling the truth about whichever flight
+   you are standing on. So it is tested both ways now - it must AGREE with
+   verify-stairs-quality rather than assert a particular verdict. The two are
+   independent implementations of the same question, which is the whole value
+   of having the panel at all. */
 t = at(-56.0, 3.78, 56.9);
 const st = field(t, "STAIR");
-ok(st !== null, "panel identifies the flight at (-56.8, 3.40, 56.9) (" + st + ")");
+ok(st !== null, "panel identifies the ship bridge flight at (-56.8, 3.40, 56.9) (" + st + ")");
 const arrLine = String(t || "").split("\n").find(l => l.indexOf("top arrival") >= 0);
-ok(!!arrLine && /NO DECK|gap/.test(arrLine),
-  "panel agrees the flight's top has no deck in reach (" + (arrLine || "missing").trim() + ")");
+ok(!!arrLine, "panel reports a top-arrival verdict for it (" + (arrLine || "missing").trim() + ")");
+/* The ship bridge was repaired in v10 (buildingAt switchback), and
+   verify-stairs-quality now reports urban arrival 0. The panel must say the
+   same. If this ever reddens, the two disagree and ONE of them is lying -
+   check verify-stairs-quality before touching the panel. */
+ok(/ok/.test(arrLine || ""),
+  "and agrees with verify-stairs-quality that it now arrives (" + (arrLine || "missing").trim() + ")");
 
 /* A flight that IS fine must not be reported as broken, or the panel cries
    wolf and stops being trusted. Mint deck stair, verified in verify-access. */

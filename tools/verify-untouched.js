@@ -111,7 +111,14 @@ function urbanLifts() {
        full height and gets a landing platform sized to the overshoot.
    Recorded with: node tools/verify-untouched.js --record */
 const BASELINE = {
-  urban: {"colliders":3334,"sum":1751341313,"draws":112,"tris":92088,"casters":62,"lights":7,"minimap":236,"bound":100},
+/* v10 BASELINE MOVE - the ship bridge switchback (districts-outer buildingAt).
+   Urban NET -2 colliders, +124 triangles from five geometry fixes, then -120 triangles and -14 DRAW CALLS from the sign atlas, from replacing one overshooting flight
+   plus a cantilevered landing with three shorter legs and three landings.
+   CASTERS AND DRAW CALLS ARE UNCHANGED at 62 and 112, which is the number that
+   actually matters - HANDOFF section 7 records Urban at ZERO caster headroom.
+   Recorded rather than silently rebaselined so the next reader can tell a
+   deliberate geometry change from a leak. */
+  urban: {"colliders":3332,"sum":2336906291,"draws":98,"tris":92092,"casters":62,"lights":7,"minimap":236,"bound":100},
   rural: {"colliders":1066,"sum":1837205283,"draws":32,"tris":54467,"casters":22,"lights":3,"minimap":210,"bound":150},
   urbanData: {"loot":363,"spawns":44,"airdrops":10},
   ruralData: {"loot":164,"spawns":50,"airdrops":12},
