@@ -197,10 +197,23 @@ ok(bad === 0, 'all ' + nFlags + ' flag combinations round-trip EXACTLY (' + bad 
 ok(/d\.e \|\| \(d\.b/.test(netSrc) || /if \(!ents && d\.b\)/.test(netSrc),
   'the client accepts both the binary and the legacy JSON entity block');
 
-console.log('\n--- websocket frames are compressed ---');
-ok(/perMessageDeflate/.test(serverSrc), 'permessage-deflate is enabled (socket.io leaves it OFF)');
-ok(/threshold/.test(serverSrc), 'with a threshold, so small frames skip the deflate header');
-ok(/concurrencyLimit/.test(serverSrc), 'and a concurrency limit, so it cannot eat the frame budget');
+console.log('\n--- websocket frames are NOT deflated ---');
+/* v10.4 reverses v10.3 on measurement. Deflate saves 2% on a binary snapshot -
+   quantised integers have nothing for a dictionary coder to find - and ws
+   compresses asynchronously on the threadpool, adding a scheduling round trip
+   of jitter to every packet. The interpolation buffer could only absorb 53 ms
+   of jitter, so that trade fed straight into the freeze-and-jump the player
+   reported. Asserted OFF so it is not switched back on by plausible reasoning
+   a second time. */
+ok(/perMessageDeflate:\s*false/.test(serverSrc),
+  'permessage-deflate is OFF — measured at 2% saving for real added jitter');
+const binSample = SnapCodec.encodeEntities(dirty);
+const deflated = require('zlib').deflateRawSync(Buffer.from(binSample), { level: 6 }).length;
+ok(deflated > binSample.length * 0.9,
+  'and the measurement still holds: deflate saves only ' +
+  (100 - deflated / binSample.length * 100).toFixed(0) + '% on a real snapshot');
+/* HTTP gzip is a different thing entirely and stays on - see above. */
+ok(/app\.use\(compression\(/.test(serverSrc), 'HTTP gzip on static assets is unaffected');
 
 /* snapRate is the one knob that scales the entire bill linearly. 15 is the
    documented floor - at 10 it rubber-bands against the 120 ms buffer. */

@@ -250,9 +250,47 @@
      buffer. Two bytes slot, two flags, plus every field, plus a 64-byte id. */
   var MAX_ENT = 4 + 6 + 2 + 2 + 1 + 1 + 1 + 2 + 2 + 3 + 1 + 1 + 1 + 16 + 1 + 64;
 
+  /* ===== v10.4 - NEVER HAND OUT A VIEW INTO A SHARED POOL =====
+
+     This was `Buffer.allocUnsafe(n)`, and that is a trap.
+
+     Node serves any allocUnsafe under 4 KB out of ONE SHARED 8192-BYTE POOL.
+     A 202-byte snapshot therefore came back as a VIEW sitting at byteOffset 8,
+     or 2176, or 4344 - wherever the pool cursor happened to be - with
+     `buf.buffer` pointing at the whole 8 KB, and that 8 KB holds OTHER
+     snapshots and unrelated memory.
+
+     Anything downstream that reaches for `.buffer` without honouring
+     byteOffset and byteLength therefore ships eight kilobytes of somebody
+     else's data, and a client decoding from offset 0 reads garbage: positions
+     that are nowhere, entities that jump, shots refused because the client and
+     the server disagree about where a body is. Intermittent, because when the
+     pool cursor happens to be at 0 it works perfectly.
+
+     That is the reported symptom exactly - "ek second idhar h, dusre second
+     udhar", with hits not registering - and it is the same failure v9.13 chased
+     from the other end. Node's own docs warn about this and it is still the
+     easiest mistake to make with a binary protocol.
+
+     So: a plain Uint8Array, exact size, byteOffset 0, owning its own
+     ArrayBuffer. There is no view, no pool, and nothing downstream can
+     misinterpret it whether it is socket.io in Node or the browser. The copy
+     costs about 200 bytes a tick, which is nothing next to being wrong.
+
+     DO NOT "optimise" this back to allocUnsafe. verify-netcodec asserts the
+     returned buffer owns its memory precisely so this cannot come back. */
   function makeBuf(n) {
-    if (typeof Buffer !== 'undefined') return Buffer.allocUnsafe(n);
     return new Uint8Array(n);
+  }
+
+  /* Trim to the bytes actually written, as a COPY that owns its ArrayBuffer.
+     `subarray` and Buffer's `slice` both return views and would reintroduce the
+     bug above; Uint8Array's own slice copies, but being explicit is clearer
+     than relying on which slice a runtime picked. */
+  function exact(buf, n) {
+    var out = new Uint8Array(n);
+    out.set(buf.subarray(0, n));
+    return out;
   }
 
   /* Encode the whole entity list. `ents` is the array of arrays that
@@ -309,7 +347,7 @@
         for (var c = 0; c < L; c++) { dv.setUint8(o, id.charCodeAt(c) & 255); o += 1; }
       }
     }
-    return buf.slice ? buf.slice(0, o) : new Uint8Array(buf.buffer, 0, o);
+    return exact(buf, o);
   }
 
   /* Decode back to the SAME array-of-arrays encodeEntity produces, so

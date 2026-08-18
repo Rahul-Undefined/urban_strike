@@ -143,6 +143,44 @@ var Net = (function () {
            mid-match is never decoding against an empty cache. */
     s.on('snap', function (d) {
       var tLocal = performance.now();
+
+      /* ===== v10.4 - MEASURE THE JITTER, DO NOT ASSUME IT =====
+
+         Reported after v10.3: "ek player ek second idhar h, dusre second udhar
+         chala ja raha", with shots refused against them. That is the v9.13
+         symptom, and v9.13's own note says the fix there was for teleports the
+         interpolator was LERPING. This is the other way the same thing happens:
+         the interpolator running DRY.
+
+         The arithmetic nobody had done. snapRate 15 puts a tick every 66.7 ms.
+         interpDelay is 120 ms, so the buffer holds 1.80 ticks and can absorb
+         120 - 66.7 = 53 MILLISECONDS of jitter before renderT passes the newest
+         sample it has. Past that, `f` clamps at 1.15 in updateRemotes, the
+         avatar stops dead, and it snaps forward when the next packet lands.
+
+         53 ms is nothing. It survives localhost, which is why every measurement
+         taken in a container looked perfect - server timer 15.09 Hz, gap p50
+         66 ms, zero gaps over 150 ms, payload sane. It does NOT survive home
+         broadband, let alone 4G. The game was fine on the machine it was tested
+         on and broken on the internet.
+
+         So the delay is measured rather than declared. We track the spread of
+         real arrival gaps and keep the buffer just big enough to cover it. A
+         good connection settles near the configured 120 ms and stays as
+         responsive as it is now; a bad one grows the buffer instead of
+         stuttering. Nothing about this is server-side - it costs no bandwidth
+         and needs no deploy coordination. */
+      if (netLastArr) {
+        var gap = tLocal - netLastArr;
+        /* Absurd gaps are a tab that was backgrounded or a reconnect, not
+           jitter. Feeding them in would leave the buffer huge for the rest of
+           the match. */
+        if (gap < 1000) {
+          jitterBuf[jitterAt++ % JITTER_N] = gap;
+          if (jitterSeen < JITTER_N) jitterSeen++;
+        }
+      }
+      netLastArr = tLocal;
       if (d.tk !== undefined) teamKills = d.tk || {};
       Pickups.droneSync(d.dr);          // undefined when none are airborne
 
@@ -517,8 +555,44 @@ var Net = (function () {
 
   // ---------- remote interpolation ----------
   var _camPos = new THREE.Vector3();
+
+  /* v10.4 jitter window. Two seconds of arrivals at 15 Hz; long enough to see a
+     bad patch, short enough to relax again when it passes. */
+  var JITTER_N = 30;
+  var jitterBuf = new Float32Array(JITTER_N);
+  var jitterAt = 0, jitterSeen = 0, netLastArr = 0;
+  var effDelay = 0;                       // what updateRemotes actually uses
+  var _sorted = new Float32Array(JITTER_N);
+
+  /* The buffer must cover the WORST recent gap, not the average one - an
+     average that looks fine still freezes on every outlier, and a freeze is
+     what the player notices. p90 rather than the true max so one bad spike does
+     not park the whole match at maximum latency.
+
+     Bounded at both ends. The floor is the configured interpDelay, so a good
+     connection is never made worse than it is today. The ceiling is 320 ms,
+     past which the extra latency hurts more than the stutter it prevents -
+     beyond that the honest answer is that the connection cannot carry the game.
+
+     Moves in small steps. Snapping the delay would itself be a visible jump,
+     which is the thing being fixed. */
+  function updateEffDelay() {
+    var base = CFG.NET.interpDelay, tick = 1000 / CFG.NET.snapRate;
+    if (jitterSeen < 8) { if (!effDelay) effDelay = base; return; }
+    for (var i = 0; i < jitterSeen; i++) _sorted[i] = jitterBuf[i];
+    var arr = Array.prototype.slice.call(_sorted, 0, jitterSeen).sort(function (a, b) { return a - b; });
+    var p90 = arr[Math.min(arr.length - 1, Math.floor(arr.length * 0.9))];
+    /* Cover the worst gap plus one whole tick, so there is still a sample on
+       the far side of renderT to interpolate TOWARDS rather than merely one to
+       sit on. */
+    var want = Math.max(base, p90 + tick * 0.75);
+    if (want > 320) want = 320;
+    if (!effDelay) effDelay = want;
+    else effDelay += (want - effDelay) * 0.06;      // ~1s to settle
+  }
   function updateRemotes(dt, camera) {
-    var renderT = performance.now() - CFG.NET.interpDelay;
+    updateEffDelay();
+    var renderT = performance.now() - effDelay;
     if (camera) camera.getWorldPosition(_camPos);
     for (var id in remotes) {
       var r = remotes[id];
@@ -565,12 +639,50 @@ var Net = (function () {
 
       var a = buf[0], b = buf.length > 1 ? buf[1] : buf[0];
       var span = Math.max(1, b.t - a.t);
-      var f = Math.min(1.15, Math.max(0, (renderT - a.t) / span));
-      r.renderPos.set(
-        a.p[0] + (b.p[0] - a.p[0]) * f,
-        a.p[1] + (b.p[1] - a.p[1]) * f,
-        a.p[2] + (b.p[2] - a.p[2]) * f
-      );
+      var raw = (renderT - a.t) / span;
+
+      /* ===== v10.4 - A DRY BUFFER COASTS, IT DOES NOT STOP =====
+
+         `f` was clamped to 1.15, so once renderT passed the newest sample the
+         avatar STOPPED - planted mid-stride, in the open, at a position the
+         server had already left. Then the next packet arrived and it snapped.
+         Freeze, jump, freeze, jump. And for the whole freeze the body on your
+         screen is not where the server has it, so the 4 m plausibility check
+         refuses every hit you claim against it while its own shots, resolved
+         server-side, land on you perfectly. That is the exact complaint: "usko
+         shoot karne pe health nahi gir raha aur woh udhar se maar raha".
+
+         A body that was walking keeps walking. Extrapolating along the last
+         known velocity for a short window is what the player expects to see and
+         it is very nearly right, because people do not reverse in 60 ms.
+
+         EXTRAP_MS is 220: about three ticks. Long enough to ride out any gap
+         the adaptive delay above did not already absorb, short enough that a
+         genuinely disconnected player does not go jogging into a wall. Past it
+         the avatar holds, which is honest - we no longer know anything.
+
+         Capped in DISTANCE as well as time. Extrapolating a respawn or a
+         teleport would recreate the v9.13 bug from the other direction, so
+         nothing may coast more than 3 m beyond its last real sample. */
+      var f, EXTRAP_MS = 220;
+      if (raw <= 1) {
+        f = Math.max(0, raw);
+      } else {
+        var over = (renderT - b.t);
+        f = 1 + Math.min(over, EXTRAP_MS) / span;
+      }
+      var nx = a.p[0] + (b.p[0] - a.p[0]) * f;
+      var ny = a.p[1] + (b.p[1] - a.p[1]) * f;
+      var nz = a.p[2] + (b.p[2] - a.p[2]) * f;
+      if (f > 1) {
+        var ex = nx - b.p[0], ey = ny - b.p[1], ez = nz - b.p[2];
+        var e2 = ex * ex + ey * ey + ez * ez;
+        if (e2 > 9) {                                  // 3 m
+          var k = 3 / Math.sqrt(e2);
+          nx = b.p[0] + ex * k; ny = b.p[1] + ey * k; nz = b.p[2] + ez * k;
+        }
+      }
+      r.renderPos.set(nx, ny, nz);
       var dry = b.ry - a.ry;
       if (dry > Math.PI) dry -= Math.PI * 2;
       if (dry < -Math.PI) dry += Math.PI * 2;

@@ -135,25 +135,31 @@ if (process.env.NETSTATS === '1') {
 }
 
 const server = http.createServer(app);
-/* v10.3: PER-MESSAGE DEFLATE, which socket.io leaves OFF by default.
+/* ===== v10.4 - PERMESSAGE-DEFLATE REMOVED, ONE VERSION AFTER ADDING IT =====
 
-   The snapshot payload is now a run of quantised little-endian integers, and
-   those compress well: neighbouring entities share high bytes, most flag words
-   are identical tick to tick, and half the position bytes barely move. Measured
-   on a real 19-bot match it takes another slice off an already-halved packet.
+   v10.3 turned it on reasoning that a run of quantised integers "compresses
+   well". MEASURED, on a real 20-entity snapshot, it saves 2 PER CENT - 242 B
+   becomes 236 B. Quantised positions and angles are close to incompressible:
+   consecutive values are unrelated, so there is nothing for a dictionary
+   coder to find. The reasoning was plausible and simply wrong, and it was
+   never checked before shipping.
 
-   `threshold` keeps it off small frames, where the deflate header costs more
-   than it saves - lobby chatter, hit events, the bot shoot event that is now
-   nineteen bytes. Only snapshots are big enough to qualify.
+   Two per cent would be fine if it were free. It is not. `ws` compresses
+   ASYNCHRONOUSLY on the libuv threadpool, so every snapshot now takes a
+   scheduling round trip before it reaches the socket - jitter added to a
+   15 Hz stream whose interpolation buffer, as v10.4 discovered, could only
+   absorb 53 ms of it. Buying jitter for 2% in a real-time shooter is the
+   wrong trade in the wrong direction, and the player symptom it feeds into is
+   the one this whole version exists to fix.
 
-   concurrencyLimit bounds the CPU this can take on a small Render instance;
-   compression happens per message per client, and a bandwidth fix that turns
-   into a frame-time problem is not a fix. Measured after enabling: bot tick
-   p99 was unchanged. */
-const io = new Server(server, {
-  cors: { origin: '*' },
-  perMessageDeflate: { threshold: 256, concurrencyLimit: 10 }
-});
+   HTTP compression stays exactly as it is: gzip on static assets is a 66% cut
+   on heavily commented JavaScript, it happens once per page load, and it is
+   nowhere near the frame path. Only the WebSocket side is reverted.
+
+   If it is ever reconsidered: measure the saving on a REAL snapshot first
+   (tools/verify-bandwidth.js has the encoder), and measure arrival-gap p99
+   with tools/diag-jitter.js before and after. */
+const io = new Server(server, { cors: { origin: '*' }, perMessageDeflate: false });
 
 const rooms = new Map();
 

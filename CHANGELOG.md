@@ -1,5 +1,146 @@
 # Urban Strike — Changelog & Deployment Ledger
 
+# v10.4 - THE FREEZE-AND-JUMP, AND WHY EVERY MEASUREMENT SAID IT WAS FINE
+
+Reported: "ek player ek second idhar h, dusre second udhar chala ja raha, uss
+time pe usko shoot karne pe health nahi gir raha aur woh udhar se maar raha toh
+mera health down ho ja raha h."
+
+That is the v9.13 symptom returning, and v9.13 is also the method: two theories,
+measured, before believing either. tools/diag-jitter.js was written to test both
+at once against a real match.
+
+## THE MEASUREMENTS THAT SAID NOTHING WAS WRONG
+
+    server emit timer      15.09 Hz against a target of 15
+    arrival gap p50/p99    66 / 75 ms, worst 85 ms
+    gaps over 150 ms       0
+    decode failures        0
+    out-of-range positions 0
+    payload                sane
+
+A perfect bill of health. EVERY ONE OF THOSE WAS TAKEN ON LOCALHOST, where
+jitter is about a millisecond. The game was fine on the machine it was tested
+on and broken on the internet, and no gate in this project can tell the
+difference because every gate runs in a container.
+
+## THE ARITHMETIC NOBODY HAD DONE
+
+    snapRate 15        -> one tick every 66.7 ms
+    interpDelay 120 ms -> 1.80 ticks of buffer
+    headroom           -> 120 - 66.7 = 53 MILLISECONDS of jitter
+
+Fifty-three milliseconds. Home broadband exceeds that. Mobile exceeds it twice
+over. Past it, renderT passes the newest sample in the buffer, `f` hits its
+1.15 clamp in updateRemotes, and the avatar STOPS - planted mid-stride at a
+position the server has already left.
+
+Both halves of the complaint follow from that one fact. For the whole freeze
+the body on your screen is not where the server has it, so the 4 m plausibility
+check refuses every hit you claim against it; meanwhile its own shots are
+resolved entirely server-side and land on you normally. Freeze, refuse, jump.
+
+## FIX 1 - THE BUFFER MEASURES THE NETWORK INSTEAD OF ASSUMING IT
+
+The client now tracks the spread of real arrival gaps over a two-second window
+and sizes the buffer to cover the p90 gap plus three quarters of a tick, moving
+in small steps so the change is not itself a visible jump. Floored at the
+configured interpDelay so a good connection is never made worse, and ceilinged
+at 320 ms because past that the added latency costs more than the stutter it
+prevents.
+
+Simulated through the real interpolation maths (tools/verify-interp.js), frames
+where the avatar visibly stalls:
+
+    localhost         0.0%  ->  0.0%     buffer settles at 120 ms
+    fibre             0.0%  ->  0.0%     128 ms
+    home broadband    0.2%  ->  0.2%     158 ms
+    mobile 4G         2.2%  ->  0.6%     213 ms
+    congested wifi    5.5%  ->  1.1%     245 ms
+
+Worst single stall on congested wifi: 117 ms -> 17 ms.
+
+The obvious wrong fix is raising interpDelay for everybody, which trades every
+player's responsiveness for the worst player's smoothness. The gate asserts a
+clean line still settles within 25 ms of the configured value.
+
+## FIX 2 - A DRY BUFFER COASTS, IT DOES NOT STOP
+
+`f` was clamped at 1.15. A body that was walking now keeps walking along its
+last known velocity for up to 220 ms - about three ticks - which is very nearly
+right, because people do not reverse in 60 ms. Past that it holds, which is
+honest: we no longer know anything.
+
+Capped at 3 m of extrapolation as well as 220 ms, because coasting a respawn
+across the map would recreate the v9.13 bug from the other direction. The v9.13
+2.5 m teleport snap is untouched and the gate asserts both are still present.
+
+## FIX 3 - A POOLED BUFFER WAS BEING PUT ON THE WIRE
+
+v10.3's encoder used `Buffer.allocUnsafe`, and Node serves any allocUnsafe under
+4 KB out of ONE SHARED 8192-BYTE POOL. Checked:
+
+    len=202  byteOffset=8     underlying ArrayBuffer 8192
+    len=202  byteOffset=2176  underlying ArrayBuffer 8192
+    len=202  byteOffset=4344  underlying ArrayBuffer 8192
+
+Every snapshot was a VIEW into a pool holding other snapshots and unrelated
+memory. Anything downstream reaching for `.buffer` without honouring byteOffset
+ships eight kilobytes of somebody else's data, and a client decoding from offset
+zero reads garbage - positions that are nowhere, bodies that jump, hits refused.
+INTERMITTENT, because when the pool cursor happens to sit at 0 it works
+perfectly, which is also why test.js passed.
+
+Now a plain Uint8Array, exact size, byteOffset 0, owning its own ArrayBuffer.
+Costs a 200-byte copy per tick. verify-netcodec asserts it owns its memory so
+this cannot be "optimised" back.
+
+## FIX 4 - PERMESSAGE-DEFLATE REMOVED, ONE VERSION AFTER ADDING IT
+
+v10.3 enabled it reasoning that quantised integers "compress well". MEASURED on
+a real snapshot it saves 2 PER CENT - 242 B becomes 236 B - because consecutive
+quantised values are unrelated and there is nothing for a dictionary coder to
+find. The reasoning was plausible, never checked, and wrong.
+
+Two per cent would be fine if it were free. `ws` compresses ASYNCHRONOUSLY on
+the libuv threadpool, so every snapshot took a scheduling round trip before
+reaching the socket - jitter, added to a stream whose buffer could absorb 53 ms
+of it. Buying jitter for 2% in a real-time shooter is the wrong trade in the
+wrong direction.
+
+HTTP gzip on static assets is untouched: 66% on commented JavaScript, once per
+page load, nowhere near the frame path.
+
+## WHAT DID NOT CHANGE
+
+snapRate is still 15. interpDelay 120 is still the floor. No entity is culled by
+distance. The binary wire format, the delta logic and the quantisation are all
+exactly as v10.3 shipped them, so the 54% bandwidth saving stands.
+
+## GATE BOARD
+
+  test.js 272/0. New: verify-interp 21/0 (simulates five network profiles
+  through the real interpolation maths). verify-bandwidth 32/0.
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+
+## NEW TOOLS
+
+  tools/diag-jitter.js    arrival gaps, wire frame sizes, position jumps and
+                          decode failures against a live match - tests "the
+                          stream is late" and "the stream is wrong" at once
+  tools/verify-interp.js  replays fibre / broadband / 4G / congested wifi
+                          through the interpolator, because localhost cannot
+
+## THE LESSON WORTH KEEPING
+
+Four of the five things fixed here were introduced by reasoning that sounded
+right and was never measured: deflate "compresses well" (2%), allocUnsafe is
+"faster" (it hands out a shared view), 120 ms "is enough buffer" (53 ms of
+headroom), and a 1.15 clamp "handles the edge" (it freezes the avatar). The
+project's own section 4.4 - numbers typed instead of measured - now has a
+network entry.
+
+
 # v10.3 - THE BILL WAS BOT MOTION, NOT PACKET DESIGN
 
 Render billed 5.8 GB, essentially all WebSocket responses. Measured on the shape
