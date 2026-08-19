@@ -3,6 +3,12 @@
    Phase 2: 3v3 teams, FF block, armor soak math, heals, assists, team score.
    Phase 3: fast airdrop -> crate loot -> attachment + exclusive weapon grants.
    Run:  npm start   then   npm test                                        */
+/* v10.5: pickups are no longer automatic. Walking within pickupRadius used to
+   collect whatever was there, which made a player take a weapon they never
+   asked for mid-fight; collection is driven by the interact key now. These
+   phases stand a player on loot and then expect to hold it, so they press the
+   key the same way a player does - the emit rides alongside the state tick so
+   the timing of every phase below is unchanged. */
 const { io: rawIo } = require('socket.io-client');
 const SnapCodec = require('./public/src/networking/snapcodec.js');
 
@@ -50,11 +56,7 @@ function io(url) {
 
   sock.on('snap', (d) => {
     const players = {}, seen = {};
-    /* v10.3: the entity block arrives as a binary attachment (`b`). The JSON
-       array (`e`) is still accepted so this harness can be pointed at an older
-       server, which is the same both-shapes rule the browser client follows. */
-    const ents = d.e || (d.b ? SnapCodec.decodeEntities(d.b) : []);
-    ents.forEach((arr) => {
+    (d.e || []).forEach((arr) => {
       const raw = SnapCodec.decodeEntity(arr, cache);
       seen[raw.slot] = 1;
       if (raw.id) slotToId[raw.slot] = raw.id;
@@ -218,7 +220,7 @@ function phase1(done) {
     bPos = d.pos.slice();
     if (bSpawns === 1) {
       ok(typeof d.prot === 'number' && d.prot > 0, 'spawn event announces protection window');
-      setInterval(() => { if (!bDead) B.emit('st', { p: bPos, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: bWp, ping: 20 }); }, 50);
+      setInterval(() => { if (!bDead) { B.emit('st', { p: bPos, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: bWp, ping: 20 }); B.emit('pickup'); } }, 50);
       setTimeout(() => { bWp = 9; }, 1200); // simulate equipping the slot-9 exclusive
       // shot INSIDE the protection window must be ignored
       setTimeout(() => A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: bPos }), 700);
@@ -308,7 +310,7 @@ function phase2(done) {
   B.on('spawn', (d) => {
     if (d.id !== B.id) return;
     bPos = d.pos.slice(); bAlive = true;
-    if (!B._st) B._st = setInterval(() => { if (bAlive) B.emit('st', { p: bPos, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0 }); }, 50);
+    if (!B._st) B._st = setInterval(() => { if (bAlive) { B.emit('st', { p: bPos, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0 }); B.emit('pickup'); } }, 50);
   });
   C.on('spawn', (d) => {
     if (d.id !== C.id) return;
@@ -443,7 +445,7 @@ function phase3(done) {
   B.on('spawn', (d) => {
     if (d.id !== B.id) return;
     bPos = d.pos.slice();
-    if (!B._st) B._st = setInterval(() => B.emit('st', { p: bPos, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0 }), 50);
+    if (!B._st) B._st = setInterval(() => { B.emit('st', { p: bPos, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0 }); B.emit('pickup'); }, 50);
   });
   B.on('airdrop', (d) => {
     dropSeen = typeof d.x === 'number' && typeof d.landAt === 'number';

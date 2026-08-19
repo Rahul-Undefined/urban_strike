@@ -214,19 +214,20 @@ const Bots = require('./server/lib/bots.js')({
      with margin, while cutting the far half of the map that would only ever
      produce invisible tracers and inaudible bangs. Squared throughout to keep a
      sqrt out of a path that runs ~96 times a second at twelve bots. */
-  botFired: (room, bot) => {
+  /* v10.5: the FULL payload again. v10.2 cut this to `{ id }` to save bandwidth,
+     resolving the position and weapon on the client from the last interpolated
+     snapshot instead. That is only correct while the interpolation is correct,
+     and it made a muzzle flash appear wherever the client THOUGHT the bot was -
+     which, during exactly the stalls being reported, is not where it fired
+     from. Bandwidth is no longer the constraint; being right is. */
+  botFired: (room, bot, weapon) => {
     const R2 = 90 * 90;
-    /* v10.2: `{ id }` ONLY. The position and the weapon are already in every
-       snapshot (snapcodec carries `wp` per entity), so sending them here was
-       duplicating data the client received milliseconds ago - measured at 5.7 MB
-       per player-hour at twelve bots, 27% on top of snapshots, against a 5 GB
-       month. The client fills both in from the interpolated remote. See the
-       compact-form note in networking/net.js. */
+    const o = [bot.pos[0], bot.pos[1] + 0.35, bot.pos[2]];
     for (const p of room.players.values()) {
       if (p.bot || !p.id) continue;
       const dx = p.pos[0] - bot.pos[0], dy = p.pos[1] - bot.pos[1], dz = p.pos[2] - bot.pos[2];
       if (dx * dx + dy * dy + dz * dz > R2) continue;
-      io.to(p.id).emit('shoot', { id: bot.id });
+      io.to(p.id).emit('shoot', { id: bot.id, w: weapon, o: o, sup: 0 });
     }
   }
 });
@@ -258,18 +259,12 @@ const RECONNECT_WINDOW = 45000;
 const NETSTATS = process.env.NETSTATS === '1';
 const netTotals = { packets: 0, bytes: 0, maxBytes: 0, entities: 0, since: Date.now(), clients: 0 };
 function netstat(room, packet) {
-  /* v10.3: the entity block is a Buffer now, and JSON.stringify would render it
-     as {"type":"Buffer","data":[...]} - roughly six times its real size - and
-     report a bandwidth INCREASE for a change that halved it. Counted properly:
-     the buffer's own length plus the JSON of everything else. */
-  const bin = packet.b ? packet.b.length : 0;
-  const rest = { ...packet }; delete rest.b;
-  const n = bin + Buffer.byteLength(JSON.stringify(rest)) + 15;   // + socket.io framing
+  const n = Buffer.byteLength(JSON.stringify(packet)) + 15;   // + socket.io framing
   const sockets = io.sockets.adapter.rooms.get(room.code);
   const recips = sockets ? sockets.size : 0;
   netTotals.packets++;
   netTotals.bytes += n * recips;
-  netTotals.entities += packet.e ? packet.e.length : (packet.n || 0);
+  netTotals.entities += packet.e.length;
   netTotals.clients += recips;
   if (n > netTotals.maxBytes) netTotals.maxBytes = n;
 }
@@ -588,13 +583,7 @@ function startSnapshots(room) {
     const tkChanged = tkNow !== (room.snapTk || null);
     room.snapTk = tkNow;
 
-    /* v10.3: the entity block goes out as a BINARY attachment, not as JSON.
-       socket.io carries a Buffer natively. Everything about WHAT is sent is
-       unchanged - same fields, same deltas, same quantisation - only how it is
-       written. See the note in snapcodec.js: 1 human + 19 bots measured 459 B a
-       packet because a bot is never still, so the delta test rejects nothing
-       and the whole cost is JSON's digits and commas. */
-    const packet = { b: SnapCodec.encodeEntities(ents), n: ents.length };
+    const packet = { e: ents };
     if (keyframe) packet.k = 1;
     /* v9.4: drones ride the normal snapshot rather than a channel of their own,
        so every client renders them with the code that already interpolates
@@ -938,7 +927,35 @@ io.on('connection', (socket) => {
     p.history.push({ t: now(), pos: p.pos });
     const cutoff = now() - CFG.NET.historyMs;
     while (p.history.length && p.history[0].t < cutoff) p.history.shift();
-    if (room.state === 'playing') tryCollect(room, p);
+    /* v10.5: NO AUTO-PICKUP. This used to call tryCollect on every state
+       update, so walking within pickupRadius of anything took it - and taking a
+       weapon you did not ask for, mid-fight, is a genuine gameplay bug rather
+       than a convenience. Rahul: "loot k pass jane se gun auto pick ho jata
+       hai, this is not required".
+
+       Collection is now driven by the client pressing the interact key, which
+       is the same Z that already rides lifts. The radius check, the upgrade
+       rules and every anti-cheat test inside tryCollect are UNCHANGED - the
+       only difference is what asks it to run. The server still decides; the
+       client only requests. */
+  });
+
+  /* v10.5: explicit pickup. Rate-limited because it is now client-driven and a
+     held key would otherwise hammer the collision scan at whatever rate the
+     browser repeats at. 120 ms is faster than anyone can meaningfully press and
+     slow enough to cost nothing. */
+  socket.on('pickup', () => {
+    /* socket.data.roomCode, NOT .code - getRoom() further down is the one place
+       that knows this. Copying the wrong field made every pickup a silent
+       no-op, which reads as "loot does nothing" rather than as an error. */
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.state !== 'playing') return;
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive) return;
+    const t = now();
+    if (p.lastPickAt && t - p.lastPickAt < 120) return;
+    p.lastPickAt = t;
+    tryCollect(room, p);
   });
 
   // Cosmetic shot relay (muzzle flash / tracer / sound on other clients)

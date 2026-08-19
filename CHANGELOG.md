@@ -1,5 +1,138 @@
 # Urban Strike — Changelog & Deployment Ledger
 
+# v10.5 - THE BANDWIDTH WORK IS REVERTED, WHOLE
+
+Rahul, after playing v10.4: "barbaad hai bahot lag kar raha hai, avatar fatt se
+idhar udhar chala ja raha hai uss time pe goli maarne se bhi kuch nahi ho raha".
+And: "yeh issue tab se hua hai jab se woh render ka 5GB wala cheej maine bataya
+tha... fuck the render ka 5GB thing, I will buy the subscription."
+
+He is right, and the diagnosis was in front of me for two versions.
+
+## WHY THE BINARY WIRE FORMAT WAS ALWAYS GOING TO FAIL
+
+Not the encoding. THE TRANSPORT.
+
+socket.io does not put a binary event on the wire as one frame. It sends a JSON
+ENVELOPE carrying a `_placeholder`, then the binary as a SEPARATE frame, and the
+client must hold the envelope until the attachment arrives before it can emit
+the event at all:
+
+    JSON event    42["snap",{...}]                                ONE frame
+    binary event  451-["snap",{"b":{"_placeholder":true,"num":0}}]
+                  + attachment                                    TWO frames
+
+Every snapshot became two frames plus a reassembly step, fifteen times a second,
+and any delay to the second frame stalls the first. The payload got 54% smaller
+and THE STREAM GOT WORSE. For a shooter that is the wrong trade in the wrong
+direction, and I shipped it without ever measuring arrival timing - only size.
+
+Then v10.4 added an adaptive interpolation buffer and velocity extrapolation to
+fix the stutter that caused. Two unproven changes stacked, the second treating
+the symptom of the first. That is how a codebase gets worse while every gate
+stays green.
+
+## WHAT IS REVERTED
+
+snapcodec.js was restored from the v9.15 upload verbatim rather than edited back
+by hand, because a hand-reverted file is a new file nobody has run.
+
+  - binary entity block            gone, JSON `e` array again
+  - PY split out of POS            gone, POS carries x/y/z
+  - permessage-deflate             gone (2% saving, ASYNC compression = jitter)
+  - adaptive interpolation delay   gone, fixed CFG.NET.interpDelay again
+  - velocity extrapolation         gone, the v9.15 1.15 clamp is back
+  - compact `{ id }` bot shot      gone, full position and weapon again
+
+WHAT SURVIVES, because none of it touches the frame path: HTTP gzip on static
+assets (66%, once per page load), the collider broadphase (19.5x on ray
+queries), the sign atlas (112 -> 98 draw calls), and every geometry fix from v10
+and v10.1.
+
+WHAT MUST SURVIVE EVERY FUTURE REVERT: v9.13's 2.5 m teleport snap. Without it a
+respawn is lerped across the map and every shot at that player is refused for
+the whole slide. verify-interp asserts it explicitly now.
+
+## THE HEADROOM NUMBER, RECORDED RATHER THAN ACTED ON
+
+    snapRate 15        -> a tick every 66.7 ms
+    interpDelay 120 ms -> 1.80 ticks of buffer
+    headroom           -> 53 ms of jitter before the interpolator runs dry
+
+That is thin, and it is the same 53 ms as before any of this work - so it is not
+what broke v10.3. It is left ALONE. If stutter persists on this clean revert,
+the cheapest experiment is raising CFG.NET.interpDelay by itself: one number, no
+new code, instantly reversible. Do not reach for extrapolation first.
+verify-interp prints what an adaptive buffer would buy, as evidence, not as a
+claim.
+
+## LOOT NO LONGER PICKS ITSELF UP
+
+"loot k pass jane se gun auto pick ho jata hai, this is not required."
+
+tryCollect ran on EVERY state update, so walking within pickupRadius took
+whatever was there - including a weapon you never asked for, mid-fight.
+
+It is now driven by the interact key, which is the same Z that already rides
+lifts; the two can never both apply, because a lift stop is not a loot spawn.
+The radius test, the upgrade rules and every anti-cheat check inside tryCollect
+are UNCHANGED - only what asks them to run. The client sends no item id and no
+position, so it cannot claim loot from across the map, and the request is
+rate-limited to one per 120 ms so a held key cannot hammer the collision scan.
+
+A bug caught doing it: I looked the room up with `socket.data.code`. The field
+is `socket.data.roomCode`. Every pickup was a silent no-op, which reads as "loot
+does nothing" rather than as an error.
+
+## RESOLUTION, AND WHICH GPU IS ACTUALLY RUNNING THIS
+
+`powerPreference` WAS NEVER SET. On any laptop with switchable graphics - Intel
+integrated plus a discrete NVIDIA or AMD - a WebGL context created with no
+preference is handed the INTEGRATED chip. This game has been running on the
+weakest GPU in the machine for its entire life, and nobody had told the browser
+otherwise. One line. It is plausibly worth more frames than every draw-call
+saving in v10 put together.
+
+Pixel ratio was capped at 1.75; it is 2.0 now, full native on any current panel.
+But it is a CEILING rather than a setting, because "full HD" and "no frame
+drops" pull in opposite directions and a fixed choice has to be wrong for
+somebody:
+
+  - frame time is sampled every frame
+  - if the p90 of the last two seconds is over 20 ms (under ~50 fps) the scale
+    steps down 0.1, floor 0.6
+  - if it is under 13.5 ms (comfortably over 70) it steps back up, ceiling 1.0
+  - one step per 900 ms, because resolution that changes continuously reads as
+    a shimmer, which is worse than either resolution it moves between
+
+Measured on the PERCENTILE, not the mean - a 15 ms average is consistent with a
+steady 60 fps that hitches every tenth frame, and the hitch is what the player
+sees. Game.renderInfo() reports the live figure so "what resolution am I at" has
+an answer on screen instead of a guess.
+
+## GATE BOARD
+
+  test.js 263/0. verify-bandwidth 24/0 and verify-interp 12/0, both INVERTED -
+  they asserted the binary format and the adaptive buffer were present, and now
+  assert the format stays simple and record the headroom instead.
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+
+## THE HONEST SUMMARY OF v10.2 THROUGH v10.4
+
+Four bugs, all mine, all from reasoning that sounded right and was never
+measured against the thing that mattered:
+
+  deflate "compresses well"        2% on quantised integers
+  allocUnsafe is "faster"          hands out a view into a shared 8 KB pool
+  binary is "smaller"              two frames per event, and the stream is what
+                                   a shooter is made of
+  team is a number                 it is a string; 'b' & 255 = 0
+
+The bandwidth was measured correctly every time. The thing that decides whether
+the game is playable - when packets ARRIVE - was never measured until the
+player reported it twice.
+
+
 # v10.4 - THE FREEZE-AND-JUMP, AND WHY EVERY MEASUREMENT SAID IT WAS FINE
 
 Reported: "ek player ek second idhar h, dusre second udhar chala ja raha, uss

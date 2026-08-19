@@ -1,6 +1,6 @@
-# Urban Strike — Handoff (v10.4 shipped)
+# Urban Strike — Handoff (v10.5 shipped)
 
-Upload this file plus `urban-strike-v10.4.zip` into a new chat.
+Upload this file plus `urban-strike-v10.5.zip` into a new chat.
 
 **Read §0 first.** All six v9.15 defects are closed, but the most useful thing
 in this document is why the gate board was green while they were live.
@@ -213,6 +213,12 @@ tools/gen-points.js       spawn/loot generator — USE IT, never type coordinate
   that forbids it.
 - **Never send what the snapshot already carries** (v10.2). Check snapcodec
   before adding a field to any event.
+- **`powerPreference` must be set on the WebGL context.** Without it a laptop
+  with switchable graphics hands you the **integrated** GPU. This game ran on
+  the weakest chip in the machine until v10.5.
+- **Measure the thing that decides playability, not the thing that is easy to
+  measure.** Bandwidth was measured correctly every time in v10.2–v10.4. When
+  packets *arrive* was never measured until the player reported it twice.
 - **Localhost is not the internet.** Four separate v10.4 bugs measured perfect
   in a container. If a fix concerns timing, simulate the network.
 - **Check the field you are reading actually exists, AND what type it is.**
@@ -242,57 +248,51 @@ it; the building itself still has no gate.
 
 ---
 
-## 7b. RENDER BANDWIDTH — 5 GB/month is the real ceiling
+## 7b. DO NOT REDO THE BANDWIDTH WORK. READ THIS FIRST.
 
-Disk is not the constraint and never was: 2.1 MB source, 41 MB node_modules,
-under 1% of the limit. **Outbound traffic is.**
+Render billed 5.8 GB and v10.2–v10.4 attacked it. **All of it is reverted** and
+Rahul has chosen to pay for bandwidth instead. The next person to see that bill
+will have the same good idea, so here is the fact that is not in the bill:
 
-**Measured on 1 human + 19 bots, Urban — the shape that produced the 5.8 GB bill:**
+**socket.io does not send a binary event as one frame.** It sends a JSON
+envelope carrying a `_placeholder`, then the attachment as a **separate frame**,
+and the client must hold the envelope until the attachment lands before it can
+emit the event. Every snapshot became **two frames plus a reassembly step**, 15
+times a second. The payload got **54% smaller** and the **stream got worse** —
+avatars teleporting, hits refused.
 
-| | before | after v10.3 |
-|---|---|---|
-| avg snapshot packet | 459 B | **210 B** (before deflate) |
-| outbound | 5,403 B/s | **2,469 B/s** |
-| per player-hour | 18.5 MB | **8.5 MB** |
-| projected | 13.0 GB/mo | **5.96 GB/mo** |
-| fresh page load | 855 KB | **293 KB** (gzip) |
-| loads per 5 GB | 6,132 | **17,875** |
+Reverted: binary entity block, PY split, permessage-deflate (2% on quantised
+integers, and `ws` compresses **async** — that is jitter), the compact `{id}`
+bot shot event, and v10.4's adaptive interpolation buffer and extrapolation.
 
-**Why the delta encoder stopped helping:** v9.8's 87% saving was measured
-against *humans*, who stand still. **A bot never does** — 19 of them keep
-POS/RY/RX dirty on every entity every tick, so the delta test rejects nothing.
-Bot mode is the worst case this format has, and it is the mode that ran up the
-bill. Nothing was left to remove; what changed is how it is *written*.
+Kept, because none of it touches the frame path: HTTP gzip on static assets
+(66%, once per page load), the broadphase, the sign atlas, all geometry fixes.
 
-If it is still too much, in order of size and each with a cost:
-1. `snapRate` 15 → 12. Linear on the whole bill, ~20%. **Costs smoothness**;
-   15 is the documented floor before rubber-banding. Measure by playing.
-2. Fewer bots — cost is linear in entity count, 19 is the cap.
-3. Relevance filtering. **Largest remaining win by far**, and the only one that
-   changes what a player receives. Needs per-client baselines and can make an
-   enemy pop into existence. Not done deliberately.
-
-`tools/verify-bandwidth.js` guards all of it. Bandwidth regressions are
-invisible — nothing crashes, no gate reddens, and the bill arrives four weeks
-later.
+**If bandwidth is ever revisited: measure ARRIVAL JITTER
+(`tools/diag-jitter.js`), not payload size.** A smaller packet that arrives late
+is a regression, and arrival is the only thing a shooter is made of.
 
 ## 7c. THE INTERPOLATION BUFFER — read this before touching snapRate
 
-`interpDelay` 120 ms against a 66.7 ms tick is **1.80 ticks of buffer**, which
-absorbs **53 ms of jitter**. Home broadband exceeds that; mobile exceeds it
-twice over. Past it the avatar freezes at a stale position, your hits are
-refused by the 4 m plausibility check, and theirs still land — the exact
-"ek second idhar, dusre second udhar" report.
+```
+snapRate 15        → a tick every 66.7 ms
+interpDelay 120 ms → 1.80 ticks of buffer
+headroom           → 53 ms of jitter before it runs dry
+```
 
-v10.4 makes the buffer **adaptive**: it measures real arrival gaps and covers
-the p90 plus three quarters of a tick, floored at 120 ms so a good line is
-never punished, ceilinged at 320 ms. A dry buffer now **coasts** on last
-velocity for up to 220 ms / 3 m instead of freezing.
+Past that, `f` clamps at 1.15 and the avatar **stops**; the server has moved
+that body on, so the 4 m plausibility check refuses your hits while its own
+still land.
+
+53 ms is thin — **and it is unchanged from v9.15, so it is not what broke
+v10.3.** Left alone deliberately. If stutter persists, the cheapest experiment
+is raising `CFG.NET.interpDelay` **alone**: one number, no new code, instantly
+reversible. Do not reach for extrapolation first. `verify-interp` prints what an
+adaptive buffer would buy as *evidence, not a claim*.
 
 **Every measurement this project can take runs on localhost, where jitter is
-~1 ms.** The server timer reads 15.09 Hz and gap p99 reads 75 ms on a game that
-stutters badly over real internet. `tools/verify-interp.js` simulates five
-network profiles because nothing else here can.
+~1 ms.** The server timer reads 15.09 Hz on a game that stutters over real
+internet.
 
 ## 8. Networking
 
@@ -303,6 +303,9 @@ in `snapcodec.js`.
 - A position change over 2.5 m in one tick is **snapped, not interpolated**.
 - `snapRate` 15 should stay; at 10 it rubber-bands against the 120 ms buffer.
 - `clientRate` is **inbound** — changing it saves nothing on Render's bill.
+- **Loot does NOT auto-pick.** `tryCollect` ran on every state update; it is
+  driven by the interact key (Z, same as lifts) since v10.5. The server still
+  owns the decision — the client sends no item id and no position.
 - **No permessage-deflate.** v10.3 enabled it; measured, it saves **2%** on a
   binary snapshot and `ws` compresses asynchronously, adding jitter to a stream
   that could only absorb 53 ms. Removed in v10.4. HTTP gzip is unaffected.
@@ -310,7 +313,7 @@ in `snapcodec.js`.
   view into a shared 8 KB pool; anything reaching for `.buffer` then ships 8 KB
   of unrelated memory and the client decodes garbage. Intermittent, because it
   works whenever the pool cursor lands on 0.
-- **The entity block is BINARY** (v10.3). Same fields, same deltas, same
+- **The entity block is JSON** — see §7b for why binary failed. Same fields, same deltas, same
   quantisation — decoded values are bit-identical to the old JSON path. `PY`
   is split out of `POS` so a stable height is not resent; it is the only field
   a moving bot leaves clean. permessage-deflate is on (socket.io defaults it

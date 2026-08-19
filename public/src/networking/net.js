@@ -144,64 +144,13 @@ var Net = (function () {
     s.on('snap', function (d) {
       var tLocal = performance.now();
 
-      /* ===== v10.4 - MEASURE THE JITTER, DO NOT ASSUME IT =====
-
-         Reported after v10.3: "ek player ek second idhar h, dusre second udhar
-         chala ja raha", with shots refused against them. That is the v9.13
-         symptom, and v9.13's own note says the fix there was for teleports the
-         interpolator was LERPING. This is the other way the same thing happens:
-         the interpolator running DRY.
-
-         The arithmetic nobody had done. snapRate 15 puts a tick every 66.7 ms.
-         interpDelay is 120 ms, so the buffer holds 1.80 ticks and can absorb
-         120 - 66.7 = 53 MILLISECONDS of jitter before renderT passes the newest
-         sample it has. Past that, `f` clamps at 1.15 in updateRemotes, the
-         avatar stops dead, and it snaps forward when the next packet lands.
-
-         53 ms is nothing. It survives localhost, which is why every measurement
-         taken in a container looked perfect - server timer 15.09 Hz, gap p50
-         66 ms, zero gaps over 150 ms, payload sane. It does NOT survive home
-         broadband, let alone 4G. The game was fine on the machine it was tested
-         on and broken on the internet.
-
-         So the delay is measured rather than declared. We track the spread of
-         real arrival gaps and keep the buffer just big enough to cover it. A
-         good connection settles near the configured 120 ms and stays as
-         responsive as it is now; a bad one grows the buffer instead of
-         stuttering. Nothing about this is server-side - it costs no bandwidth
-         and needs no deploy coordination. */
-      if (netLastArr) {
-        var gap = tLocal - netLastArr;
-        /* Absurd gaps are a tab that was backgrounded or a reconnect, not
-           jitter. Feeding them in would leave the buffer huge for the rest of
-           the match. */
-        if (gap < 1000) {
-          jitterBuf[jitterAt++ % JITTER_N] = gap;
-          if (jitterSeen < JITTER_N) jitterSeen++;
-        }
-      }
-      netLastArr = tLocal;
-      if (d.tk !== undefined) teamKills = d.tk || {};
       Pickups.droneSync(d.dr);          // undefined when none are airborne
 
-      /* v10.3: the entity block arrives as a BINARY attachment (`b`) rather
-         than a JSON array (`e`). Both are accepted - `e` costs nothing to keep
-         and means a client can outlive a server rollback, which matters because
-         this game deploys as a cumulative upload and a half-old client is a
-         real possibility for a few minutes after every push.
-
-         In the browser socket.io hands binary over as an ArrayBuffer; under
-         Node (test.js) it is a Buffer. decodeEntities normalises both. */
-      var ents = d.e;
-      if (!ents && d.b) {
-        try { ents = SnapCodec.decodeEntities(d.b); }
-        catch (err) { return; }        // a malformed frame is dropped, not fatal
-      }
-      if (!ents) return;
+      if (!d.e) return;
 
       var seen = {};
-      for (var n = 0; n < ents.length; n++) {
-        var raw = SnapCodec.decodeEntity(ents[n], snapCache);
+      for (var n = 0; n < d.e.length; n++) {
+        var raw = SnapCodec.decodeEntity(d.e[n], snapCache);
         seen[raw.slot] = 1;
         if (!raw.id) continue;                       // no identity yet, wait for a keyframe
         slotToId[raw.slot] = raw.id;
@@ -436,6 +385,10 @@ var Net = (function () {
     });
   }
   function sendShoot(d) { if (socket) socket.emit('shoot', d); }
+  /* v10.5: ask the server to collect whatever is underfoot. The server owns the
+     decision entirely - this carries no item id and no position, so it cannot
+     be used to claim loot from across the map. */
+  function pickup() { if (socket) socket.emit('pickup'); }
   function sendHit(d) { if (socket) socket.emit('hit', d); }
   function sendProj(d) { if (socket) socket.emit('proj', d); }
   function sendThrow(d) { if (socket) socket.emit('throw', d); }
@@ -447,47 +400,10 @@ var Net = (function () {
   // Remote fire/projectile events → local visuals
   function bindGameplayEvents() {
     socket.on('shoot', function (d) {
-      var r = remotes[d.id];
-      /* ===== v10.2 - THE COMPACT FORM =====
-
-         A human's shoot event carries an explicit origin and weapon name,
-         because the shooter's client knows its muzzle position more precisely
-         than any snapshot does and the extra bytes are one player's worth.
-
-         Bot gunfire is different. v10 made bots emit this event so they stop
-         firing invisibly and silently, and at twelve bots that is roughly
-         fifteen events a second TO EVERY CLIENT IN RANGE - measured at 5.7 MB
-         per player-hour, a 27% increase on top of snapshots, against a 5 GB
-         monthly budget worth about 240 player-hours.
-
-         Almost all of those bytes were already on the wire. Every snapshot
-         carries each entity's position AND its weapon index `wp`, so `o` and
-         `w` in a bot's shoot event were duplicating data the client had
-         received milliseconds earlier. The server sends `{ id }` alone now and
-         this fills the rest in from the interpolated remote.
-
-         Both shapes are accepted. The human path is untouched, an older client
-         still understands the long form, and if a remote is not yet known the
-         event is simply dropped - a muzzle flash for somebody you cannot see
-         is not worth guessing a position for. */
-      var o, wName;
-      if (d.o) {
-        o = new THREE.Vector3(d.o[0], d.o[1], d.o[2]);
-      } else {
-        if (!r) return;                       // no known shooter, nothing to place
-        o = r.renderPos ? r.renderPos.clone() : (r.group ? r.group.position.clone() : null);
-        if (!o) return;
-        o.y += 0.35;                          // roughly muzzle height off the capsule centre
-      }
-      if (typeof d.w === 'number') {
-        wName = CFG.WEAPON_ORDER[d.w] || CFG.WEAPON_ORDER[0];
-      } else if (d.w) {
-        wName = d.w;
-      } else {
-        wName = (r && CFG.WEAPON_ORDER[r.wp]) || CFG.WEAPON_ORDER[0];
-      }
-      AudioSys.shot(wName, o, { supp: !!d.sup });
+      var o = new THREE.Vector3(d.o[0], d.o[1], d.o[2]);
+      AudioSys.shot(d.w, o, { supp: !!d.sup });
       if (!d.sup) FX.muzzle(o, false);
+      var r = remotes[d.id];
       if (r) {
         // suppressed fire pings the minimap for ~1.2 s instead of 3.5 s
         r.lastShotAt = performance.now() - (d.sup ? (CFG.NET.detectMs - CFG.ATTACH.supp.detectMs) : 0);
@@ -556,43 +472,27 @@ var Net = (function () {
   // ---------- remote interpolation ----------
   var _camPos = new THREE.Vector3();
 
-  /* v10.4 jitter window. Two seconds of arrivals at 15 Hz; long enough to see a
-     bad patch, short enough to relax again when it passes. */
-  var JITTER_N = 30;
-  var jitterBuf = new Float32Array(JITTER_N);
-  var jitterAt = 0, jitterSeen = 0, netLastArr = 0;
-  var effDelay = 0;                       // what updateRemotes actually uses
-  var _sorted = new Float32Array(JITTER_N);
+  /* ===== v10.5 - THE ADAPTIVE BUFFER IS REVERTED TOO =====
 
-  /* The buffer must cover the WORST recent gap, not the average one - an
-     average that looks fine still freezes on every outlier, and a freeze is
-     what the player notices. p90 rather than the true max so one bad spike does
-     not park the whole match at maximum latency.
+     v10.4 measured arrival gaps and grew the interpolation delay to cover them,
+     and extrapolated along last velocity when the buffer ran dry. The reasoning
+     was sound and the simulation showed it helping. It went out on top of the
+     binary wire format that was ALREADY breaking the stream, so what shipped
+     was one unproven change stacked on another, and the result was worse than
+     either.
 
-     Bounded at both ends. The floor is the configured interpDelay, so a good
-     connection is never made worse than it is today. The ceiling is 320 ms,
-     past which the extra latency hurts more than the stutter it prevents -
-     beyond that the honest answer is that the connection cannot carry the game.
+     Both are gone. This is the v9.15 interpolator, unchanged, against the
+     v9.15 wire format, unchanged - the combination that was last known to
+     play correctly. Anything added back goes in ONE AT A TIME, with a match
+     played between each.
 
-     Moves in small steps. Snapping the delay would itself be a visible jump,
-     which is the thing being fixed. */
-  function updateEffDelay() {
-    var base = CFG.NET.interpDelay, tick = 1000 / CFG.NET.snapRate;
-    if (jitterSeen < 8) { if (!effDelay) effDelay = base; return; }
-    for (var i = 0; i < jitterSeen; i++) _sorted[i] = jitterBuf[i];
-    var arr = Array.prototype.slice.call(_sorted, 0, jitterSeen).sort(function (a, b) { return a - b; });
-    var p90 = arr[Math.min(arr.length - 1, Math.floor(arr.length * 0.9))];
-    /* Cover the worst gap plus one whole tick, so there is still a sample on
-       the far side of renderT to interpolate TOWARDS rather than merely one to
-       sit on. */
-    var want = Math.max(base, p90 + tick * 0.75);
-    if (want > 320) want = 320;
-    if (!effDelay) effDelay = want;
-    else effDelay += (want - effDelay) * 0.06;      // ~1s to settle
-  }
+     The 53 ms of jitter headroom that v10.4 identified is REAL and still here:
+     interpDelay 120 ms against a 66.7 ms tick is 1.80 ticks of buffer. If
+     stutter persists on a clean revert, that is the next thing to look at, and
+     the cheapest experiment is raising CFG.NET.interpDelay alone - one number,
+     no new code, instantly reversible. Do not reach for extrapolation first. */
   function updateRemotes(dt, camera) {
-    updateEffDelay();
-    var renderT = performance.now() - effDelay;
+    var renderT = performance.now() - CFG.NET.interpDelay;
     if (camera) camera.getWorldPosition(_camPos);
     for (var id in remotes) {
       var r = remotes[id];
@@ -641,48 +541,12 @@ var Net = (function () {
       var span = Math.max(1, b.t - a.t);
       var raw = (renderT - a.t) / span;
 
-      /* ===== v10.4 - A DRY BUFFER COASTS, IT DOES NOT STOP =====
-
-         `f` was clamped to 1.15, so once renderT passed the newest sample the
-         avatar STOPPED - planted mid-stride, in the open, at a position the
-         server had already left. Then the next packet arrived and it snapped.
-         Freeze, jump, freeze, jump. And for the whole freeze the body on your
-         screen is not where the server has it, so the 4 m plausibility check
-         refuses every hit you claim against it while its own shots, resolved
-         server-side, land on you perfectly. That is the exact complaint: "usko
-         shoot karne pe health nahi gir raha aur woh udhar se maar raha".
-
-         A body that was walking keeps walking. Extrapolating along the last
-         known velocity for a short window is what the player expects to see and
-         it is very nearly right, because people do not reverse in 60 ms.
-
-         EXTRAP_MS is 220: about three ticks. Long enough to ride out any gap
-         the adaptive delay above did not already absorb, short enough that a
-         genuinely disconnected player does not go jogging into a wall. Past it
-         the avatar holds, which is honest - we no longer know anything.
-
-         Capped in DISTANCE as well as time. Extrapolating a respawn or a
-         teleport would recreate the v9.13 bug from the other direction, so
-         nothing may coast more than 3 m beyond its last real sample. */
-      var f, EXTRAP_MS = 220;
-      if (raw <= 1) {
-        f = Math.max(0, raw);
-      } else {
-        var over = (renderT - b.t);
-        f = 1 + Math.min(over, EXTRAP_MS) / span;
-      }
-      var nx = a.p[0] + (b.p[0] - a.p[0]) * f;
-      var ny = a.p[1] + (b.p[1] - a.p[1]) * f;
-      var nz = a.p[2] + (b.p[2] - a.p[2]) * f;
-      if (f > 1) {
-        var ex = nx - b.p[0], ey = ny - b.p[1], ez = nz - b.p[2];
-        var e2 = ex * ex + ey * ey + ez * ez;
-        if (e2 > 9) {                                  // 3 m
-          var k = 3 / Math.sqrt(e2);
-          nx = b.p[0] + ex * k; ny = b.p[1] + ey * k; nz = b.p[2] + ez * k;
-        }
-      }
-      r.renderPos.set(nx, ny, nz);
+      var f = Math.min(1.15, Math.max(0, (renderT - a.t) / span));
+      r.renderPos.set(
+        a.p[0] + (b.p[0] - a.p[0]) * f,
+        a.p[1] + (b.p[1] - a.p[1]) * f,
+        a.p[2] + (b.p[2] - a.p[2]) * f
+      );
       var dry = b.ry - a.ry;
       if (dry > Math.PI) dry -= Math.PI * 2;
       if (dry < -Math.PI) dry += Math.PI * 2;
@@ -814,7 +678,7 @@ var Net = (function () {
     connect: connect,
     createRoom: createRoom, joinRoom: joinRoom, leaveRoom: leaveRoom,
     updateSettings: updateSettings, startMatch: startMatch, returnLobby: returnLobby,
-    sendState: sendState, sendShoot: sendShoot, sendHit: sendHit,
+    sendState: sendState, sendShoot: sendShoot, sendHit: sendHit, pickup: pickup,
     sendProj: sendProj, sendThrow: sendThrow, requestRespawn: requestRespawn,
     placeMine: function (d, cb) { if (socket) socket.emit('placeMine', d, cb); },
     mark: function (x, z) { if (socket) socket.emit('mark', { x: x, z: z }); },

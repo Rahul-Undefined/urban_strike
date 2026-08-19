@@ -23,6 +23,22 @@
    measure the network. It SIMULATES one, replaying arrival patterns from clean
    fibre to congested wifi through the real interpolation maths.
 
+   ===== v10.5 - WHAT THIS GATE IS FOR NOW =====
+
+   v10.4 answered the headroom problem with an adaptive buffer and velocity
+   extrapolation, and this gate asserted both were in place. Both are REVERTED.
+   They were not wrong in themselves - the simulation below still shows them
+   helping - but they shipped stacked on top of the binary wire format that was
+   already breaking the stream, so what reached the player was one unproven
+   change on another, and it was worse than either alone.
+
+   The interpolator is back to v9.15 exactly. This gate no longer asserts a
+   fix; it MEASURES THE HEADROOM and states it out loud, so the next person
+   knows the number before they touch snapRate or interpDelay. The simulation
+   is kept because it is the only thing in this project that can see past
+   localhost, and because when the buffer is eventually retuned this is where
+   the before-and-after goes.
+
    Run: node tools/verify-interp.js */
 
 const fs = require('fs');
@@ -181,49 +197,49 @@ ok(before['mobile 4G'].frozenPct > before['fibre'].frozenPct * 1.5,
   'and stalls get worse as jitter rises [4G ' + before['mobile 4G'].frozenPct.toFixed(1) +
   '% vs fibre ' + before['fibre'].frozenPct.toFixed(1) + '%]');
 
-console.log('\n--- NEW behaviour: adaptive buffer + 220 ms extrapolation ---');
+console.log('\n--- headroom, stated plainly ---');
+const headroom = BASE - TICK;
+console.log('        the buffer absorbs ' + headroom.toFixed(1) + ' ms of jitter before it runs dry');
+console.log('        past that, f clamps at 1.15 in updateRemotes and the avatar STOPS');
+console.log('        while it is stopped the server has already moved that body on, so');
+console.log('        the 4 m plausibility check refuses your hits and its own still land');
+ok(headroom > 0, 'there is at least some headroom [' + headroom.toFixed(1) + ' ms]');
+
+/* NOT a pass/fail on the headroom being generous - it is 53 ms and that is
+   thin, but changing it is a decision for somebody who has played the game, not
+   for a gate. What IS asserted is that the number is not silently getting
+   worse: raising snapRate or lowering interpDelay both eat it. */
+ok(headroom >= 50,
+  'headroom has not been eroded below 50 ms by a config change [' + headroom.toFixed(1) + ' ms]');
+
+console.log('\n--- what an adaptive buffer WOULD buy, if it is ever revisited ---');
+/* Kept as measurement, not as a claim. If stutter persists on the clean revert,
+   this is the evidence for what to try - and the order to try it in: raise
+   interpDelay alone first (one number, no new code, instantly reversible),
+   and only then consider the adaptive version. */
 for (const P of PROFILES) {
   const r = run(P, { adaptive: true, extrapMs: 220 });
   const b = before[P.name];
-  console.log('        ' + P.name.padEnd(16) + ' frozen ' + r.frozenPct.toFixed(1).padStart(5) +
-    '% (was ' + b.frozenPct.toFixed(1) + '%), worst stall ' + r.worstStall.toFixed(0).padStart(4) +
-    ' ms (was ' + b.worstStall.toFixed(0) + '), buffer settled at ' + r.eff.toFixed(0) + ' ms');
-  ok(r.frozenPct <= Math.max(1.0, b.frozenPct),
-    P.name + ': no worse than before [' + r.frozenPct.toFixed(1) + '% vs ' + b.frozenPct.toFixed(1) + '%]');
+  console.log('        ' + P.name.padEnd(16) + ' frozen ' + b.frozenPct.toFixed(1).padStart(5) +
+    '% now, ' + r.frozenPct.toFixed(1).padStart(5) + '% adaptive   (buffer would settle at ' +
+    r.eff.toFixed(0) + ' ms)');
 }
+const cwNow = before['congested wifi'], cwAdapt = run(PROFILES[4], { adaptive: true, extrapMs: 220 });
+ok(cwAdapt.frozenPct < cwNow.frozenPct,
+  'the simulation still says adaptive would help a jittery link [' +
+  cwNow.frozenPct.toFixed(1) + '% -> ' + cwAdapt.frozenPct.toFixed(1) + '%] — evidence, not a claim');
 
-const hb = run(PROFILES[2], { adaptive: true, extrapMs: 220 });
-ok(hb.frozenPct < 2, 'home broadband no longer stalls [' + hb.frozenPct.toFixed(1) + '% of frames]');
-const cw = run(PROFILES[4], { adaptive: true, extrapMs: 220 });
-ok(cw.frozenPct < before['congested wifi'].frozenPct / 2,
-  'congested wifi stalls less than HALF as often [' + cw.frozenPct.toFixed(1) +
-  '% vs ' + before['congested wifi'].frozenPct.toFixed(1) + '%]');
-const mob = run(PROFILES[3], { adaptive: true, extrapMs: 220 });
-ok(mob.frozenPct < 5, 'mobile 4G is playable [' + mob.frozenPct.toFixed(1) + '% of frames]');
-
-console.log('\n--- a good connection is not punished ---');
-/* The obvious wrong fix is to raise interpDelay for everyone. That trades every
-   player's responsiveness for the worst player's smoothness. The buffer must
-   stay near the configured value when the network is clean. */
-const lan = run(PROFILES[0], { adaptive: true, extrapMs: 220 });
-ok(lan.eff <= BASE + 25,
-  'on a clean line the buffer stays near the configured ' + BASE + ' ms [' + lan.eff.toFixed(0) + ' ms]');
-const fib = run(PROFILES[1], { adaptive: true, extrapMs: 220 });
-ok(fib.eff <= BASE + 40, 'on fibre it stays close too [' + fib.eff.toFixed(0) + ' ms]');
-ok(run(PROFILES[4], { adaptive: true, extrapMs: 220 }).eff <= 320,
-  'and it never exceeds the 320 ms ceiling even on congested wifi');
-
-console.log('\n--- the source actually implements this ---');
-ok(/effDelay/.test(netSrc), 'net.js computes an effective delay rather than using the constant directly');
-ok(/updateEffDelay/.test(netSrc), 'and updates it from measured arrival gaps');
-ok(!/renderT = performance\.now\(\) - CFG\.NET\.interpDelay/.test(netSrc),
-  'the fixed-delay line is gone');
-ok(/EXTRAP_MS/.test(netSrc), 'a dry buffer extrapolates instead of freezing');
-ok(/Math\.min\(1\.15/.test(netSrc) === false, 'the old 1.15 clamp that caused the freeze is gone');
-/* Extrapolation must be bounded in distance too, or a respawn gets coasted
-   across the map - which is the v9.13 bug from the other direction. */
-ok(/e2 > 9/.test(netSrc), 'extrapolation is capped at 3 m so a teleport cannot be coasted');
-ok(/6\.25/.test(netSrc), 'and the v9.13 2.5 m teleport snap is still in place');
+console.log('\n--- the shipped interpolator is the v9.15 one ---');
+ok(/renderT = performance\.now\(\) - CFG\.NET\.interpDelay/.test(netSrc),
+  'the fixed interpDelay is what runs');
+ok(!/effDelay/.test(netSrc), 'no adaptive buffer is in the shipped path');
+ok(!/EXTRAP_MS/.test(netSrc), 'no extrapolation is in the shipped path');
+ok(/Math\.min\(1\.15/.test(netSrc), 'the v9.15 clamp is back');
+/* The one interpolation fix that PREDATES the bandwidth work and must survive
+   every revert: v9.13's teleport snap. Without it a respawn is lerped across
+   the map and every shot at that player is refused for the whole slide. */
+ok(/6\.25/.test(netSrc), 'the v9.13 2.5 m teleport snap is still in place');
+ok(/r\.buf\.length = 0/.test(netSrc), 'and it still drops the buffer rather than extending it');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

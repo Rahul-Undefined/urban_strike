@@ -71,31 +71,34 @@
   var ANG_Q = 1000;     // milliradians
   var LN_Q = 100;       // lean, centimetres of travel
 
-  /* POS was one flag covering x, y AND z. v10.3 splits the height off.
+  /* ===== v10.5 - THIS FILE IS BACK TO THE v9.15 FORMAT, DELIBERATELY =====
 
-     A bot running across flat ground changes px and pz every tick - 0.29 m at
-     walking speed, twenty-nine centimetre-units, always dirty - while py sits
-     at exactly the same quantised value for hundreds of ticks at a time. Under
-     the combined flag its two unchanging bytes rode along with every single
-     position update, nineteen times a tick, for the whole match.
+     v10.3 split height into a separate PY flag and shipped the entity block as
+     a binary attachment, to cut Render egress. Reverted whole after the game
+     became unplayable - avatars teleporting, shots not registering - and after
+     Rahul chose to pay for bandwidth instead.
 
-     Split, the delta test can finally reject something in bot mode. PY only
-     goes on the wire when a player actually changes height: stairs, jumps,
-     ramps, lifts, falling. That is the FIRST field in this format that a
-     moving bot leaves clean.
+     THE BINARY BLOCK FAILED FOR A REASON THAT HAS NOTHING TO DO WITH ENCODING.
+     socket.io does not put a binary event on the wire as one frame. It sends a
+     JSON ENVELOPE carrying a `_placeholder`, then the attachment as a SEPARATE
+     frame, and the client must hold the envelope until the attachment arrives
+     before it can emit the event at all. Every snapshot became two frames plus
+     a reassembly step, fifteen times a second, and any delay to the second
+     frame stalls the first. The payload got 54% smaller and the STREAM got
+     worse. For a shooter that is the wrong trade in the wrong direction.
 
-     PY takes bit 14 rather than renumbering. CFG.WEAPON_ORDER is append-only
-     for the same reason and for the same class of bug: a renumbered flag is a
-     silent misread of every field after it. */
+     DO NOT REDO THE BANDWIDTH WORK WITHOUT THAT FACT IN FRONT OF YOU. If it is
+     ever revisited, the thing to measure is ARRIVAL JITTER
+     (tools/diag-jitter.js), not packet size. A smaller packet that arrives late
+     is a regression, and this format's whole job is to arrive on time. */
   var F = {
     POS: 1, RY: 2, RX: 4, MV: 8, CR: 16, WP: 32, LN: 64,
-    HP: 128, ARM: 256, HL: 512, RL: 1024, AL: 2048, TM: 4096, ID: 8192,
-    PY: 16384
+    HP: 128, ARM: 256, HL: 512, RL: 1024, AL: 2048, TM: 4096, ID: 8192
   };
 
   /* The order fields are written in. Changing this list changes the wire
      format on both sides at once, which is the entire point of one file. */
-  var ORDER = ['POS', 'PY', 'RY', 'RX', 'MV', 'CR', 'WP', 'LN', 'HP', 'ARM', 'HL', 'RL', 'AL', 'TM', 'ID'];
+  var ORDER = ['POS', 'RY', 'RX', 'MV', 'CR', 'WP', 'LN', 'HP', 'ARM', 'HL', 'RL', 'AL', 'TM', 'ID'];
 
   function qi(v, q) { return Math.round((+v || 0) * q); }
 
@@ -120,10 +123,9 @@
     var flags = 0, out = [];
     var full = keyframe || !prev;
 
-    if (full || s.px !== prev.px || s.pz !== prev.pz) {
-      flags |= F.POS; out.push(s.px, s.pz);
+    if (full || s.px !== prev.px || s.py !== prev.py || s.pz !== prev.pz) {
+      flags |= F.POS; out.push(s.px, s.py, s.pz);
     }
-    if (full || s.py !== prev.py) { flags |= F.PY; out.push(s.py); }
     if (full || s.ry !== prev.ry) { flags |= F.RY; out.push(s.ry); }
     if (full || s.rx !== prev.rx) { flags |= F.RX; out.push(s.rx); }
     if (full || s.mv !== prev.mv) { flags |= F.MV; out.push(s.mv); }
@@ -151,8 +153,7 @@
     var s = cache[slot];
     if (!s) s = cache[slot] = { slot: slot, id: null, px: 0, py: 0, pz: 0, ry: 0, rx: 0,
       mv: 0, cr: 0, wp: 0, ln: 0, hp: 100, lv: 0, du: 0, hl: 0, rl: 0, al: 1, tm: 0 };
-    if (flags & F.POS) { s.px = arr[i++]; s.pz = arr[i++]; }
-    if (flags & F.PY) { s.py = arr[i++]; }
+    if (flags & F.POS) { s.px = arr[i++]; s.py = arr[i++]; s.pz = arr[i++]; }
     if (flags & F.RY) s.ry = arr[i++];
     if (flags & F.RX) s.rx = arr[i++];
     if (flags & F.MV) s.mv = arr[i++];
@@ -181,224 +182,9 @@
     };
   }
 
-  /* ===== v10.3 - THE ENTITY BLOCK IS BINARY =====
-
-     Render billed 5.8 GB of egress, essentially all of it WebSocket responses.
-     Measured on the shape that produced it - 1 human + 19 bots on Urban - the
-     server was sending 459 bytes a packet at 15 Hz, 5.4 KB/s, 18.5 MB per
-     player-hour.
-
-     WHY THE DELTA ENCODER STOPPED HELPING. v9.8 cut 87% by sending only fields
-     that CHANGED, and that measurement was taken against a room of humans, who
-     spend most of a match standing still, walking in straight lines or dead. A
-     BOT NEVER STOPS. Nineteen of them move, turn and look every single tick, so
-     POS, RY and RX are dirty on every entity on every tick and the delta test
-     rejects nothing. Bot mode is close to the worst case this format has, which
-     is exactly the mode that ran up the bill.
-
-     There is nothing left to remove - every field being sent is a field that
-     changed. What is left is HOW it is written. The array
-     [5,99,1234,95,-4567,-3141,120] is thirteen bytes of information typed out
-     as twenty-nine characters of JSON: sign characters, commas, brackets, and
-     decimal digits at roughly 3.3 bits each instead of 8.
-
-     So the entity block travels as a Buffer. Measured on the real packet shape:
-     32.5 B/entity of JSON becomes 14 B/entity of binary, 56% off the part that
-     is 90% of the packet.
-
-     WHAT DELIBERATELY DID NOT CHANGE:
-       - the quantisation. POS_Q, ANG_Q and LN_Q are untouched, so a decoded
-         value is bit-identical to what the JSON path produced. This is an
-         ENCODING change, not a precision change, and verify-netcodec asserts
-         equality rather than closeness.
-       - the delta logic, the flags, the field order, slot assignment, keyframe
-         cadence, and "absence means removed".
-       - the client-facing shape. toPlayerState returns exactly what it did, so
-         nothing downstream of net.js knows this happened.
-       - drones and team kills still ride as ordinary JSON keys beside the
-         buffer. They are small and occasional; converting them would add
-         format surface for almost no bytes.
-
-     Nothing is culled by distance or relevance. The comment at the top of this
-     file is still the rule: culling trades a bandwidth number against gameplay
-     correctness, and that is the wrong way round.
-
-     Field widths are chosen so nothing can silently clip:
-       slot   uint16   slots are handed out monotonically and never recycled
-       flags  uint16   fourteen flags today
-       pos    int16    at POS_Q 100 that is +/-327 m against a 100 m bound
-       ry/rx  int16    at ANG_Q 1000 that is +/-32.7 rad against +/-pi
-       hp/du  int16    ln int16, the rest uint8
-     A value that would clip is a bug in the sender, so writeI16 asserts in
-     place rather than wrapping quietly. */
-
-  var BYTES = { POS: 4, PY: 2, RY: 2, RX: 2, MV: 1, CR: 1, WP: 1, LN: 2, HP: 2, ARM: 3, HL: 1, RL: 1, AL: 1, TM: 1 };
-
-  function clipCheck(v, lo, hi, what) {
-    if (v < lo || v > hi) {
-      /* Loud, because a clipped position is a player teleporting and a silent
-         wrap would be diagnosed as a netcode bug for weeks. */
-      if (typeof console !== 'undefined' && console.warn) {
-        console.warn('[snapcodec] ' + what + ' out of range: ' + v);
-      }
-      return v < lo ? lo : hi;
-    }
-    return v;
-  }
-
-  /* Upper bound on the encoded size of one entity, used to size the scratch
-     buffer. Two bytes slot, two flags, plus every field, plus a 64-byte id. */
-  var MAX_ENT = 4 + 6 + 2 + 2 + 1 + 1 + 1 + 2 + 2 + 3 + 1 + 1 + 1 + 16 + 1 + 64;
-
-  /* ===== v10.4 - NEVER HAND OUT A VIEW INTO A SHARED POOL =====
-
-     This was `Buffer.allocUnsafe(n)`, and that is a trap.
-
-     Node serves any allocUnsafe under 4 KB out of ONE SHARED 8192-BYTE POOL.
-     A 202-byte snapshot therefore came back as a VIEW sitting at byteOffset 8,
-     or 2176, or 4344 - wherever the pool cursor happened to be - with
-     `buf.buffer` pointing at the whole 8 KB, and that 8 KB holds OTHER
-     snapshots and unrelated memory.
-
-     Anything downstream that reaches for `.buffer` without honouring
-     byteOffset and byteLength therefore ships eight kilobytes of somebody
-     else's data, and a client decoding from offset 0 reads garbage: positions
-     that are nowhere, entities that jump, shots refused because the client and
-     the server disagree about where a body is. Intermittent, because when the
-     pool cursor happens to be at 0 it works perfectly.
-
-     That is the reported symptom exactly - "ek second idhar h, dusre second
-     udhar", with hits not registering - and it is the same failure v9.13 chased
-     from the other end. Node's own docs warn about this and it is still the
-     easiest mistake to make with a binary protocol.
-
-     So: a plain Uint8Array, exact size, byteOffset 0, owning its own
-     ArrayBuffer. There is no view, no pool, and nothing downstream can
-     misinterpret it whether it is socket.io in Node or the browser. The copy
-     costs about 200 bytes a tick, which is nothing next to being wrong.
-
-     DO NOT "optimise" this back to allocUnsafe. verify-netcodec asserts the
-     returned buffer owns its memory precisely so this cannot come back. */
-  function makeBuf(n) {
-    return new Uint8Array(n);
-  }
-
-  /* Trim to the bytes actually written, as a COPY that owns its ArrayBuffer.
-     `subarray` and Buffer's `slice` both return views and would reintroduce the
-     bug above; Uint8Array's own slice copies, but being explicit is clearer
-     than relying on which slice a runtime picked. */
-  function exact(buf, n) {
-    var out = new Uint8Array(n);
-    out.set(buf.subarray(0, n));
-    return out;
-  }
-
-  /* Encode the whole entity list. `ents` is the array of arrays that
-     encodeEntity already produces, so the delta decision and this are cleanly
-     separated and the JSON path stays testable. */
-  function encodeEntities(ents) {
-    var buf = makeBuf(2 + ents.length * MAX_ENT);
-    var dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    var o = 0;
-    dv.setUint16(o, ents.length); o += 2;
-    for (var n = 0; n < ents.length; n++) {
-      var a = ents[n], flags = a[1] | 0, i = 2;
-      dv.setUint16(o, a[0] | 0); o += 2;
-      dv.setUint16(o, flags); o += 2;
-      if (flags & F.POS) {
-        dv.setInt16(o, clipCheck(a[i++] | 0, -32768, 32767, 'px')); o += 2;
-        dv.setInt16(o, clipCheck(a[i++] | 0, -32768, 32767, 'pz')); o += 2;
-      }
-      if (flags & F.PY) { dv.setInt16(o, clipCheck(a[i++] | 0, -32768, 32767, 'py')); o += 2; }
-      if (flags & F.RY) { dv.setInt16(o, clipCheck(a[i++] | 0, -32768, 32767, 'ry')); o += 2; }
-      if (flags & F.RX) { dv.setInt16(o, clipCheck(a[i++] | 0, -32768, 32767, 'rx')); o += 2; }
-      if (flags & F.MV) { dv.setUint8(o, a[i++] & 255); o += 1; }
-      if (flags & F.CR) { dv.setUint8(o, a[i++] & 255); o += 1; }
-      if (flags & F.WP) { dv.setUint8(o, a[i++] & 255); o += 1; }
-      if (flags & F.LN) { dv.setInt16(o, clipCheck(a[i++] | 0, -32768, 32767, 'ln')); o += 2; }
-      if (flags & F.HP) { dv.setInt16(o, clipCheck(a[i++] | 0, -32768, 32767, 'hp')); o += 2; }
-      if (flags & F.ARM) {
-        dv.setUint8(o, a[i++] & 255); o += 1;
-        dv.setInt16(o, clipCheck(a[i++] | 0, -32768, 32767, 'du')); o += 2;
-      }
-      if (flags & F.HL) { dv.setUint8(o, a[i++] & 255); o += 1; }
-      if (flags & F.RL) { dv.setUint8(o, a[i++] & 255); o += 1; }
-      if (flags & F.AL) { dv.setUint8(o, a[i++] & 255); o += 1; }
-      if (flags & F.TM) {
-        /* TEAM IS A STRING, NOT A NUMBER. It is a side id like "a" or "b" from
-           CFG.botSideOf, and null in free-for-all. The first cut of this
-           encoder wrote it as a uint8, so `'b' & 255` became 0 and every player
-           on the wire collapsed onto one side - test.js caught it immediately
-           with "every bot is on side B" and "no bot shares a side with an
-           operator". Written as a length-prefixed string like the id, which
-           costs one extra byte on a field that only moves when someone changes
-           team. */
-        var tm = (a[i++] || ''), tmS = (typeof tm === 'string') ? tm : String(tm);
-        var tL = Math.min(tmS.length, 15);
-        dv.setUint8(o, tL); o += 1;
-        for (var tc = 0; tc < tL; tc++) { dv.setUint8(o, tmS.charCodeAt(tc) & 255); o += 1; }
-      }
-      if (flags & F.ID) {
-        var id = String(a[i++] || ''), L = Math.min(id.length, 63);
-        dv.setUint8(o, L); o += 1;
-        /* Socket ids are base64url from socket.io, so one byte per character.
-           Truncating at 63 rather than throwing: an id longer than that cannot
-           happen, and a match that keeps running beats one that dies. */
-        for (var c = 0; c < L; c++) { dv.setUint8(o, id.charCodeAt(c) & 255); o += 1; }
-      }
-    }
-    return exact(buf, o);
-  }
-
-  /* Decode back to the SAME array-of-arrays encodeEntity produces, so
-     decodeEntity is reused untouched and there is only one place that knows
-     what a flag means. */
-  function decodeEntities(src) {
-    var u8 = (src instanceof Uint8Array) ? src : new Uint8Array(src);
-    var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
-    var o = 0, count = dv.getUint16(o); o += 2;
-    var out = [];
-    for (var n = 0; n < count; n++) {
-      var slot = dv.getUint16(o); o += 2;
-      var flags = dv.getUint16(o); o += 2;
-      var a = [slot, flags];
-      if (flags & F.POS) { a.push(dv.getInt16(o), dv.getInt16(o + 2)); o += 4; }
-      if (flags & F.PY) { a.push(dv.getInt16(o)); o += 2; }
-      if (flags & F.RY) { a.push(dv.getInt16(o)); o += 2; }
-      if (flags & F.RX) { a.push(dv.getInt16(o)); o += 2; }
-      if (flags & F.MV) { a.push(dv.getUint8(o)); o += 1; }
-      if (flags & F.CR) { a.push(dv.getUint8(o)); o += 1; }
-      if (flags & F.WP) { a.push(dv.getUint8(o)); o += 1; }
-      if (flags & F.LN) { a.push(dv.getInt16(o)); o += 2; }
-      if (flags & F.HP) { a.push(dv.getInt16(o)); o += 2; }
-      if (flags & F.ARM) { a.push(dv.getUint8(o), dv.getInt16(o + 1)); o += 3; }
-      if (flags & F.HL) { a.push(dv.getUint8(o)); o += 1; }
-      if (flags & F.RL) { a.push(dv.getUint8(o)); o += 1; }
-      if (flags & F.AL) { a.push(dv.getUint8(o)); o += 1; }
-      if (flags & F.TM) {
-        var tL = dv.getUint8(o); o += 1;
-        var tm = '';
-        for (var tc = 0; tc < tL; tc++) { tm += String.fromCharCode(dv.getUint8(o)); o += 1; }
-        /* Empty means FFA. stateOf normalises null to 0 and toPlayerState turns
-           0 back into null, so '' must decode to something falsy that survives
-           that round trip unchanged. */
-        a.push(tm === '' ? 0 : tm);
-      }
-      if (flags & F.ID) {
-        var L = dv.getUint8(o); o += 1;
-        var id = '';
-        for (var c = 0; c < L; c++) { id += String.fromCharCode(dv.getUint8(o)); o += 1; }
-        a.push(id);
-      }
-      out.push(a);
-    }
-    return out;
-  }
-
   return {
-    FLAGS: F, ORDER: ORDER, POS_Q: POS_Q, ANG_Q: ANG_Q, LN_Q: LN_Q, BYTES: BYTES,
+    FLAGS: F, ORDER: ORDER, POS_Q: POS_Q, ANG_Q: ANG_Q, LN_Q: LN_Q,
     stateOf: stateOf, encodeEntity: encodeEntity,
-    decodeEntity: decodeEntity, toPlayerState: toPlayerState,
-    encodeEntities: encodeEntities, decodeEntities: decodeEntities
+    decodeEntity: decodeEntity, toPlayerState: toPlayerState
   };
 });

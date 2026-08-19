@@ -94,137 +94,61 @@ const CFG = require(path.join(ROOT, 'public/src/config/index.js'));
 ok(CFG.NET.snapRate <= 15,
   'snapRate is ' + CFG.NET.snapRate + ' (raising it scales the whole bill linearly)');
 
-/* The bot shoot event. v10 added it to stop bots firing invisibly and silently;
-   v10.2 cut it to `{ id }` because position and weapon are already in every
-   snapshot. Asserted structurally, because the cost only shows up on a bill. */
-const botFired = serverSrc.slice(serverSrc.indexOf('botFired:'),
-  serverSrc.indexOf('botFired:') + 1400);
-ok(botFired.length > 50, 'botFired is present');
-const emitLine = (botFired.match(/emit\('shoot',\s*\{[^}]*\}/) || [''])[0];
-ok(!/\bo:\s*o\b|\bo:\s*\[/.test(emitLine),
-  'the bot shoot event does not resend a position the snapshot already carries');
-ok(!/\bw:\s*weapon\b/.test(emitLine),
-  'nor the weapon name (snapcodec sends `wp` per entity)');
-ok(emitLine.length > 0 && emitLine.length < 60,
-  'the bot shoot payload is minimal [' + emitLine.replace(/\s+/g, ' ') + ']');
-/* Range gating: without it this is N events x every client, most of them
-   tracers nobody can see and bangs nobody can hear. */
-ok(/R2\s*=|\* \* 2|dx \* dx/.test(botFired),
-  'bot gunfire is range-gated rather than broadcast to the room');
+console.log('\n--- the snapshot format is the known-good one ---');
+/* ===== v10.5 - THIS SECTION USED TO ASSERT THE OPPOSITE =====
 
-/* The client must tolerate BOTH shapes: humans still send the long form. */
-const netSrc = fs.readFileSync(path.join(ROOT, 'public/src/networking/net.js'), 'utf8');
-ok(/if \(d\.o\)/.test(netSrc), 'the client accepts the long form when an origin is sent');
-ok(/r\.wp = st\.wp/.test(netSrc),
-  'the client stores the remote weapon index the compact form resolves the sound from');
+   v10.3 shipped a binary entity block and a split PY flag to cut Render egress
+   from 5.8 GB, and this gate asserted both were in place. They are gone, and
+   the assertions are inverted, because the bandwidth work made the game
+   unplayable and Rahul chose to pay for bandwidth instead.
 
+   THE REASON MATTERS MORE THAN THE REVERT. socket.io does not put a binary
+   event on the wire as one frame. It sends a JSON ENVELOPE carrying a
+   `_placeholder`, then the attachment as a SEPARATE frame, and the client must
+   hold the envelope until the attachment lands before it can emit the event at
+   all. Every snapshot became two frames plus a reassembly step, fifteen times a
+   second. The payload got 54% smaller and the STREAM got worse - avatars
+   teleporting, hits refused - which for a shooter is the wrong trade in the
+   wrong direction.
 
-console.log('\n--- the snapshot entity block is binary ---');
-/* ===== v10.3 =====
-   Render billed 5.8 GB, essentially all WebSocket. Measured on the shape that
-   caused it - 1 human + 19 bots on Urban - the server was sending 459 B a
-   packet at 15 Hz: 5,403 B/s, 18.5 MB per player-hour, 13 GB/month if left
-   running.
-
-   The delta encoder was not broken; it was defeated. v9.8's 87% saving was
-   measured against HUMANS, who stand still. A BOT NEVER DOES, so POS/RY/RX are
-   dirty on every entity on every tick and the delta test rejects nothing.
-
-   Nothing was left to remove, so what changed is how it is WRITTEN:
-   [5,99,1234,95,-4567,-3141,120] is thirteen bytes of data typed as
-   twenty-nine characters. Binary: 459 B -> 210 B a packet, before deflate.
-
-   Asserted structurally here because a wire regression is invisible - the game
-   plays identically and the bill arrives four weeks later. */
+   So these now assert the format STAYS simple. Not because small packets are
+   bad, but because the next person to look at the Render bill will have the
+   same good idea, and the thing they need to know is not in the bill. */
 const snapSrc = fs.readFileSync(path.join(ROOT, 'public/src/networking/snapcodec.js'), 'utf8');
 const SnapCodec = require(path.join(ROOT, 'public/src/networking/snapcodec.js'));
 
-ok(typeof SnapCodec.encodeEntities === 'function', 'snapcodec exposes a binary entity encoder');
-ok(/packet = \{ b: SnapCodec\.encodeEntities/.test(serverSrc),
-  'the server sends the entity block as a binary attachment, not JSON');
+ok(typeof SnapCodec.encodeEntities !== 'function',
+  'there is NO binary entity encoder — socket.io would split it across two frames');
+ok(/packet = \{ e: ents \}/.test(serverSrc),
+  'the entity block travels as one JSON array in a single frame');
+ok(SnapCodec.FLAGS.PY === undefined,
+  'POS carries x, y and z together — the PY split went with the binary format');
+ok(SnapCodec.ORDER.length === 14, 'the field order is the v9.15 one [' + SnapCodec.ORDER.length + ' fields]');
 
-/* PY split out of POS. A bot on flat ground changes x and z every tick and
-   leaves y identical for hundreds - under a combined flag its two bytes rode
-   along every time. This is the only field a moving bot leaves clean. */
-ok(SnapCodec.FLAGS.PY !== undefined, 'height has its own flag, so a stable y is not resent');
-ok(/if \(full \|\| s\.py !== prev\.py\)/.test(snapSrc), 'and PY is delta-tested separately');
+/* The delta encoder is the saving that DOES work and costs nothing: it only
+   sends fields that changed. It is worth ~87% against idle players and much
+   less against bots, which never stand still - that is a fact about bots, not a
+   defect to fix. */
+ok(/full \|\| s\.px !== prev\.px/.test(snapSrc), 'the v9.8 delta encoder is intact');
+ok(/POS_Q = 100/.test(snapSrc), 'positions are still quantised to centimetres');
 
-/* Size, measured rather than asserted from memory. A fully-dirty 20-entity
-   packet is the bot-mode worst case and the number that produced the bill. */
-const F = SnapCodec.FLAGS;
-const dirty = [];
-for (let i = 0; i < 20; i++) {
-  dirty.push([i, F.POS | F.RY | F.RX, (Math.random() * 20000 - 10000) | 0,
-    (Math.random() * 20000 - 10000) | 0, (Math.random() * 6283 - 3141) | 0,
-    (Math.random() * 1500) | 0]);
-}
-const binLen = SnapCodec.encodeEntities(dirty).length;
-const jsonLen = Buffer.byteLength(JSON.stringify(dirty));
-console.log('        20 fully-dirty entities: ' + jsonLen + ' B as JSON, ' + binLen + ' B binary');
-const PER_ENTITY_BUDGET = 16;
-ok(binLen / 20 <= PER_ENTITY_BUDGET,
-  'a fully-dirty entity costs ' + (binLen / 20).toFixed(1) + ' B (budget ' + PER_ENTITY_BUDGET + ' B)');
-ok(binLen < jsonLen * 0.6, 'binary is at least 40% smaller than the JSON it replaced');
-
-/* Round trip, exhaustively. The encoder is the one place a silent corruption
-   would look like a netcode bug for weeks - a team encoded as a byte turned
-   'b' into 0 and put every player on one side, which test.js caught but only
-   because a test happened to check sides. */
-let bad = 0;
-const RANGE = { POS: [2, () => (Math.random() * 20000 - 10000) | 0], PY: [1, () => (Math.random() * 3000) | 0],
-  RY: [1, () => (Math.random() * 6283 - 3141) | 0], RX: [1, () => (Math.random() * 3000 - 1500) | 0],
-  MV: [1, () => (Math.random() * 3) | 0], CR: [1, () => (Math.random() * 2) | 0],
-  WP: [1, () => (Math.random() * 25) | 0], LN: [1, () => (Math.random() * 200 - 100) | 0],
-  HP: [1, () => (Math.random() * 100) | 0], ARM: [2, () => (Math.random() * 100) | 0],
-  HL: [1, () => (Math.random() * 3) | 0], RL: [1, () => (Math.random() * 2) | 0],
-  AL: [1, () => (Math.random() * 2) | 0], TM: [1, () => ['a', 'b', 0][(Math.random() * 3) | 0]],
-  ID: [1, () => 'AbCdEfGh12345678xyz'] };
-const nFlags = 1 << SnapCodec.ORDER.length;
-for (let f = 0; f < nFlags; f++) {
-  const a = [f % 600, f];
-  for (const k of SnapCodec.ORDER) {
-    if (!(f & F[k])) continue;
-    const [n, gen] = RANGE[k];
-    for (let j = 0; j < n; j++) a.push(gen());
-  }
-  const out = SnapCodec.decodeEntities(SnapCodec.encodeEntities([a]));
-  if (JSON.stringify([a]) !== JSON.stringify(out)) bad++;
-}
-ok(bad === 0, 'all ' + nFlags + ' flag combinations round-trip EXACTLY (' + bad + ' mismatches)');
-
-/* Both shapes accepted, so a client that outlives a server rollback still
-   works - this game deploys as a cumulative upload. */
-ok(/d\.e \|\| \(d\.b/.test(netSrc) || /if \(!ents && d\.b\)/.test(netSrc),
-  'the client accepts both the binary and the legacy JSON entity block');
-
-console.log('\n--- websocket frames are NOT deflated ---');
-/* v10.4 reverses v10.3 on measurement. Deflate saves 2% on a binary snapshot -
-   quantised integers have nothing for a dictionary coder to find - and ws
-   compresses asynchronously on the threadpool, adding a scheduling round trip
-   of jitter to every packet. The interpolation buffer could only absorb 53 ms
-   of jitter, so that trade fed straight into the freeze-and-jump the player
-   reported. Asserted OFF so it is not switched back on by plausible reasoning
-   a second time. */
+console.log('\n--- and nothing sits between the server and the socket ---');
 ok(/perMessageDeflate:\s*false/.test(serverSrc),
-  'permessage-deflate is OFF — measured at 2% saving for real added jitter');
-const binSample = SnapCodec.encodeEntities(dirty);
-const deflated = require('zlib').deflateRawSync(Buffer.from(binSample), { level: 6 }).length;
-ok(deflated > binSample.length * 0.9,
-  'and the measurement still holds: deflate saves only ' +
-  (100 - deflated / binSample.length * 100).toFixed(0) + '% on a real snapshot');
-/* HTTP gzip is a different thing entirely and stays on - see above. */
-ok(/app\.use\(compression\(/.test(serverSrc), 'HTTP gzip on static assets is unaffected');
-
-/* snapRate is the one knob that scales the entire bill linearly. 15 is the
-   documented floor - at 10 it rubber-bands against the 120 ms buffer. */
+  'permessage-deflate is OFF — measured at 2% saving, and ws compresses ASYNC, adding jitter');
+ok(/app\.use\(compression\(/.test(serverSrc),
+  'HTTP gzip on static assets is unaffected — that is 66% once per page load, nowhere near the frame path');
 ok(CFG.NET.snapRate === 15,
-  'snapRate is still 15 — the documented floor before rubber-banding');
+  'snapRate is 15 — the documented floor before rubber-banding');
 
-/* NOTHING is culled by distance. The rule at the top of snapcodec stands:
-   trading gameplay correctness for a bandwidth number is the wrong way round. */
-ok(!/distance|relevan|cull/i.test(serverSrc.slice(serverSrc.indexOf('const packet = { b:') - 600,
-  serverSrc.indexOf('const packet = { b:') + 400)),
-  'no entity is culled by distance — every player still sees every player');
+console.log('\n--- the bot shoot event carries its own truth ---');
+/* v10.2 cut this to `{ id }` and resolved position and weapon from the client's
+   last interpolated snapshot. That is only right while the interpolation is
+   right, so during exactly the stalls being reported the muzzle flash appeared
+   wherever the client THOUGHT the bot was. Reverted with the rest. */
+const botFired = serverSrc.slice(serverSrc.indexOf('botFired:'), serverSrc.indexOf('botFired:') + 1400);
+ok(/o: o/.test(botFired), 'a bot shot carries the position it was actually fired from');
+ok(/w: weapon/.test(botFired), 'and the weapon it was fired with');
+ok(/R2|dx \* dx/.test(botFired), 'still range-gated rather than broadcast to the room');
 
 console.log('\n--- disk, for the record ---');
 /* Included so nobody optimises the wrong axis. */
