@@ -1,6 +1,6 @@
 {
   "name": "urban-strike",
-  "version": "10.5.0",
+  "version": "10.6.0",
   "description": "Browser-based tactical FPS. Room codes, 13 modes incl. squads, last stand and training bots, three theatres, full weapon sandbox.",
   "main": "server.js",
   "scripts": {

@@ -52,95 +52,35 @@ var Game = (function () {
     catch (err) { reportError(name, err); }
   }
 
-  /* ===== v10.5 - ADAPTIVE RESOLUTION =====
-
-     Rahul asked for full HD and, in the same message, for the frame drops to
-     stop. Those pull in opposite directions: more pixels is a sharper image and
-     fewer frames, and a fixed choice has to be wrong for somebody. So it is not
-     fixed.
-
-     The renderer starts at the full native pixel ratio, up to 2.0. Frame time
-     is measured, and if the nineties percentile of the last two seconds says we
-     are missing 60 fps the scale steps down; when there is comfortable headroom
-     it steps back up. The floor is 0.6, below which the image is too soft to
-     aim with and the honest answer is that the hardware cannot run this.
-
-     Measured on the PERCENTILE, not the average. A mean of 15 ms is consistent
-     with a steady 60 fps that hitches every tenth frame, and it is the hitch
-     the player sees - the same mistake the v9.13 bot-AI measurement made with a
-     1.08 ms mean.
-
-     Steps are coarse (0.1) and rate-limited to one every 900 ms. Resolution
-     that changes continuously reads as a shimmer, which is worse than either
-     resolution it is moving between. */
-  var resScale = 1, resLastChange = 0;
-  var frameMs = new Float32Array(120), frameAt = 0, frameSeen = 0;
-  var RES_MIN = 0.6, RES_MAX = 2.0;
-
-  function resPixelRatio() {
-    var dpr = window.devicePixelRatio || 1;
-    return Math.max(0.5, Math.min(RES_MAX, dpr * resScale));
-  }
-
-  function noteFrame(ms, nowMs) {
-    if (ms > 0 && ms < 500) { frameMs[frameAt++ % 120] = ms; if (frameSeen < 120) frameSeen++; }
-    if (frameSeen < 60 || nowMs - resLastChange < 900) return;
-    var a = Array.prototype.slice.call(frameMs, 0, frameSeen).sort(function (x, y) { return x - y; });
-    var p90 = a[Math.floor(a.length * 0.9)];
-    var before = resScale;
-    if (p90 > 20 && resScale > RES_MIN) resScale = Math.max(RES_MIN, resScale - 0.1);        // under ~50 fps
-    else if (p90 < 13.5 && resScale < 1) resScale = Math.min(1, resScale + 0.1);             // comfortably over 70
-    if (resScale !== before && renderer) {
-      renderer.setPixelRatio(resPixelRatio());
-      renderer.setSize(window.innerWidth, window.innerHeight, false);
-      resLastChange = nowMs;
-      frameSeen = 0; frameAt = 0;          // re-measure at the new cost
-    }
-  }
-
-  /* Reported to the dev HUD so "what resolution am I actually running at" has an
-     answer on screen instead of a guess. */
-  function renderInfo() {
-    var pr = renderer ? renderer.getPixelRatio() : 1;
-    return {
-      css: window.innerWidth + 'x' + window.innerHeight,
-      pixels: Math.round(window.innerWidth * pr) + 'x' + Math.round(window.innerHeight * pr),
-      pixelRatio: +pr.toFixed(2), scale: +resScale.toFixed(2)
-    };
-  }
-
   // ---------- boot ----------
   function init() {
     canvas = document.getElementById('game-canvas');
-    /* ===== v10.5 - RESOLUTION AND WHICH GPU ACTUALLY RUNS THIS =====
+    /* ===== v10.6 - THE ONLY RENDERER CHANGE, AND IT IS ONE LINE =====
 
-       powerPreference was never set. On any laptop with switchable graphics -
-       Intel integrated plus a discrete NVIDIA or AMD - a WebGL context with no
-       preference is handed the INTEGRATED chip. The game was running on the
-       weakest GPU in the machine and nobody had told the browser otherwise.
-       This one line is likely worth more frames than every draw-call saving in
-       v10 put together.
+       `powerPreference` was never set. On a laptop with switchable graphics -
+       Intel integrated plus a discrete NVIDIA or AMD - a WebGL context created
+       with no preference is handed the INTEGRATED chip. This game has run on
+       the weakest GPU in the machine for its entire life.
 
-       `failIfMajorPerformanceCaveat` is deliberately NOT set: if the only
-       context available is a software rasteriser, a slow game beats a black
-       screen, and v9.5 already has a black-screen entry nobody wants a second
-       of.
+       v10.5 also raised the pixel ratio cap from 1.75 to 2.0 and added a scaler
+       that called setPixelRatio/setSize at runtime. BOTH ARE REVERTED HERE.
+       2.0 draws 30% more pixels than 1.75, which on a GPU that was already
+       struggling makes frames worse, not better - the opposite of what was
+       asked for. And changing the pixel ratio at runtime REALLOCATES THE WHOLE
+       DRAWING BUFFER; if the scaler oscillated around its threshold it did that
+       every 900 ms, which is a hitch by itself.
 
-       Pixel ratio was capped at 1.75. Raised to 2.0, which is full native on
-       every current phone and laptop panel, so the image is as sharp as the
-       display can show. That costs pixels - 2.0 draws 30% more of them than
-       1.75 - so it is NOT a fixed choice any more. See the adaptive scaler
-       below: this is now the CEILING, not the setting. */
+       So: the GPU hint stays, because it can only help and costs nothing. The
+       resolution is exactly what v9.15 shipped. If the discrete GPU turns out
+       to be enough, raising the cap is a one-number experiment to run LATER,
+       on its own, with a match played in between. */
     renderer = new THREE.WebGLRenderer({
       canvas: canvas,
       antialias: true,
-      powerPreference: 'high-performance',
-      stencil: false,                     // nothing here uses the stencil buffer
-      alpha: false                        // opaque canvas composites faster
+      powerPreference: 'high-performance'
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    resScale = 1;
-    renderer.setPixelRatio(resPixelRatio());
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -200,7 +140,6 @@ var Game = (function () {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(resPixelRatio());
     });
 
     UI.init();
@@ -343,10 +282,11 @@ var Game = (function () {
       // work in the lobby too, so it does NOT live here. The old duplicate also
       // shadowed the smoke grenade, which had been unbindable ever since.
       if (e.code === 'KeyZ') {
-        /* v10.5: Z is the one INTERACT key. It rides a lift when you are in a
-           shaft and picks loot up when you are stood on some; the two can never
-           both apply, because a lift stop is not a loot spawn. One key beats
-           two the player has to remember which is which. */
+        /* v10.6: Z is the one INTERACT key. It rides a lift when you are stood
+           in a shaft and picks up loot when you are stood on some; the two can
+           never both apply, because a lift stop is not a loot spawn. Loot no
+           longer picks itself up - see the note on the server's 'pickup'
+           handler for why. */
         Net.pickup();
         rideLift();
         return;
@@ -672,11 +612,6 @@ var Game = (function () {
     DevHUD.update(t);            // no-ops on its first line while hidden
     if (Minimap.isFullOpen()) Minimap.drawFull();   // keeps dots live while open
     var dt = Math.min(0.05, Math.max(0.0001, (t - lastT) / 1000));
-    /* v10.5: feed the adaptive resolution scaler. Placed here, before any of
-       the frame work, so it measures the WHOLE previous frame including the
-       render - measuring only part of it would let the scaler chase a number
-       that is not the one dropping frames. */
-    noteFrame(t - lastT, t);
     lastT = t;
 
     /* v8.31 ONE GUARD AROUND THE WHOLE FRAME WAS NOT ENOUGH.
@@ -798,7 +733,6 @@ var Game = (function () {
        lerped every frame for ADS and sniper zoom, so a constant would leave
        the dial claiming a 75-degree cone while the player is scoped at 8. */
     getCamera: function () { return camera; },
-    renderInfo: renderInfo,          // v10.5: what resolution are we ACTUALLY at
     init: init,
     onMatchStart: onMatchStart,
     onLocalSpawn: onLocalSpawn,

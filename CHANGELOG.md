@@ -1,5 +1,96 @@
 # Urban Strike — Changelog & Deployment Ledger
 
+# v10.6 - TWO REAL CAUSES FOUND, BOTH MINE, BOTH INVISIBLE
+
+Rahul after v10.5: "issue is still there and it has worsened."
+
+The v10.5 revert was not the revert I claimed it was, and one of the changes I
+had left in place could make a deploy fail completely.
+
+## CAUSE 1 - THE CACHE HEADERS. THIS ONE COULD FREEZE THE GAME OUTRIGHT.
+
+v10.2 set `maxAge: '1h'` on express.static and excluded index.html "so a deploy
+is always picked up immediately". That combination is worse than either choice
+on its own, and I wrote the reason into the code myself while doing it.
+
+This game ships as a CUMULATIVE UPLOAD, and index.html names about 35 script
+files by the SAME URLs every build. After a deploy the browser fetched the new
+index.html and then served THE PREVIOUS BUILD'S JAVASCRIPT out of cache, for up
+to an hour.
+
+So a v10.3 client - which decodes a binary `d.b` entity block - could be talking
+to a v10.5 server, which sends a JSON `d.e` one. It hits `if (!d.e) return;` on
+every single snapshot. No entity ever updates. Nothing errors, nothing logs, the
+match runs, and every other player stands frozen while shots do nothing.
+
+That is a complete description of the report, and it would have got WORSE with
+each version I shipped, because each deploy widened the gap between the cached
+client and the live server.
+
+Removed. `maxAge: 0`, explicitly. Gzip stays - it compresses the response,
+caches nothing, and cannot produce a version mismatch. verify-bandwidth now
+asserts caching is OFF and says why.
+
+ANYONE DEPLOYING THIS MUST HARD-REFRESH ONCE (Ctrl+Shift+R) to clear whatever
+the old header already put in their browser.
+
+## CAUSE 2 - THE v10.5 REVERT WAS INCOMPLETE
+
+I reverted net.js by hand, with slice edits, and lost a line:
+
+    if (d.tk !== undefined) teamKills = d.tk || {};
+
+Team kills stopped updating on the client. Small on its own, and proof the
+method was wrong: a hand-reverted file is a NEW file that nobody has run.
+
+Both net.js and game.js are now restored VERBATIM from the v9.15 upload, and
+exactly three changes are re-applied on top, each small enough to read in one
+sitting. Diffed against v9.15 with comments stripped, net.js differs by two
+lines and game.js by two blocks. Nothing else.
+
+## v10.5'S RESOLUTION WORK IS ALSO REVERTED
+
+It raised the pixel ratio cap from 1.75 to 2.0 - THIRTY PER CENT MORE PIXELS -
+on a machine that was already dropping frames, and added a scaler that called
+setPixelRatio and setSize at runtime. Changing the pixel ratio REALLOCATES THE
+WHOLE DRAWING BUFFER; a scaler oscillating around its threshold does that every
+900 ms, which is a hitch in its own right. Asked for "full HD, no frame drops",
+I shipped something that could deliver neither.
+
+Resolution is exactly what v9.15 shipped.
+
+## WHAT IS ACTUALLY DIFFERENT FROM v9.15 NOW
+
+Three things in the client, one in the server, and nothing else in the frame
+path:
+
+  1. `powerPreference: 'high-performance'` on the WebGL context. It was never
+     set, so a laptop with switchable graphics handed this game its INTEGRATED
+     GPU for its entire life. One line, cannot hurt, plausibly the largest
+     single frame-rate change available.
+  2. Z also asks the server to collect loot.
+  3. Net.pickup() sends that request.
+  4. Server: loot is collected on request instead of on every state update, and
+     gzip on static assets.
+
+Everything else from v10 through v10.5 that survives is off the frame path
+entirely: geometry fixes, the collider broadphase, the sign atlas, the gates.
+
+## GATE BOARD
+
+  test.js 263/0. verify-bandwidth 25/0 with the caching assertion INVERTED.
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+
+## IF IT IS STILL WRONG AFTER A HARD REFRESH
+
+Then it is not something v10.2-v10.5 introduced, and the next step is data
+rather than another change. `node tools/diag-jitter.js` reports arrival gaps,
+real frame sizes, position jumps and decode failures against a live match, and
+distinguishes "the stream is late" from "the stream is wrong". Run it against
+the deployed server, not localhost - every measurement in this project so far
+was taken where jitter is 1 ms.
+
+
 # v10.5 - THE BANDWIDTH WORK IS REVERTED, WHOLE
 
 Rahul, after playing v10.4: "barbaad hai bahot lag kar raha hai, avatar fatt se

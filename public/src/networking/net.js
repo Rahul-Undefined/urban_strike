@@ -143,9 +143,8 @@ var Net = (function () {
            mid-match is never decoding against an empty cache. */
     s.on('snap', function (d) {
       var tLocal = performance.now();
-
+      if (d.tk !== undefined) teamKills = d.tk || {};
       Pickups.droneSync(d.dr);          // undefined when none are airborne
-
       if (!d.e) return;
 
       var seen = {};
@@ -198,13 +197,6 @@ var Net = (function () {
         }
         r.buf.push({ t: tLocal, p: st.p, ry: st.ry, rx: st.rx, cr: st.cr, mv: st.mv, ln: st.ln });
         Avatars.setRemoteGun(r, st.wp); // replicate equipped weapon (switches, pickups, late sync)
-        /* v10.2: KEEP the index, not just hand it to the avatar. The compact
-           shoot event (see the note below) resolves the gunshot SOUND from
-           r.wp, and without this line it was undefined - every bot would have
-           fired with the sound of WEAPON_ORDER[0] regardless of what it was
-           carrying. Caught before shipping only by checking that the field it
-           read actually existed. */
-        r.wp = st.wp | 0;
         if (r.buf.length > 40) r.buf.shift();
         if (st.hp < r.hp) r.lastDamagedAt = tLocal;
         r.hp = st.hp;
@@ -385,9 +377,9 @@ var Net = (function () {
     });
   }
   function sendShoot(d) { if (socket) socket.emit('shoot', d); }
-  /* v10.5: ask the server to collect whatever is underfoot. The server owns the
-     decision entirely - this carries no item id and no position, so it cannot
-     be used to claim loot from across the map. */
+  /* v10.6: ask the server to collect whatever is underfoot. Carries no item id
+     and no position, so it cannot be used to claim loot from across the map -
+     the server owns the decision exactly as it did when this ran automatically. */
   function pickup() { if (socket) socket.emit('pickup'); }
   function sendHit(d) { if (socket) socket.emit('hit', d); }
   function sendProj(d) { if (socket) socket.emit('proj', d); }
@@ -471,26 +463,6 @@ var Net = (function () {
 
   // ---------- remote interpolation ----------
   var _camPos = new THREE.Vector3();
-
-  /* ===== v10.5 - THE ADAPTIVE BUFFER IS REVERTED TOO =====
-
-     v10.4 measured arrival gaps and grew the interpolation delay to cover them,
-     and extrapolated along last velocity when the buffer ran dry. The reasoning
-     was sound and the simulation showed it helping. It went out on top of the
-     binary wire format that was ALREADY breaking the stream, so what shipped
-     was one unproven change stacked on another, and the result was worse than
-     either.
-
-     Both are gone. This is the v9.15 interpolator, unchanged, against the
-     v9.15 wire format, unchanged - the combination that was last known to
-     play correctly. Anything added back goes in ONE AT A TIME, with a match
-     played between each.
-
-     The 53 ms of jitter headroom that v10.4 identified is REAL and still here:
-     interpDelay 120 ms against a 66.7 ms tick is 1.80 ticks of buffer. If
-     stutter persists on a clean revert, that is the next thing to look at, and
-     the cheapest experiment is raising CFG.NET.interpDelay alone - one number,
-     no new code, instantly reversible. Do not reach for extrapolation first. */
   function updateRemotes(dt, camera) {
     var renderT = performance.now() - CFG.NET.interpDelay;
     if (camera) camera.getWorldPosition(_camPos);
@@ -539,8 +511,6 @@ var Net = (function () {
 
       var a = buf[0], b = buf.length > 1 ? buf[1] : buf[0];
       var span = Math.max(1, b.t - a.t);
-      var raw = (renderT - a.t) / span;
-
       var f = Math.min(1.15, Math.max(0, (renderT - a.t) / span));
       r.renderPos.set(
         a.p[0] + (b.p[0] - a.p[0]) * f,

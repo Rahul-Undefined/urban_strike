@@ -41,17 +41,29 @@ const iComp = serverSrc.indexOf('app.use(compression(');
 const iStat = serverSrc.indexOf('express.static(');
 ok(iComp > 0 && iStat > 0 && iComp < iStat,
   'compression is mounted BEFORE express.static (order is silent when wrong)');
-/* Written as a plain slice rather than one regex: `[^)]*` cannot cross the
-   `path.join(__dirname, 'public')` argument, so the obvious pattern never
-   matched even though the header was verifiably being sent. */
+/* ===== v10.6 - ASSET CACHING IS FORBIDDEN HERE =====
+
+   v10.2 set `maxAge: '1h'` on express.static and excluded index.html so a
+   deploy would still be picked up. That combination is worse than either
+   choice on its own.
+
+   This game ships as a CUMULATIVE UPLOAD, and index.html names ~35 script
+   files by the same URLs every build. After a deploy the browser fetched the
+   new index.html and then served the PREVIOUS BUILD'S JAVASCRIPT out of cache
+   for up to an hour. A v10.3 client decoding a binary `d.b` entity block
+   against a v10.5 server sending a JSON `d.e` one hits `if (!d.e) return;` on
+   every snapshot: nothing renders, nothing errors, everything freezes.
+
+   Asserted OFF. The only safe way to cache these assets is a build hash in
+   every URL so a new build cannot collide with an old cache entry, and until
+   that exists this must stay at zero. */
 const staticCall = serverSrc.slice(iStat, iStat + 500);
-ok(/maxAge/.test(staticCall),
-  'express.static sets a maxAge (the default is 0 — every file re-requested)');
-/* index.html must NOT be cached. This project ships as a cumulative upload, and
-   a client holding a stale index that names last build's files while the server
-   serves this build's is a bug nobody can reproduce. */
-ok(/index\\?\.html[\s\S]{0,120}no-cache/.test(serverSrc) || /no-cache/.test(serverSrc),
-  'index.html is excluded from caching so a deploy is picked up at once');
+ok(!/maxAge:\s*['"][0-9]/.test(staticCall) && !/maxAge:\s*[1-9]/.test(staticCall),
+  'express.static sets NO positive maxAge — a cumulative upload cannot cache assets by name');
+ok(/maxAge:\s*0/.test(staticCall), 'and says so explicitly rather than relying on the default');
+/* Gzip is a different thing entirely: it compresses the response, caches
+   nothing, and cannot produce a version mismatch. */
+ok(/app\.use\(compression\(/.test(serverSrc), 'gzip is still on — it cannot cause a stale client');
 
 console.log('\n--- the payload is actually small enough ---');
 const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');

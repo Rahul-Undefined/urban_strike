@@ -74,39 +74,31 @@ function cancelCountdown(room, silent) {
 
 const app = express();
 
-/* ===== v10.2 - RENDER BANDWIDTH =====
+/* ===== v10.6 - THE CACHE HEADERS ARE GONE, AND THEY WERE DANGEROUS =====
 
-   Measured against a 5 GB monthly budget before changing anything:
+   v10.2 added `maxAge: '1h'` to express.static to save bandwidth on repeat
+   visits. index.html was excluded so a deploy would be picked up at once - and
+   that is exactly what made it worse, not better.
 
-     static assets   855 KB RAW per fresh page load, 35 files, no compression
-                     and no cache headers at all
-     snapshots       21.1 MB per player-HOUR (409 B x 15 Hz, handoff section 8)
+   This game ships as a CUMULATIVE UPLOAD. index.html names ~35 script files by
+   the same URLs every build. So after a deploy the browser fetched the new
+   index.html and then served the PREVIOUS BUILD'S JAVASCRIPT out of cache for
+   up to an hour. A v10.3 client, which decodes a binary `d.b` entity block,
+   talking to a v10.5 server, which sends a JSON `d.e` one, hits `if (!d.e)
+   return;` on every single snapshot and renders nothing at all. Everything
+   freezes and nothing errors.
 
-   So the budget is roughly 243 player-hours, and an eight-player match burns
-   the whole 5 GB in about 30 hours. Disk is irrelevant by comparison - the
-   whole tree is 2.1 MB and node_modules is 41 MB, under 1% of the limit.
+   My own comment on that line said a stale client "is a bug nobody could
+   reproduce". It was, and then I shipped it.
 
-   Two fixes here, neither of which touches the game:
+   Gzip stays: it compresses the response, it caches nothing, and it cannot
+   produce a version mismatch. It is 66% off a page load for no risk.
 
-   GZIP. Our own assets are 855 KB raw and 293 KB gzipped - the source is
-   heavily commented JavaScript, which is close to ideal for a text compressor.
-   A 66% cut on every fresh load, for one line. three.js and the fonts come
-   from CDNs and were never our bandwidth to begin with.
-
-   CACHE HEADERS. express.static defaults to maxAge 0, so a returning player
-   re-requested all 35 files and got 35 conditional 304s. With a max-age they
-   are not requested at all. One hour is deliberately short: this game ships as
-   a cumulative upload and a stale client that has half of one build and half of
-   another is a bug nobody could reproduce. index.html is excluded entirely so a
-   deploy is always picked up immediately - it is 20 KB and it is the file that
-   names every other one. */
+   If caching is ever wanted, the only safe way is a build hash in the URL of
+   every asset, so a new build cannot collide with an old cache entry. Not
+   worth it here - Rahul is paying for bandwidth now. */
 app.use(compression({ level: 6, threshold: 1024 }));
-app.use(express.static(path.join(__dirname, 'public'), {
-  maxAge: '1h',
-  setHeaders: function (res, filePath) {
-    if (/index\.html$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
-  }
-}));
+app.use(express.static(path.join(__dirname, 'public'), { etag: true, maxAge: 0 }));
 app.get('/healthz', (req, res) => res.send('ok'));
 /* v9.8 BANDWIDTH METER. Only mounted when NETSTATS=1, so production pays
    nothing — not even the route. Reports what Render's WebSocket figure is
