@@ -40,11 +40,61 @@ var AudioSys = (function () {
   }
 
   // Route a node either straight to master (local) or through a 3D panner (world position)
+  /* ===== v10.8 - AUDIBLE RANGE, AND A CHEAPER PANNER =====
+
+     Every positional sound built a PannerNode with panningModel 'HRTF', and
+     nothing anywhere checked how far away the source was. `maxDistance: 260`
+     only shapes the GAIN - the node is still created, connected and convolved
+     for a footstep 150 m away that you cannot hear at all.
+
+     HRTF is the most expensive panning model the Web Audio API has. It
+     convolves against head-related transfer functions to place a sound in 3D.
+     For one gunshot that is a luxury worth paying for. For nineteen bots
+     walking it is not: a bot takes a step every ~0.52 s at walk speed, so
+     nineteen of them generate ROUGHLY THIRTY-SIX FOOTSTEPS A SECOND, each
+     building a BufferSource, a BiquadFilter, a Gain and an HRTF panner, and
+     every one of those panners is convolved every audio quantum until it
+     finishes.
+
+     That cost scales linearly with bot count and it is why bot mode stutters
+     while human matches do not - it is not the network, it is the audio graph
+     starving the main thread. Rahul's instinct that "bahot bots h isliye ho
+     raha h" was right about the correlation and wrong about the cause: the
+     problem is not that there are nineteen bots, it is that a bot 150 m away
+     costs exactly as much to hear as one standing next to you.
+
+     TWO CHANGES, both here, neither touching gameplay:
+
+       AUDIBLE  - past 70 m a positional sound is DROPPED ENTIRELY. Not faded,
+                  not quieted: no panner, no connection, nothing. At 260 m the
+                  inverse rolloff already had it at a few percent of volume, so
+                  nothing audible is lost. On a 200 m map this removes roughly
+                  two thirds of them.
+
+       equalpower instead of HRTF - a constant-power stereo pan, a few
+                  multiplies against a convolution. Direction is still there,
+                  the sound still moves left and right and falls off with
+                  distance; what is lost is the front/back and elevation cue,
+                  which almost nobody is resolving over laptop speakers while
+                  being shot at. If it is ever wanted back, it belongs on a
+                  small allowlist of important one-off sounds - explosions, the
+                  airdrop plane - and never on footsteps. */
+  var AUDIBLE = 70, AUD2 = 70 * 70;
+  var lisX = 0, lisY = 0, lisZ = 0;
+  function tooFar(pos) {
+    var dx = pos.x - lisX, dy = pos.y - lisY, dz = pos.z - lisZ;
+    return (dx * dx + dy * dy + dz * dz) > AUD2;
+  }
+
   function out(node, pos) {
     if (!pos) { node.connect(master); return; }
+    /* Dropped rather than connected. The source nodes the caller already built
+       are never reached by the graph and are collected; the panner - the
+       expensive part - is never created at all. */
+    if (tooFar(pos)) return;
     try {
       var pan = ctx.createPanner();
-      pan.panningModel = 'HRTF';
+      pan.panningModel = 'equalpower';
       pan.distanceModel = 'inverse';
       pan.refDistance = 7; pan.maxDistance = 260; pan.rolloffFactor = 1.15;
       if (pan.positionX) { pan.positionX.value = pos.x; pan.positionY.value = pos.y; pan.positionZ.value = pos.z; }
@@ -55,6 +105,9 @@ var AudioSys = (function () {
 
   function updateListener(pos, fwd, up) {
     if (!ctx) return;
+    /* Kept in plain numbers for tooFar(), which runs on every positional sound
+       and must not allocate or read through a THREE.Vector3 wrapper. */
+    lisX = pos.x; lisY = pos.y; lisZ = pos.z;
     var L = ctx.listener;
     try {
       if (L.positionX) {
@@ -166,6 +219,13 @@ var AudioSys = (function () {
     setTimeout(function () { tone(pos, { type: 'square', f0: 700, f1: 1100, dur: 0.05, vol: 0.24 }); }, 220);
   }
   function step(pos, quiet, sprint, surf) {
+    if (!ctx) return;
+    /* Checked HERE as well as in out(), because this is the one sound that
+       fires dozens of times a second in bot mode and the cheapest node is the
+       one never constructed. A footstep is also the least worth hearing at
+       range - it is inaudible past about 25 m in practice, so 70 m is already
+       generous. */
+    if (pos && tooFar(pos)) return;
     var v = quiet ? 0.05 : (sprint ? 0.22 : 0.13);
     if (surf === 1) { // metal: bright clank + short ring
       noiseBurst(pos, { f0: 950 + Math.random() * 400, f1: 320, dur: 0.06, vol: v });

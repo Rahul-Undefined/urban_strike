@@ -53,6 +53,32 @@ var DevHUD = (function () {
   var REFRESH_HZ = 6;
   var el = null, on = false, last = 0, text = '';
 
+  /* ===== v10.8 - FRAME TIME, SAMPLED WHETHER OR NOT THE PANEL IS OPEN =====
+
+     Six versions of "bot mode is laggy" were diagnosed by guessing, because
+     nothing in this game could tell anyone what its frame rate actually was.
+     Every measurement available to a session runs in a container.
+
+     Sampling happens on every update() call, BEFORE the hidden early-out, so
+     the numbers are already true the moment F3 is pressed instead of starting
+     from nothing. Cost while hidden: one array write and a modulo.
+
+     Reported as a PERCENTILE as well as an average. A 16 ms mean is consistent
+     with a steady 60 fps that hitches every tenth frame, and the hitch is what
+     the player sees - the same mistake the v9.13 bot-AI diagnosis made with a
+     1.08 ms mean. p90 is the number worth reading. */
+  var FN = 120, fBuf = new Float32Array(120), fAt = 0, fSeen = 0, fLast = 0;
+  function frameLine() {
+    if (fSeen < 10) return 'FPS   measuring...';
+    var a = Array.prototype.slice.call(fBuf, 0, fSeen).sort(function (x, y) { return x - y; });
+    var p50 = a[(a.length * 0.5) | 0], p90 = a[(a.length * 0.9) | 0], mx = a[a.length - 1];
+    var mean = 0;
+    for (var i = 0; i < a.length; i++) mean += a[i];
+    mean /= a.length;
+    return 'FPS   ' + (1000 / mean).toFixed(0) + ' avg   frame p50 ' + p50.toFixed(1) +
+           ' / p90 ' + p90.toFixed(1) + ' / max ' + mx.toFixed(1) + ' ms   (60fps = 16.7)';
+  }
+
   function build() {
     if (el) return el;
     el = document.createElement('div');
@@ -184,7 +210,10 @@ var DevHUD = (function () {
 
   function compose() {
     var P = (typeof PlayerCtl !== 'undefined') ? PlayerCtl.pos : null;
-    if (!P) return 'devhud: no player';
+    /* Frame timing FIRST and outside the no-player guard: the whole point of it
+       is to be readable when something is wrong, and "no player" is exactly
+       when somebody is trying to find out why. */
+    if (!P) return frameLine() + '\ndevhud: no player';
     var halfY = (CFG && CFG.PLAYER ? CFG.PLAYER.standH : 1.8) / 2;
     var feetY = P.y - halfY, headY = P.y + halfY;
     var r = probe(P.x, P.y, P.z, feetY, headY);
@@ -232,11 +261,32 @@ var DevHUD = (function () {
     isOn: function () { return on; },
     /* Called every frame from the render loop. First line is the whole
        performance story: hidden costs one boolean test. */
+    /* ===== v10.8 - FRAME TIME, MEASURED WHETHER OR NOT THE PANEL IS OPEN =====
+
+       Six versions of "bot mode is laggy" were diagnosed by guessing, because
+       nothing in this game could tell anyone what its frame rate actually was.
+       Every measurement available ran in a container.
+
+       Sampling happens on EVERY call, before the hidden-early-out, so the
+       numbers are already true the moment F3 is pressed rather than starting
+       from nothing. It costs one array write and a modulo.
+
+       Reported as a PERCENTILE as well as an average. A 16 ms mean is
+       consistent with a steady 60 fps that hitches every tenth frame, and it is
+       the hitch a player sees - the same mistake the v9.13 bot-AI measurement
+       made with a 1.08 ms mean, and the v10.4 jitter measurement with an
+       average gap. p90 is the number worth reading. */
     update: function (nowMs) {
+      if (fLast) {
+        var d = nowMs - fLast;
+        if (d > 0 && d < 500) { fBuf[fAt++ % FN] = d; if (fSeen < FN) fSeen++; }
+      }
+      fLast = nowMs;
       if (!on || !el) return;
       if (nowMs - last < 1000 / REFRESH_HZ) return;
       last = nowMs;
       text = compose();
+      if (text.indexOf('FPS') !== 0) text = frameLine() + '\n' + text;
       el.textContent = text;
     },
     copy: function () {

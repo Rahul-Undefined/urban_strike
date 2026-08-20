@@ -1,5 +1,105 @@
 # Urban Strike — Changelog & Deployment Ledger
 
+# v10.8 - THE AUDIO GRAPH WAS EATING THE FRAME, AND IT WAS NEVER MINE
+
+Rahul: "bot mode mei lagg h abhi bhi, i think bahot bots h isliye ho raha h kya,
+do u think reverting back to 10 users only instead of 20 will solve this?"
+
+Right about the correlation, wrong about the cause - and halving the bots would
+have hidden it rather than fixed it.
+
+## WHAT WAS RULED OUT BY MEASURING, NOT BY GUESSING
+
+Two v10 changes still live in the per-frame path, so both were measured first:
+
+    broadphase grid    built at runtime, confirmed: 961 cells, avg bucket 8.6
+                       of 3,332 colliders
+    wall probe         1.38 us per frame WITH the grid, 605 us without it.
+                       440x. Not the problem, and would have been catastrophic
+                       if the grid had silently failed to build.
+    updateMatrixWorld  4.8 us per avatar, 91 us per frame at 19 avatars,
+                       against a 16,700 us budget. Negligible.
+
+## THE ACTUAL CAUSE: EVERY SOUND BUILT AN HRTF PANNER, AT ANY DISTANCE
+
+`out()` in audio.js gives every positional sound a PannerNode with
+`panningModel: 'HRTF'`, and NOTHING anywhere checks how far away the source is.
+`maxDistance: 260` only shapes the GAIN - the node is still created, connected
+and convolved for a footstep 150 m away that is silent by the time it arrives.
+
+HRTF is the most expensive panning model the Web Audio API has; it convolves
+against head-related transfer functions to place a sound in three dimensions.
+For one gunshot that is worth paying for. For nineteen bots walking it is not.
+
+A bot takes a step every ~0.52 s at walk speed. Nineteen of them:
+
+    footsteps generated per second      36.3
+    within 70 m of the listener          38%
+    Web Audio nodes per second          145   (BufferSource, BiquadFilter,
+                                               Gain, HRTF Panner - each)
+
+145 nodes a second built, connected, convolved and torn down, for FOOTSTEPS,
+on top of rendering the game. That scales linearly with bot count, which is
+exactly why bot mode stutters and human matches do not, and exactly why the
+instinct that "bahot bots h" tracked the symptom so well.
+
+It is also ORIGINAL v9.15 CODE. Not one of mine. It only became visible because
+the bot count went up.
+
+## THE FIX - TWO LINES OF POLICY, NO GAMEPLAY CHANGE
+
+    AUDIBLE = 70 m   Past that a positional sound is DROPPED ENTIRELY. Not
+                     faded, not quieted: no panner, no connection, nothing. The
+                     inverse rolloff already had it at a few percent by then, so
+                     nothing audible is lost. On a 200 m map that removes about
+                     two thirds of them. Checked inside step() as well as out(),
+                     because the cheapest node is the one never constructed and
+                     footsteps are the sound that fires dozens of times a second.
+
+    equalpower       A constant-power stereo pan - a few multiplies instead of a
+    instead of HRTF  convolution. Direction survives, distance falloff survives;
+                     what is lost is the front/back and elevation cue, which
+                     nobody is resolving on laptop speakers while being shot at.
+
+    nodes per second   145  ->  56        62% fewer
+    and every surviving panner is far cheaper per sample
+
+If HRTF is ever wanted back it belongs on a short allowlist of important one-off
+sounds - explosions, the airdrop plane - and never on footsteps.
+
+## AND THE GAME CAN NOW TELL YOU ITS OWN FRAME RATE
+
+Six versions of "it is laggy" were diagnosed by guessing, because nothing in
+this game could report its frame rate and every measurement a session can take
+runs in a container.
+
+F3 now shows, on the first line:
+
+    FPS 58 avg   frame p50 16.4 / p90 18.1 / max 41.2 ms   (60fps = 16.7)
+
+Sampled on every update() call BEFORE the hidden early-out, so the numbers are
+already true the moment F3 is pressed. Cost while hidden: one array write.
+
+Reported as a PERCENTILE as well as a mean, because a 16 ms average is
+consistent with a steady 60 fps that hitches every tenth frame, and the hitch is
+what a player sees. p90 is the number worth reading. This project has now made
+that same mistake three times - the v9.13 bot-AI mean, the v10.4 jitter mean,
+and this.
+
+## ON REDUCING THE BOT COUNT
+
+It would have worked, and it would have been the wrong thing to do. Ten bots
+halves the footstep rate, the symptom improves, and the cause sits there waiting
+for the next map with more entities. The cost was never the number of bots - it
+was that a bot 150 m away cost exactly as much to hear as one standing next to
+you.
+
+## GATE BOARD
+
+  test.js 263/0. verify-devhud 14/0, verify-scope 20/0.
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+
+
 # v10.7 - THE BOT GUNFIRE BROADCAST WAS THE LAG. IT IS REMOVED.
 
 Rahul: "bots wala mode bahot laggy h, mujhe aisa lagta h ki bot sleep mode m hai
