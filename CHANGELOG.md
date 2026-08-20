@@ -1,5 +1,146 @@
 # Urban Strike — Changelog & Deployment Ledger
 
+# v10.7 - THE BOT GUNFIRE BROADCAST WAS THE LAG. IT IS REMOVED.
+
+Rahul: "bots wala mode bahot laggy h, mujhe aisa lagta h ki bot sleep mode m hai
+aur achanak se server se interact kar rahe h... Big Map mei bhi sab players kuch
+derr k liye freeze rehte h... pehle yeh ekdum nahi hota h."
+
+Every detail in that sentence points at the same thing, and it is not the
+network.
+
+## THE TELL: EVERYTHING FREEZES AT ONCE
+
+If one entity stuttered, that would be its packets. When EVERY player freezes
+together for seconds and then all snap forward, the main thread is blocked -
+updateRemotes is not running at all, so nothing moves, and when the browser
+catches up everything moves at once.
+
+"Worst in bot mode" and "worse on the big map" then name the cause between them.
+
+## WHAT v10 ADDED, AND NEVER MEASURED
+
+v10 made bots emit a 'shoot' event so they would stop firing invisibly and
+silently. The gameplay reasoning was correct. The cost was never measured, and
+it lands entirely on the client where no server-side meter can see it. Per
+event, the existing handler does:
+
+    AudioSys.shot()   ~10-15 Web Audio nodes - a BufferSource, a BiquadFilter,
+                      a Gain and a Panner, three times over, plus two setTimeouts
+    World.rayHit()    a 140 m raycast through the collider grid, to find where
+                      the tracer ends
+    FX.tracer()       geometry
+    FX.impact()       particles
+
+Nineteen bots fire about 25 times a second between them, and a 90 m range gate
+barely filters anything on a 200 m map.
+
+    ~300 Web Audio nodes per second
+    ~25 raycasts of 140 m per second
+    ~25 tracers and impacts per second
+
+on top of rendering the game. On the big map the raycast walks further, so it is
+worse there - exactly as reported.
+
+Before v10 a bot emitted NOTHING and the client did no work per bot shot. That
+is why "pehle yeh ekdum nahi hota".
+
+## REMOVED, AND WHAT IT COSTS
+
+Bots are silent again. You will take damage from a bot with no muzzle flash and
+no gunshot, which is a real gameplay problem and is being accepted deliberately:
+a silent game is playable, a stuttering one is not.
+
+To bring it back properly the missing piece is a GLOBAL BUDGET, not a tighter
+range gate - a few events a second for the whole match, nearest-first, AUDIO
+ONLY with no raycast and no tracer, measured with a frame-time percentile on
+real hardware before it ships. The note is in both bots.js and
+verify-bandwidth.js so the idea can be had again safely.
+
+## CACHE BUSTING - NOBODY HAS TO HARD-REFRESH
+
+Rahul asked whether every player needs Ctrl+Shift+R or only him. Every player
+who loaded the game while the 1-hour header was live has stale scripts, and
+their cache stays valid until its hour is up. "Tell all your players to hard
+refresh" is not a fix, it is a request, and it fails for anyone who does not
+read the message.
+
+So every local asset in index.html now carries `?v=<version>`, read from
+package.json at startup. index.html is served with `no-cache`, so a browser
+always gets the current one, and it names URLs a stale cache has never seen -
+so the cache cannot match and the browser fetches fresh. Once, automatically,
+for everyone.
+
+CDN and socket.io URLs are deliberately untouched: three.js and the fonts are
+versioned by their own paths, and /socket.io/socket.io.js is generated rather
+than served from disk. 31 of 35 references are stamped; the other 4 are those.
+
+TWO MISTAKES MAKING IT, BOTH CAUGHT BY LOOKING AT THE OUTPUT RATHER THAN THE
+CODE:
+
+  - The route was registered AFTER express.static, so static answered "/" with
+    the raw file first and the stamps never reached the browser. The route
+    existed and did nothing. Fixed by registering before it AND passing
+    `index: false`, so only one thing can ever answer "/".
+  - The regex was written through a Python heredoc that doubled every
+    backslash, producing a pattern that matched nothing. Rewritten with
+    character classes - [/] instead of \/ - so there is no escaping to get
+    wrong.
+
+Bump the version in package.json on every release and this handles itself.
+That is why it reads from there rather than being typed into the HTML.
+
+## EVERY FILE IN THE FRAME PATH IS NOW v9.15 VERBATIM
+
+Restored from the archive rather than hand-edited, because v10.5 proved a
+hand-reverted file is a NEW file nobody has run - those slice edits silently
+dropped `if (d.tk !== undefined) teamKills = ...`.
+
+    server.js              v9.15 + gzip, no-auto-pickup, pickup handler
+    server/lib/bots.js     v9.15 EXACTLY (comment only)
+    public/.../net.js      v9.15 + Net.pickup()
+    public/.../snapcodec   v9.15 EXACTLY
+    public/src/core/game.js v9.15 + powerPreference + Z also picks up
+
+Diffed with comments stripped. Nothing else in the frame path differs.
+
+## THE FOUR THINGS THAT REMAIN FROM v10
+
+  1. `powerPreference: 'high-performance'` - never set before, so a laptop with
+     switchable graphics handed this game its INTEGRATED GPU for its entire
+     life. One line, cannot hurt.
+  2. Loot no longer picks itself up; Z asks for it.
+  3. gzip on static assets - compresses the response, caches NOTHING.
+  4. Off the frame path entirely: the geometry fixes, the collider broadphase,
+     the sign atlas, and the gates.
+
+Asset caching, permessage-deflate, the binary wire format, the PY split, the
+adaptive interpolation buffer, velocity extrapolation, the compact bot shot
+payload and the adaptive resolution scaler are ALL gone.
+
+## GATE BOARD
+
+  test.js 262/1 - the one red is the documented flaky bot-damage phase, which
+  depends on snapshot timing and varies run to run. verify-bandwidth 25/0 with
+  the bot-gunfire assertions INVERTED.
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+
+## THE PATTERN, WRITTEN DOWN
+
+v10 through v10.6 shipped six regressions and every one came from measuring the
+wrong side of a change:
+
+    bot gunfire        payload measured, RECEIVER cost never measured
+    binary format      packet size measured, ARRIVAL never measured
+    deflate            "compresses well" assumed, never measured (2%)
+    allocUnsafe        "faster" assumed, hands out a shared pool view
+    asset caching      bandwidth measured, DEPLOY behaviour never considered
+    resolution scaler  sharpness reasoned about, framebuffer realloc never was
+
+The server can measure bytes. It cannot measure what the browser has to DO with
+them, and that is where every one of these landed.
+
+
 # v10.6 - TWO REAL CAUSES FOUND, BOTH MINE, BOTH INVISIBLE
 
 Rahul after v10.5: "issue is still there and it has worsened."

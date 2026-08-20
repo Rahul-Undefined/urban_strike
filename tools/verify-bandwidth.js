@@ -145,22 +145,55 @@ ok(/full \|\| s\.px !== prev\.px/.test(snapSrc), 'the v9.8 delta encoder is inta
 ok(/POS_Q = 100/.test(snapSrc), 'positions are still quantised to centimetres');
 
 console.log('\n--- and nothing sits between the server and the socket ---');
-ok(/perMessageDeflate:\s*false/.test(serverSrc),
-  'permessage-deflate is OFF — measured at 2% saving, and ws compresses ASYNC, adding jitter');
+/* socket.io leaves permessage-deflate OFF by default, and server.js is back to
+   the v9.15 constructor which passes no such option - so absence is the correct
+   state, not a missing setting. v10.3 turned it ON reasoning that quantised
+   integers "compress well"; measured, it saves 2%, and `ws` compresses
+   ASYNCHRONOUSLY on the threadpool, adding a scheduling round trip of jitter to
+   every snapshot. Asserted absent so it is not switched on by plausible
+   reasoning a second time. */
+ok(!/perMessageDeflate:\s*(true|\{)/.test(serverSrc),
+  'permessage-deflate is not enabled — 2% saving for real added jitter');
 ok(/app\.use\(compression\(/.test(serverSrc),
   'HTTP gzip on static assets is unaffected — that is 66% once per page load, nowhere near the frame path');
 ok(CFG.NET.snapRate === 15,
   'snapRate is 15 — the documented floor before rubber-banding');
 
-console.log('\n--- the bot shoot event carries its own truth ---');
-/* v10.2 cut this to `{ id }` and resolved position and weapon from the client's
-   last interpolated snapshot. That is only right while the interpolation is
-   right, so during exactly the stalls being reported the muzzle flash appeared
-   wherever the client THOUGHT the bot was. Reverted with the rest. */
-const botFired = serverSrc.slice(serverSrc.indexOf('botFired:'), serverSrc.indexOf('botFired:') + 1400);
-ok(/o: o/.test(botFired), 'a bot shot carries the position it was actually fired from');
-ok(/w: weapon/.test(botFired), 'and the weapon it was fired with');
-ok(/R2|dx \* dx/.test(botFired), 'still range-gated rather than broadcast to the room');
+console.log('\n--- bots do NOT broadcast gunfire ---');
+/* ===== v10.7 - THIS ASSERTED THE OPPOSITE THREE VERSIONS RUNNING =====
+
+   v10 made bots emit a 'shoot' event so they would stop firing invisibly, and
+   this gate checked the payload was well formed. Nobody checked what RECEIVING
+   it costs, and the cost is entirely on the client where no server-side meter
+   can see it:
+
+     AudioSys.shot()  10-15 Web Audio nodes per call
+     World.rayHit()   a 140 m raycast through the collider grid
+     FX.tracer/impact geometry and particles
+
+   Nineteen bots fire ~25 times a second between them. Bot mode was asking for
+   roughly 300 Web Audio nodes and 25 long raycasts every second on top of
+   rendering, and every player froze for seconds while the main thread caught
+   up - reported as "bots wala mode bahot laggy", entities stagnant then
+   suddenly active.
+
+   Asserted OFF, because the idea is a good one and somebody will have it again.
+   The missing piece is a GLOBAL budget - a few events a second for the whole
+   match, nearest-first, AUDIO ONLY, no raycast and no tracer - measured with a
+   frame-time percentile on real hardware before it ships. */
+ok(!/botFired/.test(serverSrc), 'the server does not broadcast bot gunfire');
+const botsSrc = fs.readFileSync(path.join(ROOT, 'server/lib/bots.js'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+ok(!/botFired/.test(botsSrc), 'and bots.js does not call it');
+
+console.log('\n--- nothing else was added to the per-frame client path ---');
+/* The rule this whole section exists to protect: anything that runs once per
+   remote EVENT lands on the client's main thread, and the main thread is what
+   renders. A server-side meter cannot see any of it. */
+const netSrc2 = fs.readFileSync(path.join(ROOT, 'public/src/networking/net.js'), 'utf8');
+const shootHandler = netSrc2.slice(netSrc2.indexOf("socket.on('shoot'"), netSrc2.indexOf("socket.on('shoot'") + 900);
+ok(/World\.rayHit/.test(shootHandler),
+  'a HUMAN shot still gets its full tracer - that is a few events a second, not hundreds');
 
 console.log('\n--- disk, for the record ---');
 /* Included so nobody optimises the wrong axis. */

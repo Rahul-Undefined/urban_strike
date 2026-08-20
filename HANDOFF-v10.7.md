@@ -1,6 +1,13 @@
-# Urban Strike — Handoff (v10.5 shipped)
+# Urban Strike — Handoff (v10.7 shipped)
 
-Upload this file plus `urban-strike-v10.5.zip` into a new chat.
+Upload this file plus `urban-strike-v10.7.zip` into a new chat.
+
+> **RELEASING? BUMP `version` IN package.json.** Every local asset URL is
+> stamped `?v=<version>` at startup, which is what stops a browser running the
+> previous build's JavaScript against the new server. Forget the bump and a
+> cached client can survive a deploy — that failure renders nothing and logs
+> nothing. Check with `curl -s <host>/ | grep -c '?v='` (expect 31) and
+> `curl -s <host>/version`.
 
 **Read §0 first.** All six v9.15 defects are closed, but the most useful thing
 in this document is why the gate board was green while they were live.
@@ -213,6 +220,20 @@ tools/gen-points.js       spawn/loot generator — USE IT, never type coordinate
   that forbids it.
 - **Never send what the snapshot already carries** (v10.2). Check snapcodec
   before adding a field to any event.
+- **A remote EVENT costs client main-thread time, and no server meter sees it.**
+  v10 made bots emit `shoot`; each one costs ~10-15 Web Audio nodes, a 140 m
+  raycast, a tracer and an impact. 19 bots ≈ 25/sec ≈ **300 audio nodes and 25
+  long raycasts per second**, and every player froze for seconds. Removed in
+  v10.7. If re-added: a **global** budget of a few per second, nearest-first,
+  audio only.
+- **NEVER cache assets by name.** This project ships as a cumulative upload;
+  ~35 scripts keep the same URLs every build, so any positive `maxAge` lets a
+  browser run last build's client against this build's server. A v10.3 client
+  hits `if (!d.e) return;` against a v10.5 server and renders nothing at all —
+  no error, total freeze. Only safe with a build hash in every URL.
+- **Never hand-revert a file.** v10.5's slice edits silently dropped
+  `if (d.tk !== undefined) teamKills = ...`. Restore from the archive verbatim
+  and re-apply changes on top.
 - **`powerPreference` must be set on the WebGL context.** Without it a laptop
   with switchable graphics hands you the **integrated** GPU. This game ran on
   the weakest chip in the machine until v10.5.
