@@ -39,7 +39,7 @@ vm.createContext(ctx);
      CFG.MAPS_RURAL undefined and produced 510 colliders where the browser
      produces 525 -- 15 objects short, on the gate whose entire job is to
      reproduce the browser build. Keep this list identical to index.html. */
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
@@ -103,7 +103,7 @@ let fail = 0;
    v9.0, but metro was never in this loop, so the budget was never applied to
    anything. Metro had no dead-ground measurement of any kind — the gate that
    exists to prove a map is fightable had never looked at it. */
-for (const map of ["urban", "rural", "metro"]) {
+for (const map of ["urban", "rural", "metro", "killhouse"]) {
   const r = analyse(map);
   const land = r.n * r.n - r.skipped;
   const pct = (r.dead.length / land * 100).toFixed(1);
@@ -128,7 +128,16 @@ for (const map of ["urban", "rural", "metro"]) {
      verges and ridge outcrops added in v9.0 — down from 32% on the first pass,
      which WAS a real problem and was fixed rather than excused. The budget is a
      ratchet from here: it may fall, never rise. */
-  const DEAD_BUDGET = { urban: 0.06, rural: 0.15, metro: 0.06 };
+  /* v10.10: killhouse ADDED to the loop. Metro shipped 19.2% dead ground
+     because this gate only ran on urban — handoff section 4.1. A new map that
+     is not in this list is a new map nobody has measured.
+
+     Its budget is 0.02, tighter than every other map, and that is deliberate:
+     an indoor 58 x 34 m room with no exterior has nowhere for dead ground to
+     legitimately hide. On a 200 m outdoor map a rooftop or a river accounts for
+     a few percent honestly; here, dead ground means a corner of the floor that
+     no cover overlooks, which is a design fault. */
+  const DEAD_BUDGET = { urban: 0.06, rural: 0.15, metro: 0.06, killhouse: 0.02 };
   const budget = DEAD_BUDGET[map] !== undefined ? DEAD_BUDGET[map] : 0.06;
   const landCells = r.n * r.n - r.skipped;   // v9.0: match the figure printed above
   if (r.dead.length / landCells > budget) {

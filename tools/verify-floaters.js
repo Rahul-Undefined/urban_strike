@@ -57,11 +57,11 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
 
 /* Keep this list identical to index.html — see the v8.9 note in verify-lifts. */
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js",
+ "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js",
  "public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
  "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js",
- "public/src/environment/metro.js","public/src/environment/access.js"]
+ "public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/access.js"]
  .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 const VOID  = 3.0;   // metres of open air beneath a prop before it is "floating"
@@ -96,12 +96,12 @@ function floaters(map) {
 }
 
 /* ---- RATCHETS. May fall, never rise. Reason required, written above. ---- */
-const BUDGET = { urban: 0, rural: 0, metro: 0 };
+const BUDGET = { urban: 0, rural: 0, metro: 0, killhouse: 0 };
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log("  PASS  " + m)) : (fail++, console.log("  FAIL  " + m)); };
 
-for (const map of ["urban", "rural", "metro"]) {
+for (const map of ["urban", "rural", "metro", "killhouse"]) {
   console.log("\n--- [" + map + "] floating props ---");
   const f = floaters(map);
   ok(f.length <= BUDGET[map],

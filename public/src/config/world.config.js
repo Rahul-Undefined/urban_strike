@@ -274,6 +274,13 @@
     urban: { label: 'Urban', ready: true },
     rural: { label: 'Rural', ready: true, bound: 150 },
     metro: { label: 'Metro City', ready: true, render: NIGHT },
+    /* v10.10 KILLHOUSE. Indoor 58 x 34 m warehouse, humans only.
+       `bound` 32 puts the out-of-bounds ring just outside the 29 m wall, so a
+       player shoved into the wall is not also shoved out of the world.
+       `maxPlayers` caps EVERY mode on this map at 8 regardless of what the mode
+       table allows: 15 operators in this footprint is not a fight. Read by the
+       lobby alongside the mode cap, lower of the two wins. */
+    killhouse: { label: 'Killhouse', ready: true, bound: 32, maxPlayers: 8, indoor: true },
   };
 
   /* v8.25: alwaysShowPlayers. Rahul asked for player locations on the map and

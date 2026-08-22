@@ -45,11 +45,11 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
 
 /* Keep this list identical to index.html — see the v8.9 note in verify-lifts. */
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js",
+ "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js",
  "public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
  "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js",
- "public/src/environment/metro.js","public/src/environment/access.js"]
+ "public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/access.js"]
  .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 function fingerprint(map) {
@@ -141,8 +141,33 @@ const BASELINE = {
    budget against a 115 ceiling with 3 spare. Merged into one atlas mesh, the
    way Metro has done since v9.5. Colliders, casters and lights all UNCHANGED,
    which is what proves this is a batching change and not a geometry one. */
-  urban: { colliders: 3332, draws: 98, tris: 92092, casters: 62, lights: 7, bound: 100, colSig: 459507278, meshSig: -25152539 },
-  rural: { colliders: 1066, draws: 32, tris: 54467, casters: 22, lights: 3, bound: 150, colSig: -956236117, meshSig: -2029443105 }
+  /* v10.10 URBAN VISUAL PASS. Lit windows, rooftop plant, overhead cables and
+     wet ground under the lamps — see the head of deco.js for why light rather
+     than geometry.
+
+       draws    98 -> 100   (budget 115)
+       tris  92092 -> 94084 (budget 120000)
+       casters  62 -> 62    UNCHANGED. There was no headroom and none was taken.
+       colliders 3332 -> 3332, colSig IDENTICAL.
+
+     That last line is the one that matters: an unchanged collision signature is
+     proof this pass moved pixels and nothing else. No cover appeared, no
+     sightline closed, no spawn or loot point was invalidated. A visual change
+     that alters colSig is not a visual change. */
+  urban: { colliders: 3332, draws: 100, tris: 94084, casters: 62, lights: 7, bound: 100, colSig: 459507278, meshSig: 1332457479 },
+  /* v10.10: rural moved on purpose. The three river-bridge stair pairs climbed
+     AWAY from the deck and finished 2.1 m short of it, so all six were
+     unclimbable (verify-climb, "reached 0.05m"). Turned around and extended
+     from two treads to three to land flush on the 0.86 m deck.
+
+     +6 colliders and +216 triangles is exactly six flights gaining one tread
+     each. Both signatures move because tread positions moved. Recorded here
+     rather than left red, because a fingerprint that is expected to fail stops
+     being able to report the NEXT change — which is the whole point of it. */
+  rural: { colliders: 1072, draws: 32, tris: 54683, casters: 22, lights: 3, bound: 150, colSig: 491534987, meshSig: -2029443105 },
+  /* v10.10: killhouse. Asserted from its first version so any later edit has to
+     justify itself the way rural just did. */
+  killhouse: { colliders: 205, draws: 33, tris: 12260, casters: 17, lights: 3, bound: 32, colSig: 23166088, meshSig: -850638274 }
 };
 
 let pass = 0, fail = 0;

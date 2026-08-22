@@ -104,7 +104,7 @@ function runMap(mapName, data, wallDefault) {
   vm.createContext(ctx);
   ["config/districts.config.js",
    "environment/world.js", "environment/districts-south.js", "environment/districts-north.js",
-   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/metro.js", "environment/access.js"].forEach(f => {
+   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/metro.js", "environment/killhouse.js", "environment/access.js"].forEach(f => {
     const p = path.join(ROOT, "public/src", f);
     if (fs.existsSync(p)) vm.runInContext(fs.readFileSync(p, "utf8"), ctx, { filename: f });
   });
@@ -188,6 +188,11 @@ runMap("rural", CFG.MAPS_RURAL, 100);
    Feed the config object directly, exactly as rural does — if a map ships the
    wrong key name, this gate must be the thing that says so. */
 runMap("metro", CFG.MAPS_METRO, 100);
+/* v10.10: killhouse. Bound is 32, not 100 — passing the wrong bound would let
+   every point inside a 200 m square count as in-bounds and the gate would
+   validate nothing. Taken from CFG.MAPS so it cannot drift from the value the
+   game uses. */
+runMap("killhouse", CFG.MAPS_KILLHOUSE, CFG.MAPS.killhouse.bound);
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -200,8 +200,32 @@ World._buildRural = function (T) {
     seg(x0, x1, 0.86, 1.75, 55.6, 56, M.wood, NCOL);
     cyl(x0 + 1, 0.3, 41, 0.28, 1.2, LOG); cyl(x1 - 1, 0.3, 41, 0.28, 1.2, LOG);
     cyl(x0 + 1, 0.3, 53, 0.28, 1.2, LOG); cyl(x1 - 1, 0.3, 53, 0.28, 1.2, LOG);
-    stairFlight(x0 + 0.5, 0, 36.6, 0, -1, 2, 0.3, 0.7, 5, M.wood);
-    stairFlight(x0 + 0.5, 0, 57.4, 0, 1, 2, 0.3, 0.7, 5, M.wood);
+    /* ===== v10.10 - THESE STAIRS CLIMBED AWAY FROM THE BRIDGE =====
+
+       Both calls were `stairFlight(x0 + 0.5, 0, 36.6, 0, -1, 2, 0.3, 0.7, 5)`
+       and its mirror. Reading them against the tread layout in world.js
+       (tread i sits at sz + dir*(i+0.5)*stepD, top at sy + (i+1)*stepH):
+
+         south flight   tread 0 at z 36.25 top 0.30
+                        tread 1 at z 35.55 top 0.60   <- highest tread
+         deck           z 38.0 to 56.0, walking surface 0.86
+
+       So the flight rose 0.60 m while travelling AWAY from the deck, and its
+       top tread finished 2.1 m short of the deck edge with open ground in
+       between. There was nothing to climb onto. verify-climb reported all six
+       (three bridges x two ends) as reaching 0.05 m, which is the signature of
+       a flight the probe cannot even start.
+
+       Turned around and extended to meet the deck exactly: three treads of
+       0.2867 rise to land flush on 0.86, with the top tread's far edge at the
+       deck edge. stepD stays 0.7, comfortably past the 0.35 m capsule radius,
+       so no tread overlaps its neighbour-but-one and the auto-step is never
+       measured against a double rise (the defect documented in stairFlight).
+
+       Fixes 6 of rural's 7 unclimbable flights from one call site. */
+    var BR_RISE = 0.86 / 3;                      // deck top, in three equal treads
+    stairFlight(x0 + 0.5, 0, 35.9, 0, 1, 3, BR_RISE, 0.7, 5, M.wood);
+    stairFlight(x0 + 0.5, 0, 58.1, 0, -1, 3, BR_RISE, 0.7, 5, M.wood);
   }
   bridge(-8, 8); bridge(-92, -76); bridge(84, 100);
   for (var fd = 0; fd < 7; fd++) cyl(40 + fd * 2.2, 0.1, 41 + fd * 1.9, 1.1, 0.5, ROCK);

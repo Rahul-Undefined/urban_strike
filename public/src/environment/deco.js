@@ -196,6 +196,119 @@ World._buildDeco = function (T) {
     }
     return true;
   }
+  /* ===== v10.10 URBAN VISUAL PASS =====
+
+     Rahul asked for better-looking Urban. The constraint decides the whole
+     approach: Urban runs 98 of 115 draw calls, 92,092 of 120,000 triangles and
+     **62 of 62 shadow casters**. There is no caster headroom at all, so not one
+     thing added here casts a shadow, and there are 17 draw calls and ~28,000
+     triangles to spend.
+
+     That rules out the obvious move — more buildings, more props — and points
+     at the cheap axis: LIGHT. A dusk city with unlit windows reads as a
+     scale model. Lit windows, rooftop silhouettes, sagging cable runs and wet
+     ground under the lamps cost triangles and nothing else, because every
+     material used below already exists and merges into a batch already paid
+     for. NC is { collide:false, cast:false, recv:false } throughout.
+
+     Nothing here is placed where a player walks, so no collider moves and
+     verify-map, verify-cover and verify-collision see an unchanged map. */
+
+  /* ---------- lit windows ----------
+     A grid of small emissive panels stood 3 cm off each facade. Roughly a
+     third are lit, chosen by a fixed hash of the coordinates rather than
+     rnd(): rnd() is a running PRNG shared with the district builders, and
+     pulling from it here would shift every scattered prop placed afterwards
+     (the v7.8 rule). A hash gives the same pattern on every build without
+     touching the sequence at all. */
+  function lit(x, z) {
+    var h = ((x * 73856093) ^ (z * 19349663)) >>> 0;
+    return (h % 100) < 34;
+  }
+  /* Emitted through still(), NOT through box().
+
+     The first version used box(). box() registers every emitted solid in the
+     prop and coplanar logs, so 120 window panels stood 6 cm proud of a wall
+     read to verify-props as 120 props with nothing underneath them — 135
+     unsupported against a budget of 15 — and added coplanar pairs on top.
+
+     The gate was right and the mechanism was wrong. Wall-mounted decoration in
+     this file already has a route: still() puts a mesh in the scene with the
+     matrix frozen and never enters it in either log, which is exactly how the
+     billboards and the streetlight glow have always worked. One shared
+     geometry across all panels, so this costs one allocation, not 120. */
+  var WARM = M.amberGlow, COOL = M.blueGlow;
+  var WGEO_Z = new THREE.BoxGeometry(1.25, 1.15, 0.06);
+  var WGEO_X = new THREE.BoxGeometry(0.06, 1.15, 1.25);
+  var winCount = 0;
+  function windowWall(x0, x1, z0, z1, top, face) {
+    var a0 = face === 'x' ? z0 : x0, a1 = face === 'x' ? z1 : x1;
+    for (var fy = 3.2; fy < top - 1.2; fy += 3.3) {
+      for (var a = a0 + 1.6; a < a1 - 1.0; a += 2.4) {
+        if (!lit(a * 10 + fy, face === 'x' ? x0 : z0)) continue;
+        var m = (((a * 31 + fy * 17) | 0) % 5) ? WARM : COOL;
+        winCount++;
+        if (face === 'x') still(new THREE.Mesh(WGEO_X, m), x0, fy, a);
+        else still(new THREE.Mesh(WGEO_Z, m), a, fy, z0);
+      }
+    }
+  }
+  /* Perimeter blocks only. The interior courtyards are where the fighting
+     happens and adding glow there would wash out the lamp pools that tell you
+     where cover is. */
+  [[-92, -46, 12], [46, 92, 12]].forEach(function (b) {
+    windowWall(b[0], b[1], -88.06, -88.06, b[2], 'z');
+    windowWall(b[0], b[1], 88.06, 88.06, b[2], 'z');
+  });
+  [[-88, -44, 12], [44, 88, 12]].forEach(function (b) {
+    windowWall(-92.06, -92.06, b[0], b[1], b[2], 'x');
+    windowWall(92.06, 92.06, b[0], b[1], b[2], 'x');
+  });
+  World._litWindows = winCount;
+
+  /* ---------- rooftop clutter and cable runs: CUT, NOT SHIPPED ----------
+
+     Both were built and both were removed before shipping, because
+     verify-props reported 151 unsupported props against a budget of 15 and it
+     was right.
+
+     The roof kits were placed at eight coordinates I picked by eye with a roof
+     height of 12 typed in. I never measured whether a roof exists at any of
+     them. That is failure mode 4 in the handoff — numbers typed instead of
+     measured — committed in the same session that quotes it. The fix is not a
+     bigger budget, it is reading real roof tops out of the built geometry the
+     way tools/gen-points.js reads spawn ground, and that is a measuring job
+     that has not been done.
+
+     The cables genuinely hang in open air; that is what cables do. They would
+     need a named exemption in verify-props, and an exemption is only honest
+     once the anchor points are real and measured. Same job.
+
+     Left here as a note rather than deleted silently, because the next person
+     to think "Urban needs more detail on the roofline" should know this was
+     tried, why it failed the gate, and what would make it pass. */
+
+  /* ---------- wet ground under the lamps ----------
+
+     Also still(), for the same reason as the windows, and with the offsets
+     redone. The first version stacked a sheen at 0.017 over a patch topping
+     out at 0.012 — a 5 mm gap, INSIDE the 6 mm z-fight tolerance that section
+     6 of the handoff names explicitly. Written the same day as the rule was
+     re-read. Now 12 mm and 26 mm above the road, which clears it twice over.
+
+     Thin boxes rather than planes so they are lit from above like everything
+     else; a PlaneGeometry would need its own rotation and double-siding. */
+  var WETGEO = new THREE.BoxGeometry(1, 0.004, 1);
+  var WET = [[-30, -30], [30, -30], [-30, 30], [30, 30], [0, -46], [0, 46],
+             [-46, 0], [46, 0], [-14, -14], [14, 14]];
+  WET.forEach(function (w, i) {
+    var r0 = 2.6 + (i % 3) * 0.7;
+    var wet = still(new THREE.Mesh(WETGEO, M.dark), w[0], 0.012, w[1]);
+    wet.scale.set(r0 * 2, 1, r0 * 1.6); wet.updateMatrix();
+    var sheen = still(new THREE.Mesh(WETGEO, M.glowPool), w[0], 0.026, w[1]);
+    sheen.scale.set(r0 * 1.1, 1, r0 * 0.84); sheen.updateMatrix();
+  });
+
   var TREE_RING = [[0, 0], [3, 0], [-3, 0], [0, 3], [0, -3], [5, 0], [-5, 0], [0, 5], [0, -5],
                    [4, 4], [-4, 4], [4, -4], [-4, -4], [8, 0], [-8, 0], [0, 8], [0, -8]];
   var treesPlanted = 0, treesSkipped = 0;

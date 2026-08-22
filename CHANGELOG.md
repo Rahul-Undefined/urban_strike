@@ -1,3 +1,134 @@
+# v10.10 - KILLHOUSE, AND THREE GATES CATCHING ME DOING WHAT THE HANDOFF WARNS ABOUT
+
+Rahul: finish the killhouse, fix what can be fixed, and make Urban look better.
+
+## KILLHOUSE
+
+Indoor warehouse, 58 x 34 m, humans only. Mirrored exactly about x=0 through a
+`pair()` helper that emits every prop twice — the mirror is structural, not a
+convention someone has to remember on the next edit. A close-quarters map that
+is not symmetric hands one spawn the better opening, and on a map this size the
+opening is most of the match.
+
+    draws       33 / 45          tris     12,260 / 26,000
+    casters     17 / 22          colliders   205
+    dead ground 0.2% / 2%        floating props 0 / 0
+    worst uncovered stretch 14.7 m
+
+0.2% dead ground against Metro's 3.4% is the number worth reading. There is
+almost nowhere to stand that no cover overlooks.
+
+NO STAIRS. Not one, deliberately. verify-climb is still red on 21 flights and
+sections 4.6 and 4.7 are both about stair fixes creating fresh defects.
+Container tops are reached by a crate chain of 0.31 m steps, well inside the
+0.42 m auto-step.
+
+The density pass is worth recording as a method. First build measured 140
+colliders and 8,004 triangles — a warehouse that read as a car park with boxes
+in it. Adding a second container tier, wall racking, roll-up doors, a gantry
+rail, tyre stacks and cable reels took it to 205 and 12,260 while the draw count
+stayed at exactly 33, because every material used already existed on another
+map and the merge pass folded it all into batches already paid for. Triangles
+were the cheap axis and there were 18,000 spare.
+
+## THE GATES CAUGHT THREE OF MY OWN MISTAKES
+
+Each is a numbered failure mode from section 4 or section 6, committed in the
+session that quotes them.
+
+**M.carPaint is an ARRAY of six materials.** I passed it to box() as a material.
+`mat.map` came back truthy because Array.prototype.map is a function, so box()
+ran the texture UV pass and three.js would have read the array as a
+multi-material. Section 6: check the field exists AND what type it is. Sixth
+instance. verify-map crashed on it, which is what that gate is for.
+
+**I typed the killhouse spawn and airdrop coordinates by hand.** verify-map
+refused four spawns sitting inside my own shipping containers and three airdrops
+on top of my own shelving racks. Section 4.4, numbers typed instead of measured
+— in a file whose header says the loot classes are validator-enforced.
+tools/gen-points.js was taught about killhouse and the points regenerated from
+the built geometry.
+
+**The Urban visual pass registered 135 unsupported props.** Window panels stood
+6 cm proud of a wall have nothing underneath them, and I emitted them through
+box(), which enters every solid in the prop and coplanar logs. The mechanism was
+wrong, not the budget: this file already has still(), which freezes a mesh's
+matrix and enters it in neither log, and which is how the billboards and the
+streetlight glow have always worked. Rerouted, with one shared geometry across
+all panels.
+
+I also stacked a wet-ground sheen 5 mm above its patch. Section 6 names 6 mm as
+the z-fight tolerance. Now 12 mm and 26 mm.
+
+## URBAN VISUAL PASS — LIGHT, BECAUSE THERE WAS NOTHING ELSE TO SPEND
+
+    draws     98 -> 100   (budget 115)
+    tris   92,092 -> 94,084 (budget 120,000)
+    casters   62 -> 62    UNCHANGED — there was no headroom and none was taken
+    colliders 3332 -> 3332, colSig IDENTICAL
+
+The constraint decided the approach. Urban runs 62 of 62 shadow casters, so more
+buildings and more props were never available. Lit windows across the perimeter
+blocks and wet ground under the lamps cost triangles and nothing else.
+
+The identical collision signature is the point. A visual change that moves
+colSig is not a visual change — it means cover appeared, or a sightline closed,
+or a spawn was invalidated. This one moved pixels and provably nothing else.
+
+**CUT BEFORE SHIPPING: rooftop clutter and overhead cable runs.** Both were
+built. The roof kits were placed at eight coordinates picked by eye with a roof
+height of 12 typed in, and I never checked a roof exists at any of them. The
+cables genuinely hang in air and would need a named exemption, which is only
+honest once the anchors are measured. Left as a commented note in deco.js rather
+than deleted silently, so the next person to think "Urban needs more roofline"
+knows it was tried, why it failed, and what would make it pass.
+
+## RURAL BRIDGE STAIRS CLIMBED AWAY FROM THE BRIDGE
+
+Three river bridges, two flights each:
+
+    stairFlight(x0 + 0.5, 0, 36.6, 0, -1, 2, 0.3, 0.7, 5, M.wood)
+
+Against the tread layout in world.js, that puts the highest tread at z 35.55 and
+0.60 m, while the deck runs z 38 to 56 with a walking surface at 0.86. The flight
+rose while travelling AWAY from the deck and finished 2.1 m short of it with open
+ground between. There was nothing to climb onto. All six read "reached 0.05m" —
+the signature of a flight the probe cannot start.
+
+Turned around and given a third tread to land flush on 0.86, with the top tread's
+far edge at the deck edge. stepD stays 0.7, past the 0.35 m capsule radius, so no
+tread overlaps its neighbour-but-one.
+
+Two of the six now climb fully. The other four reach 0.30 m — one tread up, not
+zero — so the flight shape is right and something else local to those four ends
+is in the way. Rural is 7 unclimbable down to 5. NOT FINISHED, and said so.
+
+## GATE BOARD
+
+  3,529 assertions passing, up from 3,408.
+  killhouse added to verify-map, verify-cover, verify-floaters, verify-zfight,
+  verify-fingerprint and gen-points. A new map absent from those lists is a new
+  map nobody has measured — section 4.1, which is how Metro shipped 19.2% dead
+  ground. Its cover budget is 0.02, tighter than every other map: indoors there
+  is nowhere for dead ground to hide honestly.
+
+  Fingerprint and untouched baselines re-recorded for urban and rural with the
+  reason written into the file, not the commit message.
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2
+  (urban 16, rural 5 — was 7).
+
+  test.js NOT RUN — needs a live socket, sandbox blocks the transport. Run it
+  before deploying.
+
+## STILL NOT SEEN ON A SCREEN
+
+Seven changes across two versions and zero rendered frames: the avatar GPU leak,
+the airdrop leak, the player cap, the weapon cull, bot removal, a new map, and
+Urban's new look. Test killhouse first — it is new and touches nothing else.
+Then Urban, where only pixels moved. Then a long match with several people,
+which is the only real test of the disconnect fix.
+
 # v10.9 - THE DISCONNECT WAS A GPU LEAK IN AVATARS.JS, AND IT WAS NEVER THE SERVER
 
 Rahul: "one person drops at a time and after he refreshes the browser and again

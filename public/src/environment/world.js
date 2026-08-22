@@ -1922,7 +1922,11 @@ World.buildMap = function (sceneRef, map) {
     if (World.builtMap === map) return;
     World.reset();
   }
-  var builder = map === 'rural' ? World._buildRural : (map === 'metro' ? World._buildMetro : null);
+  /* v10.10: killhouse joins the same contract. A lookup rather than another
+     nested ternary — three was already one too many and a fourth map would
+     have made the line unreadable. */
+  var builder = ({ rural: World._buildRural, metro: World._buildMetro,
+                   killhouse: World._buildKillhouse })[map] || null;
   if (map === 'urban' || !builder) {
     World.build(sceneRef);
     World.builtMap = 'urban';

@@ -40,6 +40,7 @@ function mapData(room) {
   var m = room.settings && room.settings.map;
   if (m === 'rural' && CFG.MAPS_RURAL) return CFG.MAPS_RURAL;
   if (m === 'metro' && CFG.MAPS_METRO) return CFG.MAPS_METRO;
+  if (m === 'killhouse' && CFG.MAPS_KILLHOUSE) return CFG.MAPS_KILLHOUSE;   // v10.10
   return { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points };
 }
 

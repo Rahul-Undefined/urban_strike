@@ -118,8 +118,21 @@ const BASELINE = {
    actually matters - HANDOFF section 7 records Urban at ZERO caster headroom.
    Recorded rather than silently rebaselined so the next reader can tell a
    deliberate geometry change from a leak. */
-  urban: {"colliders":3332,"sum":2336906291,"draws":98,"tris":92092,"casters":62,"lights":7,"minimap":236,"bound":100},
-  rural: {"colliders":1066,"sum":1837205283,"draws":32,"tris":54467,"casters":22,"lights":3,"minimap":210,"bound":150},
+/* ===== BASELINE RE-RECORDED FOR v10.10 — a decision, not a convenience =====
+
+   URBAN: the visual pass in deco.js. draws 98 -> 100, tris 92092 -> 94084.
+   `colliders` and `sum` are BYTE-IDENTICAL and casters is still 62. That is
+   the whole argument for re-recording: the collision hash did not move, so
+   nothing about how this map plays has changed. Lit windows and wet ground go
+   through still(), which never touches the collider set.
+
+   RURAL: the three river-bridge stair pairs climbed AWAY from the deck and
+   stopped 2.1 m short of it, so all six were unclimbable. Turned around and
+   given a third tread to land flush on 0.86. colliders 1066 -> 1072 is exactly
+   six flights gaining one tread; `sum` moves because tread positions moved.
+   Unlike urban, this one IS a gameplay change, and a deliberate one. */
+  urban: {"colliders":3332,"sum":2336906291,"draws":100,"tris":94084,"casters":62,"lights":7,"minimap":236,"bound":100},
+  rural: {"colliders":1072,"sum":3781973245,"draws":32,"tris":54683,"casters":22,"lights":3,"minimap":210,"bound":150},
   urbanData: {"loot":363,"spawns":44,"airdrops":10},
   ruralData: {"loot":164,"spawns":50,"airdrops":12},
   urbanLifts: "84.2:-25.5:1.6:0.25/3.25/6.25 | -76.2:-81.9:1.6:0.25/3.25/6.25"

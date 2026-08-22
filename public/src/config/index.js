@@ -9,7 +9,8 @@
       require('./loot.config.js'),
       require('./world.config.js'),
       require('./maps-rural.config.js'),
-      require('./maps-metro.config.js')
+      require('./maps-metro.config.js'),
+      require('./maps-killhouse.config.js')
     ]);
   } else {
     root.CFG = factory(root.__CFG_PARTS || []);

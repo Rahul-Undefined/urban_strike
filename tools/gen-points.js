@@ -23,7 +23,7 @@ let THREE; try { THREE = require('three'); } catch (e) { console.log('SKIP: npm 
 function fakeCanvas(){const c={width:0,height:0,style:{}};const g=new Proxy({},{get:(t,k)=>{if(k==='canvas')return c;return function(){if(k==='createLinearGradient'||k==='createRadialGradient')return{addColorStop(){}};if(k==='measureText')return{width:10};if(k==='getImageData')return{data:new Uint8ClampedArray(4)};};},set:()=>true});c.getContext=()=>g;return c;}
 const ctx={console,Math,Date,JSON,Object,Array,Float32Array,Uint32Array,Uint16Array,Uint8ClampedArray,THREE,performance:{now:()=>Date.now()},document:{createElement:t=>(t==='canvas'?fakeCanvas():{style:{}})},navigator:{},setTimeout,setInterval,clearTimeout,clearInterval};
 ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
-['public/src/config/weapons.config.js','public/src/config/gameplay.config.js','public/src/config/loot.config.js','public/src/config/world.config.js','public/src/config/maps-rural.config.js','public/src/config/maps-metro.config.js','public/src/config/districts.config.js','public/src/config/index.js','public/src/environment/merge.js','public/src/environment/world.js','public/src/environment/districts-south.js','public/src/environment/districts-north.js','public/src/environment/districts-outer.js','public/src/environment/deco.js','public/src/environment/rural.js','public/src/environment/metro.js','public/src/environment/access.js']
+['public/src/config/weapons.config.js','public/src/config/gameplay.config.js','public/src/config/loot.config.js','public/src/config/world.config.js','public/src/config/maps-rural.config.js','public/src/config/maps-metro.config.js','public/src/config/maps-killhouse.config.js','public/src/config/districts.config.js','public/src/config/index.js','public/src/environment/merge.js','public/src/environment/world.js','public/src/environment/districts-south.js','public/src/environment/districts-north.js','public/src/environment/districts-outer.js','public/src/environment/deco.js','public/src/environment/rural.js','public/src/environment/metro.js','public/src/environment/killhouse.js','public/src/environment/access.js']
   .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }));
 
 const map = process.argv[2] || 'urban';
@@ -36,7 +36,7 @@ vm.runInContext('World.reset && World.isBuilt && World.isBuilt() && World.reset(
 const cols = ctx.World._colliders();
 const BOUND = ctx.World.BOUND;
 const CFG = ctx.CFG;
-const data = map === 'metro' ? CFG.MAPS_METRO : map === 'rural' ? CFG.MAPS_RURAL
+const data = map === 'killhouse' ? CFG.MAPS_KILLHOUSE : map === 'metro' ? CFG.MAPS_METRO : map === 'rural' ? CFG.MAPS_RURAL
   : { SPAWNS: CFG.SPAWNS, LOOT_POINTS: CFG.LOOT_POINTS };
 
 function overlap(x, y, z, hx, hy, hz, c) {
