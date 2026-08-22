@@ -150,8 +150,18 @@ console.log('\n--- config helpers reach the BROWSER, not just Node ---');
 });
 
 console.log('\n--- the v9.2 features are wired to real things ---');
-ok(ctx.CFG.botsAllowed('co4') === true && ctx.CFG.botsAllowed('t5') === false,
+/* v10.9: this asserted botsAllowed('co4') === true, which pinned the STATE of
+   the bot switch rather than the RULE the v9.2 work introduced. Bots are off
+   (world.config.js BOTS_ENABLED), so co4 is correctly not a bot mode now.
+
+   The rule worth keeping is that the browser CFG can still tell a bot-fielding
+   mode from a human one — the distinction lives in the `vsBots` / `practice`
+   flags, which survive the switch. Testing those tests the classification;
+   testing botsAllowed() tested whether bots happened to be enabled today. */
+ok(ctx.CFG.MODES.co4.vsBots === true && !ctx.CFG.MODES.t5.vsBots,
   'the browser CFG classifies Strike Team and Team Battle correctly');
+ok(ctx.CFG.botsAllowed('co4') === ctx.CFG.BOTS_ENABLED,
+  'and botsAllowed() follows the bot switch [BOTS_ENABLED=' + ctx.CFG.BOTS_ENABLED + ']');
 ok(typeof ctx.Net.getMatch === 'function',
   'Net.getMatch() exists — minimap.js reads the mode through it');
 ok(ctx.Net.getMatch() && typeof ctx.Net.getMatch().mode === 'string',
@@ -160,11 +170,25 @@ ok(typeof ctx.Minimap.toggleFull === 'function' && typeof ctx.Minimap.drawFull =
   'the full map is still exposed by the minimap module');
 
 /* Every mode the picker can offer must resolve to a real category, or the
-   lobby dropdown renders an empty variant list and the mode cannot be chosen. */
+   lobby dropdown renders an empty variant list and the mode cannot be chosen.
+
+   v10.9: was "every mode in MODES", which is not the rule — it is the rule as
+   it happened to look when every mode was selectable. `hidden` modes exist on
+   purpose now (the seven bot modes, and t10 which duplicates t8 under the
+   15-player cap) and a hidden mode having no visible category is CORRECT.
+   Narrowed to the selectable set, which is what "the picker can offer" always
+   meant, and paired with the inverse so hiding cannot silently orphan
+   something that is still reachable. */
 const catIds = ctx.CFG.MODE_CATS.map(c => c.id);
-Object.keys(ctx.CFG.MODES).forEach(m => {
+const selectable = Object.keys(ctx.CFG.MODES).filter(m => !ctx.CFG.MODES[m].hidden);
+ok(selectable.length > 0, 'at least one mode is selectable [' + selectable.length + ']');
+selectable.forEach(m => {
   ok(catIds.indexOf(ctx.CFG.MODES[m].cat) >= 0,
     'mode ' + m + ' resolves to a category the picker shows');
+});
+Object.keys(ctx.CFG.MODES).filter(m => ctx.CFG.MODES[m].hidden).forEach(m => {
+  ok(ctx.CFG.modesInCat(ctx.CFG.MODES[m].cat).indexOf(m) === -1,
+    'hidden mode ' + m + ' is absent from its category listing');
 });
 catIds.forEach(c => ok(ctx.CFG.modesInCat(c).length > 0,
   'category ' + c + ' has at least one selectable variant'));

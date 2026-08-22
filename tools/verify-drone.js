@@ -152,9 +152,28 @@ console.log('\n--- friendly fire on detonation ---');
 console.log('\n--- not in bot modes ---');
 /* The rule lives in server.js as a CFG.botsAllowed check, so assert the
    predicate covers exactly the modes it should. A drone in Strike Team would
-   trivialise a mode whose whole point is practising your aim. */
-['bots', 'co1', 'co2', 'co3', 'co4', 'co6', 'co10'].forEach(m =>
-  ok(CFG.botsAllowed(m), m + ': is a bot mode, so drones are refused there'));
+   trivialise a mode whose whole point is practising your aim.
+
+   v10.9: bots are switched off in the shipping build (world.config.js
+   BOTS_ENABLED), so botsAllowed() is false everywhere and this block was
+   asserting that Overrun is a bot mode while nothing in the game fields bots.
+
+   The rule still matters — the bot engine is retained and Rahul intends to
+   switch it back on, at which point a drone must still be refused in those
+   modes. So the predicate is evaluated in a child process with the switch ON,
+   which is the only state in which the question means anything. The
+   human-mode half is checked against the SHIPPING build, because "drones are
+   available in FFA" must be true right now. */
+{
+  const { execFileSync } = require('child_process');
+  const cfgPath = path.join(__dirname, '..', 'public/src/config/index.js').replace(/\\/g, '\\\\');
+  const probe = `const C=require('${cfgPath}');console.log(JSON.stringify(
+    ['bots','co1','co2','co3','co4','co6','co10'].map(m => C.botsAllowed(m))));`;
+  const env = Object.assign({}, process.env, { US_BOTS: '1' });
+  const withBotsOn = JSON.parse(execFileSync(process.execPath, ['-e', probe], { env, encoding: 'utf8' }));
+  ['bots', 'co1', 'co2', 'co3', 'co4', 'co6', 'co10'].forEach((m, i) =>
+    ok(withBotsOn[i], m + ': is a bot mode when bots are enabled, so drones are refused there'));
+}
 ['ffa', 't2', 't5', 't10', 'sq2', 'sq4', 'ls', 'lsq2', 'lsq4'].forEach(m =>
   ok(!CFG.botsAllowed(m), m + ': drones are available'));
 ok(!!CFG.LOOT_ITEMS.drone && CFG.LOOT_ITEMS.drone.kind === 'gear',

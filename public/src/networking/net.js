@@ -63,9 +63,15 @@ var Net = (function () {
     }
     return r;
   }
+  /* v10.9: scene.remove() unparents; it does not free GPU memory. A leaver's
+     name-tag and hp-bar textures survived every departure, and a player who
+     refreshed and rejoined arrived under a NEW socket id — so every other
+     client built a second avatar and stranded the first. That is the cascade
+     behind "one person drops at a time". Avatars owns the list of what is
+     genuinely per-player; see disposeAvatar. */
   function removeRemote(id) {
     var r = remotes[id];
-    if (r) { scene.remove(r.av.group); delete remotes[id]; }
+    if (r) { scene.remove(r.av.group); Avatars.disposeAvatar(r.av); delete remotes[id]; }
   }
 
   function bind(s) {

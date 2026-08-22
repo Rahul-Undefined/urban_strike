@@ -25,7 +25,11 @@
 
 let THREE=require('three');
 const vm=require('vm'),fs=require('fs'),path=require('path');
-const ROOT='/home/claude/us';
+/* v10.9: was hardcoded to '/home/claude/us' — the absolute path of the
+   container this gate was authored in. It crashed with ENOENT on every other
+   checkout, including Rahul's laptop, while the board recorded it green at
+   9/0. Every other gate resolves from __dirname; this one now does too. */
+const ROOT=path.join(__dirname,'..');
 function fc(){const c={width:0,height:0,style:{}};const g=new Proxy({},{get:(t,k)=>{if(k==='canvas')return c;return function(){if(k==='createLinearGradient'||k==='createRadialGradient')return{addColorStop(){}};if(k==='measureText')return{width:10};if(k==='getImageData')return{data:new Uint8ClampedArray(4)};};},set:()=>true});c.getContext=()=>g;return c;}
 const ctx={console,Math,Date,JSON,Object,Array,Float32Array,Uint32Array,Uint16Array,Uint8ClampedArray,THREE,performance:{now:()=>Date.now()},document:{createElement:t=>(t==='canvas'?fc():{style:{}})},navigator:{},setTimeout,setInterval,clearTimeout,clearInterval,AudioSys:{step(){}}};
 ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);

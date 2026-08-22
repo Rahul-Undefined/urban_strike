@@ -37,17 +37,69 @@
 
      `lives` turns a mode into an elimination match. Absent or 0 means the
      normal kill/clock rules apply. */
+  /* ===== v10.9 - BOT MODES ARE OFF =====
+
+     Rahul: "Remove the bot mode as it is lagging... removing the bot means
+     removing every trace of it, from the welcome screen, mode selection
+     screen, everywhere" and "will think of it later and add back later".
+
+     That last clause is why this is a SWITCH and not a deletion. Deleting the
+     bot modes would mean unpicking 281 references in server/lib/bots.js, 49 in
+     server.js, 31 in ui.js and 65 assertions in test.js, then putting all of
+     it back later from memory. This project has a documented failure mode for
+     exactly that shape of change (HANDOFF section 4.3, "a shared helper edited
+     for one caller", and 4.6, "fixing one defect by creating another").
+
+     Every bot control in the UI already asks botsAllowed() or
+     backfillAllowed() whether to render, and the mode picker already filters
+     on `hidden`. So one flag closes all of it: the Overrun and Strike Team
+     categories vanish from mode selection, the bot-count and difficulty
+     sliders vanish from the lobby, the backfill row vanishes from every human
+     mode, and bots.js returns before spawning anything.
+
+     TO BRING BOTS BACK: return true from the function below. Nothing else.
+
+     The gates still exercise the bot engine — tools/verify-bots.js re-enables
+     it for its own run (see the head of that file), because the engine is
+     retained and must not be allowed to rot while it is switched off.
+
+     Read through `globalThis` rather than naming `process` directly. This file
+     is loaded by the BROWSER as well as by node, and `process` does not exist
+     there — a bare read is a ReferenceError swallowed by a try/catch, which is
+     the same "check the field you are reading actually exists" mistake listed
+     in HANDOFF section 6. tools/verify-scope.js caught it. */
+  var BOTS_ENABLED = (function () {
+    var g = (typeof globalThis !== 'undefined') ? globalThis : null;
+    var env = g && g.process && g.process.env;
+    return !!(env && env.US_BOTS === '1');
+  })();
+
   var MODES = {
-    ffa:  { label: 'Free For All',      vlabel: 'Free For All',  cat: 'ffa',    teams: false, teamCount: 0,  maxPlayers: 20 },
+    /* v10.9 ROOM CAP 20 -> 15. Rahul asked for this to reduce load. The
+       disconnect it was aimed at turned out to be a client-side GPU leak
+       (see avatars.js v10.9), not server pressure — but the cap is kept for
+       the reason it actually helps: five fewer remote avatars is five fewer
+       rigs to skin, pose and draw on every client, every frame.
+
+       Every mode that could reach 20 is re-shaped below. A mode whose
+       teamCount x squadSize exceeds the cap cannot fill, so the shape changes,
+       not just the ceiling. */
+    ffa:  { label: 'Free For All',      vlabel: 'Free For All',  cat: 'ffa',    teams: false, teamCount: 0,  maxPlayers: 15 },
     t2:   { label: '2 vs 2',            vlabel: '2 vs 2',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 4 },
     t3:   { label: '3 vs 3',            vlabel: '3 vs 3',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 6 },
     t4:   { label: '4 vs 4',            vlabel: '4 vs 4',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 8 },
     t5:   { label: '5 vs 5',            vlabel: '5 vs 5',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 10 },
     t6:   { label: '6 vs 6',            vlabel: '6 vs 6',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 12 },
-    t8:   { label: '8 vs 8',            vlabel: '8 vs 8',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 16 },
-    t10:  { label: '10 vs 10',          vlabel: '10 vs 10',      cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 20 },
-    sq2:  { label: 'Squads \u00b7 10 \u00d7 2', vlabel: '10 squads of 2', cat: 'squads', teams: true, squads: true, teamCount: 10, squadSize: 2, maxPlayers: 20 },
-    sq4:  { label: 'Squads \u00b7 5 \u00d7 4',  vlabel: '5 squads of 4',  cat: 'squads', teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20 },
+    t8:   { label: '7 vs 7',            vlabel: '7 vs 7',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 14 },
+    /* v10.9: 10 vs 10 needed 20 and the cap is 15, so the ladder now tops out at
+       t8 = 7 vs 7. This id is HIDDEN rather than deleted: mode ids are
+       server-authoritative, every gate reads this table, and a saved room
+       setting may still name it. Hidden keeps all of that valid while taking
+       it out of the picker. It is capped to match t8 so a stale reference
+       cannot open a 20-slot room. */
+    t10:  { label: '7 vs 7',            vlabel: '7 vs 7',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 14, hidden: true },
+    sq2:  { label: 'Squads \u00b7 7 \u00d7 2', vlabel: '7 squads of 2', cat: 'squads', teams: true, squads: true, teamCount: 7, squadSize: 2, maxPlayers: 14 },
+    sq4:  { label: 'Squads \u00b7 5 \u00d7 3',  vlabel: '5 squads of 3',  cat: 'squads', teams: true, squads: true, teamCount: 5,  squadSize: 3, maxPlayers: 15 },
 
     /* LAST STAND. One life. No respawn, no clock — the match ends when one
        operator, or one squad, is the only thing left breathing.
@@ -57,7 +109,7 @@
        these carry minutes 0 and killTarget 0 and still always terminate — the
        end condition is elimination, which cannot stall while anyone is alive. */
     ls:   { label: 'Last Stand \u00b7 Solo', vlabel: 'Solo \u00b7 every operator for themselves',
-            cat: 'last', teams: false, teamCount: 0, maxPlayers: 20, lives: 1 },
+            cat: 'last', teams: false, teamCount: 0, maxPlayers: 15, lives: 1 },
     /* v9.4 `fullMapContacts` — the escape hatch the v9.2 gate said to use.
        Hiding contacts on the full map is right for Team Battle and Squads,
        where the map is a free intel screen in a match that never pauses. Last
@@ -65,8 +117,8 @@
        pressing M shows where everyone is, so hiding buys you position and not
        safety. Marking the two squad variants restores that without a special
        case wired into minimap.js. Solo is already free-for-all shaped. */
-    lsq2: { label: 'Last Stand \u00b7 Squads 10 \u00d7 2', vlabel: '10 squads of 2',
-            cat: 'last', teams: true, squads: true, teamCount: 10, squadSize: 2, maxPlayers: 20, lives: 1, fullMapContacts: true },
+    lsq2: { label: 'Last Stand \u00b7 Squads 7 \u00d7 2', vlabel: '7 squads of 2',
+            cat: 'last', teams: true, squads: true, teamCount: 7, squadSize: 2, maxPlayers: 14, lives: 1, fullMapContacts: true },
     /* v8.38 TRAINING. One human, up to nineteen bots, on any difficulty. It is
        free-for-all shaped so every bot is hostile — a practice room where half
        the room is on your side teaches you nothing. Startable solo, which is
@@ -77,9 +129,9 @@
        and settings check reads, and renaming a live identifier to improve a
        label is how you break three things to fix a word. */
     bots: { label: 'Overrun', vlabel: 'One operator against the sector',
-            cat: 'practice', teams: false, teamCount: 0, maxPlayers: 20, practice: true },
-    lsq4: { label: 'Last Stand \u00b7 Squads 5 \u00d7 4',  vlabel: '5 squads of 4',
-            cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 4, maxPlayers: 20, lives: 1, fullMapContacts: true },
+            cat: 'practice', teams: false, teamCount: 0, maxPlayers: 15, practice: true, hidden: !BOTS_ENABLED },
+    lsq4: { label: 'Last Stand \u00b7 Squads 5 \u00d7 3',  vlabel: '5 squads of 3',
+            cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 3, maxPlayers: 15, lives: 1, fullMapContacts: true },
 
     /* v9.2 STRIKE TEAM — humans on one side, bots on the other.
 
@@ -99,17 +151,17 @@
        maxPlayers is the HUMAN squad size; the room cap counts humans only, so
        bots arriving at match start cannot lock a team-mate out of a free slot. */
     co1:  { label: 'Strike Team \u00b7 Solo',    vlabel: '1 operator vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 1,  vsBots: true },
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 1,  vsBots: true, hidden: !BOTS_ENABLED },
     co2:  { label: 'Strike Team \u00b7 Duo',     vlabel: '2 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 2,  vsBots: true },
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 2,  vsBots: true, hidden: !BOTS_ENABLED },
     co3:  { label: 'Strike Team \u00b7 Trio',    vlabel: '3 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 3,  vsBots: true },
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 3,  vsBots: true, hidden: !BOTS_ENABLED },
     co4:  { label: 'Strike Team \u00b7 Squad',   vlabel: '4 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 4,  vsBots: true },
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 4,  vsBots: true, hidden: !BOTS_ENABLED },
     co6:  { label: 'Strike Team \u00b7 Section', vlabel: '6 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 6,  vsBots: true },
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 6,  vsBots: true, hidden: !BOTS_ENABLED },
     co10: { label: 'Strike Team \u00b7 Platoon', vlabel: '10 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 10, vsBots: true }
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 10, vsBots: true, hidden: !BOTS_ENABLED }
   };
 
   /* THE single source of truth for "does this mode put bots in the room".
@@ -118,6 +170,7 @@
      literal source text `.practice) return`, which meant adding a second bot
      mode turned it red for being correct. */
   function botsAllowed(modeId) {
+    if (!BOTS_ENABLED) return false;          // v10.9 kill switch, see top
     var m = MODES[modeId];
     return !!(m && (m.practice || m.vsBots));
   }
@@ -141,6 +194,7 @@
      most of the mode list is unplayable unless you can assemble a crowd, which
      is a content graveyard rather than a feature set. */
   function backfillAllowed(modeId) {
+    if (!BOTS_ENABLED) return false;          // v10.9 kill switch, see top
     var m = MODES[modeId];
     if (!m) return false;
     if (m.practice || m.vsBots) return false;      // these already field bots
@@ -161,7 +215,7 @@
   /* The two-step picker. Order here is the order shown. */
   var MODE_CATS = [
     { id: 'ffa',    label: 'Free For All',
-      blurb: 'Twenty operators. No sides. Highest count when the clock dies.' },
+      blurb: 'Fifteen operators. No sides. Highest count when the clock dies.' },
     { id: 'team',   label: 'Team Battle',
       blurb: 'Two sides, your pick of size. First team to the kill target.' },
     { id: 'squads', label: 'Squads',
@@ -173,9 +227,18 @@
     { id: 'coop',   label: 'Strike Team',
       blurb: 'You and your squad against the machines. Pick your size and how mean they are.' }
   ];
+  /* v10.9: `hidden` takes a mode out of the PICKER without taking it out of
+     the table. Deleting a mode id breaks every gate that reads MODES, the
+     server guards that switch on it, and any saved room setting naming it.
+     Hiding is reversible in one word, which is the whole point. */
   function modesInCat(catId) {
-    return Object.keys(MODES).filter(function (m) { return MODES[m].cat === catId; });
+    return Object.keys(MODES).filter(function (m) { return MODES[m].cat === catId && !MODES[m].hidden; });
   }
+  /* v10.9: a CATEGORY with no visible modes must not appear either, or the
+     welcome screen still offers "Overrun" and "Strike Team" and picking one
+     lands on an empty variant list. Derived from MODES rather than listed by
+     hand, so it can never disagree with which modes are actually hidden. */
+  var VISIBLE_CATS = MODE_CATS.filter(function (c) { return modesInCat(c.id).length > 0; });
   function livesFor(modeId) { return (MODES[modeId] && MODES[modeId].lives) || 0; }
   function isElimination(modeId) { return livesFor(modeId) > 0; }
 
@@ -234,7 +297,7 @@
   };
 
   return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams,
-    MODE_CATS: MODE_CATS, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
+    MODE_CATS: VISIBLE_CATS, ALL_MODE_CATS: MODE_CATS, BOTS_ENABLED: BOTS_ENABLED, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
     botsAllowed: botsAllowed, backfillAllowed: backfillAllowed,
     humanSideOf: humanSideOf, botSideOf: botSideOf,
     MINIMAP: MINIMAP, RENDER: RENDER, MAPS: MAPS };

@@ -1,3 +1,188 @@
+# v10.9 - THE DISCONNECT WAS A GPU LEAK IN AVATARS.JS, AND IT WAS NEVER THE SERVER
+
+Rahul: "one person drops at a time and after he refreshes the browser and again
+joins" — and separately, "reduce the player count from 20 to 15 so that server
+load is low, maybe helps for smooth gameplay."
+
+Right about wanting fewer players. Wrong about why, and the why mattered: if the
+server had died, EVERY player would have dropped together. One client at a time,
+recoverable by reload, is one browser exhausting itself. No amount of server
+tuning was ever going to touch it.
+
+## THE ACTUAL CAUSE: NOTHING IN AVATARS.JS EVER CALLED DISPOSE
+
+The word `dispose` appeared ZERO times in 651 lines of avatars.js, while four
+other client files use it correctly. Two call sites minted `new
+THREE.BoxGeometry` on every invocation:
+
+    setRemoteGun()   every weapon switch by any remote player tore the old gun
+                     down with h.remove() and built a new one. Removing an
+                     Object3D from its parent does NOT free its GPU buffers.
+
+    removeRemote()   a leaver's 13 body geometries and two CanvasTextures were
+                     abandoned the same way.
+
+A rejoin arrives under a NEW socket id, so every other client builds a fresh
+avatar and strands the old one. That is the cascade behind "one at a time": each
+drop makes every surviving browser heavier and the next drop likelier.
+
+## MEASURED, SAME SIMULATED MATCH — 15 PLAYERS, 1800 SWAPS, 20 REJOINS
+
+                              before      after
+    15 avatars built             270         13
+    1800 weapon swaps         +7,272        +33
+    20 rejoin cycles            +441          0
+    TOTAL GEOMETRIES ALIVE     7,983         46      173x
+    leaked canvas textures        70         30      (= the 15 live players)
+
+Each geometry holds four WebGL buffers, so that was roughly 32,000 orphaned GPU
+buffers accumulating over a long match. It is bounded at 46 now, forever.
+
+## THE FIX IS SHARING, NOT MORE DISPOSE CALLS
+
+Geometry in this file is immutable — nothing reads or writes `.geometry` after
+construction and every box size is a literal. So a box of a given size is built
+ONCE and shared. Allocation stops being per-event and becomes
+per-distinct-size.
+
+The obvious implementation — a generic scene-graph walk that disposes every
+geometry and material it finds — would have been WRONG here. AVM, RGM and
+accentCache are module-level and shared; freeing one turns every other operator
+black. disposeAvatar() therefore names the four genuinely per-avatar resources
+explicitly, which is what makes that mistake impossible.
+
+## THE SECOND LEAK: COLLECTED AIRDROP ITEMS WERE NEVER RETIRED
+
+Map loot respawns, so parking it inactive is correct. Airdrop items are
+`noRespawn` and were parked at `respawnAt: Infinity` instead — so every crate
+added six entries the array could never lose, walked by respawnPickups every
+tick and kept as a mesh by every client.
+
+    periodSec 150    15 min +36    30 min +72    60 min +144   (on 364 base)
+
+Retired from the array on collect, and the client frees the mesh. Swept after
+the collect loop, not during it: splicing while tryCollect iterates skips the
+next pickup.
+
+## ROOM CAP 20 -> 15, AND THE MODES THAT COULD NOT FIT
+
+Kept for the reason it actually helps — five fewer remote avatars is five fewer
+rigs to skin, pose and draw every frame on every client. A mode whose
+teamCount x squadSize exceeded the cap could never fill, so the SHAPE changed,
+not just the ceiling:
+
+    8 vs 8   -> 7 vs 7          (the ladder now tops out here)
+    10 vs 10 -> hidden          duplicate of 7v7 under the cap
+    Squads 10x2 -> 7x2          Squads 5x4 -> 5x3
+    FFA / Last Stand / Overrun  -> 15
+
+## BOT MODES ARE OFF. ONE FLAG, NOT A DELETION.
+
+Rahul: "removing the bot means removing every trace of it" and "will think of it
+later and add back later". That second clause is why this is a switch.
+
+Deleting would mean unpicking 281 references in bots.js, 49 in server.js, 31 in
+ui.js and 65 assertions in test.js — then restoring all of it from memory later.
+Sections 4.3 and 4.6 of the handoff describe that shape of change and what it
+costs this project.
+
+Every bot control in the UI already asked botsAllowed() or backfillAllowed()
+whether to render, so one flag closes all of it: the Overrun and Strike Team
+CATEGORIES vanish from mode selection (derived from MODES, so they can never
+disagree with which modes are hidden), the bot-count and difficulty sliders
+vanish, the backfill row vanishes, and addBots() returns before spawning.
+
+Proven with a stale setting, which is the case that would leak:
+
+    FFA + backfill:true + botCount 12  ->  0 bots
+    Overrun + botCount 12              ->  0 bots
+
+`process` is read through globalThis. A bare read is a ReferenceError in the
+browser swallowed by a try/catch — the same "check the field you are reading
+actually exists" mistake in section 6. verify-scope caught it.
+
+## THREE GATES WENT RED AND ALL THREE WERE TESTING THE OLD STATE
+
+Section 4.2 says read the gate and fix it to test the invariant. Never weaken it.
+
+  verify-client   asserted every mode in MODES resolves to a visible category.
+                  That is not the rule, it is the rule as it looked when every
+                  mode was selectable. Narrowed to the selectable set, and
+                  PAIRED with the inverse so hiding cannot orphan something
+                  still reachable. Also asserted botsAllowed('co4') === true,
+                  which pinned the state of the switch rather than the v9.2
+                  classification rule; now reads the `vsBots` flag, which
+                  survives the switch.
+
+  verify-drone    asserted Overrun IS a bot mode, to then check drones are
+                  refused there. The rule still matters for when bots return,
+                  so the predicate is evaluated in a child process with the
+                  switch ON — the only state in which the question means
+                  anything. The human-mode half still runs against the shipping
+                  build, because "drones are available in FFA" must be true now.
+
+  verify-bots     211/37 with the switch off, because it was asking a disabled
+                  system to spawn. The engine is RETAINED and retained code that
+                  stops being tested rots, so the gate re-enables bots for its
+                  own run — and 8 NEW assertions test the other half, that the
+                  shipped default exposes no bots anywhere. 250 -> 258.
+
+## THE WEAPON CULL, AND A GUN NOBODY COULD EVER PICK UP
+
+Retired from loot: AWM-S, Karabiner 98k, M1 Garand, Recurve Bow. NOT removed
+from CFG.WEAPON_ORDER — `wp` in every snapshot is an INDEX into that array, so
+deleting an entry renumbers every weapon above it and each client renders the
+wrong gun in every other player's hands. `retired:1` is applied in exactly one
+place, initPickups, so a culled weapon cannot leak back in via a second path.
+
+KAR98 HAD NO LOOT ENTRY. It has a full weapon record, a viewmodel and a bot kit
+(bots.js weight 5) but no LOOT_ITEMS record, so in every version to date it
+could be shot at you and never picked up. Found while retiring AWM-S. Since
+Rahul kept Kar98, it now takes AWM-S's rarity slot.
+
+## THE LOW-RECOIL RIFLE ALREADY EXISTED
+
+Rahul asked for modern low-recoil assault rifles. Measuring the roster first
+showed the AUG A3 already IS one, and is already common loot:
+
+    aug    recoil 0.0085  drift 0.36  spread 0.013  680 rpm  52 m
+    m4a1          0.009         0.40         0.014  700 rpm  44 m
+    ak47          0.012         0.55         0.017  590 rpm  46 m
+    famas         0.015         0.62         0.019   <- outside the band
+    akm           0.016         0.66         0.016   <- outside the band
+
+The gap was not a missing gun. Both outliers now sit at the AK-47 end of the
+band. Damage, rate of fire and magazine UNTOUCHED, so nothing moves a damage
+class and verify-armoury measures the same numbers. FAMAS gains 4 m: at 900 rpm
+and 40 m it was the shortest-reaching rifle on maps that open past 50 m.
+
+Four new models were NOT built. That is days of work — viewmodel, sounds,
+attachment points, three gates each — to produce something the AUG already does.
+
+## VERIFY-PITCH HAS NEVER RUN ON RAHUL'S MACHINE
+
+    const ROOT='/home/claude/us';
+
+The absolute path of the container it was authored in. ENOENT on every other
+checkout while the board recorded it green at 9/0. Now resolves from __dirname
+like every other gate. Section 4.1, "a green gate that never looked", except
+this one could not look at all.
+
+## GATE BOARD
+
+  3,408 assertions passing. verify-bots 258/0 (was 250), verify-client 62/0,
+  verify-drone 45/0, verify-scope 20/0, verify-pitch 9/0 (first real run).
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+
+  test.js NOT RUN — it needs a live socket and this sandbox blocks the
+  transport. Run it before deploying. Expect 263/0.
+
+## NOTHING HERE HAS BEEN SEEN ON A SCREEN
+
+Five changes, one gate board, zero frames rendered. Section 0 still applies and
+applies harder than usual, because the avatar fix touches what every remote
+player looks like. Play before believing any of it.
+
 # Urban Strike — Changelog & Deployment Ledger
 
 # v10.8 - THE AUDIO GRAPH WAS EATING THE FRAME, AND IT WAS NEVER MINE

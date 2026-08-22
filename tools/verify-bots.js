@@ -15,6 +15,23 @@
 
    Both are structural and cheap to assert. */
 
+/* v10.9: BOTS ARE SWITCHED OFF IN THE SHIPPING BUILD, AND THIS GATE STILL RUNS.
+
+   CFG.BOTS_ENABLED is false by default (see world.config.js), which makes
+   botsAllowed() return false and stops bots.js spawning anything. Run
+   unmodified against that, this gate went 211/37 — not because the bot engine
+   broke, but because it was asking a disabled system to spawn.
+
+   That would have been the project's own failure mode 4.2: a gate pinning an
+   implementation rather than a rule. The rule this file tests is "the bot
+   engine works". The engine is RETAINED, because Rahul intends to switch bots
+   back on later, and retained code that stops being tested rots.
+
+   So the flag is set here, before the config is required, and the engine is
+   exercised exactly as before. Whether bots are REACHABLE by a player is a
+   different rule, tested separately at the foot of this file. */
+process.env.US_BOTS = '1';
+
 const fs = require('fs');
 const path = require('path');
 let pass = 0, fail = 0;
@@ -466,6 +483,55 @@ ok(CFG.MODES.bots.teams === false, 'Training is free-for-all shaped: every bot i
   for (const b of ffa.players.values()) { b.alive = true; b.pos = [Math.random() * 8, 0.95, Math.random() * 8]; }
   for (let i = 0; i < 60 * 20; i++) { T2 += 33; P3.tick(ffa, 1 / 30); }
   ok(shots > 0, 'Overrun bots still engage each other [' + shots + ' shots]');
+}
+
+/* ===== v10.9 - THE KILL SWITCH ITSELF =====
+
+   Everything above ran with US_BOTS=1 to exercise the retained engine. These
+   assertions test the OTHER rule: that the SHIPPED default exposes no bots to
+   a player anywhere. Asserted in a clean child process, because CFG was
+   already loaded above with the flag on and a cached module would answer for
+   the wrong build.
+
+   This is the half that would otherwise go untested. A switch nobody checks is
+   a switch that gets flipped back by an unrelated edit. */
+{
+  const { execFileSync } = require('child_process');
+  const probe = `
+    const CFG = require('${path.join(__dirname, '..', 'public/src/config/index.js').replace(/\\/g, '\\\\')}');
+    const hiddenModes = Object.keys(CFG.MODES).filter(m => CFG.MODES[m].hidden);
+    const botModes = Object.keys(CFG.MODES).filter(m => CFG.MODES[m].practice || CFG.MODES[m].vsBots);
+    console.log(JSON.stringify({
+      enabled: CFG.BOTS_ENABLED,
+      cats: CFG.MODE_CATS.map(c => c.id),
+      allCats: CFG.ALL_MODE_CATS.map(c => c.id),
+      botModes,
+      botModesVisible: botModes.filter(m => !CFG.MODES[m].hidden),
+      anyBotsAllowed: Object.keys(CFG.MODES).filter(m => CFG.botsAllowed(m)),
+      anyBackfill: Object.keys(CFG.MODES).filter(m => CFG.backfillAllowed(m)),
+      overMax: Object.keys(CFG.MODES).filter(m => CFG.MODES[m].maxPlayers > 15)
+    }));`;
+  const env = Object.assign({}, process.env); delete env.US_BOTS;
+  const r = JSON.parse(execFileSync(process.execPath, ['-e', probe], { env, encoding: 'utf8' }));
+
+  console.log('\n--- v10.9: the shipped default exposes no bots ---');
+  ok(r.enabled === false, 'BOTS_ENABLED is false without US_BOTS');
+  ok(r.botModes.length === 7, 'all 7 bot modes still exist in the table [' + r.botModes.length + ']');
+  ok(r.botModesVisible.length === 0,
+    'and none of them is selectable' + (r.botModesVisible.length ? ' (' + r.botModesVisible.join(', ') + ')' : ''));
+  ok(r.anyBotsAllowed.length === 0,
+    'botsAllowed() is false for every mode' + (r.anyBotsAllowed.length ? ' (' + r.anyBotsAllowed.join(', ') + ')' : ''));
+  ok(r.anyBackfill.length === 0,
+    'backfillAllowed() is false for every mode' + (r.anyBackfill.length ? ' (' + r.anyBackfill.join(', ') + ')' : ''));
+  ok(r.cats.indexOf('practice') === -1 && r.cats.indexOf('coop') === -1,
+    'the Overrun and Strike Team CATEGORIES are gone from the picker [' + r.cats.join(', ') + ']');
+  ok(r.allCats.indexOf('practice') !== -1 && r.allCats.indexOf('coop') !== -1,
+    'but both survive in ALL_MODE_CATS, so switching bots back on restores them');
+  /* v10.9 room cap. Lives here rather than in its own file because a mode that
+     can seat more than the cap is the same class of defect: a table entry that
+     disagrees with a global rule. */
+  ok(r.overMax.length === 0,
+    'no mode seats more than the 15-player cap' + (r.overMax.length ? ' (' + r.overMax.join(', ') + ')' : ''));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

@@ -209,6 +209,21 @@ var Pickups = (function () {
     AudioSys.pickupSnd(it.kind === 'heal' ? 'health' : 'armor', pos);
     FX.pickupBurst(pos.clone(), rarityColorOf(e.t));
     if (mine && (it.kind === 'heal' || it.kind === 'armor') && it.label) UI.toast(it.label);
+    /* v10.9: an airdrop item never comes back, so hiding it keeps a mesh and
+       its buffers alive for the rest of the match. The server says which ones
+       are retired (`gone`); map loot respawns and must stay. Nothing in this
+       file shares geometry or materials between items, so freeing this group's
+       own resources cannot affect another pickup. */
+    if (d.gone) { scene.remove(e.grp); freeGroup(e.grp); delete items[d.id]; }
+  }
+  function freeGroup(g) {
+    g.traverse(function (o) {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        if (o.material.map) o.material.map.dispose();
+        o.material.dispose();
+      }
+    });
   }
   function onSpawn(id) {
     var e = items[id];

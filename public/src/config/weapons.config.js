@@ -114,10 +114,25 @@
     /* FAMAS F1 — the burst-fire rifle of the class. rpm is high because the
        weapon's identity is a very fast cyclic rate; the trade is the smallest
        magazine and the worst sustained spread in the class. */
-    famas:   { key: 9, ex: 1, label: 'FAMAS F1', type: 'auto', dmg: 50, rpm: 900, mag: 25, reserve: 125, reload: 2.6, spread: 0.019, ads: 0.0068, range: 40, head: 1.6, legs: 0.72, speed: 0.94, recoil: 0.015, drift: 0.62, adsFov: 50, trc: 0xffcc9a },
+    /* v10.9 RECOIL PASS. Rahul asked for low-recoil assault rifles. Measuring
+       the roster first showed the AUG A3 already IS one (recoil 0.0085, drift
+       0.36, spread 0.013) — the gap was not a missing gun, it was that FAMAS
+       and AKM were far outside the band and unusable by comparison:
+
+         before   famas 0.015 / drift 0.62 / spread 0.019
+                  akm   0.016 / drift 0.66 / spread 0.016
+         band     aug 0.0085  m4a1 0.009  ak47 0.012
+
+       Both now sit at the AK-47 end of the band rather than beyond it. Damage,
+       rate of fire and magazine are UNTOUCHED — this changes how a burst holds
+       together, not how hard it hits, so nothing here moves a damage class and
+       verify-armoury still measures the same numbers. FAMAS also gains 4 m of
+       range: at 900 rpm and 40 m it was the shortest-reaching rifle in a game
+       whose maps open past 50 m. */
+    famas:   { key: 9, ex: 1, label: 'FAMAS F1', type: 'auto', dmg: 50, rpm: 900, mag: 25, reserve: 125, reload: 2.6, spread: 0.015, ads: 0.0055, range: 44, head: 1.6, legs: 0.72, speed: 0.94, recoil: 0.011, drift: 0.46, adsFov: 50, trc: 0xffcc9a },
     /* AKM — heavier AK. More reach and more punch per trigger pull than the
        AK-47 through range and recoil, not through damage. */
-    akm:     { key: 9, ex: 1, label: 'AKM', type: 'auto', dmg: 50, rpm: 600, mag: 30, reserve: 120, reload: 2.4, spread: 0.016, ads: 0.0055, range: 54, head: 1.6, legs: 0.72, speed: 0.92, recoil: 0.016, drift: 0.66, adsFov: 48, trc: 0xffbe78 },
+    akm:     { key: 9, ex: 1, label: 'AKM', type: 'auto', dmg: 50, rpm: 600, mag: 30, reserve: 120, reload: 2.4, spread: 0.014, ads: 0.0050, range: 54, head: 1.6, legs: 0.72, speed: 0.92, recoil: 0.012, drift: 0.50, adsFov: 48, trc: 0xffbe78 },
 
     // ---- marksman class (55 body / 2 shots) -------------------------------
     /* KARABINER 98 — the World War II bolt rifle, and the one place where

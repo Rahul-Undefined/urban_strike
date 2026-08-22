@@ -204,10 +204,16 @@
             <label class="field"><span id="kills-label">KILLS</span><select id="lobby-kills"></select></label>
             <label class="field"><span>DURATION</span><select id="lobby-time"></select></label>
           </div>
-          <!-- v8.38: bot controls, shown only in Overrun. -->
-          <!-- v9.11: backfill. Shown for the human-vs-human modes only; Overrun
-               and Strike Team field their own bots and have the row below. -->
-          <div class="field-row" id="backfill-row">
+          <!-- v8.38: bot controls, shown only in Overrun.
+               v9.11: backfill. Shown for the human-vs-human modes only.
+               v10.9: BOTH ROWS DEFAULT TO HIDDEN. Bots are switched off
+               (world.config.js BOTS_ENABLED) and backfillAllowed() now returns
+               false everywhere, so ui.js hides this row on the first lobby
+               update — but markup paints before script runs, and this row had
+               no display:none while bot-row did. That is one frame of "FILL
+               EMPTY SLOTS WITH BOTS" on a build with no bots. Hidden here;
+               ui.js is still the only thing that shows it. -->
+          <div class="field-row" id="backfill-row" style="display:none">
             <label class="field"><span>FILL EMPTY SLOTS WITH BOTS</span>
               <select id="lobby-backfill">
                 <option value="1">Yes — start with any number of players</option>

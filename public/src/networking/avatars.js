@@ -3,6 +3,50 @@
    rendering — no sockets, no interpolation, no game state. */
 var Avatars = (function () {
   'use strict';
+
+  /* ===== v10.9 - GEOMETRY IS SHARED, NOT MINTED PER MESH =====
+
+     THE LEAK. Rahul: "one person drops at a time and after he refreshes the
+     browser and again joins". One client at a time, recoverable by reload, is
+     a client-side resource exhaustion — not the server, which would have
+     dropped everybody together.
+
+     Two call sites built `new THREE.BoxGeometry` on every invocation and
+     nothing in this file ever called `dispose()` — the word appeared ZERO
+     times in 651 lines, while four other client files use it correctly. So:
+
+       setRemoteGun()  every weapon switch by any remote player tore down the
+                       old gun with h.remove() and built a new one. Removing an
+                       Object3D from a parent does NOT free its GPU buffers;
+                       three.js requires an explicit dispose. 6-15 geometries
+                       orphaned per switch, per remote player, forever.
+
+       removeRemote()  a leaver's 13 body geometries and two canvas textures
+                       were abandoned the same way.
+
+     A rejoin arrives under a NEW socket id, so every other client builds a
+     fresh avatar and strands the old one. That is why it cascades: each drop
+     makes every surviving browser heavier and the next drop likelier.
+
+     THE FIX IS NOT "call dispose in more places". Geometry here is immutable —
+     nothing in this file reads or writes `.geometry` after construction, and
+     every box size is a literal. So a box of a given size is built ONCE and
+     shared by every mesh that needs it. Allocation stops being per-event and
+     becomes per-distinct-size: bounded at a few hundred for the life of the
+     page, no matter how long the match runs or how often anyone swaps.
+
+     What is still per-avatar, and therefore still must be disposed, is the two
+     CanvasTextures (name tag, hp bar) and their SpriteMaterials. See
+     disposeAvatar() at the foot of this file.
+
+     DO NOT dispose anything reachable from here. AVM, RGM and accentCache are
+     module-level and shared; freeing one turns every other operator black. */
+  var geoCache = {};
+  function boxGeo(w, h, d) {
+    var k = w + '|' + h + '|' + d;
+    return geoCache[k] || (geoCache[k] = new THREE.BoxGeometry(w, h, d));
+  }
+
   function nameTag(text, color) {
     var c = document.createElement('canvas'); c.width = 256; c.height = 64;
     var g = c.getContext('2d');
@@ -28,7 +72,7 @@ var Avatars = (function () {
     green: new THREE.MeshLambertMaterial({ color: 0x36402e })
   };
   function rgBox(g, x, y, z, w, h, d, m) {
-    var b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    var b = new THREE.Mesh(boxGeo(w, h, d), m);
     b.position.set(x, y, z); g.add(b); return b;
   }
   function buildRemoteGun(name) {
@@ -148,7 +192,7 @@ var Avatars = (function () {
     return j;
   }
   function part(parent, x, y, z, w, h, d, m) {
-    var b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    var b = new THREE.Mesh(boxGeo(w, h, d), m);
     b.position.set(x, y, z);
     b.castShadow = true;
     parent.add(b);
@@ -639,10 +683,40 @@ var Avatars = (function () {
     z: (0.185 * RIG.z) / 2 + 0.02
   };
 
+  /* ===== v10.9 - FREE WHAT IS ACTUALLY PER-AVATAR =====
+
+     With geometry shared (see boxGeo at the head of this file) an avatar owns
+     exactly four disposable things: a 256x64 name-tag CanvasTexture, a 128x18
+     hp-bar CanvasTexture, and the SpriteMaterial wrapping each. Nothing else
+     here is unique to one player.
+
+     This is deliberately NOT a generic scene-graph walk that disposes every
+     geometry and material it finds. Such a walk is the obvious implementation
+     and it is wrong in this file: it would free AVM.skin, AVM.fatigue, the
+     RGM gun materials and the cached accent the moment ANY player left, and
+     every remaining operator would render black. Naming the four owned
+     resources explicitly is what makes that impossible.
+
+     Called from net.js removeRemote(). Safe to call twice. */
+  function disposeAvatar(av) {
+    if (!av || av.disposed) return;
+    av.disposed = true;
+    var owned = [av.tag, av.hb && av.hb.sprite];
+    for (var i = 0; i < owned.length; i++) {
+      var s = owned[i];
+      if (!s || !s.material) continue;
+      if (s.material.map) s.material.map.dispose();
+      s.material.dispose();
+      if (s.parent) s.parent.remove(s);
+    }
+    if (av.hb) { av.hb.canvas = null; av.hb.ctx = null; av.hb.tex = null; }
+  }
+
   return {
     RIG: RIG,                      // v8.19: hit detection must use these too
     HEAD_HALF: HEAD_HALF,          // v8.32: and the head box comes from here
     buildAvatar: buildAvatar,
+    disposeAvatar: disposeAvatar,
     setRemoteGun: setRemoteGun,
     drawHpBar: drawHpBar,
     setGear: setGear,

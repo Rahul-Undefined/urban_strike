@@ -8,8 +8,12 @@ module.exports = function initLootModule(ctx) {
 function initPickups(room) {
   const items = CFG.LOOT_ITEMS;
   const byRar = { c: [], r: [], l: [] };
-  // drop:1 items are airdrop-exclusive and never enter the ground-spawn pools
-  for (const t in items) if (!items[t].drop) byRar[items[t].rar].push(t);
+  /* drop:1 items are airdrop-exclusive and never enter the ground-spawn pools.
+     v10.9 `retired:1` is the weapon cull — the entry stays in LOOT_ITEMS so
+     CFG.WEAPON_ORDER indices, viewmodels and the bot kits keep resolving, but
+     it never spawns for a player. This is the ONE place the cull is applied,
+     so a retired weapon cannot leak back in through a second code path. */
+  for (const t in items) if (!items[t].drop && !items[t].retired) byRar[items[t].rar].push(t);
   room.nextLootId = 0;
   room.pickups = [];
   let hasA3 = false, hasLegW = false;
@@ -103,8 +107,24 @@ function tryCollect(room, p) {
     pk.respawnAt = pk.noRespawn ? Infinity : now() + CFG.LOOT_RESPAWN[it.rar] * 1000;
     io.to(p.id).emit('vitals', { hp: Math.round(p.hp), lv: p.armorLvl, du: Math.round(p.armorDur) });
     if (grant) io.to(p.id).emit('grant', grant);
-    io.to(room.code).emit('pickup', { id: pk.id, by: p.id, t: pk.t });
+    io.to(room.code).emit('pickup', { id: pk.id, by: p.id, t: pk.t, gone: pk.noRespawn ? 1 : 0 });
+    /* v10.9: A COLLECTED AIRDROP ITEM IS GONE. RETIRE IT.
+
+       Map loot has a finite count and respawns, so parking it inactive is
+       correct — the same record comes back. Airdrop items are `noRespawn` and
+       were parked at respawnAt Infinity instead, so every crate added six
+       entries that this array could never lose. At periodSec 150 that is +36
+       over a 15 min match, +72 over 30, +144 over 60, on top of Urban's 364:
+       a list that grows with match length and is walked by respawnPickups on
+       every tick, plus a mesh the client keeps forever.
+
+       Retired here rather than filtered at read time so there is exactly one
+       place the array shrinks. Marked `gone` for the same-tick collect loop —
+       splicing the array while tryCollect is iterating it would skip the next
+       pickup — and swept below. */
+    if (pk.noRespawn) pk.gone = true;
   }
+  if (room.pickups.some(pk => pk.gone)) room.pickups = room.pickups.filter(pk => !pk.gone);
 }
 function respawnPickups(room) {
   const t = now();
