@@ -75,6 +75,15 @@ const shows = m => !(CFG.MODES[m] && CFG.MODES[m].teams) ||
 const expectShown = ['ffa', 'ls', 'bots', 'lsq2', 'lsq4'];
 const expectHidden = ['t2', 't3', 't4', 't5', 't6', 't8', 't10',
   'sq2', 'sq4', 'co1', 'co2', 'co3', 'co4', 'co6', 'co10'];
+/* v10.13: the outbreak modes. Enemies SHOWN on the full map, and that is a
+   design decision rather than a default. In a PvP mode a full map that reveals
+   the other side removes the whole game; here the other side is a wave of
+   things that walk straight at you and make no attempt to hide. Knowing where
+   the horde is coming from is the tactical layer, not a cheat — it is how a
+   team decides which end of a building to hold. */
+const expectShownZ = Object.keys(CFG.MODES).filter(m => CFG.MODES[m].outbreak);
+expectShownZ.forEach(m => ok(CFG.MODES[m] && shows(m),
+  m + ': outbreak, so the full map shows the horde'));
 
 expectShown.forEach(m => ok(CFG.MODES[m] && shows(m),
   m + ': the full map shows ENEMIES'));
@@ -83,7 +92,7 @@ expectHidden.forEach(m => ok(CFG.MODES[m] && !shows(m),
 
 /* Nothing may fall through the classification. */
 Object.keys(CFG.MODES).forEach(m => {
-  ok(expectShown.indexOf(m) >= 0 || expectHidden.indexOf(m) >= 0,
+  ok(expectShown.indexOf(m) >= 0 || expectHidden.indexOf(m) >= 0 || expectShownZ.indexOf(m) >= 0,
     'mode ' + m + ' is classified by this gate');
 });
 

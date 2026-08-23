@@ -49,6 +49,13 @@ var Net = (function () {
     var r = remotes[rp.id];
     if (!r) {
       var av = Avatars.buildAvatar(rp.name, rp.color);
+      /* v10.13: the dead are re-dressed on top of the ordinary rig, so they
+         inherit every pose, topple and hitbox an operator has and the server
+         needs no special case for hitting one. */
+      if (rp.zombie || (rp.id && rp.id.charAt(0) === 'z' && rp.ztype)) {
+        Avatars.makeZombie(av, rp.ztype);
+      }
+      applyVisorTo(av);          // v10.10: joins mid-visor must be visible at once
       scene.add(av.group);
       r = remotes[rp.id] = {
         id: rp.id, name: rp.name, color: rp.color, team: rp.team || null,
@@ -69,6 +76,27 @@ var Net = (function () {
      client built a second avatar and stranded the first. That is the cascade
      behind "one person drops at a time". Avatars owns the list of what is
      genuinely per-player; see disposeAvatar. */
+  /* v10.10 RECON VISOR. One flag and a loop over the avatars that already
+     exist; new arrivals read `visorOn` when they are built. Toggling
+     `visible` on a mesh that is already in the scene graph costs nothing —
+     there is no allocation and no material change, which matters because the
+     materials are shared (v10.9). */
+  var visorOn = false;
+  function setVisor(on) {
+    visorOn = !!on;
+    for (var id in remotes) {
+      var r = remotes[id];
+      if (r && r.av && r.av.xray) r.av.xray.visible = visorOn;
+    }
+    if (UI.setVisorHud) UI.setVisorHud(visorOn);
+  }
+  function visorActive() { return visorOn; }
+
+  /* v10.10: a player who joins or respawns while you are wearing a visor must
+     be visible through walls immediately. setVisor() only walks the avatars
+     that existed when it ran, so the flag is re-read here at build time. */
+  function applyVisorTo(av) { if (av && av.xray) av.xray.visible = visorOn; }
+
   function removeRemote(id) {
     var r = remotes[id];
     if (r) { scene.remove(r.av.group); Avatars.disposeAvatar(r.av); delete remotes[id]; }
@@ -221,6 +249,12 @@ var Net = (function () {
     });
 
     s.on('vitals', function (d) { UI.setVitals(d.hp, d.lv, d.du); });
+    /* v10.10 NUKE — killhouse killstreak. The client is told it HAS one; it
+       never decides that for itself. See server/lib/nuke.js. */
+    s.on('nukeReady', function (d) { UI.nukeReady(d); });
+    s.on('nukeLost', function (d) { UI.nukeLost(d && d.reason); });
+    s.on('nukeIncoming', function (d) { UI.nukeIncoming(d); FX.nukeStart(d); });
+    s.on('nukeEnd', function () { FX.nukeEnd(); });
     s.on('pickup', function (d) { Pickups.onCollected(d, d.by === myIdV); });
     s.on('pickupSpawn', function (d) { Pickups.onSpawn(d.id); });
     s.on('grant', function (d) { Weapons.applyGrant(d); });
@@ -273,7 +307,17 @@ var Net = (function () {
         if (SPREE[d.killerStreak]) { UI.announce(SPREE[d.killerStreak]); AudioSys.stinger(d.killerStreak >= 7); }
       }
       if (d.assistIds && d.assistIds.indexOf(myIdV) !== -1) UI.announce('+ ASSIST', true);
-      if (d.victimId === myIdV) { killTimes = []; AudioSys.death(); Game.onLocalDeath(d); }
+      if (d.victimId === myIdV) {
+        killTimes = [];
+        /* v10.10: both streak rewards die with you. The server clears its own
+           copy of each (spawnPlayer for the visor, nuke.js clearArmed for the
+           nuke) — these two calls are the client catching up immediately
+           rather than waiting for the next vitals, so the through-wall view
+           does not linger for a second after you are dead. */
+        setVisor(false);
+        UI.nukeLost('died');
+        AudioSys.death(); Game.onLocalDeath(d);
+      }
       else {
         var r = remotes[d.victimId];
         if (r) { if (r.alive) r.deadAt = performance.now(); r.alive = false; FX.bloodPuff(r.renderPos.clone().add(new THREE.Vector3(0, 0.4, 0))); }
@@ -452,7 +496,26 @@ var Net = (function () {
        so this can be trusted to be from an ally. */
     socket.on('mark', function (d) {
       Minimap.addMark(d);
-      if (d && d.id !== myIdV) UI.toast((d.name || 'Squad') + ' marked a position');
+      if (!d) return;
+      var mine = d.id === myIdV || d.id === 'spot:' + myIdV;
+      if (d.kind === 'enemy') {
+        UI.toast((mine ? 'Enemy spotted' : (d.name || 'Squad') + ' spotted an enemy') +
+                 (d.dist ? ' \u00b7 ' + d.dist + ' m' : ''), false);
+        if (FX.teamPing) FX.teamPing({ x: d.x, z: d.z, hostile: true });
+      } else if (!mine) {
+        UI.toast((d.name || 'Squad') + ' marked a position');
+      }
+    });
+    socket.on('spotMiss', function () { UI.toast('No enemy in view', true); });
+    /* v10.13 OUTBREAK. The server owns the wave state entirely; these only
+       paint it. `zomb` arrives roughly twice a second plus on every phase
+       change, so the HUD is never more than half a second stale. */
+    s.on('zomb', function (d) { if (UI.zombState) UI.zombState(d); });
+    s.on('zombSpawn', function (d) { if (UI.zombSpawn) UI.zombSpawn(d); });
+    s.on('zombDown', function (d) { if (UI.zombDown) UI.zombDown(d); });
+    s.on('zombSwing', function (d) {
+      var r = remotes[d && d.id];
+      if (r && r.av && FX.shake) { /* felt, not seen, unless it is close */ }
     });
     /* v9.11: a team-mate's ping. Relayed to this side only, so it can be
        trusted to be from an ally. */
@@ -658,6 +721,10 @@ var Net = (function () {
     sendProj: sendProj, sendThrow: sendThrow, requestRespawn: requestRespawn,
     placeMine: function (d, cb) { if (socket) socket.emit('placeMine', d, cb); },
     mark: function (x, z) { if (socket) socket.emit('mark', { x: x, z: z }); },
+    /* v10.13: the client says where it is LOOKING; the server decides whether
+       an enemy is there and whether it can be seen. Nothing about who the
+       enemy is comes from this side. */
+    spot: function (yaw, pitch) { if (socket) socket.emit('spot', { yaw: yaw, pitch: pitch }); },
     ping: function (kind, x, y, z) { if (socket) socket.emit('ping', { k: kind, x: x, y: y, z: z }); },
     launchDrone: function (cb) { if (socket) socket.emit('launchDrone', {}, cb); },
     droneHit: function (id, dmg) { if (socket) socket.emit('droneHit', { id: id, dmg: dmg }); },
@@ -678,6 +745,11 @@ var Net = (function () {
     getRoomCode: function () { return roomCode; },
     getMyTeam: function () { return myTeam; },
     getTeamKills: function () { return teamKills; },
-    isAlly: function (id) { var r = remotes[id]; return !!(myTeam && r && r.team === myTeam); }
+    isAlly: function (id) { var r = remotes[id]; return !!(myTeam && r && r.team === myTeam); },
+    setVisor: setVisor,               // v10.10 recon visor
+    visorActive: visorActive,
+    /* v10.10: the client asks for a strike; the server decides whether it is
+       allowed one. Nothing here checks eligibility, deliberately. */
+    nukeStrike: function (x, z) { if (socket) socket.emit('nukeStrike', { x: x, z: z }); }
   };
 })();

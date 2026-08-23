@@ -45,11 +45,11 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
 
 /* Keep this list identical to index.html — see the v8.9 note in verify-lifts. */
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js",
+ "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js",
  "public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
  "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js",
- "public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/access.js"]
+ "public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/access.js"]
  .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 function fingerprint(map) {
@@ -166,8 +166,41 @@ const BASELINE = {
      being able to report the NEXT change — which is the whole point of it. */
   rural: { colliders: 1072, draws: 32, tris: 54683, casters: 22, lights: 3, bound: 150, colSig: 491534987, meshSig: -2029443105 },
   /* v10.10: killhouse. Asserted from its first version so any later edit has to
-     justify itself the way rural just did. */
-  killhouse: { colliders: 205, draws: 33, tris: 12260, casters: 17, lights: 3, bound: 32, colSig: 23166088, meshSig: -850638274 }
+     justify itself the way rural just did.
+
+     MOVED WITHIN v10.10, twice, both deliberate:
+       -1 collider / -12 tris  the scatter crate that landed in the west office
+                               doorway. Rahul could not walk through his own
+                               front door: 0.69 m of gap against a 0.70 m
+                               capsule. Scatter now respects a keep-clear list.
+       colSig                  three mirrored walls were emitted with x0 > x1
+                               and went in with NEGATIVE width — the west
+                               perimeter wall among them. Normalised through
+                               segx(); verify-collision now asserts the class.
+
+     meshSig is UNCHANGED across both, which is the tell that these were
+     collision defects and not appearance ones: the building always looked
+     right, it just did not collide right. */
+  /* v10.12: sunsetrow, asserted from its first version.
+     draws 33/45, tris 3,040/26,000, casters 17/22 — comfortably inside every
+     budget and, at 3,040 triangles against killhouse's 12,248, deliberately
+     LIGHT. The object count is right; the per-object detail is not there yet
+     (no roof tiling, no fence pickets, no window frames). That is a density
+     pass with 23,000 triangles of room, recorded as an open item rather than
+     rushed in on the same day the map was built. */
+  /* v10.12 SUNSET ROW, recorded after its density pass.
+
+       first build   130 colliders · 32 draws · 3,064 tris   two boxes and a bus
+       after         182          · 39      · 5,112
+
+     +52 colliders and +2,048 triangles for chimneys, gutters, driveways,
+     carports, trees, hedges, power lines and kerbside clutter. Draws went 32 ->
+     42 on the first attempt because three of those props used materials this
+     map did not otherwise carry (sage, maroon, roadPaint); swapping them for
+     palette entries already present brought it back to 39. On this axis a new
+     MATERIAL is expensive and geometry is nearly free. */
+  sunsetrow: { colliders: 182, draws: 39, tris: 5112, casters: 17, lights: 3, bound: 34, colSig: 935596110, meshSig: -384905933 },
+  killhouse: { colliders: 204, draws: 33, tris: 12248, casters: 17, lights: 3, bound: 32, colSig: -270199003, meshSig: -850638274 }
 };
 
 let pass = 0, fail = 0;

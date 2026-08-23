@@ -26,7 +26,7 @@ var UI = (function () {
       'announce', 'cook-bar', 'cook-fill', 'att-list',
       'tc-mine', 'tc-molotov', 'countdown', 'btn-ready',
       'info-map', 'info-mode', 'info-kills', 'info-time', 'info-slots', 'info-role',
-      'ready-fill', 'ready-text', 'stat-maps'
+      'ready-fill', 'ready-text', 'stat-maps', 'stat-weapons', 'stat-attach', 'stat-seats', 'brand-ver'
     ].forEach(function (id) { els[id] = $(id); });
   }
 
@@ -115,7 +115,43 @@ var UI = (function () {
     fillSelect(els['lobby-map'], mapItems(), 'urban');
     fillSelect(els['lobby-kills'], killItems(), M.defaultKills);
     fillSelect(els['lobby-time'], timeItems(), M.defaultMinutes);
+    /* v10.12: the build number on the menu comes from the same /version the
+       cache stamp uses. A hardcoded one on a screen whose whole job is to say
+       which build you are running would be the worst possible thing to let go
+       stale. */
+    if (els['brand-ver'] && !els['brand-ver'].dataset.set) {
+      els['brand-ver'].dataset.set = '1';
+      try {
+        fetch('/version').then(function (r) { return r.text(); })
+          .then(function (v) { els['brand-ver'].textContent = (v || '').trim() || '\u2014'; })
+          .catch(function () { });
+      } catch (e) { }
+    }
     if (els['stat-maps']) els['stat-maps'].textContent = String(mapItems().length);
+    /* v10.12: both of these were hardcoded — "3 THEATRES" and "25 WEAPONS" —
+       and both were wrong the moment killhouse shipped and the v10.9 cull
+       retired four guns. A number on the front page that contradicts the game
+       is worse than no number, and a hardcoded one goes stale silently.
+       Counted from CFG so they cannot drift again. */
+    if (els['stat-weapons']) {
+      var playable = CFG.WEAPON_ORDER.filter(function (w) {
+        var it = CFG.LOOT_ITEMS['wpn_' + w];
+        return !(it && it.retired);
+      }).length;
+      els['stat-weapons'].textContent = String(playable);
+    }
+    if (els['stat-attach']) els['stat-attach'].textContent = String(Object.keys(CFG.ATTACH).length);
+    /* MAX OPERATORS read 20 and had been wrong since v10.9 dropped the cap to
+       15. The largest SELECTABLE mode is the honest number — counting hidden
+       modes would advertise a lobby size nobody can choose. */
+    if (els['stat-seats']) {
+      var seats = 0;
+      for (var mk in CFG.MODES) {
+        if (CFG.MODES[mk].hidden) continue;
+        seats = Math.max(seats, CFG.MODES[mk].maxPlayers | 0);
+      }
+      els['stat-seats'].textContent = String(seats);
+    }
     /* v9.9: THIS was the wall of text.
        It listed EVERY mode label joined by dots. That read fine at eight modes
        in v8.x; by v9.7 there are twenty-five, and the welcome screen was
@@ -802,6 +838,124 @@ var UI = (function () {
     setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 4000);
   }
 
+  /* ===== v10.10 KILLHOUSE NUKE + RECON VISOR HUD =====
+
+     Display only. Not one of these functions decides anything: `armed` lives
+     on the server (server/lib/nuke.js) and the banner is a mirror of what the
+     server said. If this file and the server ever disagree, the server is
+     right and the banner is stale — which is the correct failure direction for
+     a reward that can be lost mid-aim. */
+  var nukeArmed = false;
+  function nukeEl() { return document.getElementById('nuke-banner'); }
+
+  function nukeReady() {
+    nukeArmed = true;
+    var e = nukeEl(); if (e) e.classList.add('armed');
+    toast('NUKE ACTIVATED \u00b7 press N to select a target');
+  }
+  /* Called on death, on spending it, and on match end. Also closes the target
+     map if it is open — being killed while aiming must take the map away as
+     well as the nuke, or the player sits staring at a crosshair that no longer
+     does anything. */
+  function nukeLost(reason) {
+    if (!nukeArmed) return;
+    nukeArmed = false;
+    var e = nukeEl(); if (e) e.classList.remove('armed');
+    if (Minimap.setNukeAim) Minimap.setNukeAim(false);
+    if (Minimap.isFullOpen && Minimap.isFullOpen()) Minimap.toggleFull();
+    if (reason === 'died') toast('Nuke lost \u2014 you were killed before launch', true);
+  }
+  function nukeFired() {
+    nukeArmed = false;
+    var e = nukeEl(); if (e) e.classList.remove('armed');
+    if (Minimap.setNukeAim) Minimap.setNukeAim(false);
+  }
+  function nukeArmedNow() { return nukeArmed; }
+
+  /* The N key. Opens the full map in targeting mode; a second press cancels
+     without spending it. */
+  function nukeToggleAim() {
+    if (!nukeArmed) return false;
+    if (Minimap.nukeAiming && Minimap.nukeAiming()) {
+      Minimap.setNukeAim(false);
+      if (Minimap.isFullOpen()) Minimap.toggleFull();
+      return true;
+    }
+    if (!Minimap.isFullOpen()) Minimap.toggleFull();
+    Minimap.setNukeAim(true);
+    toast('Click the map to call the strike');
+    return true;
+  }
+
+  function nukeIncoming(d) {
+    var mine = d && d.by === Net.myId();
+    toast(mine ? 'NUKE INBOUND \u00b7 your strike is landing'
+               : 'NUKE INBOUND \u00b7 ' + ((d && d.byName) || 'Enemy') + ' \u2014 get clear', !mine);
+  }
+
+  function setVisorHud(on) {
+    var e = document.getElementById('visor-pip');
+    if (e) e.classList.toggle('on', !!on);
+  }
+
+  /* ===== v10.13 OUTBREAK HUD =====
+     Display only. The server owns the wave, the count, the phase and the
+     score; every function here paints what arrived and decides nothing. If
+     this file and the server disagree, the server is right and the HUD is at
+     most half a second stale. */
+  var zWaveShown = -1, zWaveTotal = 0;
+  function zEl(id) { return document.getElementById(id); }
+
+  function zombState(d) {
+    if (!d) return;
+    var hud = zEl('zomb-hud'); if (hud) hud.classList.add('on');
+    var n = zEl('zomb-n'), ti = zEl('zomb-tier'), c = zEl('zomb-count'),
+        pts = zEl('zomb-pts'), fill = zEl('zomb-fill');
+    if (n) n.textContent = String(d.wave || 0);
+    if (ti) ti.textContent = d.tier || '';
+    if (pts) pts.textContent = String(d.score || 0);
+
+    if (d.phase === 'cooldown') {
+      /* The bar becomes the countdown between waves. One bar doing two jobs
+         rather than two bars: the player is looking at the same place either
+         way, and what they need to know is always "how long until it changes". */
+      var pct = Math.max(0, Math.min(1, (d.inMs || 0) / 10000));
+      if (fill) fill.style.width = (pct * 100).toFixed(0) + '%';
+      if (c) c.textContent = Math.ceil((d.inMs || 0) / 1000);
+      var lbl = zEl('zomb-left');
+      if (lbl) lbl.innerHTML = '<b id="zomb-count">' + Math.ceil((d.inMs || 0) / 1000) + '</b> UNTIL NEXT WAVE';
+    } else {
+      if (d.why === 'waveStart' || zWaveTotal === 0) zWaveTotal = Math.max(1, d.left || 1);
+      var rem = d.left || 0;
+      if (fill) fill.style.width = (Math.max(0, 1 - rem / Math.max(1, zWaveTotal)) * 100).toFixed(0) + '%';
+      var lb = zEl('zomb-left');
+      if (lb) lb.innerHTML = '<b id="zomb-count">' + rem + '</b> REMAINING';
+    }
+
+    if (d.why === 'waveStart' && d.wave !== zWaveShown) {
+      zWaveShown = d.wave;
+      zWaveTotal = d.left || 1;
+      zombBanner('WAVE ' + d.wave, d.tier || '');
+      AudioSys.stinger(d.wave >= 25);
+    }
+    if (d.why === 'waveClear') zombBanner('WAVE CLEAR', 'REGROUP \u00b7 10 SECONDS');
+    if (d.why === 'cleared') {
+      zombBanner('THE LAST OF THEM', 'ONE HUNDRED WAVES \u00b7 THE WORLD IS QUIET AGAIN');
+    }
+    if (d.why === 'wiped') zombBanner('OVERRUN', 'YOU REACHED WAVE ' + d.wave);
+  }
+
+  function zombBanner(title, sub) {
+    var b = zEl('zomb-banner'), t = zEl('zomb-btitle'), su = zEl('zomb-bsub');
+    if (!b || !t) return;
+    t.textContent = title; if (su) su.textContent = sub || '';
+    b.classList.remove('show'); void b.offsetWidth;   // restart the animation
+    b.classList.add('show');
+  }
+  function zombSpawn() { }
+  function zombDown() { }
+  function zombHide() { var h = zEl('zomb-hud'); if (h) h.classList.remove('on'); zWaveShown = -1; zWaveTotal = 0; }
+
   // ---------- settings (pause panel) ----------
   var sensitivity = 1.0;
   function wireSettings() {
@@ -1059,6 +1213,10 @@ var UI = (function () {
       if (el) el.style.display = 'none';
     },
     toast: toast,
+    zombState: zombState, zombSpawn: zombSpawn, zombDown: zombDown, zombHide: zombHide,
+    nukeReady: nukeReady, nukeLost: nukeLost, nukeFired: nukeFired,
+    nukeIncoming: nukeIncoming, nukeToggleAim: nukeToggleAim,
+    nukeArmedNow: nukeArmedNow, setVisorHud: setVisorHud,
     getSensitivity: function () { return sensitivity; },
     el: function (id) { return els[id]; }
   };

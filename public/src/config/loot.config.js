@@ -111,7 +111,21 @@
        someone to contest a crate is a reward. It also fixes the count problem:
        two per player was already a lot in a twenty-player match, and making it
        ground-lootable would have put six or seven in the air at once. */
-    drone:      { kind: 'gear', g: 'drone', n: 1, rar: 'l', drop: 1, label: 'Strike Drone' }
+    drone:      { kind: 'gear', g: 'drone', n: 1, rar: 'l', drop: 1, label: 'Strike Drone' },
+    /* v10.10 RECON VISOR. Rahul: see other players through walls, lasts until
+       you are killed.
+
+       `drop: 1` makes it airdrop-only, like the strike drone. Seeing every
+       enemy through every wall is the strongest single effect in the game, and
+       a floor spawn would mean somebody has it from the first thirty seconds of
+       every match. A crate is a place you have to go, in the open, that
+       everyone else can see you going to.
+
+       It is NOT killhouse-only. It reads as strongest indoors, but a 58 m room
+       is also where it matters least — you can hear everything anyway. On
+       Urban it is genuinely powerful, and that is the right home for a rare
+       crate item. */
+    visor:      { kind: 'gear', g: 'visor', n: 1, rar: 'l', drop: 1, label: 'Recon Visor' }
   };
   // Spawn-point classes: g ground, h elevated/interior-notable, s signature.
 
@@ -306,7 +320,13 @@
     extraCount: 2,
     /* v10.9: wpn_bow retired in the cull. The pool is filtered against
        LOOT_ITEMS at draw time, but a retired entry would still be a dead slot. */
-    exoticPool: ['drone', 'drone', 'helm_3', 'wpn_rocket', 'molotov', 'medkit', 'att_x8']
+    /* v10.10: `visor` added. It shipped as drop:1 with no pool entry, which
+       made it UNOBTAINABLE — the same defect as Kar98 in v10.9, found the same
+       way, by verify-models asserting that every drop-exclusive item is
+       actually reachable from a crate. Twice in two versions is a pattern:
+       marking an item drop-only and adding it to a pool are two separate edits
+       and the gate is the only thing joining them. */
+    exoticPool: ['drone', 'drone', 'helm_3', 'wpn_rocket', 'molotov', 'medkit', 'att_x8', 'visor']
   };
 
   return { LOOT_ITEMS: LOOT_ITEMS, LOOT_WEIGHTS: LOOT_WEIGHTS, LOOT_RESPAWN: LOOT_RESPAWN, LOOT_POINTS: LOOT_POINTS, AIRDROP: AIRDROP };

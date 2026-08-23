@@ -149,6 +149,10 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
         attacker.streak++;
         killerStreak = attacker.streak;
         if (attacker.streak > (attacker.bestStreak || 0)) attacker.bestStreak = attacker.streak;
+        /* v10.10: the nuke rides THIS counter rather than keeping its own.
+           A second streak counter is a second thing to reset, and combat.js
+           already resets this one on death a few lines below. */
+        if (ctx.onKillStreak) ctx.onKillStreak(room, attacker);
         killerName = attacker.name;
         if (teams && attacker.team) room.teamKills[attacker.team]++;
 
@@ -192,8 +196,20 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
         if (ap) { ap.assists++; assistIds.push(aid); }
       }
     }
+    /* v10.13: a zombie's death is scored by the outbreak module, not the
+       kill feed. Routed here rather than in zombies.js because THIS is where
+       the game already knows a thing has died, and a second death path is a
+       second set of rules to keep in sync. */
+    if (victim.zombie && ctx.onZombieKilled) {
+      ctx.onZombieKilled(room, victim.id, attacker);
+      return;
+    }
     victim.rd = {};
     victim.streak = 0;
+    /* v10.10: dying loses an armed nuke, whether or not the target map was
+       open. This is the rule that makes the reward cost something — see the
+       header of server/lib/nuke.js. One call, one place. */
+    if (ctx.onDeathClearStreakReward) ctx.onDeathClearStreakReward(room, victim);
     io.to(room.code).emit('death', {
       victimId: victim.id, victimName: victim.name,
       killerId: attackerId, killerName, killerStreak, assistIds,

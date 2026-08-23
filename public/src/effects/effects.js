@@ -293,6 +293,44 @@ var FX = (function () {
     hitEl = document.getElementById('hitmarker');
   }
   var vignetteT = null;
+  /* ===== v10.10 NUKE STRIKE EFFECT =====
+
+     Ten seconds of repeated explosions inside the target circle, plus a screen
+     overlay and continuous shake. Driven by a single interval that is stored
+     and cleared, NOT by scheduling 20 timeouts up front — a match can end, a
+     player can disconnect, or a second nuke can land mid-strike, and 20 loose
+     timeouts would keep firing into a torn-down scene. One handle, one clear.
+
+     Purely cosmetic. The kills come from the server tick in
+     server/lib/nuke.js, so a client that never renders this still dies in the
+     circle, and a client that renders it does not get to decide who died. */
+  var nukeTimer = null;
+  function nukeEnd() {
+    if (nukeTimer) { clearInterval(nukeTimer); nukeTimer = null; }
+    var f = document.getElementById('nuke-flash');
+    if (f) f.classList.remove('on');
+  }
+  function nukeStart(d) {
+    nukeEnd();                                  // a second strike replaces the first
+    if (!d) return;
+    var f = document.getElementById('nuke-flash');
+    if (f) f.classList.add('on');
+    var r = d.r || 11, cx = d.x || 0, cz = d.z || 0;
+    var ends = performance.now() + (d.duration || 10) * 1000;
+    nukeTimer = setInterval(function () {
+      if (performance.now() >= ends) { nukeEnd(); return; }
+      /* Two blasts per beat at random points in the circle, biased outward by
+         sqrt so they spread evenly over AREA rather than clustering in the
+         middle — a uniform radius would put half the explosions in the inner
+         quarter and read as one big centre blast. */
+      for (var i = 0; i < 2; i++) {
+        var a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * r;
+        explosion(new THREE.Vector3(cx + Math.cos(a) * rr, 0.6, cz + Math.sin(a) * rr), 1.5);
+      }
+      shake(0.55);
+    }, 320);
+  }
+
   function damageFlash(strength) {
     if (!vignetteEl) return;
     vignetteEl.style.opacity = Math.min(1, 0.35 + strength);
@@ -387,6 +425,7 @@ var FX = (function () {
     explosion: explosion, smokeCloud: smokeCloud,
     shake: shake, applyShake: applyShake,
     damageFlash: damageFlash, damageDirection: damageDirection,
-    hitmarker: hitmarker, flashbang: flashbang, updateFlash: updateFlash
+    hitmarker: hitmarker, flashbang: flashbang, updateFlash: updateFlash,
+    nukeStart: nukeStart, nukeEnd: nukeEnd
   };
 })();

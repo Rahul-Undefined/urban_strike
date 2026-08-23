@@ -298,7 +298,12 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
        one operator against a side made entirely of bots, and it is correct at
        one seat — maxPlayers counts HUMANS. The ceiling of 20 still applies to
        everything, because that is what the avatar budget was measured against. */
-    const seatFloor = M.vsBots ? 1 : 2;
+    /* v10.13: outbreak joins vsBots at a floor of one. Outbreak Solo is one
+       operator against the wave system, and it is the ONLY mode on this build
+       a single person can start — every PvP mode needs a second human and
+       bots have been off since v10.9. A floor of two here would have refused
+       the mode that gives the game back to a solo player. */
+    const seatFloor = (M.vsBots || M.outbreak) ? 1 : 2;
     ok(M.maxPlayers >= seatFloor && M.maxPlayers <= 20,
       m + ' seats ' + seatFloor + '-20 players [' + M.maxPlayers + ']');
     const ids = CFG.activeTeams(m);
@@ -334,11 +339,29 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
 
   /* The welcome screen advertises a weapon count. It was wrong the moment a
      weapon was added, and a wrong number on the front door is the first thing
-     a player sees. */
-  const advertised = parseInt((hsrc.match(/<b>(\d+)<\/b><span>WEAPONS<\/span>/) || [])[1], 10);
-  ok(advertised === Object.keys(CFG.WEAPONS).length,
-    'welcome screen weapon count matches the table [says ' + advertised +
-    ', actual ' + Object.keys(CFG.WEAPONS).length + ']');
+     a player sees.
+
+     v10.12: this used to read the LITERAL out of index.html and compare it to
+     the size of CFG.WEAPONS. Two things changed and both matter.
+
+     First, the markup no longer carries a literal — ui.js computes it, which
+     is what stops it going stale in the first place. Parsing the HTML now
+     yields NaN, so the check moved to the SOURCE of the number.
+
+     Second, the target changed from 25 to 21. CFG.WEAPONS still holds 25
+     entries, but the v10.9 cull retired four from every loot path and
+     WEAPON_ORDER keeps their slots only because the wire format is an index
+     into it. A player cannot obtain them by any route. Advertising 25 weapons
+     when 21 are reachable is the same lie in the other direction. */
+  const playable = CFG.WEAPON_ORDER.filter(w => {
+    const it = CFG.LOOT_ITEMS['wpn_' + w];
+    return !(it && it.retired);
+  }).length;
+  ok(!/<b>\d+<\/b><span>WEAPONS<\/span>/.test(hsrc),
+    'the weapon count is no longer a literal in the markup');
+  ok(/els\['stat-weapons'\]/.test(fs.readFileSync('./public/src/ui/ui.js', 'utf8')),
+    'ui.js computes it from WEAPON_ORDER minus retired [' + playable + ' playable of ' +
+    Object.keys(CFG.WEAPONS).length + ' modelled]');
 
   /* v8.33: global hotkeys must not eat characters typed into a text field.
      KeyM called preventDefault() unconditionally, so the callsign box could

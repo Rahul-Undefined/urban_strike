@@ -172,6 +172,13 @@ var Weapons = (function () {
         if (owned.drone) ammo.drone = ammo.drone || { mag: 0, reserve: 0 };
         UI.toast('Strike Drone \u00b7 ' + d.n + ' carried');
       }
+      else if (d.g === 'visor') {
+        /* v10.10: no slot, no count, no HUD item — it is a passive effect that
+           lasts until death. Net.setVisor drives the through-wall render; this
+           branch only confirms the pickup to the player. */
+        Net.setVisor(true);
+        UI.toast('Recon Visor \u00b7 enemies visible through walls');
+      }
       else if (d.g === 'molotov') {
         throwsLeft.molotov = Math.min(CFG.THROWS.molotov.maxCarry, throwsLeft.molotov + d.n);
         UI.toast('Molotov +' + d.n);

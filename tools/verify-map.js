@@ -104,9 +104,20 @@ function runMap(mapName, data, wallDefault) {
   vm.createContext(ctx);
   ["config/districts.config.js",
    "environment/world.js", "environment/districts-south.js", "environment/districts-north.js",
-   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/metro.js", "environment/killhouse.js", "environment/access.js"].forEach(f => {
+   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/metro.js", "environment/killhouse.js", "environment/sunsetrow.js", "environment/access.js"].forEach(f => {
     const p = path.join(ROOT, "public/src", f);
-    if (fs.existsSync(p)) vm.runInContext(fs.readFileSync(p, "utf8"), ctx, { filename: f });
+    /* v10.12: this was `if (fs.existsSync(p))`, which silently skipped a file
+       that was not there. sunsetrow.js was added to the game and NOT to this
+       list, so World._buildSunsetRow never existed in this context, buildMap
+       fell through to the urban path, and the gate validated Sunset Row's loot
+       and airdrop points against URBAN'S geometry. It then reported two
+       confident, completely fictional failures.
+
+       A gate that quietly works with less than it was told to load is worse
+       than one that crashes: it produces output that looks like evidence.
+       Missing now throws. */
+    if (!fs.existsSync(p)) throw new Error("verify-map: listed source is missing: " + f);
+    vm.runInContext(fs.readFileSync(p, "utf8"), ctx, { filename: f });
   });
   const scene = new Obj();
   ctx.World.buildMap(scene, mapName);
@@ -193,6 +204,7 @@ runMap("metro", CFG.MAPS_METRO, 100);
    validate nothing. Taken from CFG.MAPS so it cannot drift from the value the
    game uses. */
 runMap("killhouse", CFG.MAPS_KILLHOUSE, CFG.MAPS.killhouse.bound);
+runMap("sunsetrow", CFG.MAPS_SUNSETROW, CFG.MAPS.sunsetrow.bound);   // v10.12
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

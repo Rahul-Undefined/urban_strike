@@ -62,12 +62,12 @@ vm.createContext(ctx);
 [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+  "public/src/config/maps-rural.config.js", "public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-metro.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
   "public/src/environment/deco.js", "public/src/environment/rural.js",
-  "public/src/environment/metro.js", "public/src/environment/access.js",
+  "public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/metro.js", "public/src/environment/access.js",
   "public/src/player/controller.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
@@ -226,8 +226,17 @@ const GROUND = [-40, -0.4, -40, 40, 0, 40, 0];
    Sealing Urban is the first item of the map-flow pass, where perimeter
    geometry can be added and re-validated against verify-arch, verify-cover and
    the triangle budget in one go. Rural and Metro are paused by instruction. */
-const ESCAPE_BUDGET = { urban: 8, rural: 6, metro: 8 };
-const MAPS = ["urban", "rural", "metro"];
+const ESCAPE_BUDGET = { urban: 8, rural: 6, metro: 8,
+  /* v10.10: killhouse is a sealed building — a continuous wall on all four
+     sides with no exterior at all. Anything above zero here means the shell has
+     a hole in it, which is why this is the only map on the list with a budget
+     of 0 rather than a tolerance. */
+  killhouse: 0,
+  /* v10.12: sunsetrow is outdoors but fully walled — brick on the long sides,
+     fence across the street ends. Same reasoning as killhouse: any escape at
+     all means the boundary has a hole in it. */
+  sunsetrow: 0 };
+const MAPS = ["urban", "rural", "metro", "killhouse", "sunsetrow"];
 
 for (const map of MAPS) {
   console.log(`\n--- B: ${map} ---`);
@@ -340,6 +349,39 @@ for (const map of MAPS) {
   ok(escapes <= ESCAPE_BUDGET[map],
     `${map}: ${escapes}/${probed} bearings walk off the world edge (budget ${ESCAPE_BUDGET[map]})`);
   if (escapes > 0) console.log(`        note: walkable ground ends without a boundary wall — map defect, not resolver`);
+}
+
+/* ===== v10.10 - NO COLLIDER MAY BE INVERTED =====
+
+   The killhouse west office shipped a doorway wall written as
+   `seg(cx - s*hw, cx - s*(hw-0.16), ...)`. At s = -1 that evaluates to
+   seg(-20.90, -21.06): x0 GREATER than x1. seg() does not normalise, so the
+   box went into the collider list with negative width and undefined collision
+   behaviour. Rahul found it by walking into it.
+
+   The call site is fixed. This catches the CLASS. Every overlap test in this
+   engine assumes min < max on all three axes; a box that violates it does not
+   fail loudly, it fails as a wall that is sometimes there. That is far worse
+   than a crash and it is invisible to every other gate — an inverted box still
+   has a plausible centre, still merges, still draws, still passes the
+   fingerprint.
+
+   A degenerate box (min === max) is allowed: paint and decals are legitimately
+   flat on one axis. Only a NEGATIVE extent is a defect. */
+console.log("\n--- v10.10: no collider has a negative extent ---");
+for (const map of MAPS) {
+  buildMap(map);
+  const cols = ctx.World.colliders;
+  const bad = [];
+  for (let i = 0; i < cols.length; i++) {
+    const c = cols[i];
+    if (c[0] > c[3] || c[1] > c[4] || c[2] > c[5]) {
+      bad.push("[" + c.slice(0, 6).map(v => (+v).toFixed(2)).join(",") + "]");
+    }
+  }
+  ok(bad.length === 0,
+    map + ": " + cols.length + " colliders, none inverted" +
+    (bad.length ? " — " + bad.length + " BAD: " + bad.slice(0, 3).join(" ") : ""));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

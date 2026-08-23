@@ -60,6 +60,15 @@ var Pickups = (function () {
       box(g, 0.1, 0.08, 0.15, cc, 0.05, 0.03, 0);
     } else if (it.kind === 'weapon') {
       gunMesh(g, it.w);
+    } else if (it.kind === 'gear' && it.g === 'visor') {
+      /* v10.10 RECON VISOR — goggles: a dark strap with two cyan lenses. Gear
+         had no mesh branch at all until now (drone and mine are start-kit or
+         crate items that never sat on the floor), so anything falling through
+         got the bare rarity ring and nothing else. */
+      box(g, 0.30, 0.09, 0.07, 0x23282e, 0, 0, 0);
+      box(g, 0.11, 0.07, 0.04, 0x37c8d8, -0.075, 0, 0.035);
+      box(g, 0.11, 0.07, 0.04, 0x37c8d8, 0.075, 0, 0.035);
+      box(g, 0.34, 0.04, 0.05, 0x14181c, 0, 0, -0.03);
     }
     return g;
   }

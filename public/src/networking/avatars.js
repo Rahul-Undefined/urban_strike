@@ -41,6 +41,15 @@ var Avatars = (function () {
 
      DO NOT dispose anything reachable from here. AVM, RGM and accentCache are
      module-level and shared; freeing one turns every other operator black. */
+  /* v10.10: shared by every avatar's visor silhouette. Sized to the standing
+     capsule rather than the body mesh — a blob that reads at 40 m through three
+     walls is more useful than an accurate outline nobody can resolve. */
+  var XRAY_GEO = new THREE.BoxGeometry(0.62, 1.86, 0.42);
+  var XRAY_MAT = new THREE.MeshBasicMaterial({
+    color: 0xff4d4d, transparent: true, opacity: 0.42,
+    depthTest: false, depthWrite: false
+  });
+
   var geoCache = {};
   function boxGeo(w, h, d) {
     var k = w + '|' + h + '|' + d;
@@ -227,6 +236,74 @@ var Avatars = (function () {
      itself uses: 0.90 standing, 0.60 crouched, 0.35 prone. */
   var RIG_LIFT = RIG.y - 1;
 
+  /* ===== v10.13 THE DEAD =====
+
+     Rahul: "zombies avatar should be very horrorful and not animated."
+
+     Straight answer first: this engine has no textures, no normal maps and no
+     skinned meshes. Nothing here will ever be photoreal, and pretending
+     otherwise would produce a worse result than aiming at what boxes CAN do.
+
+     What actually frightens in a low-fidelity game is SILHOUETTE and WRONG
+     MOTION, not face detail. You never see a face at 30 m; you see a shape
+     that moves incorrectly and does not stop. So:
+
+       - the head hangs FORWARD and to one side, permanently
+       - one arm is raised and locked, the other swings dead at the side
+       - the spine is bent and the stance is asymmetric
+       - the palette is necrotic grey-green with dried blood, no team colour
+       - eyes are two dim emissive points, the only bright thing on the body
+
+     Applied on top of the existing rig, so a zombie inherits every pose,
+     death topple and hitbox the operator already has, and the server's hit
+     detection needs no special case. */
+  var ZM = null;
+  function zombieMats() {
+    if (ZM) return ZM;
+    var L = function (o) { return new THREE.MeshLambertMaterial(o); };
+    ZM = {
+      flesh: L({ color: 0x6f7a63 }),
+      flesh2: L({ color: 0x55604c }),
+      rag: L({ color: 0x3b3a34 }),
+      blood: L({ color: 0x4a1d18 }),
+      eye: new THREE.MeshBasicMaterial({ color: 0xc8ff5a })
+    };
+    return ZM;
+  }
+  /* Re-dresses a built avatar as one of the dead. Materials are SHARED across
+     every zombie — the v10.9 rule — so a wave of ninety costs five materials,
+     not four hundred and fifty. */
+  function makeZombie(av, type) {
+    var Z = zombieMats();
+    av.group.traverse(function (o) {
+      if (!o.isMesh || o === av.tag || (av.hb && o === av.hb.sprite)) return;
+      if (o === av.xray) return;
+      o.material = (Math.random() < 0.22) ? Z.flesh2 : Z.flesh;
+    });
+    if (av.helmet) av.helmet.visible = false;
+    if (av.vest) { av.vest.visible = true; av.vest.material = Z.rag; }
+    if (av.headMesh) {
+      av.headMesh.material = Z.flesh;
+      var e1 = new THREE.Mesh(boxGeo(0.035, 0.02, 0.02), Z.eye);
+      var e2 = new THREE.Mesh(boxGeo(0.035, 0.02, 0.02), Z.eye);
+      e1.position.set(-0.05, 0.02, 0.10); e2.position.set(0.05, 0.02, 0.10);
+      av.headMesh.add(e1); av.headMesh.add(e2);
+    }
+    /* The wrong-motion pass. Static offsets, not animation — they persist
+       through every pose the rig plays, which is what makes the body read as
+       broken rather than as a soldier doing an odd walk. */
+    var side = Math.random() < 0.5 ? -1 : 1;
+    if (av.head) { av.head.rotation.x = 0.34; av.head.rotation.z = side * 0.30; }
+    if (av.spine) { av.spine.rotation.x = 0.26; av.spine.rotation.z = side * 0.10; }
+    if (av.armR) { av.armR.rotation.x = -1.35; av.armR.rotation.z = -0.22; }
+    if (av.armL) { av.armL.rotation.x = -0.15 - Math.random() * 0.9; }
+    if (av.gun) av.gun.visible = false;             // the dead carry nothing
+    var sc = (type === 'brute') ? 1.28 : (type === 'runner' ? 0.94 : 1.0);
+    av.group.scale.set(RIG.x * sc, RIG.y * sc, RIG.z * sc);
+    av.zombie = true;
+    return av;
+  }
+
   function buildAvatar(name, colorHex) {
     var accent = accentMat(colorHex);
     var g = new THREE.Group();
@@ -326,8 +403,53 @@ var Avatars = (function () {
     hs.position.y = 0.98 * RIG.y; hs.visible = false; tagHolder.add(hs);
     var hb = { sprite: hs, canvas: hc, ctx: hc.getContext('2d'), tex: htx };
 
+    /* ===== v10.10 RECON VISOR SILHOUETTE ===== (placed correctly in v10.12)
+
+       A single box drawn with depthTest OFF and a high renderOrder, so it
+       paints over whatever is in front of it. Hidden by default; Net toggles it
+       when the local player is wearing a visor.
+
+       WHY IT IS PARENTED TO tagHolder AND NOT TO g.
+
+       v10.10 added it straight to `g` with `position.y = RIG.y * 0.95`. That
+       was wrong twice over, and wrong in a way nothing would have reported:
+
+         g.scale is (1.52, 1.301, 1.52). A child of g is scaled by that, so the
+         0.62 x 1.86 x 0.42 box rendered at 0.94 x 2.42 x 0.64 — a marker half a
+         metre taller than the operator it marks.
+
+         Local position is scaled too, so y = RIG.y * 0.95 = 1.236 landed at
+         1.236 * 1.301 = 1.61 above the group origin — floating over the head
+         rather than on the body.
+
+       And because g is ROTATED for prone (~83 degrees about X), the box would
+       have swung out flat in front of a prone player, marking empty floor.
+
+       tagHolder already solves all three. It carries the inverse RIG scale and
+       is counter-rotated every frame by poseAvatar, which is exactly why the
+       nameplate and hp bar live there. Its children work in world units, so
+       -0.27 is the standing group lift (halfNow * RIG_LIFT = 0.9 * 0.301) put
+       back, landing the box on the capsule centre.
+
+       WHY A SEPARATE MESH RATHER THAN RE-MATERIALISING THE BODY. v10.9 made
+       every avatar material SHARED across all players — that was the fix for
+       the disconnect leak. Setting depthTest = false on a body material to show
+       one player through a wall sets it on EVERY player, including the ones you
+       are meant to have to find.
+
+       Geometry and material are module-level and shared, so this costs one mesh
+       per avatar and nothing per frame. disposeAvatar must NOT free them; it
+       names the four resources it owns and this is not among them. */
+    var xray = new THREE.Mesh(XRAY_GEO, XRAY_MAT);
+    xray.position.y = -(0.9 * RIG_LIFT);
+    xray.visible = false;
+    xray.renderOrder = 9998;
+    xray.matrixAutoUpdate = false; xray.updateMatrix();
+    tagHolder.add(xray);
+
     return {
       group: g, gun: gun, head: neck, headMesh: headMesh, torso: chest, spine: spine, hb: hb, tag: tag,
+      xray: xray,
       tagHolder: tagHolder,
       hipL: hipL, hipR: hipR, armL: armL, armR: armR,
       helmet: helmet, vest: vest, pack: pack, detail: detail,
@@ -720,6 +842,8 @@ var Avatars = (function () {
     setRemoteGun: setRemoteGun,
     drawHpBar: drawHpBar,
     setGear: setGear,
-    poseAvatar: poseAvatar
+    poseAvatar: poseAvatar,
+    makeZombie: makeZombie,
+    XRAY_MAT: XRAY_MAT
   };
 })();

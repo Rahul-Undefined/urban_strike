@@ -794,3 +794,100 @@ select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; p
 .bot-tag { font: 700 9px var(--mono); letter-spacing: 1.4px; color: #7fd4e8;
   border: 1px solid rgba(127,212,232,0.45); border-radius: 2px; padding: 0 4px;
   font-style: normal; margin-left: 6px; }
+
+/* ===================================================================
+   v10.12 WELCOME SCREEN
+
+   Rahul: "it is kindoff boring now... get ideas from cod mobile.
+   Logo, image, style, music, colours, gun skin, and all."
+
+   What that menu does, with its art budget removed, is four things:
+
+     a hero 3D asset          -> .showcase, live weapon from viewmodels.js
+     a logo, not just type    -> .brand-mark, a stencil plate and chevrons
+     ONE loud accent          -> --amber pushed hotter, everything else colder
+     motion that answers you  -> pointer parallax on .backdrop
+
+   The old screen was not unstyled — it already had a parallax skyline. It was
+   FLAT: one weight of type, one distance, nothing moving in response to the
+   player. That is what reads as boring, and it is fixable without an artist.
+   =================================================================== */
+
+:root {
+  /* Pushed hotter and colder at the same time. The old --amber sat close
+     enough to --ink that the accent never actually popped; separating the two
+     is most of why this reads differently. */
+  --amber: #ffab2e;
+  --amber-hot: #ffd166;
+  --amber-deep: #c9741a;
+  --bg: #080a0e;
+  --panel: #12171f;
+  --line: #26303e;
+}
+
+/* ---------- logo lockup ---------- */
+.brand-mark { display: flex; align-items: center; justify-content: center; gap: clamp(10px, 2vw, 26px); }
+.bm-chev { color: var(--amber-deep); font-size: clamp(14px, 2.2vw, 26px); opacity: 0.85;
+  animation: bmPulse 3.2s ease-in-out infinite; }
+.bm-chev:last-child { animation-delay: 1.6s; }
+@keyframes bmPulse { 0%, 100% { opacity: 0.30; } 50% { opacity: 0.95; } }
+
+.brand h1 {
+  position: relative; padding: 0.06em 0.30em;
+  font-size: clamp(48px, 9.2vw, 104px); font-weight: 700;
+  letter-spacing: 0.07em; line-height: 0.95;
+  /* The plate is what makes it a mark rather than a heading. Drawn with
+     gradients rather than an image so it scales to any viewport and adds no
+     request. */
+  background: linear-gradient(180deg, rgba(255,171,46,0.10), rgba(255,171,46,0.02));
+  border-top: 2px solid var(--amber-deep);
+  border-bottom: 2px solid var(--amber-deep);
+  text-shadow: 0 0 34px rgba(255,171,46,0.28), 0 3px 0 rgba(0,0,0,0.55);
+}
+.brand h1::before, .brand h1::after {
+  content: ''; position: absolute; top: -2px; bottom: -2px; width: 6px; background: var(--amber);
+}
+.brand h1::before { left: -6px; } .brand h1::after { right: -6px; }
+.brand h1 span { color: var(--amber); text-shadow: 0 0 26px rgba(255,171,46,0.55), 0 3px 0 rgba(0,0,0,0.55); }
+
+.brand-serial { margin-top: 12px; font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.34em; color: #5d6875; }
+.brand-serial b { color: var(--amber-deep); font-weight: 600; }
+
+/* ---------- featured weapon ---------- */
+.showcase { position: relative; margin: 20px auto 4px; width: min(560px, 92vw); height: clamp(150px, 22vh, 230px); }
+#showcase-cv { width: 100%; height: 100%; display: block; }
+/* Hidden until showcase.js reports a live context. A dead black rectangle is
+   worse than no rectangle, and this must never be the reason the menu looks
+   broken — see the fail-safe note in showcase.js. */
+.showcase:not(.live) #showcase-cv { display: none; }
+.showcase:not(.live) { height: 0; margin: 0; }
+
+.sc-meta { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; pointer-events: none; }
+.sc-tag { font-family: var(--mono); font-size: 9px; letter-spacing: 0.4em; color: var(--amber-deep); }
+.sc-name { font-size: clamp(15px, 2.4vw, 21px); font-weight: 700; letter-spacing: 0.20em; color: var(--ink); }
+.sc-stats { margin-top: 3px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; color: #6f7a88; }
+.sc-stats b { color: var(--amber); font-weight: 600; }
+
+/* ---------- motion that answers the player ----------
+   Pointer parallax. The backdrop already had three depth layers and moved none
+   of them in response to anything, which is the difference between a painting
+   and a place. Driven by two CSS variables set from JS, so the animation stays
+   on the compositor and never touches the frame budget — the same rule the
+   original backdrop comment sets out. */
+.backdrop { --px: 0; --py: 0; }
+.bd-skyline .sky-far  { transform: translate3d(calc(var(--px) * -8px),  calc(var(--py) * -3px), 0); }
+.bd-skyline .sky-mid  { transform: translate3d(calc(var(--px) * -16px), calc(var(--py) * -6px), 0); }
+.bd-skyline .sky-near { transform: translate3d(calc(var(--px) * -28px), calc(var(--py) * -10px), 0); }
+.bd-skyline g { transition: transform 340ms cubic-bezier(.22,.61,.36,1); }
+
+/* A warm floor glow, so the bottom of the screen is lit rather than fading to
+   flat black. Cheap, and it is most of what makes the reference look expensive. */
+#menu-layer::after {
+  content: ''; position: fixed; left: 0; right: 0; bottom: 0; height: 42vh; pointer-events: none; z-index: 0;
+  background: radial-gradient(120% 100% at 50% 118%, rgba(255,140,40,0.16), rgba(255,90,20,0.05) 44%, rgba(0,0,0,0) 72%);
+}
+
+/* ---------- buttons with more weight ---------- */
+.btn-primary { box-shadow: 0 0 0 1px var(--amber-deep) inset, 0 6px 26px rgba(255,150,40,0.20); }
+.btn-primary:hover { box-shadow: 0 0 0 1px var(--amber) inset, 0 8px 34px rgba(255,170,60,0.34); }

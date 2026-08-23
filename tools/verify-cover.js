@@ -39,18 +39,54 @@ vm.createContext(ctx);
      CFG.MAPS_RURAL undefined and produced 510 colliders where the browser
      produces 525 -- 15 objects short, on the gate whose entire job is to
      reproduce the browser build. Keep this list identical to index.html. */
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js",
+  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
   "public/src/environment/deco.js", "public/src/environment/rural.js", "public/src/environment/metro.js",
+  /* v10.12: killhouse and sunsetrow were MISSING from this list while both were
+     in the map loop above. buildMap fell through to the urban path for each, so
+     this gate measured urban twice and printed the result under their names —
+     the 0.2% dead-ground figure reported for killhouse in v10.10 was urban's.
+     Section 4.1 again, in its worst form: not a gate that never looked, a gate
+     that looked at the wrong thing and said so confidently. */
+  "public/src/environment/killhouse.js","public/src/environment/sunsetrow.js",
   "public/src/environment/access.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(f, "utf8"), ctx, { filename: f }));
 
-const BOUND = 100, CELL = 4, MAXD = 14;   // metres
+/* v10.12: BOUND is now PER MAP, and CELL scales with it.
+
+   It was a flat 100 for every map, which was fine while every map was 200 m
+   across. killhouse is 58 x 34 and sunsetrow 64 x 40, so a 100 m grid spent
+   about 97% of its samples on empty space outside the building and reported
+   88% dead ground with a worst gap of 108 m — on a map where nothing is more
+   than 58 m from anything. Nonsense numbers, confidently printed.
+
+   CELL shrinks with the map so a small map still gets a meaningful sample
+   count instead of a handful of coarse cells. MAXD — the distance at which
+   ground counts as uncovered — shrinks too: 14 m of open ground is a normal
+   street on urban and half the width of killhouse. */
+const CELL_BIG = 4, MAXD_BIG = 14;
+function gridFor(map) {
+  const B = (require('../public/src/config/index.js').MAPS[map] || {}).bound || 100;
+  if (B > 60) return { BOUND: B, CELL: CELL_BIG, MAXD: MAXD_BIG };
+  return { BOUND: B, CELL: 1.5, MAXD: 7 };
+}
 const REPORT = process.argv.includes("--report");
 
+/* True when some collider top sits at a plausible standing height under (x,z).
+   Ground slabs sit a little below 0 and floors a little above it; anything in
+   this band is somewhere a player can be. */
+function walkableAt(cols, x, z) {
+  for (const c of cols) {
+    if (x < c[0] || x > c[3] || z < c[2] || z > c[5]) continue;
+    if (c[4] >= -0.6 && c[4] <= 1.2) return true;
+  }
+  return false;
+}
+
 function analyse(map) {
+  const { BOUND, CELL, MAXD } = gridFor(map);
   ctx.__m = map;
   vm.runInContext(`World.reset && World.isBuilt() && World.reset(); World.buildMap(__sc, __m);`,
     Object.assign(ctx, { __sc: new THREE.Scene() }));
@@ -71,6 +107,18 @@ function analyse(map) {
          dead ground on land. Rural declares its river and lake; maps without
          water declare nothing and behave exactly as before. */
       if (WATER.some(w => x >= w[0] && x <= w[2] && z >= w[1] && z <= w[3])) { row.push(-1); skipped.n++; continue; }
+      /* v10.12: A CELL WITH NO FLOOR UNDER IT IS NOT DEAD GROUND, IT IS NOT
+         GROUND. The grid is square and derived from `bound`, but killhouse is
+         58 x 34 inside a bound of 32 and sunsetrow 64 x 40 inside 34 — so
+         roughly half of every small map's grid fell outside the building, had
+         no floor, was counted as land, and was counted as uncovered. That
+         produced 32% dead ground on a map whose real figure is a fraction of
+         it.
+
+         This never mattered while every map filled its bound. It matters the
+         moment a map does not, and the honest test is the one already implied
+         by the word "ground": is there a walkable surface here at all. */
+      if (!walkableAt(cols, x, z)) { row.push(-1); skipped.n++; continue; }
       let best = 1e9;
       for (const c of cover) {
         const dx = Math.max(c[0] - x, 0, x - c[3]);
@@ -103,7 +151,7 @@ let fail = 0;
    v9.0, but metro was never in this loop, so the budget was never applied to
    anything. Metro had no dead-ground measurement of any kind — the gate that
    exists to prove a map is fightable had never looked at it. */
-for (const map of ["urban", "rural", "metro", "killhouse"]) {
+for (const map of ["urban", "rural", "metro", "killhouse", "sunsetrow"]) {
   const r = analyse(map);
   const land = r.n * r.n - r.skipped;
   const pct = (r.dead.length / land * 100).toFixed(1);
@@ -137,7 +185,23 @@ for (const map of ["urban", "rural", "metro", "killhouse"]) {
      legitimately hide. On a 200 m outdoor map a rooftop or a river accounts for
      a few percent honestly; here, dead ground means a corner of the floor that
      no cover overlooks, which is a design fault. */
-  const DEAD_BUDGET = { urban: 0.06, rural: 0.15, metro: 0.06, killhouse: 0.02 };
+  /* v10.12: RURAL IS NOW RED AT 28.6% AND THE BUDGET IS NOT MOVING.
+
+   BOUND was a flat 100 for every map. Rural's bound is 150, so this gate has
+   only ever sampled the middle 44% of it — the outer ring, which is the most
+   open ground on the map, was never measured. Fixing BOUND to be per-map
+   doubled the honest figure from 14.7% to 28.6%.
+
+   The map did not get worse; the instrument got better. Raising the budget to
+   28.6% would make the number go green and make the gate useless, and this
+   project's own rule is that ratchets fall and never rise. So rural stays red
+   as a DOCUMENTED red alongside verify-access, verify-arch and verify-climb,
+   and the fix is cover in rural's outer ring, not a bigger number here. */
+const DEAD_BUDGET = { urban: 0.06, rural: 0.15, metro: 0.06, killhouse: 0.02,
+    /* v10.12: set from the honest measurement, not guessed ahead of it.
+       sunsetrow reads 0.9% and killhouse 0.0%, so 0.02 is a real ratchet on
+       both rather than slack. */
+    sunsetrow: 0.02 };
   const budget = DEAD_BUDGET[map] !== undefined ? DEAD_BUDGET[map] : 0.06;
   const landCells = r.n * r.n - r.skipped;   // v9.0: match the figure printed above
   if (r.dead.length / landCells > budget) {

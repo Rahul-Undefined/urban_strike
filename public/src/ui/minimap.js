@@ -8,7 +8,47 @@ var Minimap = (function () {
   function invalidate() { off = null; }
   var SIZE = 200, R = 96;     // canvas px, radar radius
   var SCALE = 3.0;            // px per meter (the "zoom")
-  var WORLD = 100;            // world half-extent
+
+  /* ===== v10.13 - WORLD AND SCALE FOLLOW THE MAP =====
+
+     Rahul: "minimap in killhouse and other map needs to be fixed properly".
+
+     WORLD was a hardcoded 100 — Urban's half-extent, written when Urban was
+     the only map. Every other map has since disagreed with it:
+
+       urban 100   rural 150   metro 100   killhouse 32   sunsetrow 34
+
+     On rural the outer 50 m of the world simply had no minimap: the baked
+     canvas stopped at 100 and a third of the map was off the edge of it. On
+     killhouse the opposite — a 64 x 34 m building drawn into a 200 x 200 m
+     canvas, so the whole map was a smudge in the middle of the radar occupying
+     about a ninth of the area, and the full map (M) was mostly empty grey.
+
+     Both come from the same line, and the fix has to move SCALE as well as
+     WORLD. Leaving SCALE at 3 px/m and shrinking WORLD would fix the extents
+     and leave killhouse's radar showing a 21 m circle — closer than the map is
+     wide. The radar should show a comparable slice of the world whatever the
+     map, so px-per-metre scales inversely with the world size and is clamped:
+     the offscreen canvas is WORLD*2*SCALE on a side and an unclamped small map
+     would mint a needlessly large one.
+
+     Read from CFG.MAPS[map].bound, which is the SAME number the out-of-bounds
+     ring and the airdrop clamp use, so the minimap cannot disagree with where
+     the world actually ends. */
+  var WORLD = 100;
+  function applyMapExtent() {
+    var m = (typeof World !== 'undefined' && World.builtMap) || 'urban';
+    var b = (CFG.MAPS[m] && CFG.MAPS[m].bound) || 100;
+    var wasWorld = WORLD, wasScale = SCALE;
+    WORLD = b;
+    /* 3.0 px/m at 100 m is the look everything was tuned against. Hold the
+       offscreen canvas near that pixel budget rather than the scale, so a
+       32 m map gets a much closer radar and a 150 m map does not mint a
+       450 px-per-side bake for no benefit. */
+    SCALE = Math.max(2.0, Math.min(7.0, 300 / b));
+    if (WORLD !== wasWorld || SCALE !== wasScale) invalidate();
+    return WORLD;
+  }
   var lastDraw = 0;
   var ready = false;
 
@@ -22,6 +62,12 @@ var Minimap = (function () {
   }
 
   function bakeStatic() {
+    /* v10.13: resolve the extent HERE, immediately before the bake that
+       depends on it. bakeStatic is called from init() (before any map exists),
+       from the draw path when `off` is null, and after World.reset() — putting
+       the call anywhere else leaves one of those three baking at the previous
+       map's scale. */
+    applyMapExtent();
     var px = Math.ceil(WORLD * 2 * SCALE);
     off = document.createElement('canvas');
     off.width = px; off.height = px;
@@ -273,14 +319,20 @@ var Minimap = (function () {
   var MARK_TTL = 45000;
   var marks = {};                    // player id -> { x, z, at, name }
 
+  /* v10.13: `kind` distinguishes a planning mark (click the full map) from an
+     enemy spot (crosshair callout). An enemy spot is a SNAPSHOT of where
+     somebody was, so it expires in a third of the time — a stale enemy marker
+     that looks current is worse than none, because the team pushes onto it. */
   function addMark(m) {
     if (!m) return;
-    marks[m.id] = { x: m.x, z: m.z, at: performance.now(), name: m.name || 'Squad' };
+    marks[m.id] = { x: m.x, z: m.z, at: performance.now(), name: m.name || 'Squad',
+                    kind: m.kind || 'spot', dist: m.dist || 0 };
   }
   function liveMarks() {
     var out = [], t = performance.now();
     for (var k in marks) {
-      if (t - marks[k].at > MARK_TTL) { delete marks[k]; continue; }
+      var ttl = marks[k].kind === 'enemy' ? 5000 : MARK_TTL;
+      if (t - marks[k].at > ttl) { delete marks[k]; continue; }
       out.push(marks[k]);
     }
     return out;
@@ -292,8 +344,38 @@ var Minimap = (function () {
      -> world transform is the exact inverse of sx/sz in drawFull; deriving it
      from the same W and WORLD is what keeps a pin under the cursor when the
      window is resized. */
+  /* v10.10 NUKE TARGETING reuses this transform rather than writing a second
+     one. A duplicate screen->world mapping is a duplicate that drifts: the
+     comment above exists because deriving it from the same W and WORLD is the
+     only thing that keeps a pin under the cursor on resize, and a nuke landing
+     where the player did not click is worse than a pin doing it. */
+  var nukeAim = false;
+  function setNukeAim(on) { nukeAim = !!on; if (fullCv) fullCv.style.cursor = nukeAim ? 'crosshair' : ''; }
+  function nukeAiming() { return nukeAim; }
+
+  function screenToWorld(clientX, clientY) {
+    var r = fullCv.getBoundingClientRect();
+    var W = r.width, S = W / (WORLD * 2);
+    var x = (clientX - r.left) / S - WORLD;
+    var z = (clientY - r.top) / S - WORLD;
+    if (Math.abs(x) > WORLD || Math.abs(z) > WORLD) return null;
+    return { x: x, z: z };
+  }
+
   function markAt(clientX, clientY) {
     if (!fullOn || !fullCv) return;
+    /* Targeting takes precedence over team pings. Someone holding a nuke who
+       clicks the map means the nuke, every time — and the alternative, both
+       firing at once, would drop a strike AND ping it for the enemy team. */
+    if (nukeAim) {
+      var w = screenToWorld(clientX, clientY);
+      if (!w) return;
+      nukeAim = false;
+      Net.nukeStrike(w.x, w.z);
+      if (UI.nukeFired) UI.nukeFired(w);
+      toggleFull();
+      return;
+    }
     var modeCfg = CFG.MODES[(Net.getMatch() || {}).mode];
     if (!modeCfg || !modeCfg.teams) return;          // no sides, no shared marker
     var r = fullCv.getBoundingClientRect();
@@ -547,5 +629,6 @@ var Minimap = (function () {
 
   return { init: init, update: update, invalidate: invalidate,
            addMark: addMark, clearMarks: clearMarks, liveMarks: liveMarks,
-           toggleFull: toggleFull, drawFull: drawFull, isFullOpen: isFullOpen };
+           toggleFull: toggleFull, drawFull: drawFull, isFullOpen: isFullOpen,
+           setNukeAim: setNukeAim, nukeAiming: nukeAiming };
 })();

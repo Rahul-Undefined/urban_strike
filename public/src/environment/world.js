@@ -1926,7 +1926,8 @@ World.buildMap = function (sceneRef, map) {
      nested ternary — three was already one too many and a fourth map would
      have made the line unreadable. */
   var builder = ({ rural: World._buildRural, metro: World._buildMetro,
-                   killhouse: World._buildKillhouse })[map] || null;
+                   killhouse: World._buildKillhouse,
+                   sunsetrow: World._buildSunsetRow })[map] || null;
   if (map === 'urban' || !builder) {
     World.build(sceneRef);
     World.builtMap = 'urban';

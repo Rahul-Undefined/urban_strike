@@ -143,6 +143,11 @@ var Game = (function () {
     });
 
     UI.init();
+    /* v10.12 WELCOME SCREEN. Both calls are guarded: a menu that throws would
+       make every unplayed change behind it untestable, which is a far worse
+       outcome than a menu without a hero asset. showcase.js fails to a
+       collapsed panel rather than an error. */
+    try { if (window.Showcase) { window.Showcase.bindParallax(); window.Showcase.start(); } } catch (e) { }
     AudioSys.init();
     Net.init(scene);
     FX.init(scene, camera);
@@ -235,6 +240,33 @@ var Game = (function () {
          with the other always-available keys so it works while paused — that
          is when you actually want to study a layout. */
       if (e.code === 'KeyM') { e.preventDefault(); Minimap.toggleFull(); return; }
+      /* v10.10: N calls the killhouse nuke. Sits beside M because it opens the
+         same map, and returns early only when a nuke is actually armed — so on
+         every other map, and for every player who has not earned one, N falls
+         through to whatever else wants it. UI.nukeToggleAim reports whether it
+         consumed the key rather than this line guessing. */
+      if (e.code === 'KeyN' && UI.nukeToggleAim && UI.nukeToggleAim()) { e.preventDefault(); return; }
+      /* v10.13: V spots whatever enemy is in the crosshair for the team.
+
+         This was KeyX for exactly one gate run. X is toggleProne, bound
+         eighteen lines below, and my handler returned FIRST — so binding it
+         would have silently taken prone away from every player on every map.
+         verify-models caught it as a duplicate keydown claim, which is the
+         only thing that would have: both handlers are valid code, and the
+         conflict is only visible if something compares them.
+
+         V was the second guess and V is placeMine. The gate caught that one
+         too, which is the point of it — every letter from A to Z except
+         I, J, K, L, O, P and U is already claimed on this build, and none of
+         those collisions is visible by reading a single file.
+
+         KeyU it is: unbound, reachable without leaving WASD, and next to Y
+         (already a comms key) so the spot sits with the other callouts. */
+      if (e.code === 'KeyU' && playing) {
+        e.preventDefault();
+        Net.spot(PlayerCtl.yaw, PlayerCtl.pitch);
+        return;
+      }
       if (e.code === 'F3') { e.preventDefault(); DevHUD.toggle(); return; }
       if (e.code === 'F4') { e.preventDefault(); DevHUD.copy(); return; }
       if (e.code === 'Tab' && playing) {
@@ -389,6 +421,12 @@ var Game = (function () {
      `reportError` puts the real message on screen so the actual trigger can
      finally be identified instead of guessed at. */
   function onMatchStart(d) {
+    /* v10.12: free the menu's WebGL context BEFORE the map build. The showcase
+       holds a second renderer while the welcome screen is up; leaving it alive
+       during a match is exactly the sort of invisible cost v10.9 was spent
+       chasing. Guarded because nothing in the match-start path may throw —
+       see the black-screen note above this function. */
+    try { if (window.Showcase) window.Showcase.stop(); } catch (e) { }
     UI.setLoading(true);
     setTimeout(function () {           // let the loading bar paint before the ~1s map build
       var built = false;

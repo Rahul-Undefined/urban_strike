@@ -1,3 +1,436 @@
+# v10.13 - OUTBREAK, A SPOT THAT IS NOT A WALLHACK, AND A MINIMAP THAT KNEW ONE MAP
+
+## THE MINIMAP HAD URBAN'S SIZE HARDCODED
+
+    var WORLD = 100;            // world half-extent
+
+Written when urban was the only map. Every map since has disagreed:
+
+    urban 100   rural 150   metro 100   killhouse 32   sunsetrow 34
+
+On RURAL the outer 50 m had no minimap at all — the baked canvas stopped at
+100 and a third of the world was off the edge of it. On KILLHOUSE the
+opposite: a 64 x 34 m building drawn into a 200 x 200 m canvas, so the map was
+a smudge occupying about a ninth of the radar and the full map was mostly grey.
+
+One line, two opposite symptoms. Fixed by reading `CFG.MAPS[map].bound` — the
+SAME number the out-of-bounds ring and the airdrop clamp use, so the minimap
+cannot disagree with where the world actually ends.
+
+SCALE had to move too. Fixing WORLD alone would have left killhouse's radar
+showing a 21 m circle on a map 64 m wide. px-per-metre now scales inversely
+with the world and is clamped, holding the offscreen bake near its old pixel
+budget:
+
+    urban 3.00 px/m (unchanged)   rural 2.00   killhouse/sunsetrow 7.00
+
+## SPOTTING AN ENEMY — FOUR RULES KEEP IT FROM BEING A WALLHACK
+
+Rahul: mark where the enemy are, "smartly so that it doesn't effect the
+gameplay". The existing marker needs the full map open and a click, which is
+fine for planning and useless in a firefight.
+
+`U` spots what is in your crosshair. What stops it being an aimbot for the team:
+
+  1. LINE OF SIGHT IS REQUIRED, checked server-side with the same
+     segmentBlocked the bot AI uses. You cannot spot through a wall — this
+     reports what you can ALREADY see and tells your team.
+  2. IT MARKS A PLACE, NOT A PLAYER. A position stamped at the moment of the
+     spot, expiring in 5 s. It never follows him. A marker that tracked would
+     be a wallhack with extra steps.
+  3. 60-degree cone, 90 m. A callout, not a radar sweep.
+  4. Throttled at 1.2 s, harder than the map mark's 0.7 s, because this one
+     needs no menu.
+
+Also fixed while in there: the map-mark bound was
+
+    const B = CFG.MAPS[room.settings.map || 'urban'] ? 110 : 110;
+
+a ternary with the same value on both arms. The map's bound was looked up and
+discarded. Harmless at 100, but it silently refused every mark past 110 m on
+rural, whose bound is 150.
+
+## OUTBREAK — AND THE DECISION THAT MADE IT BUILDABLE
+
+One life, waves, a 10 s breather, harder as it goes, an end at wave 100.
+
+**A zombie is a BOT, not a new creature.** server/lib/bots.js is 1,137 lines of
+pathing, collider scanning, stair planning, climbing, line of sight, spawning
+and targeting, covered by 271 assertions, switched off since v10.9 rather than
+deleted precisely so it could come back. Writing a separate zombie AI would
+have meant reimplementing all of it and then maintaining two copies.
+
+The melee is the only new behaviour, and bots.js had already named it as the
+gap, at LOADOUTS:
+
+    "a knife bot needs melee closing behaviour that does not exist yet.
+     Leaving them out is honest; shipping them half-modelled is not."
+
+Everything else is configuration.
+
+### The curve: three dials moving at three rates
+
+    wave   1  CONTAINMENT   5 bodies   100 hp   0.54x   13 dmg
+    wave  10  OUTBREAK     30 bodies   180 hp   0.69x   21 dmg
+    wave  25  INFESTED     90 bodies   366 hp   0.83x   33 dmg
+    wave  45  HORDE        90 bodies   656 hp   0.92x   50 dmg
+    wave 100  EXTINCTION   90 bodies  1596 hp   0.96x   52 dmg
+
+COUNT grows fastest then caps — more bodies is the fun kind of hard, and a wave
+nobody can render is not difficulty. HEALTH never stops climbing; that is what
+eventually makes a body cost real ammunition. SPEED is the dangerous dial and
+grows slowest: **a zombie faster than a sprinting player removes the counterplay
+of backing off**, so it asymptotes at 0.96x and a RUNNER at 1.45x is still
+under a sprint. verify-outbreak asserts that, because it is the difference
+between "very tough" and "not impossible" and it is a number.
+
+Concurrency is capped at 26 separately from wave size, so wave 60 is a grind
+against a tide rather than 90 actors spawning into one frame.
+
+Three types, introduced on a schedule so each is learned separately: WALKER,
+RUNNER from wave 8 (fast, fragile), BRUTE from wave 15 (slow, 3.2x health,
+heavy hit). They earn their place by changing the fight, not by having more hp.
+
+### One life, and the ending
+
+`lives: 1` reuses Last Stand's one-life-and-spectate path end to end rather
+than writing a second. The wave runs while anyone is alive; the round ends when
+the last one falls, or when wave 100 is cleared — which is a WIN, and says so:
+"THE LAST OF THEM — ONE HUNDRED WAVES, THE WORLD IS QUIET AGAIN."
+
+### The dead
+
+Rahul asked for horrific and not cartoonish. Straight answer: this engine has
+no textures, no normal maps and no skinned meshes, and pretending otherwise
+would produce something worse than aiming at what boxes CAN do.
+
+What frightens at low fidelity is SILHOUETTE and WRONG MOTION, not face detail.
+You never see a face at 30 m. So the head hangs forward and to one side, one
+arm is raised and locked while the other swings dead, the spine is bent, the
+stance is asymmetric, the palette is necrotic grey-green with dried blood and
+no team colour, and the eyes are the only bright thing on the body. Applied on
+top of the existing rig, so a zombie inherits every pose, topple and hitbox an
+operator has and the server needs no special case to shoot one.
+
+Materials are shared across every zombie — the v10.9 rule — so a wave of ninety
+costs five materials, not four hundred and fifty.
+
+### Not on the small maps
+
+Rahul asked for a mode "where sniper, assault and all other guns can function
+properly". Killhouse and Sunset Row are 8-player rooms with every sightline
+under 40 m. Outbreak runs on urban, rural and metro, which have the range for
+it. A DEDICATED outbreak map is not built — see the handoff.
+
+## THREE COLLISIONS THE GATES CAUGHT IN ONE SESSION
+
+**KeyX for the spot — X IS PRONE.** My handler returned first, so binding it
+would have silently taken prone away from every player on every map. Both
+handlers are valid code; the conflict is only visible if something compares
+them. **KeyV was the second guess and V is placeMine.** Every letter A-Z except
+I, J, K, L, O, P and U is claimed on this build. Landed on U.
+
+**Outbreak Solo seats one, and a gate required two.** The floor was written
+when every mode was human against human. Outbreak Solo is the only mode on this
+build a single person can start — every PvP mode needs a second human and bots
+have been off since v10.9. A floor of two would have refused the mode that
+gives the game back to a solo player.
+
+**The full map classified every mode and did not know these four.** Outbreak
+shows the horde on the full map, deliberately: in PvP a full map revealing the
+other side removes the game, but here the other side walks straight at you and
+makes no attempt to hide. Knowing where they are coming from is the tactical
+layer.
+
+## GATE BOARD
+
+  3,800+ assertions. NEW: tools/verify-outbreak.js, 33 assertions — the curve
+  is monotonic and bounded, no zombie outruns a sprint, wave 100 ends the run
+  as a WIN, and outbreak is completely separate from the PvP modes.
+
+  verify-bots showed 270/1 once inside a back-to-back sweep and 271/0 on three
+  standalone runs. Contention in the child-process probe, not a defect —
+  recorded rather than ignored.
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+  test.js NOT RUN — needs a live socket.
+# v10.12 - SUNSET ROW, A MENU THAT ANSWERS BACK, AND A SILHOUETTE SCALED TWICE
+
+Rahul: a second small map, keep the avatar side clean, and the welcome screen
+is boring — take ideas from CoD Mobile.
+
+## THE AVATAR BUG HE ASKED ME TO GO LOOKING FOR
+
+He said "keep ensuring no bugs are left in the game and specially from the
+avatar side". There was one, and it was mine, from v10.10.
+
+The recon visor silhouette was added as a direct child of the avatar group.
+That group carries `scale = RIG = (1.52, 1.301, 1.52)`, and a child inherits it
+in BOTH its dimensions and its local position:
+
+    intended   0.62 x 1.86 x 0.42 at y 1.24
+    rendered   0.94 x 2.42 x 0.64 at y 1.61
+
+A marker half a metre taller than the operator, floating over its head. And
+because the group is rotated ~83 degrees for prone, it would have swung out
+flat in FRONT of a prone player, marking empty floor.
+
+Nothing caught it. It is not a leak, not a material, not a collider; every
+existing avatar assertion passed. It is only visible on a screen, and none of
+this has been on a screen.
+
+Fixed by parenting to `tagHolder`, which already carries the inverse RIG scale
+and is counter-rotated every frame — the mechanism the nameplate and hp bar
+have used since v8.16. `-(0.9 * RIG_LIFT)` puts the standing group lift back so
+the box sits on the capsule centre.
+
+verify-avatar now asserts the CLASS: no direct child of the RIG-scaled group
+may be a Sprite or carry a depthTest:false material. Both are signatures of a
+world-space overlay and both belong under tagHolder.
+
+## SUNSET ROW — ROOMS AND A STREET, NOT A SECOND SET OF LANES
+
+64 x 40 m. Two houses facing each other across a road, four rooms each, windows
+you can shoot through, a bus and two cars in the middle, side yards to flank
+through.
+
+The shape is the entire point. Killhouse is cover-in-lanes: pick a corridor and
+push. A second map with that shape would play identically and one of the two
+would stop being chosen. Here the houses are ENTERABLE VOLUMES at the ends, so
+every life offers three real plays: hold your house and shoot from a window,
+push the street behind the bus, or take the long way round.
+
+    draws 39/45 · tris 5,112/26,000 · casters 17/22 · colliders 182
+    dead ground 0.1% · floaters 0 · escapes 0 · worst uncovered 7.1 m
+
+NO STAIRS, NO CLIMBABLE ROOFS. Same call as killhouse, same reason.
+
+Density pass: first build was 130 colliders and 3,064 triangles — two boxes and
+a bus. Chimneys, gutters, driveways, carports, trees, hedges, power lines and
+kerbside clutter took it to 182 and 5,112. Draws went 32 -> 42 on the first
+attempt because three props used materials this map did not otherwise carry;
+swapping them for palette entries already present brought it to 39. **On this
+axis a new MATERIAL is expensive and geometry is nearly free.**
+
+## THE SMALL-MAP RULES ARE NOW A FLAG, NOT A NAME
+
+`server/lib/nuke.js` guarded on `map === 'killhouse'`. Sunset Row would have
+received the entire small-map rule set EXCEPT the killstreak — the silent kind
+of gap nobody reports, because nothing looks broken, it just never happens.
+
+Keyed on `CFG.MAPS[map].smallMap` now, and verify-nuke asserts BOTH directions:
+every flagged map gets it, every unflagged map does not, and each clamps to its
+OWN bound rather than a hardcoded 32.
+
+## THE WELCOME SCREEN
+
+The old one was not unstyled — it already had a parallax skyline. It was FLAT:
+one weight of type, one distance, nothing moving in response to the player.
+Strip the reference of its art budget and four things are left, none of which
+needs an artist:
+
+  a hero 3D asset      viewmodels.js already holds 25 built weapons. One of
+                       them now turns slowly on the menu and cycles through a
+                       shortlist of eight readable silhouettes, with its real
+                       damage, rate of fire and range read from CFG.
+  a logo, not type     a stencil plate with hard amber caps and chevrons
+  ONE loud accent      --amber pushed hotter, --bg pushed colder. The old pair
+                       sat close enough together that the accent never popped.
+  motion that answers  pointer parallax across the three skyline layers, driven
+                       by two CSS variables so it stays on the compositor and
+                       never touches the frame budget
+
+### The showcase is wrapped everywhere, and that matters more than the showcase
+
+It creates a SECOND WebGLRenderer. Browsers cap live contexts, drivers vary,
+and none of this has been rendered yet. Every entry point is guarded and any
+failure collapses the panel to zero height, leaving the menu exactly as it was.
+
+Rahul has several versions of unplayed work sitting behind this screen. A menu
+that throws would make ALL of it untestable rather than just this one feature.
+`stop()` also drops the context via WEBGL_lose_context before the map build, so
+the match never runs with two renderers alive.
+
+## FOUR NUMBERS ON THE FRONT PAGE WERE LYING
+
+    3  THEATRES        five maps since killhouse and sunsetrow
+    25 WEAPONS         21 are reachable; the v10.9 cull retired four
+    11 ATTACHMENTS     correct, by luck
+    20 MAX OPERATORS   the cap has been 15 since v10.9
+
+All four are computed from CFG now. verify-menu asserts they are COMPUTED, not
+that they currently read right — a literal that happens to be correct today is
+precisely the thing that goes stale.
+
+verify-models had already been checking the weapon count and was comparing the
+markup against CFG.WEAPONS.length, i.e. 25. That target was wrong too:
+WEAPON_ORDER keeps retired slots only because the wire format is an index into
+it, and a player cannot obtain them by any route.
+
+## SUNSETROW WAS LOADED TWICE ON EVERY PAGE LOAD
+
+Duplicate `<script>` tags for both its config and its builder. Fetched, parsed
+and executed twice, every load, for every player.
+
+It surfaced as a bandwidth failure — first load hit 341 KB against a 340 KB
+budget. **The budget was right and the code was wrong.** Removing the
+duplicates took it to 334 KB, under budget, without touching a ratchet that the
+handoff says may fall but never rise. The wasted parse and the double module
+execution were free of charge and completely invisible.
+
+verify-menu now asserts no script tag is duplicated. Nothing else looks at that.
+
+## GATE BOARD
+
+  3,715 assertions passing, up from 3,565.
+  NEW: tools/verify-menu.js, 17 assertions — the counters are computed, the
+  showcase fail-safe holds, no script loads twice, parallax stays on the
+  compositor.
+  NEW: verify-avatar RIG-scale class check, 6 assertions.
+  NEW: verify-nuke smallMap flag coverage, both directions.
+  sunsetrow added to verify-map, cover, floaters, zfight, collision,
+  fingerprint and gen-points.
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+  test.js NOT RUN — needs a live socket.
+
+## STILL NOT PLAYED, AND NOW THERE IS A MENU IN FRONT OF IT
+
+Test the menu first. If the welcome screen renders and the weapon turns, the
+riskiest new code in this build is already proven and everything behind it is
+reachable.
+
+# v10.11 - THE NUKE, THE VISOR, AND A DOOR ONE CENTIMETRE TOO NARROW
+
+Rahul, from inside the killhouse, with the F3 readout attached:
+"this block in the killhouse map door is short so player cant get in in one shot"
+
+He was standing at X -20.71, Z 0.03 — the west office doorway. Two separate
+defects were there, both shipped in v10.10, both mine.
+
+## DEFECT 1: HE WAS ONE CENTIMETRE TOO WIDE FOR HIS OWN FRONT DOOR
+
+A scatter crate at x[-21.99,-21.16] z[-0.71,-0.09], inside a doorway whose
+opening runs z[-0.6,0.6]. Walkable gap: z[-0.09,0.60] = 0.69 m. The player
+capsule is 0.70 m across.
+
+Being only 0.24 m tall made it WORSE. Under the 0.42 m auto-step it does not
+read as an obstacle at all, so the doorway looks clear and the player simply
+does not fit — which is exactly how he described it.
+
+    for (var i = 0; i < 14; i++) {
+      var px = (rnd() - 0.5) * 46, pz = (rnd() - 0.5) * 28;
+      if (Math.abs(px) < 5 && Math.abs(pz) < 5) continue;   // only the centre
+
+A random scatter with one exclusion will eventually block something. There is
+now a KEEP_CLEAR list covering both office doorways, the central stack and the
+four spawn approaches, tested against the crate's FULL FOOTPRINT rather than its
+centre — a centre test passes a crate whose corner still blocks the gap, which
+is the same near-miss that produced this.
+
+## DEFECT 2: THE WEST HALF OF THE BUILDING HAD WALLS OF NEGATIVE WIDTH
+
+Every mirrored wall in killhouse.js computes x from `s`, which is -1 on one
+side:
+
+    seg(s * HX, s * (HX + 0.4), ...)     east: seg(29, 29.4)     correct
+                                         west: seg(-29, -29.4)   x0 > x1
+
+seg() does not sort its arguments. The west perimeter wall, the west office's
+back wall and its doorway piers all went into the collider list with negative
+extents. An inverted AABB does not crash — it merges, it draws, it passes the
+fingerprint, and it collides unpredictably. A wall that is sometimes there.
+
+Every X pair that depends on `s` now goes through segx(), which normalises.
+
+**AND THE GATE FOUND TWO MORE WHILE I WAS WRITING IT.** verify-collision gained
+an inverted-extent assertion across all four maps; the first run caught the west
+perimeter wall and the west office back wall, neither of which I had noticed.
+Degenerate boxes (min === max) stay legal — paint is legitimately flat on one
+axis. Only a NEGATIVE extent is a defect.
+
+## NUKE KILLSTREAK — KILLHOUSE ONLY
+
+Five kills without dying. Server emits `nukeReady`, the banner comes up, N opens
+the full map in targeting mode, a click calls an 11 m strike for 10 seconds,
+55 damage every 500 ms.
+
+**Everything is decided on the server.** The client is told it HAS one and asked
+WHERE; it is never asked WHETHER. A killstreak reward is the most attractive
+thing on this map to fake.
+
+**It rides combat.js's existing `streak` counter** rather than keeping its own.
+combat.js already resets that on death — a second counter is a second thing to
+reset and a second thing to disagree.
+
+**Dying while aiming loses it, and that is the whole design.** The reward is not
+"you earned a nuke", it is "you earned a nuke AND you have to survive long
+enough to place it". One rule, one place: clearArmed() on death. There is no
+separate "is he aiming" flag, because aiming is a client overlay with no server
+state — dying clears the award whether the map was open or not.
+
+**No friendly fire, checked EVERY TICK rather than once at launch.** Players
+move during ten seconds; a teammate who walks in at second seven must be as safe
+as one standing there at second zero. verify-nuke tests exactly that case,
+because a play session where nobody happens to walk in proves nothing.
+
+Damage goes through applyDamage(), so a nuke kill uses the same armour, kill
+feed, assist and win-condition path as a bullet. A second damage route is a
+second set of rules to keep in sync.
+
+Targeting reuses Minimap's existing screen->world transform. A duplicate mapping
+is a duplicate that drifts, and a nuke landing where the player did not click is
+worse than a pin doing it.
+
+The effect is ONE stored interval, not 20 queued timeouts. A match can end or a
+player can disconnect mid-strike, and 20 loose timeouts would keep firing into a
+torn-down scene.
+
+## RECON VISOR
+
+Crate-only gear. See every player through every wall until you are killed.
+
+**It is a separate silhouette mesh, NOT a change to the body materials.** v10.9
+made every avatar material shared across all players — that was the disconnect
+fix. Setting `depthTest = false` on a body material to show one player through a
+wall sets it on EVERY player, including the ones you are meant to have to find.
+Shared geometry, two shared materials, one hidden mesh per avatar, toggled by
+visibility. disposeAvatar must not free them and does not.
+
+Cleared in spawnPlayer, which runs on every respawn — per LIFE, unlike drones
+which are per MATCH and cleared in the match-start block. verify-nuke asserts
+the ordering of those two lines, because the difference between them is one
+`if` block and no visible symptom.
+
+## AND IT SHIPPED UNOBTAINABLE, EXACTLY LIKE KAR98 DID
+
+`visor` was marked drop:1 and added to no airdrop pool. verify-models:
+
+    every drop-exclusive item is actually reachable from an airdrop crate
+    (unreachable: visor)
+
+Second time in two versions. Marking an item drop-only and adding it to a pool
+are two separate edits, and that gate is the only thing joining them.
+
+## GATE BOARD
+
+  3,565 assertions passing, up from 3,529.
+  NEW: tools/verify-nuke.js, 28 assertions. Four rules that a play session
+  cannot check — killhouse-only, the five-kill cost, per-tick friendly fire, and
+  refusal of an unearned request.
+  NEW: verify-collision inverted-extent check, all four maps.
+  killhouse fingerprint moved twice, both recorded with the reason. meshSig
+  UNCHANGED across both — the tell that these were collision defects and not
+  appearance ones. The building always looked right; it did not collide right.
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+  test.js NOT RUN — needs a live socket. Run before deploying.
+
+## NOT PLAYED
+
+The nuke has never been called by a human. Whether five kills is the right price
+and eleven metres the right radius are questions no gate can answer.
+
 # v10.10 - KILLHOUSE, AND THREE GATES CATCHING ME DOING WHAT THE HANDOFF WARNS ABOUT
 
 Rahul: finish the killhouse, fix what can be fixed, and make Urban look better.

@@ -41,6 +41,8 @@ function mapData(room) {
   if (m === 'rural' && CFG.MAPS_RURAL) return CFG.MAPS_RURAL;
   if (m === 'metro' && CFG.MAPS_METRO) return CFG.MAPS_METRO;
   if (m === 'killhouse' && CFG.MAPS_KILLHOUSE) return CFG.MAPS_KILLHOUSE;   // v10.10
+  if (m === 'sunsetrow' && CFG.MAPS_SUNSETROW) return CFG.MAPS_SUNSETROW;   // v10.12
+  if (m === 'sunsetrow' && CFG.MAPS_SUNSETROW) return CFG.MAPS_SUNSETROW;   // v10.12
   return { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points };
 }
 
@@ -207,9 +209,26 @@ const Loot = require('./server/lib/loot.js')({ io, now, mapData });
 const { initPickups, pickupList, tryCollect, respawnPickups,
   scheduleAirdrop, clearAirdrop, dropCrate } = Loot;
 const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
-  endMatch: (...a) => endMatch(...a) });
+  endMatch: (...a) => endMatch(...a),
+  /* v10.10: late-bound on purpose. Nuke needs applyDamage, which Combat
+     returns, so Nuke cannot exist yet at this line. Arrow functions defer the
+     lookup to call time, by which point both modules are built. */
+  onKillStreak: (...a) => Nuke.onKill(...a),
+  onDeathClearStreakReward: (...a) => Nuke.clearArmed(...a),
+  onZombieKilled: (...a) => Zombies.onZombieKilled(...a) });
 const { weaponServerDamage, applyDamage, positionPlausible, fireRateOk } = Combat;
 const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo }); // code -> room
+/* v10.10 NUKE KILLSTREAK — killhouse only. Server-authoritative for the same
+   reason as the strike drone: the client is told it HAS one and asked WHERE to
+   put it, never whether it has one. See server/lib/nuke.js. */
+const Nuke = require('./server/lib/nuke.js')({ io, now, applyDamage: (...a) => applyDamage(...a) });
+/* v10.13 OUTBREAK. A zombie is a bot-shaped record in room.players, so it
+   snapshots, renders, takes damage and dies through the paths that already
+   exist. See the header of server/lib/zombies.js for why that was the decision
+   that made the mode buildable rather than a second game. */
+const Zombies = require('./server/lib/zombies.js')({
+  io, now, applyDamage: (...a) => applyDamage(...a), pushLobby,
+  endMatch: (...a) => endMatch(...a), mapData: (r) => mapData(r) });
 /* v9.4 STRIKE DRONE. Server-authoritative for the reason recorded in
    server/lib/drones.js: a drone outlives the moment its owner is watching it,
    and a third player can shoot it down, so no single client can be trusted with
@@ -398,6 +417,14 @@ function pickSpawn(room, forP) {
 function spawnPlayer(room, p) {
   const s = pickSpawn(room, p);
   p.hp = CFG.PLAYER.hp; p.armorLvl = 0; p.armorDur = 0; p.alive = true;
+  /* v10.10 RECON VISOR is PER LIFE. Cleared here in spawnPlayer, which runs on
+     every respawn as well as at match start — unlike drones, which are cleared
+     in the match-start block below because they are per MATCH. Rahul:
+     "available until the player is killed, once killed this is gone."
+
+     Cleared before the vitals emit further down, so the client is told in the
+     same message that brings it back to life. */
+  p.visor = false;
   p.protUntil = now() + CFG.MATCH.spawnProtect * 1000;
   p.pos = [s[0], 0.95, s[1]]; p.ry = s[2]; p.history = [];
   io.to(room.code).emit('spawn', { id: p.id, pos: p.pos, ry: p.ry, prot: CFG.MATCH.spawnProtect });
@@ -408,6 +435,7 @@ function spawnPlayer(room, p) {
 // weights, with guarantees: an L3 vest and at least one legendary weapon exist.
 function startMatch(room) {
   room.state = 'playing';
+  Zombies.begin(room);        // v10.13: no-op unless the mode is an outbreak
   room.startedAt = now();
   room.teamKills = zeroTeamKills(room.settings.mode);   // v8.34: sized to the mode
   for (const p of room.players.values()) {
@@ -505,6 +533,8 @@ function startSnapshots(room) {
     Drones.tick(room, 1 / CFG.NET.snapRate); // v9.4
     respawnPickups(room);
     Mines.tick(room);
+    Nuke.tick(room);                         // v10.10 killhouse killstreak
+    Zombies.tick(room, 1 / CFG.NET.snapRate); // v10.13 outbreak waves
     regenTick(room);
     if (++room.snapN % 60 === 0) pushLobby(room); // live K/D/assists/damage refresh (~4 s)
 
@@ -584,6 +614,8 @@ function endMatch(room, winnerId, reason) {
   stopSnapshots(room);
   clearAirdrop(room);
   Mines.clear(room);
+  Nuke.reset(room);           // v10.10: no strike survives the final whistle
+  Zombies.reset(room);        // v10.13: and no zombie survives it either
   const teams = modeInfo(room).teams;
   Bots.removeBots(room);      // v8.38: bots are per-match; never let them into a lobby
   const insights = buildInsights(room);
@@ -754,7 +786,11 @@ io.on('connection', (socket) => {
     if (!modeInfo(room).teams) return;
     const x = +d.x, z = +d.z;
     if (!isFinite(x) || !isFinite(z)) return;
-    const B = CFG.MAPS[room.settings.map || 'urban'] ? 110 : 110;
+    /* v10.13: was `CFG.MAPS[map] ? 110 : 110` — a ternary with the same value
+       on both arms, so the map's own bound was looked up and then thrown away.
+       Harmless on urban and metro at 100, but it silently refused every mark
+       past 110 m on rural, whose bound is 150. Read the real number. */
+    const B = ((CFG.MAPS[room.settings.map || 'urban'] || {}).bound || 100) + 10;
     if (Math.abs(x) > B || Math.abs(z) > B) return;
     /* Throttled per player: a marker is a deliberate act, and without this a
        held mouse button becomes a broadcast loop. */
@@ -767,6 +803,77 @@ io.on('connection', (socket) => {
       io.to(q.id).emit('mark', payload);
     }
   });
+  /* ===== v10.13 — SPOT AN ENEMY =====
+
+     Rahul: "in team mode add the option to mark places for the team mates to
+     guide where the enemy are, make it smartly so that it doesn't effect the
+     gameplay."
+
+     The existing 'mark' needs the full map open and a click. That is fine for
+     planning and useless in a firefight, which is exactly when you want to
+     tell someone where the enemy is. This spots what you are LOOKING at.
+
+     FOUR RULES KEEP IT FROM BECOMING A WALLHACK, which is the whole of "does
+     not affect the gameplay":
+
+       1. LINE OF SIGHT IS REQUIRED. Checked server-side with the same
+          segmentBlocked the bot AI uses. You cannot spot through a wall, so
+          this reports what you can already see — it just tells your team.
+       2. IT MARKS A PLACE, NOT A PLAYER. The marker is a position stamped at
+          the moment of the spot and it expires. It never follows him. A
+          marker that tracked would be a wallhack with extra steps.
+       3. 60-DEGREE CONE, 90 m. It is a crosshair callout, not a radar sweep.
+       4. THROTTLED HARDER THAN THE MAP MARK (1.2 s vs 0.7 s), because this one
+          needs no menu and could otherwise be held down.
+
+     Server-authoritative throughout: the client sends where it is looking, and
+     the server decides whether anything is there. The client is never asked
+     who the enemy is. */
+  socket.on('spot', (d) => {
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing' || !d) return;
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive || !p.team) return;              // FFA and the dead do not spot
+    if (!modeInfo(room).teams) return;
+    const yaw = +d.yaw, pitch = +d.pitch;
+    if (!isFinite(yaw) || !isFinite(pitch)) return;
+    if (now() - (p.lastSpot || 0) < 1200) return;
+    p.lastSpot = now();
+
+    const dirX = -Math.sin(yaw) * Math.cos(pitch);
+    const dirY = Math.sin(pitch);
+    const dirZ = -Math.cos(yaw) * Math.cos(pitch);
+    const eye = p.pos[1] + CFG.PLAYER.eyeStand;
+    const cols = Bots.buildColliders(room.settings.map || 'urban');
+
+    let best = null, bestDot = Math.cos(Math.PI / 6);   // 60-degree cone
+    for (const q of room.players.values()) {
+      if (!q.alive || q.out || q.id === p.id) continue;
+      if (q.team && q.team === p.team) continue;        // never spot your own side
+      const vx = q.pos[0] - p.pos[0], vy = q.pos[1] - p.pos[1], vz = q.pos[2] - p.pos[2];
+      const dist = Math.hypot(vx, vy, vz);
+      if (dist < 0.5 || dist > 90) continue;
+      const dot = (vx * dirX + vy * dirY + vz * dirZ) / dist;
+      if (dot < bestDot) continue;
+      if (cols.length && Bots.segmentBlocked(cols, p.pos[0], eye, p.pos[2],
+            q.pos[0], q.pos[1] + 0.4, q.pos[2])) continue;   // rule 1
+      bestDot = dot; best = { q, dist };
+    }
+    if (!best) { io.to(p.id).emit('spotMiss'); return; }
+
+    /* A position, stamped now. Not a subscription to where he goes next. */
+    const payload = {
+      id: 'spot:' + socket.id, name: p.name, kind: 'enemy',
+      x: Math.round(best.q.pos[0] * 10) / 10,
+      z: Math.round(best.q.pos[2] * 10) / 10,
+      at: now(), team: p.team, dist: Math.round(best.dist)
+    };
+    for (const q of room.players.values()) {
+      if (q.bot || !q.connected || q.team !== p.team) continue;
+      io.to(q.id).emit('mark', payload);
+    }
+  });
+
   /* ===== v9.11 — PING WHEEL =====
      Same relay shape as the v9.10 map marker and for the same reason: the
      server is the only thing that knows who is on whose side, so it decides the
@@ -806,6 +913,21 @@ io.on('connection', (socket) => {
     const p = room.players.get(socket.id);
     if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
     ack(Mines.place(room, p, d && d.p));
+  });
+  /* v10.10 NUKE STRIKE — killhouse only.
+
+     The client sends only a target. Whether this player is allowed to call one
+     at all is decided inside Nuke.requestStrike against server state, never
+     from anything in `d`. A request from a player who has not earned it, is
+     dead, is on another map, or has already spent it, returns silently — there
+     is nothing useful to tell an attacker, and a real player cannot reach this
+     path without the button. */
+  socket.on('nukeStrike', (d) => {
+    const room = getRoom(socket);
+    if (!room) return;
+    const p = room.players.get(socket.id);
+    if (!p) return;
+    Nuke.requestStrike(room, p, d && +d.x, d && +d.z);
   });
   /* v8.28 HOST-ASSIGNED TEAMS.
 

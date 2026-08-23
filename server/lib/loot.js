@@ -87,6 +87,14 @@ function tryCollect(room, p) {
         if ((p.drones | 0) >= CFG.GEAR.drone.maxCarry) continue;
         p.drones = Math.min(CFG.GEAR.drone.maxCarry, (p.drones | 0) + it.n);
         grant = { t: 'gear', g: 'drone', n: p.drones };
+      } else if (it.g === 'visor') {
+        /* v10.10: a boolean, not a count. Picking up a second visor while
+           wearing one must not stack or refresh anything — there is nothing to
+           refresh, it lasts until death — so it is left on the ground for
+           someone who can use it, the same courtesy the drone branch shows. */
+        if (p.visor) continue;
+        p.visor = true;
+        grant = { t: 'gear', g: 'visor', n: 1 };
       } else if (it.g === 'mine') {
         if ((p.mines | 0) >= CFG.GEAR.mine.maxCarry) continue;
         p.mines = Math.min(CFG.GEAR.mine.maxCarry, (p.mines | 0) + it.n);

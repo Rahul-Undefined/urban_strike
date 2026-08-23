@@ -274,5 +274,115 @@ ok(mats20.size <= AV_BUDGET.matsBody20,
   "twenty avatars share " + mats20.size + " materials (budget " + AV_BUDGET.matsBody20 +
   ") — sharing holds at double the player count");
 
+/* ===== v10.12 - CHURN LEAKS NOTHING =====
+
+   Rahul: "keep ensuring that no bugs are left in the game and specially from
+   the avatar side."
+
+   This file already proves avatars SHARE their materials. It did not prove
+   they RELEASE what they own, and that is the half that caused the
+   30/60-minute disconnects in v10.9 — nothing in avatars.js called dispose at
+   all, and the leak was invisible until a match ran long enough.
+
+   So: 200 full lifecycles, each one build -> six weapon swaps -> gear on ->
+   gear off -> hp bar -> dispose -> dispose again. Counts what is still alive
+   afterwards.
+
+   The three numbers mean different things:
+     geometry   must be BOUNDED, not zero. It is shared and deliberately never
+                freed — one per distinct box size, reused forever.
+     textures   must be ZERO. Two CanvasTextures per avatar are genuinely
+                per-player and disposeAvatar owns them.
+     materials  must be ZERO, same reason.
+
+   Double dispose is called on purpose. removeRemote and the leaveRoom sweep
+   can both reach the same avatar, and a second call must be a no-op rather
+   than a crash or a double-free. */
+{
+  const before = vm.runInContext(`(function () {
+    var g = 0, t = 0, m = 0;
+    var OG = THREE.BoxGeometry, OT = THREE.CanvasTexture, OM = THREE.SpriteMaterial;
+    THREE.BoxGeometry = function (w, h, d) { g++; return new OG(w, h, d); };
+    THREE.CanvasTexture = function (c) { t++; var x = new OT(c); var od = x.dispose.bind(x);
+      x.dispose = function () { t--; od(); }; return x; };
+    THREE.SpriteMaterial = function (o) { m++; var x = new OM(o); var od = x.dispose.bind(x);
+      x.dispose = function () { m--; od(); }; return x; };
+    for (var i = 0; i < 200; i++) {
+      var r = { av: Avatars.buildAvatar('P' + i, '#3f8dff'), gunName: null };
+      for (var w = 0; w < 6; w++) Avatars.setRemoteGun(r, w % CFG.WEAPON_ORDER.length);
+      Avatars.setGear(r.av, 1, 2); Avatars.setGear(r.av, 0, 0);
+      Avatars.drawHpBar(r, 55, true, 'a');
+      Avatars.disposeAvatar(r.av);
+      Avatars.disposeAvatar(r.av);
+    }
+    THREE.BoxGeometry = OG; THREE.CanvasTexture = OT; THREE.SpriteMaterial = OM;
+    return { g: g, t: t, m: m };
+  })()`, ctx);
+
+  console.log("\n--- v10.12: 200 join/swap/gear/leave cycles leak nothing ---");
+  ok(before.t === 0,
+    "every per-avatar CanvasTexture is released [" + before.t + " still alive]");
+  ok(before.m === 0,
+    "every per-avatar SpriteMaterial is released [" + before.m + " still alive]");
+  ok(before.g > 0 && before.g < 120,
+    "geometry stays bounded and shared, not freed [" + before.g + " for 200 avatars]");
+}
+
+/* ===== v10.12 - EVERY WORLD-SIZED CHILD MUST CANCEL THE RIG SCALE =====
+
+   buildAvatar sets g.scale to RIG (1.52, 1.301, 1.52) so the operator is
+   taller than the raw rig. Every child of g inherits that, in BOTH its
+   dimensions and its local position, and g is additionally rotated ~83 degrees
+   about X when prone.
+
+   Body parts are meant to inherit it — that is the point. Anything measured in
+   WORLD units is not: a nameplate, an hp bar, a marker. Those live under
+   tagHolder, which carries the inverse scale and is counter-rotated each frame
+   by poseAvatar.
+
+   The v10.10 recon visor silhouette was added straight to g. It rendered
+   0.94 x 2.42 instead of 0.62 x 1.86, floated 1.61 m up instead of sitting on
+   the body, and would have swung out flat in front of a prone player. Nothing
+   caught it: it is not a leak, not a material, not a collider, and every
+   existing avatar assertion passed.
+
+   So: no direct child of g may be a Sprite or carry a depthTest:false
+   material. Those are the two signatures of a screen-space or world-space
+   overlay, and both belong under tagHolder. */
+{
+  const av = vm.runInContext(`Avatars.buildAvatar("Scale", "#3f8dff")`, ctx);
+  const RIG = vm.runInContext(`Avatars.RIG`, ctx);
+  const strays = [];
+  (av.group.children || []).forEach((c) => {
+    if (c === av.tagHolder) return;
+    const m = c.material;
+    if (c.isSprite || (m && m.depthTest === false)) {
+      strays.push(c.type + (c.name ? ":" + c.name : ""));
+    }
+  });
+  ok(strays.length === 0,
+    "no world-sized overlay is a direct child of the RIG-scaled group" +
+    (strays.length ? " — found " + strays.join(", ") : ""));
+
+  const th = av.tagHolder;
+  ok(th && Math.abs(th.scale.x - 1 / RIG.x) < 1e-6 &&
+     Math.abs(th.scale.y - 1 / RIG.y) < 1e-6 &&
+     Math.abs(th.scale.z - 1 / RIG.z) < 1e-6,
+    "tagHolder still carries the exact inverse RIG scale");
+
+  /* The visor silhouette specifically: right parent, right size once the
+     inverse scale is applied, and off until a visor is picked up. */
+  ok(!!av.xray, "the recon visor silhouette exists");
+  ok(av.xray && av.xray.parent === th,
+    "and hangs off tagHolder, not off the scaled group");
+  ok(av.xray && av.xray.visible === false,
+    "and is hidden until Net.setVisor turns it on");
+  if (av.xray && av.xray.geometry && av.xray.geometry.parameters) {
+    const gp = av.xray.geometry.parameters;
+    ok(gp.height > 1.6 && gp.height < 2.1,
+      "its height is operator-sized in WORLD units [" + gp.height.toFixed(2) + " m]");
+  }
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

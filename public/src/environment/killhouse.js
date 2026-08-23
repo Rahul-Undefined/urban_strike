@@ -49,6 +49,27 @@
        directly instead of through pair(). */
     function pair(f) { f(1); f(-1); }
 
+    /* segx — seg() with its X pair normalised.
+
+       v10.10. seg(x0, x1, ...) does NOT sort its arguments, and every mirrored
+       call in this file computes x from `s`, which is -1 on one side. So
+       `seg(s * HX, s * (HX + 0.4), ...)` is seg(29, 29.4) going east and
+       seg(-29, -29.4) going west — the second has x0 > x1 and produced a
+       collider with negative width. The entire west perimeter wall was one of
+       these, along with the west office's back wall and its doorway piers.
+
+       An inverted box does not crash. It merges, it draws, it passes the
+       fingerprint, and it collides unpredictably — a wall that is sometimes
+       there. Rahul found the doorway one by walking into it.
+
+       Every X pair that depends on `s` goes through here now. Z pairs are safe
+       because nothing in this map mirrors about z. verify-collision asserts the
+       whole collider set for negative extents, so a future call that bypasses
+       this is caught rather than shipped. */
+    function segx(xa, xb, y0, y1, z0, z1, mat, opts) {
+      return seg(Math.min(xa, xb), Math.max(xa, xb), y0, y1, z0, z1, mat, opts);
+    }
+
     /* ================= SHELL ================= */
 
     /* Floor. Two slabs rather than one: the centre strip is a different tone
@@ -69,7 +90,7 @@
       stripe(s * 12.9, s * 13.1, -HZ + 1, HZ - 1);
       // hazard chevrons at the spawn thresholds
       for (var i = 0; i < 6; i++) {
-        seg(s * 22 - 0.5, s * 22 + 0.5, 0.006, 0.014,
+        segx(s * 22 - 0.5, s * 22 + 0.5, 0.006, 0.014,
           -7.5 + i * 2.6, -7.5 + i * 2.6 + 1.1, M.hazard, NBOTH);
       }
     });
@@ -80,7 +101,7 @@
     seg(-HX - 0.4, HX + 0.4, 0, WALL_H, -HZ - 0.4, -HZ, M.metal);
     seg(-HX - 0.4, HX + 0.4, 0, WALL_H, HZ, HZ + 0.4, M.metal);
     pair(function (s) {
-      seg(s * HX, s * (HX + 0.4), 0, WALL_H, -HZ, HZ, M.metal);
+      segx(s * HX, s * (HX + 0.4), 0, WALL_H, -HZ, HZ, M.metal);
     });
     for (var rx = -HX + 2; rx <= HX - 2; rx += 3.2) {
       seg(rx - 0.09, rx + 0.09, 0.2, WALL_H - 0.3, -HZ - 0.02, -HZ + 0.14, M.steelBlue, NBOTH);
@@ -99,8 +120,8 @@
     }
     pair(function (s) {
       for (var tx = 4; tx <= HX - 3; tx += 6) {
-        seg(s * tx - 0.14, s * tx + 0.14, WALL_H - 3.4, WALL_H - 0.6, -HZ + 1, -HZ + 1.3, M.steelBlue, NBOTH);
-        seg(s * tx - 0.14, s * tx + 0.14, WALL_H - 3.4, WALL_H - 0.6, HZ - 1.3, HZ - 1, M.steelBlue, NBOTH);
+        segx(s * tx - 0.14, s * tx + 0.14, WALL_H - 3.4, WALL_H - 0.6, -HZ + 1, -HZ + 1.3, M.steelBlue, NBOTH);
+        segx(s * tx - 0.14, s * tx + 0.14, WALL_H - 3.4, WALL_H - 0.6, HZ - 1.3, HZ - 1, M.steelBlue, NBOTH);
       }
     });
 
@@ -320,11 +341,25 @@
       var W = 5.2, D = 3.8, H = 2.9, hw = W / 2, hd = D / 2;
       seg(cx - hw, cx + hw, 0, H, cz - hd, cz - hd + 0.16, M.cream);
       seg(cx - hw, cx + hw, 0, H, cz + hd - 0.16, cz + hd, M.cream);
-      seg(cx + s * (hw - 0.16), cx + s * hw, 0, H, cz - hd, cz + hd, M.cream);
-      // doorway wall: two piers and a header, leaving a 1.2 m opening
-      seg(cx - s * hw, cx - s * (hw - 0.16), 0, H, cz - hd, cz - 0.6, M.cream);
-      seg(cx - s * hw, cx - s * (hw - 0.16), 0, H, cz + 0.6, cz + hd, M.cream);
-      seg(cx - s * hw, cx - s * (hw - 0.16), 2.1, H, cz - 0.6, cz + 0.6, M.cream);
+      segx(cx + s * (hw - 0.16), cx + s * hw, 0, H, cz - hd, cz + hd, M.cream);
+      /* Doorway wall: two piers and a header, leaving a 1.2 m opening.
+
+         v10.10 FIX 1 — THE WEST OFFICE HAD AN INVERTED COLLIDER. These three
+         lines read `seg(cx - s*hw, cx - s*(hw-0.16), ...)`. At s = +1 that is
+         seg(20.90, 21.06) and correct; at s = -1 it is seg(-20.90, -21.06),
+         where x0 is GREATER than x1. seg() does not normalise, so the west
+         office shipped a doorway wall whose bounding box had negative width and
+         whose collision behaviour was undefined. Rahul walked into it.
+
+         Both ends are now written min-first with Math.min/max, so the sign of
+         `s` cannot invert them. verify-collision gained an inverted-AABB
+         assertion in the same version — the call site is fixed here, and the
+         whole CLASS of defect is caught there. */
+      var dpx0 = Math.min(cx - s * hw, cx - s * (hw - 0.16));
+      var dpx1 = Math.max(cx - s * hw, cx - s * (hw - 0.16));
+      segx(dpx0, dpx1, 0, H, cz - hd, cz - 0.6, M.cream);
+      segx(dpx0, dpx1, 0, H, cz + 0.6, cz + hd, M.cream);
+      segx(dpx0, dpx1, 2.1, H, cz - 0.6, cz + 0.6, M.cream);
       seg(cx - hw, cx + hw, H, H + 0.18, cz - hd, cz + hd, M.roof, NCAST);
       // windows
       box(cx, 1.8, cz - hd + 0.06, W * 0.6, 0.9, 0.06, M.shopGlass, NBOTH);
@@ -334,11 +369,43 @@
     pair(function (s) { office(s * 23.5, 0, s); });
 
     /* Loose scatter. Seeded from rnd(), which world.reset() reseeds, so this
-       is identical on every build — the v7.8 rule. */
+       is identical on every build — the v7.8 rule.
+
+       v10.10 FIX 2 — A SCATTER CRATE LANDED IN THE WEST OFFICE DOORWAY.
+       Rahul: "this block in the killhouse map door is short so player cant get
+       in in one shot". Measured: a 0.24 m crate at x[-21.99,-21.16]
+       z[-0.71,-0.09], inside a doorway whose opening is z[-0.6,0.6]. That
+       leaves a walkable gap of z[-0.09,0.60] = 0.69 m. The player capsule is
+       0.70 m across. He was 1 cm too wide to walk through his own front door.
+
+       Being only 0.24 m tall made it worse, not better: under the 0.42 m
+       auto-step it is invisible as an obstacle, so the player reads a clear
+       doorway and simply does not fit.
+
+       A random scatter with no exclusions will eventually block something. The
+       keep-clear list below is checked against the crate's FULL footprint, not
+       its centre — a centre test passes a crate whose corner still blocks the
+       gap, which is the same near-miss that produced this bug. */
+    var KEEP_CLEAR = [
+      [-22.6, -20.4, -1.4, 1.4],   // west office doorway and its approach
+      [20.4, 22.6, -1.4, 1.4],     // east office doorway
+      [-5, 5, -5, 5],              // central stack
+      [-29, -19, -16, -11], [19, 29, -16, -11],   // spawn approaches
+      [-29, -19, 11, 16], [19, 29, 11, 16]
+    ];
+    function clearOf(px, pz, hw2, hd2) {
+      for (var k = 0; k < KEEP_CLEAR.length; k++) {
+        var z2 = KEEP_CLEAR[k];
+        if (px + hw2 > z2[0] && px - hw2 < z2[1] &&
+            pz + hd2 > z2[2] && pz - hd2 < z2[3]) return false;
+      }
+      return true;
+    }
     for (var i = 0; i < 14; i++) {
       var px = (rnd() - 0.5) * 46, pz = (rnd() - 0.5) * 28;
-      if (Math.abs(px) < 5 && Math.abs(pz) < 5) continue;
-      box(px, 0.12, pz, 0.5 + rnd() * 0.5, 0.24, 0.4 + rnd() * 0.4, M.cargoWood, NCAST);
+      var cw = 0.5 + rnd() * 0.5, cd = 0.4 + rnd() * 0.4;
+      if (!clearOf(px, pz, cw / 2, cd / 2)) continue;
+      box(px, 0.12, pz, cw, 0.24, cd, M.cargoWood, NCAST);
     }
     pair(function (s) {
       cyl(s * 27, 1.1, -15, 0.22, 2.2, M.metal, NCAST);
