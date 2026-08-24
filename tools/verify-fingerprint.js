@@ -45,11 +45,11 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
 
 /* Keep this list identical to index.html — see the v8.9 note in verify-lifts. */
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js",
+ "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js",
  "public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
  "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js",
- "public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/access.js"]
+ "public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/access.js"]
  .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 function fingerprint(map) {
@@ -200,7 +200,12 @@ const BASELINE = {
      palette entries already present brought it back to 39. On this axis a new
      MATERIAL is expensive and geometry is nearly free. */
   sunsetrow: { colliders: 182, draws: 39, tris: 5112, casters: 17, lights: 3, bound: 34, colSig: 935596110, meshSig: -384905933 },
-  killhouse: { colliders: 204, draws: 33, tris: 12248, casters: 17, lights: 3, bound: 32, colSig: -270199003, meshSig: -850638274 }
+  killhouse: { colliders: 204, draws: 33, tris: 12248, casters: 17, lights: 3, bound: 32, colSig: -270199003, meshSig: -850638274 },
+  /* v10.14: the three new small maps, asserted from their first version so any
+     later edit has to justify itself. Filled in below from a measured run. */
+freightyard: { colliders: 118, draws: 22, tris: 8184, casters: 13, lights: 3, bound: 21, colSig: 687692594, meshSig: 1215863378 },
+bazaar     : { colliders: 126, draws: 24, tris: 4044, casters: 10, lights: 3, bound: 29, colSig: 501986612, meshSig: -1977644747 },
+substation : { colliders: 137, draws: 21, tris: 6924, casters: 12, lights: 3, bound: 25, colSig: -2141431923, meshSig: 201354676 }
 };
 
 let pass = 0, fail = 0;

@@ -49,12 +49,6 @@ var Net = (function () {
     var r = remotes[rp.id];
     if (!r) {
       var av = Avatars.buildAvatar(rp.name, rp.color);
-      /* v10.13: the dead are re-dressed on top of the ordinary rig, so they
-         inherit every pose, topple and hitbox an operator has and the server
-         needs no special case for hitting one. */
-      if (rp.zombie || (rp.id && rp.id.charAt(0) === 'z' && rp.ztype)) {
-        Avatars.makeZombie(av, rp.ztype);
-      }
       applyVisorTo(av);          // v10.10: joins mid-visor must be visible at once
       scene.add(av.group);
       r = remotes[rp.id] = {
@@ -507,16 +501,25 @@ var Net = (function () {
       }
     });
     socket.on('spotMiss', function () { UI.toast('No enemy in view', true); });
-    /* v10.13 OUTBREAK. The server owns the wave state entirely; these only
-       paint it. `zomb` arrives roughly twice a second plus on every phase
-       change, so the HUD is never more than half a second stale. */
-    s.on('zomb', function (d) { if (UI.zombState) UI.zombState(d); });
-    s.on('zombSpawn', function (d) { if (UI.zombSpawn) UI.zombSpawn(d); });
-    s.on('zombDown', function (d) { if (UI.zombDown) UI.zombDown(d); });
-    s.on('zombSwing', function (d) {
-      var r = remotes[d && d.id];
-      if (r && r.av && FX.shake) { /* felt, not seen, unless it is close */ }
-    });
+    /* v10.13 OUTBREAK LISTENERS REMOVED IN v10.14 along with the mode.
+
+       They are worth a note because of HOW they broke rather than what they
+       did. They were written as `s.on('zomb', ...)` and pasted into
+       bindGameplayEvents(), where the socket is named `socket`. `s` is the
+       parameter of bind() — a real identifier, declared, in the same file,
+       four hundred lines away and out of scope here.
+
+       So it was a ReferenceError on the first gameplay bind. It aborted the
+       rest of the chain, which is why the screen said "match start: s is not
+       defined", then "the map could not be built", then "map failed to load":
+       ONE undefined variable produced four unrelated-looking errors and every
+       match on every map failed to start.
+
+       verify-scope did not catch it and could not: it looks for identifiers a
+       module never declares, and `s` IS declared in this module. Being in the
+       wrong scope is invisible to it. tools/verify-bindings.js was added to
+       execute bind() and bindGameplayEvents() against a stub socket, which is
+       the only thing that would have caught this. */
     /* v9.11: a team-mate's ping. Relayed to this side only, so it can be
        trusted to be from an ally. */
     socket.on('ping', function (d) { FX.teamPing(d); });

@@ -24,25 +24,9 @@
 @keyframes nukeRoll{0%,100%{opacity:.55}50%{opacity:1}}
 </style>
 <style>
-#zomb-hud{position:fixed;left:50%;top:10px;transform:translateX(-50%);display:none;z-index:41;
   text-align:center;pointer-events:none;font-family:var(--disp,sans-serif);min-width:240px}
-#zomb-hud.on{display:block}
-#zomb-wave{font-size:15px;letter-spacing:.20em;color:#d9e2ea;text-shadow:0 2px 4px #000}
-#zomb-wave b{color:#9ede4a;font-size:19px}
-#zomb-tier{display:block;font-size:9px;letter-spacing:.42em;color:#7d8a6a;margin-top:1px}
-#zomb-bar{margin:5px auto 3px;width:220px;height:3px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden}
-#zomb-fill{display:block;height:100%;width:0;background:linear-gradient(90deg,#4a7a22,#9ede4a);transition:width .3s linear}
-#zomb-left{font-family:var(--mono,monospace);font-size:10px;letter-spacing:.18em;color:#8d97a3}
-#zomb-left b{color:#c8d4de}
-#zomb-score{font-family:var(--mono,monospace);font-size:10px;letter-spacing:.18em;color:#7d8a6a;margin-top:2px}
-#zomb-score b{color:#9ede4a}
-#zomb-banner{position:fixed;left:50%;top:26%;transform:translateX(-50%);display:none;z-index:44;
   text-align:center;pointer-events:none}
-#zomb-banner.show{display:block;animation:zbIn 2.6s ease-out forwards}
-#zomb-btitle{font-size:40px;font-weight:800;letter-spacing:.16em;color:#9ede4a;
   text-shadow:0 0 26px rgba(120,200,60,.75),0 3px 5px #000}
-#zomb-bsub{margin-top:4px;font-size:12px;letter-spacing:.42em;color:#c9d6b4;text-shadow:0 2px 4px #000}
-@keyframes zbIn{0%{opacity:0;transform:translateX(-50%) scale(.86)}14%{opacity:1;transform:translateX(-50%) scale(1)}
   76%{opacity:1}100%{opacity:0}}
 </style>
 </head>
@@ -329,16 +313,6 @@
   <div id="nuke-banner"><div id="nuke-banner-t">NUKE ACTIVATED</div><div id="nuke-banner-s">PRESS <b>N</b> TO SELECT TARGET</div></div>
   <div id="visor-pip">RECON VISOR</div>
   <div id="nuke-flash"></div>
-  <!-- v10.13 OUTBREAK HUD. Outside #hud-top for the same reason the nuke
-       banner is: it must survive the layout that clips the stat strip on short
-       viewports. Hidden entirely outside an outbreak. -->
-  <div id="zomb-hud">
-    <div id="zomb-wave">WAVE <b id="zomb-n">1</b> <span id="zomb-tier">CONTAINMENT</span></div>
-    <div id="zomb-bar"><i id="zomb-fill"></i></div>
-    <div id="zomb-left"><b id="zomb-count">0</b> REMAINING</div>
-    <div id="zomb-score">SCORE <b id="zomb-pts">0</b></div>
-  </div>
-  <div id="zomb-banner"><div id="zomb-btitle">WAVE 1</div><div id="zomb-bsub">CONTAINMENT</div></div>
   <div id="hud-top">
     <div id="match-timer">10:00</div>
     <div id="team-score" class="hidden"></div>
@@ -437,6 +411,7 @@
   <script src="src/config/maps-metro.config.js"></script>
   <script src="src/config/maps-killhouse.config.js"></script>
   <script src="src/config/maps-sunsetrow.config.js"></script>
+  <script src="src/config/maps-small.config.js"></script>
   <script src="src/config/districts.config.js"></script>
   <script src="src/config/index.js"></script>
   <script src="src/audio/audio.js"></script>
@@ -450,6 +425,7 @@
   <script src="src/environment/metro.js"></script>
   <script src="src/environment/killhouse.js"></script>
   <script src="src/environment/sunsetrow.js"></script>
+  <script src="src/environment/smallmaps.js"></script>
   <script src="src/environment/access.js"></script>
   <script src="src/effects/effects.js"></script>
   <script src="src/player/controller.js"></script>

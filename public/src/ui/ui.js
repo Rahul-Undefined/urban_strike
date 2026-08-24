@@ -898,64 +898,6 @@ var UI = (function () {
     if (e) e.classList.toggle('on', !!on);
   }
 
-  /* ===== v10.13 OUTBREAK HUD =====
-     Display only. The server owns the wave, the count, the phase and the
-     score; every function here paints what arrived and decides nothing. If
-     this file and the server disagree, the server is right and the HUD is at
-     most half a second stale. */
-  var zWaveShown = -1, zWaveTotal = 0;
-  function zEl(id) { return document.getElementById(id); }
-
-  function zombState(d) {
-    if (!d) return;
-    var hud = zEl('zomb-hud'); if (hud) hud.classList.add('on');
-    var n = zEl('zomb-n'), ti = zEl('zomb-tier'), c = zEl('zomb-count'),
-        pts = zEl('zomb-pts'), fill = zEl('zomb-fill');
-    if (n) n.textContent = String(d.wave || 0);
-    if (ti) ti.textContent = d.tier || '';
-    if (pts) pts.textContent = String(d.score || 0);
-
-    if (d.phase === 'cooldown') {
-      /* The bar becomes the countdown between waves. One bar doing two jobs
-         rather than two bars: the player is looking at the same place either
-         way, and what they need to know is always "how long until it changes". */
-      var pct = Math.max(0, Math.min(1, (d.inMs || 0) / 10000));
-      if (fill) fill.style.width = (pct * 100).toFixed(0) + '%';
-      if (c) c.textContent = Math.ceil((d.inMs || 0) / 1000);
-      var lbl = zEl('zomb-left');
-      if (lbl) lbl.innerHTML = '<b id="zomb-count">' + Math.ceil((d.inMs || 0) / 1000) + '</b> UNTIL NEXT WAVE';
-    } else {
-      if (d.why === 'waveStart' || zWaveTotal === 0) zWaveTotal = Math.max(1, d.left || 1);
-      var rem = d.left || 0;
-      if (fill) fill.style.width = (Math.max(0, 1 - rem / Math.max(1, zWaveTotal)) * 100).toFixed(0) + '%';
-      var lb = zEl('zomb-left');
-      if (lb) lb.innerHTML = '<b id="zomb-count">' + rem + '</b> REMAINING';
-    }
-
-    if (d.why === 'waveStart' && d.wave !== zWaveShown) {
-      zWaveShown = d.wave;
-      zWaveTotal = d.left || 1;
-      zombBanner('WAVE ' + d.wave, d.tier || '');
-      AudioSys.stinger(d.wave >= 25);
-    }
-    if (d.why === 'waveClear') zombBanner('WAVE CLEAR', 'REGROUP \u00b7 10 SECONDS');
-    if (d.why === 'cleared') {
-      zombBanner('THE LAST OF THEM', 'ONE HUNDRED WAVES \u00b7 THE WORLD IS QUIET AGAIN');
-    }
-    if (d.why === 'wiped') zombBanner('OVERRUN', 'YOU REACHED WAVE ' + d.wave);
-  }
-
-  function zombBanner(title, sub) {
-    var b = zEl('zomb-banner'), t = zEl('zomb-btitle'), su = zEl('zomb-bsub');
-    if (!b || !t) return;
-    t.textContent = title; if (su) su.textContent = sub || '';
-    b.classList.remove('show'); void b.offsetWidth;   // restart the animation
-    b.classList.add('show');
-  }
-  function zombSpawn() { }
-  function zombDown() { }
-  function zombHide() { var h = zEl('zomb-hud'); if (h) h.classList.remove('on'); zWaveShown = -1; zWaveTotal = 0; }
-
   // ---------- settings (pause panel) ----------
   var sensitivity = 1.0;
   function wireSettings() {
@@ -1213,7 +1155,6 @@ var UI = (function () {
       if (el) el.style.display = 'none';
     },
     toast: toast,
-    zombState: zombState, zombSpawn: zombSpawn, zombDown: zombDown, zombHide: zombHide,
     nukeReady: nukeReady, nukeLost: nukeLost, nukeFired: nukeFired,
     nukeIncoming: nukeIncoming, nukeToggleAim: nukeToggleAim,
     nukeArmedNow: nukeArmedNow, setVisorHud: setVisorHud,

@@ -236,74 +236,6 @@ var Avatars = (function () {
      itself uses: 0.90 standing, 0.60 crouched, 0.35 prone. */
   var RIG_LIFT = RIG.y - 1;
 
-  /* ===== v10.13 THE DEAD =====
-
-     Rahul: "zombies avatar should be very horrorful and not animated."
-
-     Straight answer first: this engine has no textures, no normal maps and no
-     skinned meshes. Nothing here will ever be photoreal, and pretending
-     otherwise would produce a worse result than aiming at what boxes CAN do.
-
-     What actually frightens in a low-fidelity game is SILHOUETTE and WRONG
-     MOTION, not face detail. You never see a face at 30 m; you see a shape
-     that moves incorrectly and does not stop. So:
-
-       - the head hangs FORWARD and to one side, permanently
-       - one arm is raised and locked, the other swings dead at the side
-       - the spine is bent and the stance is asymmetric
-       - the palette is necrotic grey-green with dried blood, no team colour
-       - eyes are two dim emissive points, the only bright thing on the body
-
-     Applied on top of the existing rig, so a zombie inherits every pose,
-     death topple and hitbox the operator already has, and the server's hit
-     detection needs no special case. */
-  var ZM = null;
-  function zombieMats() {
-    if (ZM) return ZM;
-    var L = function (o) { return new THREE.MeshLambertMaterial(o); };
-    ZM = {
-      flesh: L({ color: 0x6f7a63 }),
-      flesh2: L({ color: 0x55604c }),
-      rag: L({ color: 0x3b3a34 }),
-      blood: L({ color: 0x4a1d18 }),
-      eye: new THREE.MeshBasicMaterial({ color: 0xc8ff5a })
-    };
-    return ZM;
-  }
-  /* Re-dresses a built avatar as one of the dead. Materials are SHARED across
-     every zombie — the v10.9 rule — so a wave of ninety costs five materials,
-     not four hundred and fifty. */
-  function makeZombie(av, type) {
-    var Z = zombieMats();
-    av.group.traverse(function (o) {
-      if (!o.isMesh || o === av.tag || (av.hb && o === av.hb.sprite)) return;
-      if (o === av.xray) return;
-      o.material = (Math.random() < 0.22) ? Z.flesh2 : Z.flesh;
-    });
-    if (av.helmet) av.helmet.visible = false;
-    if (av.vest) { av.vest.visible = true; av.vest.material = Z.rag; }
-    if (av.headMesh) {
-      av.headMesh.material = Z.flesh;
-      var e1 = new THREE.Mesh(boxGeo(0.035, 0.02, 0.02), Z.eye);
-      var e2 = new THREE.Mesh(boxGeo(0.035, 0.02, 0.02), Z.eye);
-      e1.position.set(-0.05, 0.02, 0.10); e2.position.set(0.05, 0.02, 0.10);
-      av.headMesh.add(e1); av.headMesh.add(e2);
-    }
-    /* The wrong-motion pass. Static offsets, not animation — they persist
-       through every pose the rig plays, which is what makes the body read as
-       broken rather than as a soldier doing an odd walk. */
-    var side = Math.random() < 0.5 ? -1 : 1;
-    if (av.head) { av.head.rotation.x = 0.34; av.head.rotation.z = side * 0.30; }
-    if (av.spine) { av.spine.rotation.x = 0.26; av.spine.rotation.z = side * 0.10; }
-    if (av.armR) { av.armR.rotation.x = -1.35; av.armR.rotation.z = -0.22; }
-    if (av.armL) { av.armL.rotation.x = -0.15 - Math.random() * 0.9; }
-    if (av.gun) av.gun.visible = false;             // the dead carry nothing
-    var sc = (type === 'brute') ? 1.28 : (type === 'runner' ? 0.94 : 1.0);
-    av.group.scale.set(RIG.x * sc, RIG.y * sc, RIG.z * sc);
-    av.zombie = true;
-    return av;
-  }
-
   function buildAvatar(name, colorHex) {
     var accent = accentMat(colorHex);
     var g = new THREE.Group();
@@ -843,7 +775,6 @@ var Avatars = (function () {
     drawHpBar: drawHpBar,
     setGear: setGear,
     poseAvatar: poseAvatar,
-    makeZombie: makeZombie,
     XRAY_MAT: XRAY_MAT
   };
 })();

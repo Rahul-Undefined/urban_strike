@@ -196,14 +196,6 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
         if (ap) { ap.assists++; assistIds.push(aid); }
       }
     }
-    /* v10.13: a zombie's death is scored by the outbreak module, not the
-       kill feed. Routed here rather than in zombies.js because THIS is where
-       the game already knows a thing has died, and a second death path is a
-       second set of rules to keep in sync. */
-    if (victim.zombie && ctx.onZombieKilled) {
-      ctx.onZombieKilled(room, victim.id, attacker);
-      return;
-    }
     victim.rd = {};
     victim.streak = 0;
     /* v10.10: dying loses an armed nuke, whether or not the target map was

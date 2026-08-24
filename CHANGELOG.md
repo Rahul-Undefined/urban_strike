@@ -1,3 +1,149 @@
+# v10.14 - ONE UNDEFINED VARIABLE BROKE EVERY MATCH, AND OUTBREAK IS OUT
+
+## THE CRASH
+
+Rahul's screen, on every map:
+
+    match start: s is not defined
+    match start (retry): s is not defined
+    The map could not be built - leave and rejoin the room
+    Map failed to load - press ESC and rejoin the room
+
+Four errors, one cause. v10.13 added the Outbreak listeners as
+
+    s.on('zomb', function (d) { ... });
+
+inside `bindGameplayEvents()`, where the socket is named `socket`. `s` is the
+parameter of `bind()` — a real identifier, declared, in the same file, four
+hundred lines away and out of scope at that point.
+
+So it threw on the first gameplay bind and took the rest of the chain with it.
+Every handler after it silently never registered, the map build never ran, and
+the retry hit the same line again.
+
+**NOTHING CAUGHT IT.** Not the syntax check — it is valid JavaScript. Not
+verify-scope — that looks for identifiers a module never declares, and `s` IS
+declared here; being in the wrong scope is invisible to it. Every other gate
+tests data and geometry, and this was plumbing.
+
+The only thing that catches a wrong-scope reference is RUNNING THE CODE.
+tools/verify-bindings.js now executes Net.init() + Net.connect() and
+bindGameplayEvents() against a stub socket and asserts they complete and that
+the late handlers registered — because a handler missing from the END of the
+chain is the signature of something throwing earlier in it.
+
+I shipped this without running it. That is the whole of it.
+
+## OUTBREAK IS REMOVED
+
+Rahul: "Walker is just standing in one place with a gun, neither moving, nor I
+am able to kill it... remove this mode from the game."
+
+He is right, and the reason is worth recording because the wave logic was not
+the problem — that was gate-covered and correct.
+
+A zombie was a bot-shaped record in `room.players`, and NOTHING TOLD THE CLIENT
+IT WAS A ZOMBIE. The snapshot carries position, yaw, weapon index and health.
+It has no field for "this one is dead and wants to eat you". So every client
+built an ordinary operator, gave it the default AK-47 and rendered it in the
+standard idle pose. `makeZombie()` was never reached, and the melee never read
+as an attack because the thing swinging looked like a soldier standing still.
+
+Making it work properly means extending the wire format — the one thing this
+project treats as sacred (snapcodec.js, append-only, index-based). That is a
+real piece of design and it deserves its own build, not the end of a session.
+
+DELETED, not commented out: server/lib/zombies.js, tools/verify-outbreak.js,
+the four modes, the category, the avatar dressing, the client listeners, the
+HUD markup, the HUD CSS and the HUD logic. The reasoning survives in v10.13.
+
+## THREE SMALL MAPS IN ITS PLACE
+
+Rahul asked what small maps are worth adding. The existing two are KILLHOUSE
+(indoor box, three parallel lanes) and SUNSET ROW (two houses either end of a
+street). A third in either shape would play the same and stop being chosen, so
+each of these is a shape the roster did not have:
+
+  FREIGHTYARD  38 x 38 m, FOUR-WAY ROTATIONAL rather than mirrored. No lanes
+               and no ends — you can be shot from any compass point at any
+               moment. Smallest map in the game.
+               118 colliders · 22 draws · 8,184 tris · 0.2% dead ground
+  BAZAAR       54 x 40 m of winding alleys. NO STRAIGHT LINES: staggered
+               screens and stalls mean almost every fight starts inside 12 m
+               around a corner. The opposite of a sightline map.
+               126 colliders · 24 draws · 4,044 tris · 1.6% dead ground
+  SUBSTATION   46 x 46 m RING around a sunken pit. The middle is visible but
+               not walkable, so rotation is a commitment — you cannot cut the
+               corner and changing your mind costs the long way round.
+               137 colliders · 21 draws · 6,924 tris · 4.9% dead ground
+
+All three: humans only, 8 players, the small-map rule set via `smallMap` (nuke
+killstreak, crate-only visor), no stairs, fully fenced with zero escapes.
+
+Substation's cover budget is 0.10 rather than 0.02 and the reason is named in
+the gate: its middle is a hole nobody can stand in, and a gate that counts
+unreachable floor as dead ground is measuring the wrong thing.
+
+## THE MINIMAP KNEW EXACTLY ONE MAP
+
+    var WORLD = 100;    // world half-extent
+
+Written when urban was the only map. Every map since disagreed: rural 150,
+killhouse 32, sunsetrow 34. On RURAL the outer 50 m had no minimap at all. On
+the small maps the whole world was a smudge in a ninth of the radar.
+
+Reads `CFG.MAPS[map].bound` now — the same number the out-of-bounds ring and
+the airdrop clamp use. SCALE moves with it, or killhouse would have shown a
+21 m circle on a 64 m map. Urban is unchanged at 3.00 px/m.
+
+## SPOTTING AN ENEMY (U), AND WHY IT IS NOT A WALLHACK
+
+  1. LINE OF SIGHT REQUIRED, checked server-side with the same segmentBlocked
+     the bot AI uses. It reports what you can already see.
+  2. IT MARKS A PLACE, NOT A PLAYER. A position stamped at the moment of the
+     spot, gone in 5 s. It never follows him.
+  3. 60-degree cone, 90 m. A callout, not a radar sweep.
+  4. 1.2 s cooldown, harder than the map mark's 0.7 s, because it needs no menu.
+
+Also fixed: the map-mark bound was `CFG.MAPS[map] ? 110 : 110` — a ternary with
+the same value on both arms. It silently refused every mark past 110 m on
+rural, whose bound is 150.
+
+## FOUR MORE COORDINATE MISTAKES, ALL MINE, ALL CAUGHT
+
+Freightyard's airdrops were typed three separate times and blocked three
+separate ways — the centre stack, then the tyre stacks the density pass added
+at the diagonals, then the drum clusters at radius 13. Computed from the built
+colliders on the fourth attempt, which is what section 4.4 says every time.
+
+Bazaar's elevated loot sat on the stall AWNINGS, which are non-colliding on
+purpose — an awning breaks sight from above without becoming cover, so there
+was nothing under the loot. Moved to the counters. Substation's sat at radius
+21 on transformers that are at radius 15.
+
+## THE BANDWIDTH RATCHET ROSE, 340 -> 355 KB
+
+Written down rather than quietly edited. Checked first whether the gate was
+pointing at waste or content: removed Outbreak's dead HUD markup, CSS and
+logic (2 KB), and what remained was three real maps. A budget that can never
+rise forbids content.
+
+THE REAL FIX, NOT DONE: every map builder ships to every player on every load
+and exactly one is used per match. Eight builders is ~90 KB raw that does
+nothing 7/8 of the time. On-demand loading would take first load BELOW where it
+was three versions ago.
+
+## GATE BOARD
+
+  3,800+ assertions. NEW: tools/verify-bindings.js, 10 assertions — it executes
+  the socket bind chain, which is the only thing that would have caught the
+  crash that made this version necessary.
+
+  Also fixed: a local named `b` in smallmaps.js shadowed a verify-undeclared
+  watch identifier.
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+  test.js NOT RUN — needs a live socket.
 # v10.13 - OUTBREAK, A SPOT THAT IS NOT A WALLHACK, AND A MINIMAP THAT KNEW ONE MAP
 
 ## THE MINIMAP HAD URBAN'S SIZE HARDCODED

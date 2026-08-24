@@ -42,6 +42,9 @@ function mapData(room) {
   if (m === 'metro' && CFG.MAPS_METRO) return CFG.MAPS_METRO;
   if (m === 'killhouse' && CFG.MAPS_KILLHOUSE) return CFG.MAPS_KILLHOUSE;   // v10.10
   if (m === 'sunsetrow' && CFG.MAPS_SUNSETROW) return CFG.MAPS_SUNSETROW;   // v10.12
+  if (m === 'freightyard' && CFG.MAPS_FREIGHTYARD) return CFG.MAPS_FREIGHTYARD; // v10.14
+  if (m === 'bazaar' && CFG.MAPS_BAZAAR) return CFG.MAPS_BAZAAR;               // v10.14
+  if (m === 'substation' && CFG.MAPS_SUBSTATION) return CFG.MAPS_SUBSTATION;   // v10.14
   if (m === 'sunsetrow' && CFG.MAPS_SUNSETROW) return CFG.MAPS_SUNSETROW;   // v10.12
   return { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points };
 }
@@ -214,21 +217,29 @@ const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
      returns, so Nuke cannot exist yet at this line. Arrow functions defer the
      lookup to call time, by which point both modules are built. */
   onKillStreak: (...a) => Nuke.onKill(...a),
-  onDeathClearStreakReward: (...a) => Nuke.clearArmed(...a),
-  onZombieKilled: (...a) => Zombies.onZombieKilled(...a) });
+  onDeathClearStreakReward: (...a) => Nuke.clearArmed(...a) });
 const { weaponServerDamage, applyDamage, positionPlausible, fireRateOk } = Combat;
 const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo }); // code -> room
 /* v10.10 NUKE KILLSTREAK — killhouse only. Server-authoritative for the same
    reason as the strike drone: the client is told it HAS one and asked WHERE to
    put it, never whether it has one. See server/lib/nuke.js. */
 const Nuke = require('./server/lib/nuke.js')({ io, now, applyDamage: (...a) => applyDamage(...a) });
-/* v10.13 OUTBREAK. A zombie is a bot-shaped record in room.players, so it
-   snapshots, renders, takes damage and dies through the paths that already
-   exist. See the header of server/lib/zombies.js for why that was the decision
-   that made the mode buildable rather than a second game. */
-const Zombies = require('./server/lib/zombies.js')({
-  io, now, applyDamage: (...a) => applyDamage(...a), pushLobby,
-  endMatch: (...a) => endMatch(...a), mapData: (r) => mapData(r) });
+/* v10.14: OUTBREAK REMOVED. It shipped in v10.13 having never been run, and it
+   did not work: the zombies stood still holding rifles and could not be killed.
+
+   The cause was not the wave logic — that was gate-covered and correct. It was
+   that a zombie was a bot-shaped record in room.players and NOTHING told the
+   client it was a zombie. The snapshot carries position, yaw, weapon index and
+   health; it has no field for "this one is dead and wants to eat you". So every
+   client built an ordinary operator, gave it the default AK, and rendered it
+   with the standard idle pose. makeZombie() was never reached.
+
+   Making it work properly means extending the wire format, which is the one
+   thing this project treats as sacred (snapcodec.js, append-only). That is a
+   real piece of design and it deserves to be done deliberately in a build of
+   its own rather than bolted onto the end of a session. Rahul asked for it to
+   come out and he is right. server/lib/zombies.js is DELETED, not commented
+   out — the reasoning survives in the v10.13 changelog entry. */
 /* v9.4 STRIKE DRONE. Server-authoritative for the reason recorded in
    server/lib/drones.js: a drone outlives the moment its owner is watching it,
    and a third player can shoot it down, so no single client can be trusted with
@@ -435,7 +446,6 @@ function spawnPlayer(room, p) {
 // weights, with guarantees: an L3 vest and at least one legendary weapon exist.
 function startMatch(room) {
   room.state = 'playing';
-  Zombies.begin(room);        // v10.13: no-op unless the mode is an outbreak
   room.startedAt = now();
   room.teamKills = zeroTeamKills(room.settings.mode);   // v8.34: sized to the mode
   for (const p of room.players.values()) {
@@ -534,7 +544,6 @@ function startSnapshots(room) {
     respawnPickups(room);
     Mines.tick(room);
     Nuke.tick(room);                         // v10.10 killhouse killstreak
-    Zombies.tick(room, 1 / CFG.NET.snapRate); // v10.13 outbreak waves
     regenTick(room);
     if (++room.snapN % 60 === 0) pushLobby(room); // live K/D/assists/damage refresh (~4 s)
 
@@ -615,7 +624,6 @@ function endMatch(room, winnerId, reason) {
   clearAirdrop(room);
   Mines.clear(room);
   Nuke.reset(room);           // v10.10: no strike survives the final whistle
-  Zombies.reset(room);        // v10.13: and no zombie survives it either
   const teams = modeInfo(room).teams;
   Bots.removeBots(room);      // v8.38: bots are per-match; never let them into a lobby
   const insights = buildInsights(room);

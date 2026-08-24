@@ -62,12 +62,12 @@ vm.createContext(ctx);
 [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-metro.config.js",
+  "public/src/config/maps-rural.config.js", "public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-metro.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
   "public/src/environment/deco.js", "public/src/environment/rural.js",
-  "public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/metro.js", "public/src/environment/access.js",
+  "public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/metro.js", "public/src/environment/access.js",
   "public/src/player/controller.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
@@ -235,8 +235,11 @@ const ESCAPE_BUDGET = { urban: 8, rural: 6, metro: 8,
   /* v10.12: sunsetrow is outdoors but fully walled — brick on the long sides,
      fence across the street ends. Same reasoning as killhouse: any escape at
      all means the boundary has a hole in it. */
-  sunsetrow: 0 };
-const MAPS = ["urban", "rural", "metro", "killhouse", "sunsetrow"];
+  sunsetrow: 0,
+  /* v10.14: all three new small maps are fully fenced, same as the two before
+     them. Zero, not a tolerance — an escape means the shell has a hole. */
+  freightyard: 0, bazaar: 0, substation: 0 };
+const MAPS = ["urban", "rural", "metro", "killhouse", "sunsetrow", "freightyard", "bazaar", "substation"];
 
 for (const map of MAPS) {
   console.log(`\n--- B: ${map} ---`);

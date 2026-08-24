@@ -104,7 +104,7 @@ function runMap(mapName, data, wallDefault) {
   vm.createContext(ctx);
   ["config/districts.config.js",
    "environment/world.js", "environment/districts-south.js", "environment/districts-north.js",
-   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/metro.js", "environment/killhouse.js", "environment/sunsetrow.js", "environment/access.js"].forEach(f => {
+   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/metro.js", "environment/killhouse.js", "environment/sunsetrow.js", "environment/smallmaps.js", "environment/access.js"].forEach(f => {
     const p = path.join(ROOT, "public/src", f);
     /* v10.12: this was `if (fs.existsSync(p))`, which silently skipped a file
        that was not there. sunsetrow.js was added to the game and NOT to this
@@ -205,6 +205,9 @@ runMap("metro", CFG.MAPS_METRO, 100);
    game uses. */
 runMap("killhouse", CFG.MAPS_KILLHOUSE, CFG.MAPS.killhouse.bound);
 runMap("sunsetrow", CFG.MAPS_SUNSETROW, CFG.MAPS.sunsetrow.bound);   // v10.12
+runMap("freightyard", CFG.MAPS_FREIGHTYARD, CFG.MAPS.freightyard.bound); // v10.14
+runMap("bazaar", CFG.MAPS_BAZAAR, CFG.MAPS.bazaar.bound);                // v10.14
+runMap("substation", CFG.MAPS_SUBSTATION, CFG.MAPS.substation.bound);    // v10.14
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

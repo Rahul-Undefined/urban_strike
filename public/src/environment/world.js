@@ -1927,7 +1927,10 @@ World.buildMap = function (sceneRef, map) {
      have made the line unreadable. */
   var builder = ({ rural: World._buildRural, metro: World._buildMetro,
                    killhouse: World._buildKillhouse,
-                   sunsetrow: World._buildSunsetRow })[map] || null;
+                   sunsetrow: World._buildSunsetRow,
+                   freightyard: World._buildFreightyard,
+                   bazaar: World._buildBazaar,
+                   substation: World._buildSubstation })[map] || null;
   if (map === 'urban' || !builder) {
     World.build(sceneRef);
     World.builtMap = 'urban';

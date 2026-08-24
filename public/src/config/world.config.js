@@ -98,18 +98,6 @@
        it out of the picker. It is capped to match t8 so a stale reference
        cannot open a 20-slot room. */
     t10:  { label: '7 vs 7',            vlabel: '7 vs 7',        cat: 'team',   teams: true,  teamCount: 2,  maxPlayers: 14, hidden: true },
-    /* v10.13 OUTBREAK MODES. Solo and co-op share one rule set; the only
-       difference is how many people are holding the line. `lives: 1` reuses
-       Last Stand's one-life-and-spectate path rather than writing a second.
-       `teams: false` because the dead are not a side you can join. */
-    zsolo: { label: 'Outbreak \u00b7 Solo',  vlabel: 'Alone',
-             cat: 'zomb', teams: false, teamCount: 0, maxPlayers: 1,  lives: 1, outbreak: true },
-    zduo:  { label: 'Outbreak \u00b7 Pair',  vlabel: 'Two of you',
-             cat: 'zomb', teams: false, teamCount: 0, maxPlayers: 2,  lives: 1, outbreak: true },
-    zsqd:  { label: 'Outbreak \u00b7 Squad', vlabel: 'Four of you',
-             cat: 'zomb', teams: false, teamCount: 0, maxPlayers: 4,  lives: 1, outbreak: true },
-    zfull: { label: 'Outbreak \u00b7 Fifteen', vlabel: 'Fifteen of you',
-             cat: 'zomb', teams: false, teamCount: 0, maxPlayers: 15, lives: 1, outbreak: true },
     sq2:  { label: 'Squads \u00b7 7 \u00d7 2', vlabel: '7 squads of 2', cat: 'squads', teams: true, squads: true, teamCount: 7, squadSize: 2, maxPlayers: 14 },
     sq4:  { label: 'Squads \u00b7 5 \u00d7 3',  vlabel: '5 squads of 3',  cat: 'squads', teams: true, squads: true, teamCount: 5,  squadSize: 3, maxPlayers: 15 },
 
@@ -225,18 +213,6 @@
   }
 
   /* The two-step picker. Order here is the order shown. */
-  /* v10.13 OUTBREAK. Its own category so it never mixes with the PvP list —
-     Rahul: "completely make it separate from the other players modes".
-
-     `outbreak: true` is what every zombie rule keys off, the same way
-     `smallMap` carries the small-map rules. One life is expressed as
-     `lives: 1`, which Last Stand already implements end to end, so the
-     spectate-your-team-mates behaviour comes for free rather than being
-     written twice.
-
-     Not offered on killhouse or sunsetrow: those are 8-player rooms with
-     sightlines under 40 m, and Rahul asked for a mode "where sniper, assault
-     and all other guns can function properly". A shotgun map cannot host that. */
   var MODE_CATS = [
     { id: 'ffa',    label: 'Free For All',
       blurb: 'Fifteen operators. No sides. Highest count when the clock dies.' },
@@ -250,9 +226,7 @@
       blurb: 'You against the sector. Choose how many come for you, and how mean they are.' },
     { id: 'coop',   label: 'Strike Team',
       blurb: 'You and your squad against the machines. Pick your size and how mean they are.' }
-  ,
-    { id: 'zomb', label: 'Outbreak', vlabel: 'Outbreak',
-      blurb: 'One life. Endless dead. Hold out for a hundred waves.' }];
+  ];
   /* v10.9: `hidden` takes a mode out of the PICKER without taking it out of
      the table. Deleting a mode id breaks every gate that reads MODES, the
      server guards that switch on it, and any saved room setting naming it.
@@ -314,6 +288,14 @@
        shared rules, so a third small map inherits them by setting one flag
        instead of by someone remembering four separate places. */
     sunsetrow: { label: 'Sunset Row', ready: true, bound: 34, maxPlayers: 8, smallMap: true },
+    /* v10.14: three more small maps, replacing Outbreak. Each is a SHAPE the
+       roster did not have — see maps-small.config.js for why these three.
+       All carry `smallMap`, which is what grants the nuke killstreak, the
+       8-player cap and the crate-only visor without anyone remembering four
+       separate places. */
+    freightyard: { label: 'Freightyard', ready: true, bound: 21, maxPlayers: 8, smallMap: true },
+    bazaar:      { label: 'Bazaar',      ready: true, bound: 29, maxPlayers: 8, smallMap: true },
+    substation:  { label: 'Substation',  ready: true, bound: 25, maxPlayers: 8, smallMap: true },
   };
 
   /* v8.25: alwaysShowPlayers. Rahul asked for player locations on the map and

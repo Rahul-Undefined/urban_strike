@@ -39,7 +39,7 @@ vm.createContext(ctx);
      CFG.MAPS_RURAL undefined and produced 510 colliders where the browser
      produces 525 -- 15 objects short, on the gate whose entire job is to
      reproduce the browser build. Keep this list identical to index.html. */
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js",
+  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
@@ -50,7 +50,7 @@ vm.createContext(ctx);
      the 0.2% dead-ground figure reported for killhouse in v10.10 was urban's.
      Section 4.1 again, in its worst form: not a gate that never looked, a gate
      that looked at the wrong thing and said so confidently. */
-  "public/src/environment/killhouse.js","public/src/environment/sunsetrow.js",
+  "public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js",
   "public/src/environment/access.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(f, "utf8"), ctx, { filename: f }));
 
@@ -151,7 +151,7 @@ let fail = 0;
    v9.0, but metro was never in this loop, so the budget was never applied to
    anything. Metro had no dead-ground measurement of any kind — the gate that
    exists to prove a map is fightable had never looked at it. */
-for (const map of ["urban", "rural", "metro", "killhouse", "sunsetrow"]) {
+for (const map of ["urban", "rural", "metro", "killhouse", "sunsetrow", "freightyard", "bazaar", "substation"]) {
   const r = analyse(map);
   const land = r.n * r.n - r.skipped;
   const pct = (r.dead.length / land * 100).toFixed(1);
