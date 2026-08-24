@@ -145,5 +145,47 @@ const bgeBody = bge.slice(0, bge.indexOf('\n  function ', 10) > 0 ? bge.indexOf(
 ok(!/(^|[^\w.])s\.on\s*\(/.test(bgeBody),
   'bindGameplayEvents() never calls s.on — its socket is named `socket`');
 
+console.log('\n--- v10.16: the frame guard covers every per-frame call ---');
+/* v8.31 gave every subsystem its own step() guard so one fault could not skip
+   renderer.render(). Two calls were left OUTSIDE it — DevHUD.update and the
+   full-map draw — and a throw in either skipped every remaining line of the
+   frame, forever, with the loop still rescheduling. No error storm, just a
+   black screen. Asserted structurally because there is no way to execute the
+   render loop headlessly. */
+{
+  const g = fs.readFileSync(path.join(ROOT, 'public/src/core/game.js'), 'utf8');
+  const loop = g.slice(g.indexOf('function loop(t)'));
+  const body = loop.slice(0, loop.indexOf('\n  }'));
+  const stripped = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  ['DevHUD.update', 'Minimap.drawFull'].forEach(call => {
+    const i = stripped.indexOf(call);
+    ok(i >= 0, call + ' is still in the frame loop');
+    if (i < 0) return;
+    /* Walk back to the start of its statement and require a step( wrapper. */
+    const line = stripped.lastIndexOf('\n', i);
+    const stmt = stripped.slice(line, i);
+    ok(/step\(/.test(stmt), call + ' runs inside a step() guard');
+  });
+  ok(stripped.indexOf('requestAnimationFrame(loop)') < stripped.indexOf('DevHUD.update'),
+    'the loop reschedules BEFORE any work, so a throw cannot stop it');
+}
+
+console.log('\n--- v10.16: the page ships no broken CSS ---');
+/* v10.14 stripped the Outbreak styles with a line filter that deleted each
+   rule's OPENING line and left its continuation lines behind — four orphaned
+   closing braces in a <style> block. Browsers error-recover, so it was
+   invisible, but it is corruption shipped to every player. */
+{
+  const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
+  const blocks = html.match(/<style>[\s\S]*?<\/style>/g) || [];
+  let bad = 0;
+  blocks.forEach(b => {
+    const inner = b.replace(/<\/?style>/g, '');
+    if ((inner.match(/\{/g) || []).length !== (inner.match(/\}/g) || []).length) bad++;
+  });
+  ok(bad === 0, blocks.length + ' inline <style> block(s), all with balanced braces' +
+     (bad ? ' — ' + bad + ' CORRUPT' : ''));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

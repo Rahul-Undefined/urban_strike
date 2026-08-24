@@ -872,18 +872,22 @@ var UI = (function () {
   }
   function nukeArmedNow() { return nukeArmed; }
 
-  /* The N key. Opens the full map in targeting mode; a second press cancels
-     without spending it. */
+  /* ===== v10.15 - N CALLS THE STRIKE. IT DOES NOT OPEN A MENU. =====
+
+     This used to open the full map in a targeting mode and wait for a click.
+     Rahul: "there is no option to select the area" — and he was right, because
+     the only route into that mode was a map overlay nobody opens mid-fight, so
+     pressing N looked like it did nothing at all.
+
+     One press, one strike. The server decides where it lands (nuke.js
+     bestTarget), which is what the player would have tried to do with the map
+     anyway, done without leaving the fight. */
   function nukeToggleAim() {
     if (!nukeArmed) return false;
-    if (Minimap.nukeAiming && Minimap.nukeAiming()) {
-      Minimap.setNukeAim(false);
-      if (Minimap.isFullOpen()) Minimap.toggleFull();
-      return true;
-    }
-    if (!Minimap.isFullOpen()) Minimap.toggleFull();
-    Minimap.setNukeAim(true);
-    toast('Click the map to call the strike');
+    nukeArmed = false;                       // spend it here so N cannot double-fire
+    var e = nukeEl(); if (e) e.classList.remove('armed');
+    Net.nukeStrike(0, 0);                    // coordinates ignored; the server aims
+    toast('STRIKE CALLED');
     return true;
   }
 

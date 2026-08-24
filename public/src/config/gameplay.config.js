@@ -154,7 +154,16 @@
   // Item catalogue. kind: heal | ammo | armor | att | weapon. rar: c | r | l.
 
   var NET = {
-    clientRate: 20, snapRate: 15, interpDelay: 120,
+    clientRate: 20, snapRate: 15,
+    /* v10.15: 120 -> 190 ms. At snapRate 15 a tick is 66.7 ms, so 120 ms was
+       1.80 ticks of buffer and tolerated only ~53 ms of arrival jitter before
+       the client ran dry and froze the remote body (see the long note in
+       net.js updateRemotes). 190 ms is 2.85 ticks and ~123 ms of tolerance.
+
+       The cost is 70 ms more visual latency on other players' positions. That
+       is a real cost and it is worth it: a body that is 70 ms behind is still
+       shootable, and a body that is frozen is not. */
+    interpDelay: 190,
     hitTolerance: 4.0, historyMs: 1200,
     detectMs: 3500        // ms an unsuppressed shot pings the minimap
   };
@@ -177,7 +186,20 @@
     respawnDelay: 3,
     defaultMode: 'ffa',
     pickupRadius: 1.25,
+    /* v10.15: 2.5 s is the default and it is wrong on a small map.
+
+       Rahul: "the avatar sometimes show as stagnant and suddenly gets
+       activated and starts playing". Two and a half seconds of an untouchable
+       operator standing still is most of the time it takes to cross Killhouse,
+       so on a 58 m map a spawning player reads as a frozen body you cannot
+       hurt — the same thing the interpolation freeze looked like, from a
+       completely different cause.
+
+       It stays at 2.5 on the big maps, where crossing takes long enough that
+       protection is genuinely protecting a spawn rather than blocking a lane.
+       Small maps get 1.0 via spawnProtectFor() below. */
     spawnProtect: 2.5,   // seconds of spawn protection (ends early if you attack)
+    spawnProtectSmall: 1.0,
     assistWindow: 8,     // seconds — damage within this window before a kill counts as assist
     assistMinDmg: 25
   };

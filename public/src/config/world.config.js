@@ -193,6 +193,18 @@
      Stand 20-player need ten to twenty humans to exist at all. Without backfill
      most of the mode list is unplayable unless you can assemble a crowd, which
      is a content graveyard rather than a feature set. */
+  /* v10.15: spawn protection is per MAP, not global. Read through this
+     everywhere rather than touching CFG.MATCH.spawnProtect directly, so a
+     sixth small map inherits the shorter timer by carrying `smallMap` and
+     nothing else. */
+  function spawnProtectFor(mapId) {
+    var m = MAPS[mapId];
+    var G = (typeof MATCH !== 'undefined') ? MATCH : null;
+    var base = G ? G.spawnProtect : 2.5;
+    var small = G && G.spawnProtectSmall !== undefined ? G.spawnProtectSmall : 1.0;
+    return (m && m.smallMap) ? small : base;
+  }
+
   function backfillAllowed(modeId) {
     if (!BOTS_ENABLED) return false;          // v10.9 kill switch, see top
     var m = MODES[modeId];
@@ -319,6 +331,7 @@
   };
 
   return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams,
+    spawnProtectFor: spawnProtectFor,
     MODE_CATS: VISIBLE_CATS, ALL_MODE_CATS: MODE_CATS, BOTS_ENABLED: BOTS_ENABLED, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
     botsAllowed: botsAllowed, backfillAllowed: backfillAllowed,
     humanSideOf: humanSideOf, botSideOf: botSideOf,

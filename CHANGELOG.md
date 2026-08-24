@@ -1,3 +1,220 @@
+# v10.16 - THE BLACK SCREEN: TWO CALLS OUTSIDE THE GUARD THAT WAS BUILT TO STOP IT
+
+Rahul, after v10.15: "u messed the urban map, when we are playing now whole map
+is showing black and it is not playable."
+
+## WHAT I RULED OUT FIRST, WITH EVIDENCE
+
+Guessing at a black screen is how you fix the wrong thing, so each candidate was
+tested rather than reasoned about:
+
+    urban builds with the real three.js       100 meshes, 0 broken geometry
+    built 6x including replay and map switch  identical every time
+    CFG.spawnProtectFor on all 8 maps         resolves, no throw
+    style.css nesting depth at the v10.12 block  0 (top level, not in a @media)
+    HTML div balance                          129 open / 129 close
+
+The map was never the problem. It builds perfectly. So the failure had to be
+per-frame, and it had to be skipping `renderer.render()`.
+
+## THE CAUSE
+
+v8.31 wrapped every subsystem in its own `step()` guard for exactly this
+reason, and its comment says so: one fault must not skip the render. Two lines
+at the top of the loop were never brought inside it.
+
+    requestAnimationFrame(loop);
+    DevHUD.update(t);                              <- unguarded
+    if (Minimap.isFullOpen()) Minimap.drawFull();  <- unguarded
+
+A throw in either skips EVERY REMAINING LINE OF THE FRAME. Every frame.
+Forever. And because the loop reschedules on its first line, there is no crash,
+no error storm, nothing in the console after the first report — just a black
+screen and a game that will not respond.
+
+Both now run through `step()` like everything else.
+
+**This is the class, not the instance.** I could not reproduce the specific
+thrower headlessly — there is no way to execute a render loop without a
+browser — so the fix is to make it impossible for ANY per-frame fault to black
+the screen, which is what v8.31 already decided and only half-applied.
+
+## AND A SECOND, DEFINITE DEFECT: I SHIPPED BROKEN CSS
+
+v10.14 removed the Outbreak styles with a line filter:
+
+    [l for l in lines if 'zomb-' not in l]
+
+Every rule's OPENING line contained `#zomb-...` and was deleted. Their
+CONTINUATION lines did not, and survived — four orphaned fragments ending in
+`}` left in an inline `<style>` block:
+
+      text-align:center;pointer-events:none;font-family:var(--disp);min-width:240px}
+      text-shadow:0 0 26px rgba(120,200,60,.75),0 3px 5px #000}
+      76%{opacity:1}100%{opacity:0}}
+
+Braces 2 open, 6 close. Browsers error-recover from this, which is why it was
+invisible — but it is corruption shipped to every player, and a multi-line CSS
+rule deleted by a single-line filter is a mistake that will recur. The whole
+block is gone.
+
+## THE v10.15 INTERPOLATION CHANGE IS NOT THE THROWER
+
+It reads `buf[buf.length - 1]` and splices, so it was the obvious suspect: if
+any buffer shape makes it throw it throws every frame, which until this version
+meant a black screen. Exercised against every shape a bad link produces —
+one entry, two stale entries, a long stale burst, timestamps in the future,
+identical timestamps — and all six resolve to a finite position. The stale
+buffer lands on the NEWEST sample, which is the behaviour v10.15 added.
+
+## GATES
+
+  NEW in verify-bindings: the frame loop is parsed and every per-frame call
+  must sit inside a step() guard, and the loop must reschedule before any work.
+  Also asserts every inline <style> block has balanced braces.
+
+  NEW in verify-interp: updateRemotes' catch-up arithmetic against six
+  adversarial buffer shapes.
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+  test.js NOT RUN — needs a live socket.
+
+## IF IT IS STILL BLACK
+
+The frame now renders whatever else fails, so a black screen after this is a
+different fault. Press F3: if the dev HUD draws, the loop is alive and the
+scene is the problem. The first `reportError` line in the browser console will
+name the subsystem — that name is the answer.
+# v10.15 - THE FREEZE WAS ONE `> 2`, AND THE NUKE NEVER HAD A TARGET SCREEN
+
+## 4. THE FROZEN, UNKILLABLE, TELEPORTING AVATAR
+
+Rahul: "player ek jagah rehta h aur uss time woh khada rehta hai aur usko goli
+maarne se bhi nahi marta lekin woh player online h apne system mei aur achanak
+se yeh avatar active hota h aur woh dusre jagah aa jata h."
+
+Every symptom in that sentence is ONE line:
+
+    while (buf.length > 2 && buf[1].t < renderT) buf.shift();
+
+The guard is `> 2`. Once the interpolation buffer drains to exactly two
+entries it STOPS ADVANCING, however far in the past both of them are. `a` and
+`b` stay stale, `f` clamps at 1.15, and the body stands frozen 15% past a
+position it left seconds ago.
+
+**"Goli maarne se bhi nahi marta" is not a hit-detection bug.** It is this bug
+one layer down: the shot is aimed at the stale body, the 4 m plausibility check
+in combat.js measures it against the player's REAL position, and refuses the
+hit. The server was right and the screen was lying.
+
+**The teleport is the recovery, not a second fault.** A packet lands, the
+buffer refills, the shift resumes, and the body jumps to the present in one
+frame.
+
+WHY IT RAN DRY: interpDelay was 120 ms against a 66.7 ms tick — 1.80 ticks, so
+anything over ~53 ms of arrival jitter emptied it. Fifty-three milliseconds is
+an ordinary hiccup over the public internet.
+
+THREE PARTS, and none of them is loosening the plausibility check:
+
+  1. interpDelay 120 -> 190 ms. 2.85 ticks, ~123 ms of jitter tolerated.
+     Costs 70 ms of visual latency on other players. A body 70 ms behind is
+     still shootable; a frozen one is not.
+  2. The drain loop now advances to the newest usable pair instead of stopping
+     at two, so a late burst is consumed at once.
+  3. If the newest state held is more than 3 ticks behind, stop pretending to
+     interpolate and JUMP to it. One honest frame of hitch beats an indefinite
+     frozen unkillable body.
+
+verify-interp had asserted `frozenPct > 3` — it asserted THE BUG EXISTS,
+because that file was written as evidence for a proposed adaptive buffer.
+Congested wifi now models at 1.0%, so the old assertion failed by succeeding.
+Inverted to the rule worth holding: the shipped buffer must keep stalls rare.
+
+## 1. THE NUKE AIMS ITSELF
+
+Rahul: "there is no option to select the area."
+
+He was right, and worse than he knew: the v10.10 design opened the full map in
+a targeting mode reachable only through an overlay nobody opens mid-firefight,
+so pressing N appeared to do nothing at all.
+
+One press, one strike. The SERVER picks the ground, scanning every enemy
+position plus the midpoint of every enemy PAIR and taking whichever centre
+covers the most living enemies. A cluster of two or three produces a midpoint
+that covers all of them where no single position does — scanning pairs is what
+finds it. Ties break toward the map centre.
+
+Coordinates from the client are ignored entirely. With nobody alive to aim at
+it still fires, ahead of the caller, because a spent killstreak that produces
+nothing reads as the button being broken again.
+
+RADIUS 11 -> 17 m. Rahul: "range should be a good amount that opponent gets
+trapped." At 11 m a strike covered one lane of a 58 m map and a sidestep left
+it. 17 m covers a lane and both approaches, so getting clear means committing
+to a direction and running. Freightyard, smallest at 38 m across, still keeps
+two clear corners.
+
+## 2. SPAWN PROTECTION IS PER MAP NOW
+
+2.5 s is most of the time it takes to cross Killhouse, so a spawning player
+read as a frozen untouchable body — the same appearance as the interpolation
+bug, from a completely unrelated cause. 1.0 s on every small map, 2.5 s
+unchanged on urban, rural and metro. Read through CFG.spawnProtectFor(), so a
+sixth small map inherits it by carrying `smallMap` and nothing else.
+
+## 3. MINES REFILL ON RESPAWN
+
+They were set once, in the per-MATCH block, so five spent meant none for the
+rest of the round with no way to earn more.
+
+Moved to spawnPlayer, which runs on every respawn. The v9.4 reasoning that
+keeps DRONES per-match — refilling on death gives an unlimited supply to
+anyone willing to die — does not apply: drones are crate loot with no starting
+stock, and a mine you must die to replace is a mine nobody uses.
+
+Grenades, smoke, flash and molotov were checked and were NOT broken: their
+stock lives client-side in Weapons.throwsLeft and Game.onLocalSpawn already
+calls resetLoadout() on every respawn. Adding a server copy would have been a
+second source of truth for the same number. p.mines was the only expendable
+the server owned and the only one broken.
+
+## 5. TEAM SPAWNS — THE MECHANISM WAS THERE, THE TAGS WERE NOT
+
+spawnFor() has always filtered candidates on `s[3]` against the player's team.
+None of the five small maps carried the tag, so the filter matched ZERO
+candidates — and the v8.27 guard, which exists so an empty list can never
+crash a match, correctly fell back to the FULL spawn set.
+
+**A safety net doing its job perfectly while quietly turning team spawns off.**
+No error, no warning, no crash. The only symptom is a player noticing they keep
+appearing behind the enemy.
+
+    killhouse   a:7 b:7 n:2     sunsetrow   a:7 b:7 n:2
+    freightyard a:6 b:6         bazaar      a:4 b:4 n:4
+    substation  a:3 b:3 n:6
+
+Freightyard is four-way rotational so there is no west and east: the split is
+by diagonal, keeping each side's tiles adjacent, which is what "the same side"
+means on a map with no ends.
+
+tools/verify-spawns.js asserts the tags exist, that both sides have enough
+tiles for the crowding score to have somewhere to move a player, and that the
+nearest 'a' tile to the nearest 'b' tile is FURTHER APART THAN A SPRINT COVERS
+during spawn protection — a tag that does not separate is decoration.
+
+Its first draft read `CFG.MOVE.speed * CFG.MOVE.sprintMul`. Neither exists; the
+keys are `walk` and `sprint`. It produced NaN, and `nearest > NaN` is false, so
+every map "failed" against a threshold that was not a number. Section 6,
+seventh instance, this time in a gate rather than in the game.
+
+## GATE BOARD
+
+  3,850+ assertions. NEW: tools/verify-spawns.js, 32 assertions.
+  verify-interp inverted, 13/0. verify-nuke 47/0 with six new assertions for
+  the auto-aim.
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+  test.js NOT RUN — needs a live socket.
 # v10.14 - ONE UNDEFINED VARIABLE BROKE EVERY MATCH, AND OUTBREAK IS OUT
 
 ## THE CRASH

@@ -86,8 +86,13 @@ ok(!room.nukes || !room.nukes.length, 'nor does a dead player holding a stale fl
 
 console.log('\n--- friendly fire is refused, per tick ---');
 room = mkRoom('killhouse');
+/* v10.15: `far` moved from (28,15) to (60,60). The strike now AIMS ITSELF at
+   the densest enemy cluster instead of taking a coordinate, and the radius
+   went 11 -> 17, so a foe at 32 m from the cluster centre is no longer
+   reliably outside it. The rule being tested is "outside the radius means
+   safe", not "this particular coordinate is safe", so the coordinate moves. */
 const caller = mkP('K', 'a', 0, 0), mate = mkP('M', 'a', 1, 1),
-      foe = mkP('F', 'b', 2, 2, 100000), far = mkP('X', 'b', 28, 15);
+      foe = mkP('F', 'b', 2, 2, 100000), far = mkP('X', 'b', 60, 60);
 [caller, mate, foe, far].forEach(p => room.players.set(p.id, p));
 caller.streak = 5; Nuke.onKill(room, caller);
 Nuke.requestStrike(room, caller, 0, 0);
@@ -115,6 +120,45 @@ ok(ticked > 0 && ticked <= Math.ceil(Nuke.DURATION * 2) + 1,
   'damage ticks are bounded by the duration [' + ticked + ' over ' + Nuke.DURATION + 's]');
 T += 500; dmg.length = 0; Nuke.tick(room);
 ok(dmg.length === 0, 'and nothing is damaged after it ends');
+
+console.log('\n--- v10.15: the server aims, the client does not ---');
+{
+  /* Three enemies, two of them clustered. A strike centred on either of the
+     pair covers both; one centred on the loner covers one. The scan must find
+     the pair — that is the whole reason it considers midpoints as well as
+     positions. */
+  const room = mkRoom('killhouse');
+  const p = mkP('P', 'a', 0, 0);
+  const c1 = mkP('C1', 'b', 20, 0, 99999);
+  const c2 = mkP('C2', 'b', 24, 0, 99999);
+  const lone = mkP('L', 'b', -25, 0, 99999);
+  [p, c1, c2, lone].forEach(q => room.players.set(q.id, q));
+  p.streak = 5; Nuke.onKill(room, p);
+  /* Coordinates are passed and must be IGNORED — they point at the loner. */
+  Nuke.requestStrike(room, p, -25, 0);
+  ok(room.nukes.length === 1, 'the strike fires without any target from the client');
+  const n = room.nukes[0];
+  const covers = q => Math.hypot(q.pos[0] - n.x, q.pos[2] - n.z) <= n.r;
+  ok(covers(c1) && covers(c2),
+    'and lands on the PAIR, covering both [' + n.x.toFixed(1) + ', ' + n.z.toFixed(1) + ']');
+  ok(!covers(p), 'never on the caller');
+  ok(n.r >= 15, 'the radius is large enough to trap a group [' + n.r + ' m]');
+}
+
+{
+  /* No enemies alive: it must still fire. A spent killstreak that produces
+     nothing reads as the button being broken, which is the defect this whole
+     change exists to fix. */
+  const room = mkRoom('sunsetrow');
+  const p = mkP('P2', 'a', 0, 0); p.yaw = 0;
+  room.players.set(p.id, p);
+  p.streak = 5; Nuke.onKill(room, p);
+  Nuke.requestStrike(room, p, 0, 0);
+  ok(room.nukes.length === 1, 'with nobody to aim at it still fires, ahead of the caller');
+  const n = room.nukes[0];
+  ok(Math.hypot(n.x - p.pos[0], n.z - p.pos[2]) > 5,
+    'and not on top of him [' + Math.hypot(n.x - p.pos[0], n.z - p.pos[2]).toFixed(1) + ' m away]');
+}
 
 console.log('\n--- a click past the wall is clamped, not dropped ---');
 room = mkRoom('killhouse'); const g = mkP('G'); room.players.set('G', g);

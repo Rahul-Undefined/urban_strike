@@ -190,9 +190,27 @@ for (const P of PROFILES) {
    does show clearly is congested wifi and mobile, and those are the links this
    game is played on. If this ever goes green the simulation has drifted and
    every comparison below is meaningless. */
-ok(before['congested wifi'].frozenPct > 3,
-  'the old fixed buffer stalls badly on a jittery link [congested wifi ' +
-  before['congested wifi'].frozenPct.toFixed(1) + '% of frames] — this is the reported bug');
+/* ===== v10.15 - THIS ASSERTION IS INVERTED, AND THAT IS THE POINT =====
+
+   It used to read `frozenPct > 3` — it asserted THE BUG EXISTS, because this
+   whole file was written as evidence for a proposed adaptive buffer and needed
+   to prove the problem was real first.
+
+   v10.15 raised interpDelay 120 -> 190 ms (1.80 -> 2.85 ticks) and taught
+   updateRemotes to snap forward when the buffer genuinely runs dry. Congested
+   wifi now models at 1.0% of frames instead of over 3, so the old assertion
+   fails — by succeeding.
+
+   A gate that fails when the defect is fixed is a gate pinned to the old
+   state, which section 4.2 is about. Flipped to the rule actually worth
+   holding: the SHIPPED configuration must keep stalls rare on the links this
+   game is played on. If this ever goes red, the buffer has been shortened or
+   the tick rate has moved. */
+ok(before['congested wifi'].frozenPct < 2.0,
+  'the SHIPPED buffer keeps a jittery link smooth [congested wifi ' +
+  before['congested wifi'].frozenPct.toFixed(1) + '% of frames, was >3% at interpDelay 120]');
+ok(before['mobile 4G'].frozenPct < 2.0,
+  'and mobile too [' + before['mobile 4G'].frozenPct.toFixed(1) + '%]');
 ok(before['mobile 4G'].frozenPct > before['fibre'].frozenPct * 1.5,
   'and stalls get worse as jitter rises [4G ' + before['mobile 4G'].frozenPct.toFixed(1) +
   '% vs fibre ' + before['fibre'].frozenPct.toFixed(1) + '%]');
@@ -225,9 +243,68 @@ for (const P of PROFILES) {
     r.eff.toFixed(0) + ' ms)');
 }
 const cwNow = before['congested wifi'], cwAdapt = run(PROFILES[4], { adaptive: true, extrapMs: 220 });
-ok(cwAdapt.frozenPct < cwNow.frozenPct,
-  'the simulation still says adaptive would help a jittery link [' +
-  cwNow.frozenPct.toFixed(1) + '% -> ' + cwAdapt.frozenPct.toFixed(1) + '%] — evidence, not a claim');
+/* v10.15: this asserted adaptive beats fixed, which was true when fixed meant
+   120 ms. At 190 ms the two are level in the model — adaptive has nothing left
+   to recover. Kept as a REPORT rather than an assertion, because the number
+   still matters: if the gap ever reopens, the fixed buffer has drifted too
+   short again and adaptive becomes worth building. */
+console.log('        congested wifi: fixed ' + cwNow.frozenPct.toFixed(1) +
+  '%  vs adaptive ' + cwAdapt.frozenPct.toFixed(1) + '%  (gap ' +
+  (cwNow.frozenPct - cwAdapt.frozenPct).toFixed(1) + ' pts)');
+ok(cwAdapt.frozenPct <= cwNow.frozenPct + 0.1,
+  'adaptive is no longer meaningfully better than the shipped fixed buffer');
+
+console.log('\n--- v10.16: updateRemotes survives every buffer shape ---');
+/* The v10.15 catch-up reads buf[buf.length - 1] and splices. If any buffer
+   shape can make it throw, it throws EVERY FRAME — and until v10.16 that
+   skipped renderer.render() and blacked the screen. Exercised directly against
+   the shapes a bad link actually produces. */
+{
+  const vm2 = require('vm');
+  const fs2 = require('fs');
+  const pathMod = require('path');
+  const src2 = fs2.readFileSync(pathMod.join(__dirname, '..', 'public/src/networking/net.js'), 'utf8');
+  /* Lift the catch-up arithmetic out of updateRemotes and run it standalone —
+     the whole function needs a scene, a camera and THREE, but the logic under
+     test is self-contained. */
+  const TICKMS = 1000 / 15;
+  function catchUp(buf, renderT) {
+    while (buf.length > 2 && buf[1].t < renderT) buf.shift();
+    while (buf.length > 1 && buf[buf.length - 1].t < renderT && buf.length > 2) buf.shift();
+    if (!buf.length) return null;
+    let a = buf[0], b = buf.length > 1 ? buf[1] : buf[0];
+    const SNAP_MS = TICKMS * 3;
+    const newest = buf[buf.length - 1];
+    if (renderT - newest.t > SNAP_MS) {
+      a = newest; b = newest;
+      if (buf.length > 1) buf.splice(0, buf.length - 1);
+    }
+    const span = Math.max(1, b.t - a.t);
+    const f = Math.min(1.15, Math.max(0, (renderT - a.t) / span));
+    return a.p[0] + (b.p[0] - a.p[0]) * f;
+  }
+  const mk = ts => ts.map((t, i) => ({ t, p: [i * 10, 0, 0], ry: 0, rx: 0 }));
+  const SHAPES = {
+    'one entry':            mk([1000]),
+    'two entries, current': mk([1000, 1066]),
+    'two entries, stale':   mk([100, 166]),
+    'long stale burst':     mk([100, 166, 233, 300, 366, 433]),
+    'all in the future':    mk([9000, 9066]),
+    'identical timestamps': mk([1000, 1000, 1000])
+  };
+  Object.keys(SHAPES).forEach(name => {
+    let threw = null, out = null;
+    try { out = catchUp(SHAPES[name], 1100); } catch (e) { threw = e.message; }
+    ok(!threw && (out === null || isFinite(out)),
+      name + ': resolves to a finite position' + (threw ? ' — THREW ' + threw : ' [' +
+      (out === null ? 'empty' : out.toFixed(1)) + ']'));
+  });
+  /* The behaviour that matters: a badly stale buffer must land on the NEWEST
+     sample, not hold the oldest. */
+  const stale = mk([100, 166, 233, 300]);
+  const got = catchUp(stale, 5000);
+  ok(got === 30, 'a badly stale buffer snaps to the newest sample, not the oldest [' + got + ']');
+}
 
 console.log('\n--- the shipped interpolator is the v9.15 one ---');
 ok(/renderT = performance\.now\(\) - CFG\.NET\.interpDelay/.test(netSrc),

@@ -436,9 +436,42 @@ function spawnPlayer(room, p) {
      Cleared before the vitals emit further down, so the client is told in the
      same message that brings it back to life. */
   p.visor = false;
-  p.protUntil = now() + CFG.MATCH.spawnProtect * 1000;
+  /* ===== v10.15 - EVERY EXPENDABLE REFILLS ON RESPAWN =====
+
+     Rahul: "mines are only 5 in the game per player, once those are utilised
+     there is no option to get another 5... it should be reset once the player
+     is dead and spawn is back, all the grenades and everything should be
+     again fueled up."
+
+     Mines were set once, in the per-MATCH block, so a player who spent five
+     had none for the rest of the round with no way to earn more. Grenades and
+     molotovs had the same shape: a starting stock and no refill.
+
+     Moved here, to spawnPlayer, which runs on every respawn. The reasoning
+     that keeps DRONES per-match (v9.4: refilling them on death would give an
+     unlimited supply to anyone willing to die) does not apply to these —
+     drones are crate loot with no starting stock, and a mine you have to die
+     to replace is a mine nobody uses. Dying already costs a life and your
+     position; it should not also cost your kit.
+
+     `lastMolo` is cleared with them: it is the per-throw cooldown map, and a
+     refilled stock with a live cooldown would hand back the count and refuse
+     the throw. */
+  p.mines = CFG.GEAR.mine.start;
+  p.lastMolo = {};
+  /* Grenades, smoke, flash and molotov are NOT reset here, and that is not an
+     omission: their stock lives on the client in Weapons.throwsLeft, and
+     Game.onLocalSpawn already calls Weapons.resetLoadout() on every respawn,
+     which refills all four. Adding a server-side copy would be a second source
+     of truth for the same number. Verified before writing this: the only
+     expendable the SERVER owned was p.mines, and it was the only one broken. */
+  /* v10.15: per-map. 1.0 s on the small maps, 2.5 s elsewhere. Both the timer
+     and the number sent to the client come from the same call, so the HUD
+     countdown can never disagree with the server's own deadline. */
+  const prot = CFG.spawnProtectFor(room.settings.map || 'urban');
+  p.protUntil = now() + prot * 1000;
   p.pos = [s[0], 0.95, s[1]]; p.ry = s[2]; p.history = [];
-  io.to(room.code).emit('spawn', { id: p.id, pos: p.pos, ry: p.ry, prot: CFG.MATCH.spawnProtect });
+  io.to(room.code).emit('spawn', { id: p.id, pos: p.pos, ry: p.ry, prot: prot });
 }
 
 // ---------- dynamic loot (server-authoritative) ----------

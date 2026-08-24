@@ -43,8 +43,14 @@ module.exports = function initNukeModule(ctx) {
   /* Tuning. Kept together and named so a change is a decision, not a stray
      number edited mid-file. */
   const REQ_STREAK = 5;      // consecutive kills, no deaths between
-  const RADIUS = 11.0;       // metres. Roughly one lane of a 58 x 34 m map:
-                             // decisive where it lands, survivable elsewhere.
+  /* v10.15: 11 -> 17 m. Rahul: "range should be a good amount that opponent
+     gets trapped on those area". At 11 m on a 58 x 34 m map a strike covered
+     about one lane and a walk sideways left it; 17 m covers a lane and both
+     its approaches, so getting clear means committing to a direction and
+     running, which is the decision the strike is supposed to force. It is
+     still well under half the map — Freightyard, the smallest at 38 m across,
+     keeps two clear corners. */
+  const RADIUS = 17.0;
   const DURATION = 10.0;     // seconds, per Rahul
   const TICK_MS = 500;       // damage evaluations per strike: 20
   const TICK_DMG = 55;       // two ticks kills a full-health player, so a
@@ -81,12 +87,79 @@ module.exports = function initNukeModule(ctx) {
     io.to(p.id).emit('nukeLost', { reason: reason || 'died' });
   }
 
-  /* A strike request. Everything the client sent is treated as a suggestion. */
+  /* ===== v10.15 - THE STRIKE PICKS ITS OWN GROUND =====
+
+     Rahul: "there is no option to select the area... when user press N, it
+     starts to rain nuke on an area automatically for 10 seconds."
+
+     The v10.10 design opened the full map and asked for a click. That was
+     wrong twice over. It never worked — the targeting mode was reachable only
+     through a map overlay that a player in a firefight has no reason to open,
+     and pressing N appeared to do nothing. And even working, it asks somebody
+     to stop playing, read a top-down map and aim on it, which is the opposite
+     of what a killstreak reward should feel like.
+
+     So the server aims it. It scans candidate centres and picks the one
+     covering the MOST living enemies — which is what a player would have tried
+     to do with the map anyway, done instantly and without leaving the fight.
+
+     Candidates are every enemy's position plus the midpoint of every enemy
+     pair. A cluster of two or three produces a midpoint that covers all of
+     them and no single position does; scanning pairs is what finds it. With
+     one enemy the answer is simply where he is. */
+  function bestTarget(room, p) {
+    const foes = [];
+    for (const q of room.players.values()) {
+      if (!q.alive || q.out || q.id === p.id) continue;
+      if (q.team && p.team && q.team === p.team) continue;
+      foes.push(q);
+    }
+    if (!foes.length) return null;
+
+    const cands = [];
+    for (const f of foes) cands.push([f.pos[0], f.pos[2]]);
+    for (let i = 0; i < foes.length; i++) {
+      for (let j = i + 1; j < foes.length; j++) {
+        cands.push([(foes[i].pos[0] + foes[j].pos[0]) / 2,
+                    (foes[i].pos[2] + foes[j].pos[2]) / 2]);
+      }
+    }
+    const r2 = RADIUS * RADIUS;
+    let best = cands[0], bestN = -1;
+    for (const c of cands) {
+      let n = 0;
+      for (const f of foes) {
+        const dx = f.pos[0] - c[0], dz = f.pos[2] - c[1];
+        if (dx * dx + dz * dz <= r2) n++;
+      }
+      /* Ties break toward the centre of the map rather than toward whichever
+         enemy happened to be first in the player list — a strike on the middle
+         cuts more rotations than one on the edge. */
+      if (n > bestN || (n === bestN && (c[0] * c[0] + c[1] * c[1]) <
+                                       (best[0] * best[0] + best[1] * best[1]))) {
+        bestN = n; best = c;
+      }
+    }
+    return { x: best[0], z: best[1], covered: bestN };
+  }
+
+  /* A strike request. The client sends NOTHING but the request; where it lands
+     is decided here. */
   function requestStrike(room, p, x, z) {
     if (!isSmallMap(room)) return;
     if (!p || !p.nukeArmed || !p.alive || p.out) return;
     if (room.state !== 'playing') return;
-    if (!isFinite(x) || !isFinite(z)) return;
+    /* v10.15: coordinates from the client are ignored entirely. The server
+       aims. If nobody is alive to aim at, the strike lands on the caller's
+       forward arc rather than being refused — a spent killstreak that produces
+       nothing would read as the button being broken again. */
+    const aim = bestTarget(room, p);
+    if (aim) { x = aim.x; z = aim.z; }
+    else {
+      const yaw = +p.yaw || 0;
+      x = p.pos[0] - Math.sin(yaw) * (RADIUS * 0.9);
+      z = p.pos[2] - Math.cos(yaw) * (RADIUS * 0.9);
+    }
 
     /* Clamp into the building rather than rejecting. A click one metre outside
        the wall is a near-miss on a small map, not an exploit, and refusing it
@@ -103,7 +176,8 @@ module.exports = function initNukeModule(ctx) {
       endsAt, nextTick: now(), byName: p.name
     });
     io.to(room.code).emit('nukeIncoming', {
-      x, z, r: RADIUS, duration: DURATION, by: p.id, byName: p.name, team: p.team || null
+      x, z, r: RADIUS, duration: DURATION, by: p.id, byName: p.name,
+      team: p.team || null, covered: aim ? aim.covered : 0
     });
   }
 

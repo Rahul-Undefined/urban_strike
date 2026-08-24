@@ -44,10 +44,18 @@
        symmetry means there is no "your end" — the spawn you get is the corner
        you get, and every corner is the same corner turned 90 degrees. */
     SPAWNS: [
-      [-16.5, -16.5, 0.785], [-13.5, -17.5, 0.785], [-17.5, -13.5, 0.785],
-      [16.5, 16.5, -2.356], [13.5, 17.5, -2.356], [17.5, 13.5, -2.356],
-      [-16.5, 16.5, 2.356], [-13.5, 17.5, 2.356], [-17.5, 13.5, 2.356],
-      [16.5, -16.5, -0.785], [13.5, -17.5, -0.785], [17.5, -13.5, -0.785]
+      /* v10.15: team-tagged. spawnFor() filters `s[3]` against the player's
+         team; without the tag it matched nothing and both sides spawned
+         anywhere (see maps-killhouse.config.js for the full note).
+
+         FREIGHTYARD is four-way rotational, so there is no natural west and
+         east — the split is by DIAGONAL: the two -x corners are 'a', the two
+         +x corners are 'b'. That keeps each side's three tiles adjacent, which
+         is what "the same side of the map" means on a map with no ends. */
+      [-16.5, -16.5, 0.785, "a"], [-13.5, -17.5, 0.785, "a"], [-17.5, -13.5, 0.785, "a"],
+      [16.5, 16.5, -2.356, "b"], [13.5, 17.5, -2.356, "b"], [17.5, 13.5, -2.356, "b"],
+      [-16.5, 16.5, 2.356, "a"], [-13.5, 17.5, 2.356, "a"], [-17.5, 13.5, 2.356, "a"],
+      [16.5, -16.5, -0.785, "b"], [13.5, -17.5, -0.785, "b"], [17.5, -13.5, -0.785, "b"]
     ],
     /* v10.14: the first pass put one on the centre stack and four on the
        container ends — verify-map refused all five. On a four-way map the OPEN
@@ -84,9 +92,12 @@
       [-12, 0.55, 0, "g"], [12, 0.55, 0, "g"]
     ],
     SPAWNS: [
-      [-25.5, -12, 1.5708], [-25.5, -4, 1.5708], [-25.5, 4, 1.5708], [-25.5, 12, 1.5708],
-      [25.5, -12, -1.5708], [25.5, -4, -1.5708], [25.5, 4, -1.5708], [25.5, 12, -1.5708],
-      [-9, -18, 0], [9, -18, 0], [-9, 18, 3.1416], [9, 18, 3.1416]
+      /* v10.15: team-tagged, west 'a' and east 'b'. The four alley-mouth
+         spawns in the middle stay 'n' — they are for free-for-all, where
+         there are no sides to keep apart. */
+      [-25.5, -12, 1.5708, "a"], [-25.5, -4, 1.5708, "a"], [-25.5, 4, 1.5708, "a"], [-25.5, 12, 1.5708, "a"],
+      [25.5, -12, -1.5708, "b"], [25.5, -4, -1.5708, "b"], [25.5, 4, -1.5708, "b"], [25.5, 12, -1.5708, "b"],
+      [-9, -18, 0, "n"], [9, -18, 0, "n"], [-9, 18, 3.1416, "n"], [9, 18, 3.1416, "n"]
     ],
     /* v10.14: [-3,-19] was inside the perimeter fence. A crate needs more
        clearance than a loot point does, so the generator's LOOT suggestions
@@ -110,10 +121,13 @@
       [-19, 0.55, -19, "h"], [19, 0.55, 19, "h"], [-19, 0.55, 19, "h"], [19, 0.55, -19, "h"]
     ],
     SPAWNS: [
-      [-21.5, -14, 1.5708], [-21.5, 0, 1.5708], [-21.5, 14, 1.5708],
-      [21.5, -14, -1.5708], [21.5, 0, -1.5708], [21.5, 14, -1.5708],
-      [-14, -21.5, 0], [0, -21.5, 0], [14, -21.5, 0],
-      [-14, 21.5, 3.1416], [0, 21.5, 3.1416], [14, 21.5, 3.1416]
+      /* v10.15: team-tagged. On a ring map west and east are opposite arcs,
+         which is as separated as this shape allows; the north and south arcs
+         are 'n' for free-for-all. */
+      [-21.5, -14, 1.5708, "a"], [-21.5, 0, 1.5708, "a"], [-21.5, 14, 1.5708, "a"],
+      [21.5, -14, -1.5708, "b"], [21.5, 0, -1.5708, "b"], [21.5, 14, -1.5708, "b"],
+      [-14, -21.5, 0, "n"], [0, -21.5, 0, "n"], [14, -21.5, 0, "n"],
+      [-14, 21.5, 3.1416, "n"], [0, 21.5, 3.1416, "n"], [14, 21.5, 3.1416, "n"]
     ],
     /* v10.14: two of these sat on the pit railing posts — 6 cm cylinders that
        a loot point clears and a crate does not. */

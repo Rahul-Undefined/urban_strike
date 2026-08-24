@@ -364,18 +364,11 @@ var Minimap = (function () {
 
   function markAt(clientX, clientY) {
     if (!fullOn || !fullCv) return;
-    /* Targeting takes precedence over team pings. Someone holding a nuke who
-       clicks the map means the nuke, every time — and the alternative, both
-       firing at once, would drop a strike AND ping it for the enemy team. */
-    if (nukeAim) {
-      var w = screenToWorld(clientX, clientY);
-      if (!w) return;
-      nukeAim = false;
-      Net.nukeStrike(w.x, w.z);
-      if (UI.nukeFired) UI.nukeFired(w);
-      toggleFull();
-      return;
-    }
+    /* v10.15: the click-to-target branch is gone. N calls the strike directly
+       and the server aims it — see ui.js nukeToggleAim. setNukeAim/nukeAiming
+       remain as no-ops so nothing that still calls them throws; screenToWorld
+       stays because it is the only correct screen-to-world transform in the
+       file and a future feature should reuse it rather than write a second. */
     var modeCfg = CFG.MODES[(Net.getMatch() || {}).mode];
     if (!modeCfg || !modeCfg.teams) return;          // no sides, no shared marker
     var r = fullCv.getBoundingClientRect();

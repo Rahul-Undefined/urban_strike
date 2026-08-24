@@ -71,20 +71,31 @@
 
        Facing is toward the map centre in every case. */
     SPAWNS: [
+      /* ===== v10.15 - SPAWNS ARE TEAM-TAGGED =====
+         Rahul: "in teams match, spawn location should be team specific,
+         everyone from the team should spawn in the same location or side."
+
+         The mechanism already existed — spawnFor() filters on `s[3]` against
+         the player's team — but none of the small maps carried the tag, so
+         the filter matched nothing, fell through to the full set (the v8.27
+         never-return-empty guard) and both teams spawned anywhere.
+
+         'a' west, 'b' east, 'n' for the neutral ends used by free-for-all,
+         where there are no sides to keep apart. */
       // west — team A, behind House A
       /* v10.12: z +/-8 was inside the garden walls behind each house
          (x 26..31, z 8.1..8.4). verify-map caught all four. Pulled to +/-6.5,
          which clears the wall and still fans five operators across the pocket
          so an eight-player lobby does not stack on one tile. */
-      [-30.5, -6.5, 1.5708], [-30.5, -3.2, 1.5708], [-30.5, 0, 1.5708],
-      [-30.5, 3.2, 1.5708], [-30.5, 6.5, 1.5708],
-      [-29.0, -12, 1.5708], [-29.0, 12, 1.5708],
+      [-30.5, -6.5, 1.5708, "a"], [-30.5, -3.2, 1.5708, "a"], [-30.5, 0, 1.5708, "a"],
+      [-30.5, 3.2, 1.5708, "a"], [-30.5, 6.5, 1.5708, "a"],
+      [-29.0, -12, 1.5708, "a"], [-29.0, 12, 1.5708, "a"],
       // east — team B, behind House B
-      [30.5, -6.5, -1.5708], [30.5, -3.2, -1.5708], [30.5, 0, -1.5708],
-      [30.5, 3.2, -1.5708], [30.5, 6.5, -1.5708],
-      [29.0, -12, -1.5708], [29.0, 12, -1.5708],
+      [30.5, -6.5, -1.5708, "b"], [30.5, -3.2, -1.5708, "b"], [30.5, 0, -1.5708, "b"],
+      [30.5, 3.2, -1.5708, "b"], [30.5, 6.5, -1.5708, "b"],
+      [29.0, -12, -1.5708, "b"], [29.0, 12, -1.5708, "b"],
       // neutral yard ends, used by free-for-all
-      [0, -17.5, 0], [0, 17.5, 3.1416]
+      [0, -17.5, 0, "n"], [0, 17.5, 3.1416, "n"]
     ],
 
     /* AIRDROP_POINTS — [x, z]. Open sky only: nothing under a roof, nothing

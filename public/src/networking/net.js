@@ -541,7 +541,51 @@ var Net = (function () {
     for (var id in remotes) {
       var r = remotes[id];
       var buf = r.buf;
+      /* ===== v10.15 - THE FREEZE-AND-TELEPORT, FIXED AT THE CAUSE =====
+
+         Rahul: "player ek jagah rehta h aur uss time woh khada rehta hai aur
+         usko goli maarne se bhi nahi marta lekin woh player online h... achanak
+         se yeh avatar active hota h aur woh dusre jagah aa jata h."
+
+         Every symptom in that sentence comes from ONE line, which used to read:
+
+             while (buf.length > 2 && buf[1].t < renderT) buf.shift();
+
+         The guard is `> 2`. Once the buffer drains to exactly two entries it
+         STOPS ADVANCING, however far in the past both of them are. From then
+         on `a` and `b` are stale, `f` clamps at 1.15, and the avatar stands
+         frozen 15% past a position it left seconds ago.
+
+         It cannot be shot there because the SERVER knows where the player
+         actually is: the shot is aimed at the stale body, the 4 m plausibility
+         check in combat.js measures it against the real position and refuses
+         the hit. "Goli maarne se bhi nahi marta" is not a hit-detection bug —
+         it is this bug, one layer down.
+
+         And when a packet finally lands the buffer refills, the shift resumes,
+         and the body jumps to the present in a single frame. The teleport is
+         the recovery, not a second fault.
+
+         WHY IT RUNS DRY. interpDelay was 120 ms against a 66.7 ms tick — 1.8
+         ticks of buffer, so anything over ~53 ms of arrival jitter empties it.
+         Fifty-three milliseconds is an ordinary hiccup over the public
+         internet, and it gets likelier the longer a match runs.
+
+         THREE PARTS TO THE FIX, and none of them is the plausibility check:
+
+         1. interpDelay 120 -> 190 ms (see gameplay.config.js). 2.85 ticks,
+            about 123 ms of jitter tolerated instead of 53.
+         2. This loop now drains to the NEWEST usable pair rather than stopping
+            at two, so a late burst of packets is consumed at once instead of
+            being walked through one frame at a time.
+         3. If the newest state we hold is older than SNAP_MS, stop pretending
+            to interpolate and JUMP to it. A visible hitch is honest and lasts
+            one frame; a frozen unkillable body is neither. */
       while (buf.length > 2 && buf[1].t < renderT) buf.shift();
+      /* Part 2: the two-entry case the old guard refused to touch. Advance
+         while the SECOND entry is already in the past and something newer
+         exists behind it. */
+      while (buf.length > 1 && buf[buf.length - 1].t < renderT && buf.length > 2) buf.shift();
       var vis = r.alive && phase === 'playing' && buf.length > 0;
       /* v8.23 THE BODY USED TO BE DELETED 50ms AFTER IT FINISHED FALLING.
 
@@ -582,6 +626,23 @@ var Net = (function () {
       if (!vis) continue;
 
       var a = buf[0], b = buf.length > 1 ? buf[1] : buf[0];
+
+      /* Part 3: the catch-up. If the newest state we hold is more than SNAP_MS
+         behind where we are rendering, the buffer has genuinely run dry —
+         interpolating between two old samples would hold the body in the past
+         indefinitely, which is the defect. Take the newest sample as truth and
+         accept one frame of jump.
+
+         SNAP_MS is 3 ticks. Below that the buffer is merely thin and the
+         clamp below rides it out smoothly; above it, no amount of waiting
+         produces a better answer than the freshest thing we have. */
+      var SNAP_MS = (1000 / CFG.NET.snapRate) * 3;
+      var newest = buf[buf.length - 1];
+      if (renderT - newest.t > SNAP_MS) {
+        a = newest; b = newest;
+        if (buf.length > 1) buf.splice(0, buf.length - 1);
+      }
+
       var span = Math.max(1, b.t - a.t);
       var f = Math.min(1.15, Math.max(0, (renderT - a.t) / span));
       r.renderPos.set(

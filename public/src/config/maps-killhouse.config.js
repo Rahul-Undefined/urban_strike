@@ -74,16 +74,27 @@
        All seven per side sit behind the spawn-side container line, so nothing
        on the opposing spawn can see them at the moment they appear. */
     SPAWNS: [
+      /* ===== v10.15 - SPAWNS ARE TEAM-TAGGED =====
+         Rahul: "in teams match, spawn location should be team specific,
+         everyone from the team should spawn in the same location or side."
+
+         The mechanism already existed — spawnFor() filters on `s[3]` against
+         the player's team — but none of the small maps carried the tag, so
+         the filter matched nothing, fell through to the full set (the v8.27
+         never-return-empty guard) and both teams spawned anywhere.
+
+         'a' west, 'b' east, 'n' for the neutral ends used by free-for-all,
+         where there are no sides to keep apart. */
       // west — team A
-      [-26.5, -12, 1.5708], [-26.5, -6, 1.5708], [-26.5, 0, 1.5708],
-      [-26.5, 6, 1.5708], [-26.5, 12, 1.5708],
-      [-24.0, -13.5, 1.5708], [-24.0, 13.5, 1.5708],
+      [-26.5, -12, 1.5708, "a"], [-26.5, -6, 1.5708, "a"], [-26.5, 0, 1.5708, "a"],
+      [-26.5, 6, 1.5708, "a"], [-26.5, 12, 1.5708, "a"],
+      [-24.0, -13.5, 1.5708, "a"], [-24.0, 13.5, 1.5708, "a"],
       // east — team B
-      [26.5, -12, -1.5708], [26.5, -6, -1.5708], [26.5, 0, -1.5708],
-      [26.5, 6, -1.5708], [26.5, 12, -1.5708],
-      [24.0, -13.5, -1.5708], [24.0, 13.5, -1.5708],
+      [26.5, -12, -1.5708, "b"], [26.5, -6, -1.5708, "b"], [26.5, 0, -1.5708, "b"],
+      [26.5, 6, -1.5708, "b"], [26.5, 12, -1.5708, "b"],
+      [24.0, -13.5, -1.5708, "b"], [24.0, 13.5, -1.5708, "b"],
       // neutral north/south entries, used by free-for-all
-      [0, -14.5, 0], [0, 14.5, 3.1416]
+      [0, -14.5, 0, "n"], [0, 14.5, 3.1416, "n"]
     ],
 
     /* AIRDROP_POINTS — [x, z]. Four, all in open floor with no roof truss

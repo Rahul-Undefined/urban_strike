@@ -647,8 +647,21 @@ var Game = (function () {
   var fwdV = new THREE.Vector3(), upV = new THREE.Vector3(0, 1, 0);
   function loop(t) {
     requestAnimationFrame(loop);
-    DevHUD.update(t);            // no-ops on its first line while hidden
-    if (Minimap.isFullOpen()) Minimap.drawFull();   // keeps dots live while open
+    /* ===== v10.16 - THESE TWO WERE OUTSIDE THE GUARD =====
+
+       v8.31 put every subsystem in its own step() guard precisely so one fault
+       could not skip renderer.render() and black the screen. These two lines
+       were never brought inside it, so a throw in the dev HUD or the full map
+       skipped EVERY REMAINING LINE OF THE FRAME, every frame, forever — and
+       the loop kept rescheduling, so there was no error storm to notice, just
+       a black screen and a game that would not respond.
+
+       That is the whole class Rahul hit after v10.15 ("whole map is showing
+       black and it is not playable"). Both now run through step() like
+       everything else, so a fault in either is contained to itself and the
+       frame still renders. */
+    step('devhud', function () { DevHUD.update(t); });
+    step('fullmap', function () { if (Minimap.isFullOpen()) Minimap.drawFull(); });
     var dt = Math.min(0.05, Math.max(0.0001, (t - lastT) / 1000));
     lastT = t;
 
