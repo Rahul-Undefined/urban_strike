@@ -53,19 +53,19 @@ ok(!u.nukeArmed, 'nine kills on urban arms nothing — the guard is on the MAP')
    map must get the killstreak automatically — a name check would have given
    Sunset Row the whole rule set EXCEPT this, which is the kind of gap nobody
    reports because nothing looks broken, it just never happens. */
-Object.keys(CFG.MAPS).filter(m => CFG.MAPS[m].smallMap).forEach(m => {
+Object.keys(CFG.MAPS).filter(m => CFG.isArena(m)).forEach(m => {
   const r = mkRoom(m); const q = mkP('S_' + m); r.players.set(q.id, q);
   for (let i = 0; i < 5; i++) { q.streak++; Nuke.onKill(r, q); }
-  ok(q.nukeArmed === true, m + ': is flagged smallMap, so it gets the killstreak');
+  ok(q.nukeArmed === true, m + ': carries the arena rules, so it gets the killstreak');
   Nuke.requestStrike(r, q, 9999, 9999);
   const B = CFG.MAPS[m].bound;
   ok(r.nukes.length === 1 && Math.abs(r.nukes[0].x) <= B,
     m + ': clamps to its OWN bound [' + B + '], not a hardcoded one');
 });
-Object.keys(CFG.MAPS).filter(m => !CFG.MAPS[m].smallMap).forEach(m => {
+Object.keys(CFG.MAPS).filter(m => !CFG.isArena(m)).forEach(m => {
   const r = mkRoom(m); const q = mkP('B_' + m); r.players.set(q.id, q);
   for (let i = 0; i < 9; i++) { q.streak++; Nuke.onKill(r, q); }
-  ok(!q.nukeArmed, m + ': is a full-size map and gets no killstreak');
+  ok(!q.nukeArmed, m + ': is a full-size theatre and gets no killstreak');
 });
 
 console.log('\n--- dying loses it, which is the whole reward ---');

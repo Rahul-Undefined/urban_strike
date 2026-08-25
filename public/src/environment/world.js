@@ -1930,7 +1930,9 @@ World.buildMap = function (sceneRef, map) {
                    sunsetrow: World._buildSunsetRow,
                    freightyard: World._buildFreightyard,
                    bazaar: World._buildBazaar,
-                   substation: World._buildSubstation })[map] || null;
+                   substation: World._buildSubstation,
+                   riverside: World._buildRiverside,
+                   airfield: World._buildAirfield })[map] || null;
   if (map === 'urban' || !builder) {
     World.build(sceneRef);
     World.builtMap = 'urban';

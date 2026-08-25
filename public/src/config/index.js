@@ -13,6 +13,7 @@
       require('./maps-killhouse.config.js'),
       require('./maps-sunsetrow.config.js'),
       require('./maps-small.config.js'),
+      require('./maps-medium.config.js'),
       require('./maps-sunsetrow.config.js')
     ]);
   } else {

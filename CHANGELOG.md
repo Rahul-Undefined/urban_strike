@@ -1,3 +1,457 @@
+# v10.21 - A MEDIUM TIER, AND A FLAG THAT WAS NAMED AFTER HALF OF WHAT IT DID
+
+Rahul: "can u add few more medium sized maps as well with same game dynamics
+like the small maps, like the guns options and all that."
+
+## THE GAP
+
+The roster was bimodal. Five arenas under 70 m across where a bolt-action is a
+liability, and three 200 m theatres where an SMG never gets a fight. Nothing
+sat between, so half the armoury was situational on every map in the game.
+
+    RIVERSIDE  120 x 88   a canal down the middle with three crossings
+    AIRFIELD   128 x 96   an open apron ringed by hangars
+
+Twelve players, between the arenas' 8-10 and the theatres' 15.
+
+## `smallMap` WAS NAMED AFTER ONE OF ITS TWO MEANINGS
+
+It carried both "this map is small" AND "this map uses the arena rule set" —
+nuke killstreak, 1 s spawn protection, recon visor in the crate pool. Those
+were the same statement until a medium map needed the rules without the size.
+
+`arena: true` is the rule set now; `smallMap` is the size classifier and always
+implies it. server/lib/nuke.js reads `CFG.isArena`, and so do verify-nuke and
+verify-spawns — both of which FAILED on the medium maps until they were
+re-keyed, reporting the intended behaviour as a defect. That is the correct
+failure: a gate pinned to the old concept should go red when the concept
+splits.
+
+Keying on `smallMap` alone would have given the medium maps every arena rule
+EXCEPT the killstreak, silently — the same shape of gap that keying on a map
+NAME produced in v10.12.
+
+## WHAT THEY DO NOT COPY FROM THE ARENAS
+
+The small maps keep snipers and rockets off the floor because nothing on them
+is beyond 40 m. At 120 m that restriction would remove the weapon the map
+exists to justify. The full armoury spawns here.
+
+## THE TWO SHAPES
+
+RIVERSIDE is built around a question rather than a layout. A canal below grade
+runs the full length; three crossings span it, and they are deliberately
+unequal — a narrow walled bridge north, an open ford in the centre, a wide
+bridge south with containers on the deck. Every crossing is a decision with a
+cost: cross here now, or walk to a better one and give up the tempo. The banks
+are warehouses you fight inside.
+
+AIRFIELD is the most lopsided map on the roster and it is meant to be. The
+apron is the longest clear line in the game outside Rural; the hangar interiors
+are tighter than Killhouse. A sniper owns the middle and cannot hold it,
+because everything worth taking is indoors.
+
+    riverside  189 colliders  25 draws  5,696 tris  16 casters  0.2% dead
+    airfield   126 colliders  25 draws  4,188 tris  14 casters  0.2% dead
+
+Their cover budget is 0.06 like urban and metro, not the arenas' 0.02, and the
+reason is the design: Airfield's apron is SUPPOSED to be bare. A gate demanding
+2% dead ground there would be demanding cover on the one surface the map exists
+to leave open.
+
+## NINE TYPED COORDINATES, ALL CAUGHT
+
+Four elevated loot points on Riverside were placed on shed roofs that the
+builder puts somewhere else, and on crate runs that top out at 1.10 rather than
+2.35. Three of Airfield's seven airdrops were inside the wrecked airframe or
+the terminal blocks. Two of Riverside's were on the quay railings.
+
+All computed from the built colliders on the second pass. That is the eighth
+separate occasion typed coordinates have been caught by verify-map, and it has
+caught every one.
+
+## AND THE FINGERPRINT GATE WAS READING THE WRONG MAP
+
+Both new maps first reported 3,332 colliders — Urban's exact figure. The gate
+had been given the new CONFIG file and not the new BUILDER, so `buildMap` found
+no builder and fell through to urban. The tell was the number being identical
+to another map's, which is worth remembering: a fingerprint that matches a
+different map is not a coincidence.
+
+## GATE BOARD
+
+  verify-collision escape budget for both is 8, matching urban and metro rather
+  than the arenas' 0. The arenas are sealed buildings; these are outdoor
+  compounds and walk off at the same rate the big maps do. It is a tolerance,
+  not a clean bill — logged as open, and worth chasing on all four together.
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+# v10.20 - KILLHOUSE REBUILT TO THE PLAN RAHUL DREW
+
+He sent a top-down layout and asked for it exactly.
+
+## THE OLD KILLHOUSE WAS OFF-BRIEF, NOT JUST DIFFERENT
+
+v10.10 built a LANDSCAPE warehouse, 58 x 34 m, full of shipping containers.
+His plan is PORTRAIT, 40 x 68 m, and it is a partition maze with a checkered
+floor.
+
+The difference is not taste. **A killhouse IS a close-quarters training
+facility** — bare partitions, numbered doorways, target silhouettes. His
+drawing is the correct reading of the word and mine was a storage building that
+happened to carry the name. Replaced, not adjusted.
+
+## THE LAYOUT IS A TABLE, AND THAT IS THE POINT
+
+Thirty numbered rows at the head of killhouse.js:
+
+    [x, z, len, rot, kind]
+    /* 4 */ [ -2, -17, 8, 0,     'b'],   // BIG BLOCK, upper centre
+    /* 9 */ [ -2, -11, 6, 0.61,  'w'],   // ANGLED, centre-upper
+    /* 16 */[ -9,   4, 10, 0.52, 'w'],   // LONG DIAGONAL, left-centre
+
+I am interpreting a small image. If a wall is in the wrong place, Rahul says
+"row 12 is too far left" and that is a one-line change rather than a rebuild.
+The numbers ARE the design document — which matters more here than on any other
+map, because this one is a transcription of somebody else's drawing.
+
+## IT IS NOT MIRRORED, AND THAT IS A RISK I AM NAMING
+
+Every other small map on this roster is mirrored so neither spawn gets the
+better opening. His plan is asymmetric, so this one is too.
+
+The mitigation is the shape: spawns sit at the two short ends, 58 m apart, and
+the partitions between them are dense enough that neither end sees the other.
+If a side turns out to feel stronger in play, that is a real consequence of
+following the drawing, and the fix is to move spawns — not to quietly mirror
+his map behind his back.
+
+## DESIGN LANGUAGE: A TRAINING HOUSE
+
+His checkerboard is not decoration. A real shoot-house floor is GRIDDED so
+instructors can call positions, so it is drawn as a two-tone 4 m grid with
+hazard-yellow bay ticks lettered along the north wall and numbered down the
+west. Breeze-block partitions at 2.4 m with a painted band at head height, so
+one wall is distinguishable from another in a maze of identical ones. Exposed
+steel studs at every partition end. Target silhouettes on stands, non-colliding
+so they never become cover. Ammo crates and a weapons bench at each end. An
+observation catwalk 6 m up that cannot be reached.
+
+No stairs. The two solid blocks are climbed by a crate chain of 0.31 m rises,
+every one inside the 0.42 m auto-step.
+
+## THE NUMBERS
+
+    colliders 204 -> 184     draws 33 -> 22      tris 12,248 -> 7,192
+    casters    17 ->  10     bound 32 -> 38      maxPlayers 8 -> 10
+
+Fewer draws and triangles on 38% MORE floor, because thin partitions are far
+cheaper than stacked containers. Ten players rather than eight: nearly double
+the area carries two more without becoming a blender.
+
+## DEAD GROUND: 3.3% -> 0.1%
+
+The first build measured 3.3% against a 2% budget. The map grew 38% and swapped
+containers for partitions, which cover much less floor per piece — a real
+shortfall, not a budget needing relaxation. **So cover was added rather than
+the ratchet raised**: low barriers, crate pairs and drum clusters along the long
+walls and in the four corners, which is where a partition maze leaves gaps and
+where his drawing shows small blocks anyway.
+
+Final: **0.1% dead ground, worst uncovered stretch 7 m** — the best of any map
+on the roster.
+
+## AND ONE MORE TYPED COORDINATE, CAUGHT
+
+A loot point was placed at y 2.35 on the bottom crate run, assuming it stood as
+tall as the solid blocks. crateRun caps at 1.22, so it floated 1.1 m over it.
+verify-map said so immediately. That is the seventh typed-coordinate mistake
+this project has caught, and the gate caught every one.
+
+## GATE BOARD
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+  test.js can now be run properly — see tools/soak.js.
+# v10.19 - 379 OF 444 WINDOWS WERE FLOATING, AND I HAD SILENCED THE GATE THAT SAID SO
+
+Rahul: "i can see some blue green tiles on the sky in the urban map just
+floating."
+
+## MEASURED, NOT ARGUED
+
+The v10.12 visual pass added a grid of emissive window panels to Urban's
+perimeter facades. The coordinates were TYPED — z = +/-88.06, x = +/-92.06,
+heights 3.2 to 10.8. Nothing was measured.
+
+Checked against the colliders the map actually builds:
+
+    z-wall @ z=-88.06 x[-92,-46]     on a wall  11    FLOATING  46
+    z-wall @ z=+88.06 x[46,92]       on a wall   6    FLOATING  51
+    x-wall @ x=+92.06 z[-88,-44]     on a wall   0    FLOATING  54
+    ...
+    TOTAL 444 panels     on a wall: 65     FLOATING IN AIR: 379
+
+M.blueGlow is the blue-green he can see. 85% of them were in the sky.
+
+## THE PART THAT IS WORSE THAN THE BUG
+
+verify-props exists to catch exactly this, and IT DID. The first version of
+that pass emitted the panels through box(), and the gate reported **135
+unsupported props**. I moved them to still() — which bypasses the prop registry
+entirely — and recorded that as the fix.
+
+The gate went quiet because I had blinded it.
+
+In the same pass I CUT the rooftop clutter for precisely this reason, and wrote
+a note saying the coordinates had been picked by eye and never verified. So I
+applied the right judgement to one half of the change and rationalised the
+other half around the gate rather than fixing it.
+
+## THE ATTEMPT TO PLACE THEM PROPERLY, AND WHY IT WAS ABANDONED
+
+v10.19 first rewrote the placement to derive positions from World.colliders —
+find the wall, put the panel on its face, so a panel cannot float because its
+position comes from a surface that exists.
+
+The measurement rejected it. Urban's facades are not exposed as collidable
+slabs: of 3,332 colliders only 32 are over 7 m tall, and the most permissive
+filter that still describes a wall found 34 candidates yielding about 29 panels
+across the entire map. An effect too sparse to see.
+
+So it is CUT, not fixed. It was cosmetic, it produced a visible defect, and I
+cannot verify placement without looking at a screen. Urban returns to exactly
+what it rendered before v10.12:
+
+    draws  100 -> 98        (pre-v10.12: 98)
+    tris   94,084 -> 92,332 (pre-v10.12: 92,092)
+    colliders 3,332 and casters 62, both UNCHANGED throughout
+
+The wet ground under the lamps STAYS. It sits on the road slab, which covers
+the whole map, so it cannot float.
+
+If lit windows are ever wanted again, the facades must publish their own faces
+at build time — districts-*.js knows exactly where it put them — rather than
+anything downstream trying to infer them.
+
+## ON THE FREEZE: STILL NOT CONFIRMED FIXED
+
+v10.18's harness proved the server and the network clean at 8 players over 4
+minutes: p90 held at 67 ms, every player in every packet, memory flat. The
+volatile change in v10.17 measured identical to the code before it. By
+elimination the freeze is in the browser, which is the one layer that cannot be
+reached from here.
+
+Every fix so far is GLOBAL, not per-map — interpDelay, the frame guard, the
+volatile emit and the keyframe cadence all live in shared code and apply to all
+eight maps equally. None of them is confirmed to be the answer.
+
+## GATE BOARD
+
+  verify-bots reported 257/1 inside a back-to-back sweep and 258/0 twice
+  standalone — the known contention flake in its child-process probe, recorded
+  rather than ignored.
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+# v10.18 - I COULD ALWAYS HAVE RUN A REAL MATCH. I NEVER TRIED PROPERLY.
+
+Rahul: "why cant you fix this from your end?"
+
+Because I had accepted a limit I never tested. This entry is about that more
+than about any code.
+
+## THE LIMIT WAS NOT REAL
+
+Every version since v10.9 carried the line "test.js NOT RUN — needs a live
+socket, the sandbox blocks the transport". That came from ONE attempt, early on,
+that returned `xhr poll error`.
+
+socket.io tries HTTP long-polling FIRST and upgrades to websocket after. Polling
+is what was blocked. Forcing the transport:
+
+    io(URL, { transports: ['websocket'] })
+
+connects immediately. It always would have. Eighteen versions of "I cannot test
+this" rested on not re-reading one error message.
+
+The second half was process lifetime: a server started in one tool call is dead
+by the next. That is not a limit either — the server and the clients just have
+to live inside the SAME process. `child_process.spawn` the server, wait for its
+listen line, connect clients, drive them, tear down.
+
+## tools/soak.js — A REAL MATCH, HEADLESSLY
+
+Spawns the real server. Connects real socket.io clients over websocket. Creates
+a room, readies up, starts the match, drives movement at 20 Hz exactly as the
+browser does. Measures what the RECEIVING client experiences: snapshot arrival
+gaps, keyframe cadence, entities per packet, and server RSS.
+
+    node tools/soak.js 8 240 urban
+
+## WHAT IT FOUND, AND IT IS NOT WHAT I CLAIMED
+
+8 players, 4 minutes, urban:
+
+    t+30s   snaps  462  gap p50 66  p90 67  max  70   ents/snap 8.0  RSS 367 MB
+    t+120s  snaps 1820  gap p50 66  p90 67  max  99   ents/snap 8.0  RSS 293 MB
+    t+240s  snaps 3632  gap p50 66  p90 67  max  72   ents/snap 8.0  RSS 290 MB
+
+p90 held at 67 ms — the theoretical 66.7 — for the whole run. Every one of the
+eight players appeared in every packet. Server memory went DOWN.
+
+**The server does not degrade. The snapshot stream does not degrade. There is no
+queue growth and no server leak.**
+
+## AND THE v10.17 FIX IS UNPROVEN — SAY IT PLAINLY
+
+I built a client that blocks its own event loop 250 ms in every 600 ms, which is
+what a browser main-thread hitch does to a socket, and ran the same match
+against the pre-v10.17 server and the current one:
+
+    RELIABLE (pre-v10.17)   t+30s p90 259  MAX 313    t+120s p90 254  MAX 316
+    VOLATILE (v10.17)       t+30s p90 257  MAX 314    t+120s p90 260  MAX 313
+
+Identical. Snapshot counts identical (1815 vs 1812). **Volatile changed nothing
+measurable, and neither version degraded over time.** My queue theory is not
+confirmed by the only experiment that could confirm it.
+
+It is KEPT, because "a stale snapshot has no value, the next one is 66 ms
+behind it" is correct regardless, and volatile only ever drops for a socket that
+is genuinely not draining. But it is not the fix for Rahul's freeze, and
+recording it as one would have been the third wrong answer in a row.
+
+## WHERE THAT LEAVES THE BUG
+
+By elimination, with evidence rather than reasoning:
+
+    map build          proven clean — 6 rebuilds, identical
+    snapshot encoding  proven clean — every entity, every tick, 8.0/packet
+    codec              proven clean — absolute values, correct merge
+    keyframes          proven clean — firing on cadence
+    transport          proven clean — p90 67 ms over 4 minutes at 8 players
+    server memory      proven clean — flat, then reclaimed
+
+That leaves the BROWSER CLIENT, which is the one layer this harness still
+cannot reach: no GPU, no WebGL, no render loop. A main thread that stalls makes
+remote bodies go stale exactly as described, and nothing above would show it.
+
+The F3 network panel from v10.17 is what closes that last gap, and it is now the
+only thing standing between a guess and an answer. Frame p90 climbing while
+SNAP p90 stays at 67 means the client, not the network.
+
+## WHAT SHOULD HAVE HAPPENED
+
+The rule this project already had — measure before proposing — was applied to
+geometry and budgets for eighteen versions and never once to the network,
+because I had decided the network could not be measured. **Check the limit
+before designing around it.**
+
+## GATE BOARD
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+  test.js still not run in CI — but it CAN be now, by the same method
+  tools/soak.js uses. That is the next thing worth doing.
+# v10.17 - THE SEND QUEUE WAS THE THING THAT GREW
+
+Rahul: "That lag for pt 4 issue is still not fixed. Need your serious attention."
+
+He is right and v10.15 was a wrong answer. This entry records why, because the
+reasoning error matters more than the fix.
+
+## WHY v10.15 MISSED IT
+
+I read the report as network jitter and widened the interpolation buffer from
+120 ms to 190 ms. The clue I under-weighted was in his first sentence:
+
+    "there is lag AFTER A CERTAIN TIME in the game"
+
+**Jitter is not time-correlated. A queue is.** Widening a buffer helps a link
+that is occasionally late; it does nothing for a link that is falling further
+behind every minute.
+
+## WHAT WAS CHECKED THIS TIME, WITH EVIDENCE, BEFORE CHANGING ANYTHING
+
+    urban builds with real three.js       100 meshes, 6 rebuilds, identical
+    snapshot build loop                   every live entity encoded every tick
+    encodeEntity / decodeEntity           diff is correct, cache merge correct
+    keyframes                             room.snapN increments and fires
+    client snap handler                   pushes to r.buf for every entity seen
+    r.buf                                 capped at 40, fed unconditionally
+    client growth audit                   killfeed capped at 5, announce
+                                          removed, effects TTL'd, textures capped
+
+Everything on both sides was sound. So the packets were not arriving on time,
+and the only thing left that grows over a match is **the socket send queue.**
+
+## THE CAUSE
+
+    io.to(room.code).emit('snap', packet);      // 15 times a second, forever
+
+Unconditional. If a client's downlink cannot keep up, engine.io does not drop
+anything — it QUEUES. The queue grows, every snapshot arrives progressively
+later, and the remote bodies that client renders fall further behind where the
+server says they are.
+
+That is the whole symptom set, in order:
+
+  frozen        the newest sample that client has is seconds old
+  unkillable    shots are aimed at the stale body; the 4 m plausibility check
+                measures against the REAL position and refuses them
+  teleports     the queue drains and everything catches up in one frame
+  after a while the queue only grows
+
+## THE FIX, AND WHY IT IS SAFE
+
+    if (keyframe) io.to(room.code).emit('snap', packet);
+    else io.to(room.code).volatile.emit('snap', packet);
+
+A stale snapshot has no value — the next one is 66 ms behind it. Dropping one
+is strictly better than delivering it late and delaying every snapshot after it.
+
+**Volatile is only safe because every value in this format is ABSOLUTE.**
+"Delta" here means only WHICH FIELDS are sent. encodeEntity pushes
+`s.px, s.py, s.pz`, never a difference from the previous position, so a dropped
+packet costs one sample rather than corrupting the position. Had it ever pushed
+a difference, this design would be wrong and the whole change unsafe.
+
+The one exposure is a field that stops changing immediately after a drop: the
+server believes the client has it and stops sending it. That is what the
+periodic keyframe repairs, and it is why **keyframes stay reliable while deltas
+do not.** KEYFRAME_EVERY 60 -> 30 ticks halves the worst case to 2 s, at about
+5% more outbound.
+
+verify-interp asserts all four halves of that contract, including that
+encodeEntity never pushes a value derived from `prev` — if someone ever
+optimises it into true delta encoding, this gate is what stops volatile from
+silently becoming a corruption bug.
+
+## AND INSTRUMENTATION, BECAUSE I GUESSED ONCE ALREADY
+
+F3 now carries a network panel:
+
+    SNAP  gap p50 67 / p90 71 / max 96 ms   (15Hz = 67)
+    NET   last 12 ms ago   3 remotes   stale 78 ms
+
+Read while a body is frozen in front of you:
+
+  p90 near 67          the stream is healthy; the fault is not the network
+  p90 climbing         the send queue is still backing up
+  STALE large          this IS the bug, quantified, and it NAMES the remote —
+                       all of them stale means the client stopped receiving,
+                       one of them means something specific to that entity
+
+F4 copies the whole readout. One match, one screenshot, and the next answer is
+read rather than reasoned about.
+
+## A MISPLACED FUNCTION, CAUGHT BY A GATE
+
+`netLine()` was inserted before the first `return {` in devhud.js, which is a
+local helper's return, not the module export — so it was scoped inside that
+helper and `netLine is not defined` at the call site. verify-devhud caught it
+immediately. Moved to module scope.
+
+## GATE BOARD
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
+  test.js NOT RUN — needs a live socket.
 # v10.16 - THE BLACK SCREEN: TWO CALLS OUTSIDE THE GUARD THAT WAS BUILT TO STOP IT
 
 Rahul, after v10.15: "u messed the urban map, when we are playing now whole map

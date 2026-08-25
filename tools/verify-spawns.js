@@ -45,7 +45,7 @@ MAPS.forEach(map => {
   /* Both sides must have enough tiles that a full team is not stacked on one.
      The cap is 8 on a small map, so 3 is the floor at which the crowding
      score in spawnFor() has anywhere to move a player to. */
-  const floor = CFG.MAPS[map].smallMap ? 3 : 4;
+  const floor = CFG.isArena(map) ? 3 : 4;
   ok((counts.a || 0) >= floor && (counts.b || 0) >= floor,
     map + ': both sides have at least ' + floor + ' tiles [a:' +
     (counts.a || 0) + ' b:' + (counts.b || 0) + ']');
@@ -80,12 +80,16 @@ MAPS.forEach(map => {
 console.log('\n--- spawn protection is short on the small maps ---');
 /* 2.5 s of untouchable operator is most of the time it takes to cross a 58 m
    map, which is why Rahul read a spawning player as a frozen body. */
+/* v10.21: keyed on isArena, not smallMap. The two were the same flag until the
+   medium tier arrived and needed the arena RULES without the arena SIZE. A gate
+   still testing `smallMap` here would have demanded 2.5 s protection on a map
+   deliberately given 1 s, and reported the intended behaviour as a defect. */
 MAPS.forEach(map => {
   const p = CFG.spawnProtectFor(map);
-  if (CFG.MAPS[map].smallMap) {
-    ok(p <= 1.0, map + ': small map, protection is ' + p + 's');
+  if (CFG.isArena(map)) {
+    ok(p <= 1.0, map + ': arena rules, protection is ' + p + 's');
   } else {
-    ok(p >= 2.0, map + ': full-size map, protection stays ' + p + 's');
+    ok(p >= 2.0, map + ': full-size theatre, protection stays ' + p + 's');
   }
 });
 

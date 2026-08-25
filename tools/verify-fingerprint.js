@@ -45,11 +45,11 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
 
 /* Keep this list identical to index.html — see the v8.9 note in verify-lifts. */
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js",
+ "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js",
  "public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
  "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js",
- "public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/access.js"]
+ "public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/medium.js","public/src/environment/access.js"]
  .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 function fingerprint(map) {
@@ -145,8 +145,14 @@ const BASELINE = {
      wet ground under the lamps — see the head of deco.js for why light rather
      than geometry.
 
-       draws    98 -> 100   (budget 115)
-       tris  92092 -> 94084 (budget 120000)
+       draws    98 -> 100 -> 98 (v10.19 cut the lit windows)
+       tris  92092 -> 94084 -> 92332
+
+     v10.19: the lit windows are GONE. 379 of their 444 panels were floating in
+     open air — the coordinates were typed, never measured, and verify-props
+     was silenced rather than satisfied when it reported them. Urban is back to
+     its pre-v10.12 draw count. The wet ground under the lamps stays: it sits
+     on the road slab, which covers the whole map, so it cannot float.
        casters  62 -> 62    UNCHANGED. There was no headroom and none was taken.
        colliders 3332 -> 3332, colSig IDENTICAL.
 
@@ -154,7 +160,7 @@ const BASELINE = {
      proof this pass moved pixels and nothing else. No cover appeared, no
      sightline closed, no spawn or loot point was invalidated. A visual change
      that alters colSig is not a visual change. */
-  urban: { colliders: 3332, draws: 100, tris: 94084, casters: 62, lights: 7, bound: 100, colSig: 459507278, meshSig: 1332457479 },
+  urban: { colliders: 3332, draws: 98, tris: 92332, casters: 62, lights: 7, bound: 100, colSig: 459507278, meshSig: 1117349927 },
   /* v10.10: rural moved on purpose. The three river-bridge stair pairs climbed
      AWAY from the deck and finished 2.1 m short of it, so all six were
      unclimbable (verify-climb, "reached 0.05m"). Turned around and extended
@@ -167,6 +173,19 @@ const BASELINE = {
   rural: { colliders: 1072, draws: 32, tris: 54683, casters: 22, lights: 3, bound: 150, colSig: 491534987, meshSig: -2029443105 },
   /* v10.10: killhouse. Asserted from its first version so any later edit has to
      justify itself the way rural just did.
+
+     REBUILT IN v10.20 to Rahul's own top-down plan: portrait 40 x 68 m instead
+     of landscape 58 x 34, a partition maze instead of a container yard. Every
+     figure moves because it is a different map, not a modified one:
+
+       colliders 204 -> 184   draws 33 -> 22   tris 12,248 -> 7,192
+       casters    17 ->  10   bound  32 -> 38
+
+     Fewer draws and triangles on 38% more floor, because thin partitions are
+     cheaper than stacked containers. Dead ground came out at 0.1% with a worst
+     gap of 7 m — the best on the roster.
+
+     The v10.10 history below is kept because its two lessons still apply.
 
      MOVED WITHIN v10.10, twice, both deliberate:
        -1 collider / -12 tris  the scatter crate that landed in the west office
@@ -200,12 +219,16 @@ const BASELINE = {
      palette entries already present brought it back to 39. On this axis a new
      MATERIAL is expensive and geometry is nearly free. */
   sunsetrow: { colliders: 182, draws: 39, tris: 5112, casters: 17, lights: 3, bound: 34, colSig: 935596110, meshSig: -384905933 },
-  killhouse: { colliders: 204, draws: 33, tris: 12248, casters: 17, lights: 3, bound: 32, colSig: -270199003, meshSig: -850638274 },
+killhouse: { colliders: 184, draws: 22, tris: 7192, casters: 10, lights: 3, bound: 38, colSig: 947646429, meshSig: -578993764 },
   /* v10.14: the three new small maps, asserted from their first version so any
      later edit has to justify itself. Filled in below from a measured run. */
 freightyard: { colliders: 118, draws: 22, tris: 8184, casters: 13, lights: 3, bound: 21, colSig: 687692594, meshSig: 1215863378 },
 bazaar     : { colliders: 126, draws: 24, tris: 4044, casters: 10, lights: 3, bound: 29, colSig: 501986612, meshSig: -1977644747 },
-substation : { colliders: 137, draws: 21, tris: 6924, casters: 12, lights: 3, bound: 25, colSig: -2141431923, meshSig: 201354676 }
+substation : { colliders: 137, draws: 21, tris: 6924, casters: 12, lights: 3, bound: 25, colSig: -2141431923, meshSig: 201354676 },
+  /* v10.21 MEDIUM TIER, asserted from their first version so any later edit has
+     to justify itself. Filled in from a measured run. */
+  riverside  : { colliders: 189, draws: 25, tris: 5696, casters: 16, lights: 3, bound: 66, colSig: -1855972853, meshSig: -1297675864 },
+  airfield   : { colliders: 126, draws: 25, tris: 4188, casters: 14, lights: 3, bound: 70, colSig: 1231840380, meshSig: -130204069 }
 };
 
 let pass = 0, fail = 0;

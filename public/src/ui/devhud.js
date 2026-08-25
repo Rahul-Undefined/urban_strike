@@ -250,6 +250,41 @@ var DevHUD = (function () {
     return L.join('\n');
   }
 
+  /* ===== v10.17 NETWORK PANEL =====
+
+     Added because v10.15 guessed at the freeze-and-teleport and guessed wrong.
+     The next answer should be READ, not reasoned about.
+
+     How to read it while a body is frozen in front of you:
+
+       SNAP p90 near 67 ms   the stream is healthy. The fault is NOT the
+                             network — look at the client's frame time above.
+       SNAP p90 climbing     the send queue is backing up. That is exactly what
+                             v10.17 made snapshots volatile to prevent; if it
+                             is still climbing, the drop is not taking effect.
+       STALE large           this IS the bug, quantified. It names the remote
+                             whose newest sample is furthest behind, so you can
+                             tell whether one player is stuck or all of them.
+                             ALL of them means your client stopped receiving;
+                             ONE means something specific to that entity.
+
+     F4 copies the whole readout, so a screenshot is not needed. */
+  function netLine() {
+    if (typeof Net === 'undefined' || !Net.netDiag) return 'NET   —';
+    var d;
+    try { d = Net.netDiag(); } catch (e) { return 'NET   unavailable'; }
+    var g = d.gaps
+      ? 'gap p50 ' + d.gaps.p50.toFixed(0) + ' / p90 ' + d.gaps.p90.toFixed(0) +
+        ' / max ' + d.gaps.max.toFixed(0) + ' ms'
+      : 'gap measuring...';
+    var stale = d.worstStale > 250
+      ? '  STALE ' + (d.worstStale / 1000).toFixed(1) + 's (' + d.worstName + ')  <-- THIS IS THE BUG'
+      : '  stale ' + d.worstStale.toFixed(0) + ' ms';
+    return 'SNAP  ' + g + '   (15Hz = 67)\n' +
+           'NET   last ' + d.sinceSnap.toFixed(0) + ' ms ago   ' +
+           d.remotes + ' remotes' + stale;
+  }
+
   return {
     toggle: function () {
       build();
@@ -287,6 +322,8 @@ var DevHUD = (function () {
       last = nowMs;
       text = compose();
       if (text.indexOf('FPS') !== 0) text = frameLine() + '\n' + text;
+      text = text + '\n' + netLine();   // v10.17
+
       el.textContent = text;
     },
     copy: function () {

@@ -61,9 +61,13 @@ module.exports = function initNukeModule(ctx) {
      no killstreak while every other small-map rule applied — the silent kind of
      inconsistency nobody reports because nothing looks broken, it just never
      happens. A third small map now inherits this by setting one flag. */
+  /* v10.21: reads CFG.isArena, which covers small AND medium maps. It was
+     keyed on `smallMap` alone, so a medium map would have inherited every
+     other arena rule and silently not the killstreak — the same shape of gap
+     that keying on a map NAME produced in v10.12. */
   function isSmallMap(room) {
     const m = room && room.settings && room.settings.map;
-    return !!(m && CFG.MAPS[m] && CFG.MAPS[m].smallMap);
+    return !!(m && CFG.isArena && CFG.isArena(m));
   }
 
   /* Called from combat.js after a kill is credited. `attacker.streak` already

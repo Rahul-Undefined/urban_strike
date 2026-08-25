@@ -120,7 +120,9 @@ const BASELINE = {
    deliberate geometry change from a leak. */
 /* ===== BASELINE RE-RECORDED FOR v10.10 — a decision, not a convenience =====
 
-   URBAN: the visual pass in deco.js. draws 98 -> 100, tris 92092 -> 94084.
+   URBAN: v10.19 CUT the lit windows the v10.12 pass added — 379 of their 444
+   panels were floating in open air on typed coordinates. draws are back to 98
+   and tris to 92,332, i.e. essentially the pre-v10.12 map.
    `colliders` and `sum` are BYTE-IDENTICAL and casters is still 62. That is
    the whole argument for re-recording: the collision hash did not move, so
    nothing about how this map plays has changed. Lit windows and wet ground go
@@ -131,7 +133,7 @@ const BASELINE = {
    given a third tread to land flush on 0.86. colliders 1066 -> 1072 is exactly
    six flights gaining one tread; `sum` moves because tread positions moved.
    Unlike urban, this one IS a gameplay change, and a deliberate one. */
-  urban: {"colliders":3332,"sum":2336906291,"draws":100,"tris":94084,"casters":62,"lights":7,"minimap":236,"bound":100},
+urban: {"colliders":3332,"sum":2336906291,"draws":98,"tris":92332,"casters":62,"lights":7,"minimap":236,"bound":100},
   rural: {"colliders":1072,"sum":3781973245,"draws":32,"tris":54683,"casters":22,"lights":3,"minimap":210,"bound":150},
   urbanData: {"loot":363,"spawns":44,"airdrops":10},
   ruralData: {"loot":164,"spawns":50,"airdrops":12},

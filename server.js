@@ -45,6 +45,8 @@ function mapData(room) {
   if (m === 'freightyard' && CFG.MAPS_FREIGHTYARD) return CFG.MAPS_FREIGHTYARD; // v10.14
   if (m === 'bazaar' && CFG.MAPS_BAZAAR) return CFG.MAPS_BAZAAR;               // v10.14
   if (m === 'substation' && CFG.MAPS_SUBSTATION) return CFG.MAPS_SUBSTATION;   // v10.14
+  if (m === 'riverside' && CFG.MAPS_RIVERSIDE) return CFG.MAPS_RIVERSIDE;      // v10.21
+  if (m === 'airfield' && CFG.MAPS_AIRFIELD) return CFG.MAPS_AIRFIELD;         // v10.21
   if (m === 'sunsetrow' && CFG.MAPS_SUNSETROW) return CFG.MAPS_SUNSETROW;   // v10.12
   return { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points };
 }
@@ -250,7 +252,12 @@ const SnapCodec = require('./public/src/networking/snapcodec.js');
 /* A keyframe every 60 ticks (4 s at 15 Hz). Deltas are exact over an ordered,
    reliable transport, so this is a bound on the damage any future bug can do
    rather than a correctness requirement. */
-const KEYFRAME_EVERY = 60;
+/* v10.17: 60 -> 30 ticks (4 s -> 2 s). Deltas are volatile now, so a keyframe
+   is no longer just insurance against a hypothetical bug — it is the mechanism
+   that repairs a genuinely dropped packet. Halving the interval halves the
+   worst case, and a keyframe is roughly 3x a delta, so at 15 Hz this costs
+   about 5% more outbound. Cheap for the guarantee it buys. */
+const KEYFRAME_EVERY = 30;
 /* v9.11: how long a seat is held for a dropped player. Long enough for a phone
    changing towers or a laptop resuming from sleep; short enough that a genuine
    quitter does not hold a slot for a whole round. */
@@ -639,7 +646,54 @@ function startSnapshots(room) {
        — and the client never read it: the interpolation buffer timestamps
        arrivals with its own performance.now(), and the clock offset comes from
        matchStart. Eighteen bytes a tick for a field nothing consumed. */
-    io.to(room.code).emit('snap', packet);
+    /* ===== v10.17 - SNAPSHOTS ARE VOLATILE. KEYFRAMES ARE NOT. =====
+
+       THE BUG THIS FIXES, and why the v10.15 attempt missed it.
+
+       Rahul: "there is lag AFTER A CERTAIN TIME in the game where the avatar
+       seems standing without moving but the player is playing... usko goli
+       maarne se bhi nahi marta... achanak se active hota h aur dusre jagah aa
+       jata h."
+
+       v10.15 read that as network jitter and widened the interpolation buffer.
+       It did not fix it, and the reason is in his own words: AFTER A CERTAIN
+       TIME. Jitter is not time-correlated. Something that grows over a match
+       is.
+
+       Everything else was checked and is sound: every live entity is encoded
+       every tick (above), the codec diffs correctly, keyframes fire every 60
+       ticks, and the client buffers every entity it receives. So the packets
+       were not arriving on time — and the thing that grows is the SOCKET SEND
+       QUEUE.
+
+       This loop emits 15 times a second unconditionally. If a client's downlink
+       cannot keep up, engine.io does not drop anything: it QUEUES. The queue
+       grows, every snapshot arrives progressively later, and the remote bodies
+       that client renders fall further and further behind where the server
+       says they are. Shots at them are refused by the 4 m plausibility check —
+       "goli maarne se bhi nahi marta". Then the queue drains and everything
+       catches up at once, which is the teleport.
+
+       WHY VOLATILE IS SAFE HERE, WHICH IS THE PART THAT MATTERS.
+
+       "Delta" in this format means only WHICH FIELDS are sent. Every value is
+       ABSOLUTE — encodeEntity pushes `s.px, s.py, s.pz`, never a difference
+       from the previous position. So a dropped packet costs one sample, not a
+       diverging position. The next packet in which a field changes carries its
+       full current value.
+
+       The one exposure is a field that stops changing immediately after a drop:
+       the server believes the client has it and stops sending it. That is what
+       the periodic keyframe is for, and it is why the keyframe itself must
+       stay RELIABLE while the deltas do not. Worst case is one keyframe
+       interval of staleness on one field, which is bounded and self-healing —
+       against a queue that was bounded by nothing.
+
+       A stale snapshot has no value. The next one is 66 ms behind it. Dropping
+       one is strictly better than delivering it late and delaying every
+       snapshot after it. */
+    if (keyframe) io.to(room.code).emit('snap', packet);
+    else io.to(room.code).volatile.emit('snap', packet);
     if (NETSTATS) netstat(room, packet);
     return;
   }, 1000 / CFG.NET.snapRate);

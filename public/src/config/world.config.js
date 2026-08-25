@@ -197,12 +197,22 @@
      everywhere rather than touching CFG.MATCH.spawnProtect directly, so a
      sixth small map inherits the shorter timer by carrying `smallMap` and
      nothing else. */
+  /* v10.21: `arena` is the RULE SET — nuke killstreak, short spawn protection,
+     recon visor in the crate pool. `smallMap` is a SIZE classifier and always
+     implies it. They were the same flag until medium maps arrived and needed
+     the rules without the size, which is the point at which a flag named after
+     one of its two meanings stops being usable. */
+  function isArena(mapId) {
+    var m = MAPS[mapId];
+    return !!(m && (m.arena || m.smallMap));
+  }
+
   function spawnProtectFor(mapId) {
     var m = MAPS[mapId];
     var G = (typeof MATCH !== 'undefined') ? MATCH : null;
     var base = G ? G.spawnProtect : 2.5;
     var small = G && G.spawnProtectSmall !== undefined ? G.spawnProtectSmall : 1.0;
-    return (m && m.smallMap) ? small : base;
+    return isArena(mapId) ? small : base;
   }
 
   function backfillAllowed(modeId) {
@@ -292,7 +302,11 @@
        `maxPlayers` caps EVERY mode on this map at 8 regardless of what the mode
        table allows: 15 operators in this footprint is not a fight. Read by the
        lobby alongside the mode cap, lower of the two wins. */
-    killhouse: { label: 'Killhouse', ready: true, bound: 32, maxPlayers: 8, indoor: true, smallMap: true },
+    /* v10.20: rebuilt to Rahul's plan — PORTRAIT, 40 x 68 m. bound 38 puts the
+       out-of-bounds ring just outside the 34 m end walls. maxPlayers 10 rather
+       than 8: the old landscape map was 58 x 34 and this one has nearly twice
+       the floor, so it carries two more without becoming a blender. */
+    killhouse: { label: 'Killhouse', ready: true, bound: 38, maxPlayers: 10, indoor: true, smallMap: true },
     /* v10.12 SUNSET ROW. Two houses across a street, 64 x 40 m. Same rule set
        as killhouse — 8 players, nuke killstreak, visor in the crate pool, no
        sniper or RPG on the floor — but a different SHAPE: rooms and a street
@@ -308,6 +322,12 @@
     freightyard: { label: 'Freightyard', ready: true, bound: 21, maxPlayers: 8, smallMap: true },
     bazaar:      { label: 'Bazaar',      ready: true, bound: 29, maxPlayers: 8, smallMap: true },
     substation:  { label: 'Substation',  ready: true, bound: 25, maxPlayers: 8, smallMap: true },
+    /* v10.21 MEDIUM TIER. `arena: true` without `smallMap` — they carry the
+       arena RULES (nuke killstreak, 1 s spawn protection, crate visor) at a
+       size where a sniper is a real weapon rather than a liability. Twelve
+       players: between the arenas' 8-10 and the theatres' 15. */
+    riverside:   { label: 'Riverside',   ready: true, bound: 66, maxPlayers: 12, arena: true },
+    airfield:    { label: 'Airfield',    ready: true, bound: 70, maxPlayers: 12, arena: true },
   };
 
   /* v8.25: alwaysShowPlayers. Rahul asked for player locations on the map and
@@ -331,7 +351,7 @@
   };
 
   return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams,
-    spawnProtectFor: spawnProtectFor,
+    spawnProtectFor: spawnProtectFor, isArena: isArena,
     MODE_CATS: VISIBLE_CATS, ALL_MODE_CATS: MODE_CATS, BOTS_ENABLED: BOTS_ENABLED, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
     botsAllowed: botsAllowed, backfillAllowed: backfillAllowed,
     humanSideOf: humanSideOf, botSideOf: botSideOf,

@@ -75,6 +75,45 @@ var Net = (function () {
      `visible` on a mesh that is already in the scene graph costs nothing —
      there is no allocation and no material change, which matters because the
      materials are shared (v10.9). */
+  /* ===== v10.17 NETWORK DIAGNOSTICS =====
+
+     v10.15 guessed at the freeze-and-teleport and guessed wrong. This exists so
+     the next answer is read off the screen instead of reasoned about.
+
+     `snapGaps` is a ring of arrival intervals. At snapRate 15 the expected gap
+     is 66.7 ms. If p90 is near 66 the stream is healthy and the fault is
+     elsewhere; if p90 is climbing while the match runs, that is the send queue
+     backing up, which is what v10.17 made volatile to prevent. */
+  var SG = 90, snapGaps = new Float32Array(SG), sgAt = 0, sgSeen = 0, sgLast = 0;
+  function noteSnapArrival(t) {
+    if (sgLast) {
+      var d = t - sgLast;
+      if (d > 0 && d < 5000) { snapGaps[sgAt++ % SG] = d; if (sgSeen < SG) sgSeen++; }
+    }
+    sgLast = t;
+  }
+  /* What the dev HUD reads. `worstStale` is the number that matters: how far
+     behind the newest sample of the most out-of-date remote is. A frozen body
+     IS a large worstStale, so this turns an invisible bug into a number. */
+  function netDiag() {
+    var t = performance.now();
+    var gaps = null;
+    if (sgSeen > 8) {
+      var a = Array.prototype.slice.call(snapGaps, 0, sgSeen).sort(function (x, y) { return x - y; });
+      gaps = { p50: a[(a.length * 0.5) | 0], p90: a[(a.length * 0.9) | 0], max: a[a.length - 1] };
+    }
+    var worst = 0, worstName = '', n = 0;
+    for (var id in remotes) {
+      var r = remotes[id];
+      if (!r || !r.buf || !r.buf.length) continue;
+      n++;
+      var age = t - r.buf[r.buf.length - 1].t;
+      if (age > worst) { worst = age; worstName = r.name || id; }
+    }
+    return { gaps: gaps, sinceSnap: sgLast ? t - sgLast : 0,
+             worstStale: worst, worstName: worstName, remotes: n };
+  }
+
   var visorOn = false;
   function setVisor(on) {
     visorOn = !!on;
@@ -171,6 +210,7 @@ var Net = (function () {
            mid-match is never decoding against an empty cache. */
     s.on('snap', function (d) {
       var tLocal = performance.now();
+      noteSnapArrival(tLocal);          // v10.17: measured, not assumed
       if (d.tk !== undefined) teamKills = d.tk || {};
       Pickups.droneSync(d.dr);          // undefined when none are airborne
       if (!d.e) return;
@@ -810,6 +850,7 @@ var Net = (function () {
     getMyTeam: function () { return myTeam; },
     getTeamKills: function () { return teamKills; },
     isAlly: function (id) { var r = remotes[id]; return !!(myTeam && r && r.team === myTeam); },
+    netDiag: netDiag,                 // v10.17 — read by the F3 panel
     setVisor: setVisor,               // v10.10 recon visor
     visorActive: visorActive,
     /* v10.10: the client asks for a strike; the server decides whether it is

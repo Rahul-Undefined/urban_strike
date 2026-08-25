@@ -254,6 +254,44 @@ console.log('        congested wifi: fixed ' + cwNow.frozenPct.toFixed(1) +
 ok(cwAdapt.frozenPct <= cwNow.frozenPct + 0.1,
   'adaptive is no longer meaningfully better than the shipped fixed buffer');
 
+console.log('\n--- v10.17: the snapshot stream cannot queue without bound ---');
+{
+  const fs3 = require('fs'), path3 = require('path');
+  const srv = fs3.readFileSync(path3.join(__dirname, '..', 'server.js'), 'utf8');
+  const netjs = fs3.readFileSync(path3.join(__dirname, '..', 'public/src/networking/net.js'), 'utf8');
+  const codec = fs3.readFileSync(path3.join(__dirname, '..', 'public/src/networking/snapcodec.js'), 'utf8');
+
+  /* THE RULE: a delta may be dropped, a keyframe may not. Dropping deltas is
+     what stops the send queue growing on a slow link; keeping keyframes
+     reliable is what repairs whatever a drop cost. Both halves are required —
+     volatile keyframes would make a dropped packet permanent. */
+  ok(/volatile\.emit\('snap'/.test(srv), 'deltas are emitted volatile');
+  const kfLine = srv.slice(srv.indexOf("if (keyframe) io.to(room.code)"), srv.indexOf("if (keyframe) io.to(room.code)") + 120);
+  ok(/if \(keyframe\) io\.to\(room\.code\)\.emit/.test(kfLine),
+    'and keyframes are emitted RELIABLY, which is what repairs a dropped delta');
+
+  /* Volatile is only safe because every field is absolute. If encodeEntity ever
+     pushed a difference from the previous value, one dropped packet would
+     corrupt the position permanently and this whole design would be wrong. */
+  const enc = codec.slice(codec.indexOf('function encodeEntity'), codec.indexOf('function decodeEntity'));
+  ok(!/out\.push\([^)]*prev\./.test(enc),
+    'encodeEntity pushes ABSOLUTE values, never a difference from prev — this is what makes dropping safe');
+  ok(/out\.push\(s\.px, s\.py, s\.pz\)/.test(enc),
+    'position specifically is sent absolute');
+
+  const kf = /const KEYFRAME_EVERY = (\d+)/.exec(srv);
+  ok(kf && +kf[1] <= 30,
+    'the keyframe interval is short enough to bound a dropped delta [' +
+    (kf ? kf[1] : '?') + ' ticks = ' + (kf ? (+kf[1] / 15).toFixed(1) : '?') + 's]');
+
+  /* The instrumentation. v10.15 guessed and was wrong; the next answer must be
+     readable off the screen. */
+  ok(/function netDiag\(/.test(netjs) && /netDiag: netDiag/.test(netjs),
+    'net.js exposes arrival timing and per-remote staleness');
+  ok(/noteSnapArrival\(tLocal\)/.test(netjs),
+    'and records an arrival timestamp for every snapshot received');
+}
+
 console.log('\n--- v10.16: updateRemotes survives every buffer shape ---');
 /* The v10.15 catch-up reads buf[buf.length - 1] and splices. If any buffer
    shape can make it throw, it throws EVERY FRAME — and until v10.16 that

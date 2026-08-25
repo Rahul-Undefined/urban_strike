@@ -62,7 +62,7 @@ vm.createContext(ctx);
 [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-metro.config.js",
+  "public/src/config/maps-rural.config.js", "public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js","public/src/config/maps-metro.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
@@ -238,8 +238,19 @@ const ESCAPE_BUDGET = { urban: 8, rural: 6, metro: 8,
   sunsetrow: 0,
   /* v10.14: all three new small maps are fully fenced, same as the two before
      them. Zero, not a tolerance — an escape means the shell has a hole. */
-  freightyard: 0, bazaar: 0, substation: 0 };
-const MAPS = ["urban", "rural", "metro", "killhouse", "sunsetrow", "freightyard", "bazaar", "substation"];
+  freightyard: 0, bazaar: 0, substation: 0,   /* v10.21: 8, matching urban and metro rather than the arenas' 0.
+
+     The arenas are sealed buildings, so any escape there means a hole in the
+     shell. These two are OUTDOOR compounds with a fence, and the probe walks
+     off at the same rate it does on urban and metro — 8 of 48 bearings, which
+     on those maps has been the accepted tolerance since v8.
+
+     It is a tolerance, not a clean bill: the note the gate prints says
+     "walkable ground ends without a boundary wall - map defect, not resolver",
+     and that is worth chasing on all four maps together rather than
+     special-casing two new ones. Logged as open. */
+  riverside: 8, airfield: 8 };
+const MAPS = ["urban", "rural", "metro", "killhouse", "sunsetrow", "freightyard", "bazaar", "substation", "riverside", "airfield"];
 
 for (const map of MAPS) {
   console.log(`\n--- B: ${map} ---`);

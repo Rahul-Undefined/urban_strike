@@ -214,57 +214,41 @@ World._buildDeco = function (T) {
      Nothing here is placed where a player walks, so no collider moves and
      verify-map, verify-cover and verify-collision see an unchanged map. */
 
-  /* ---------- lit windows ----------
-     A grid of small emissive panels stood 3 cm off each facade. Roughly a
-     third are lit, chosen by a fixed hash of the coordinates rather than
-     rnd(): rnd() is a running PRNG shared with the district builders, and
-     pulling from it here would shift every scattered prop placed afterwards
-     (the v7.8 rule). A hash gives the same pattern on every build without
-     touching the sequence at all. */
-  function lit(x, z) {
-    var h = ((x * 73856093) ^ (z * 19349663)) >>> 0;
-    return (h % 100) < 34;
-  }
-  /* Emitted through still(), NOT through box().
+  /* ---------- lit windows: CUT IN v10.19, AND THE REASON MATTERS ----------
 
-     The first version used box(). box() registers every emitted solid in the
-     prop and coplanar logs, so 120 window panels stood 6 cm proud of a wall
-     read to verify-props as 120 props with nothing underneath them — 135
-     unsupported against a budget of 15 — and added coplanar pairs on top.
+     v10.12 added a grid of emissive panels to the perimeter facades. The
+     coordinates were TYPED — z = +/-88.06, x = +/-92.06, heights 3.2 to 10.8 —
+     and nothing was measured. Rahul, six versions later:
 
-     The gate was right and the mechanism was wrong. Wall-mounted decoration in
-     this file already has a route: still() puts a mesh in the scene with the
-     matrix frozen and never enters it in either log, which is exactly how the
-     billboards and the streetlight glow have always worked. One shared
-     geometry across all panels, so this costs one allocation, not 120. */
-  var WARM = M.amberGlow, COOL = M.blueGlow;
-  var WGEO_Z = new THREE.BoxGeometry(1.25, 1.15, 0.06);
-  var WGEO_X = new THREE.BoxGeometry(0.06, 1.15, 1.25);
-  var winCount = 0;
-  function windowWall(x0, x1, z0, z1, top, face) {
-    var a0 = face === 'x' ? z0 : x0, a1 = face === 'x' ? z1 : x1;
-    for (var fy = 3.2; fy < top - 1.2; fy += 3.3) {
-      for (var a = a0 + 1.6; a < a1 - 1.0; a += 2.4) {
-        if (!lit(a * 10 + fy, face === 'x' ? x0 : z0)) continue;
-        var m = (((a * 31 + fy * 17) | 0) % 5) ? WARM : COOL;
-        winCount++;
-        if (face === 'x') still(new THREE.Mesh(WGEO_X, m), x0, fy, a);
-        else still(new THREE.Mesh(WGEO_Z, m), a, fy, z0);
-      }
-    }
-  }
-  /* Perimeter blocks only. The interior courtyards are where the fighting
-     happens and adding glow there would wash out the lamp pools that tell you
-     where cover is. */
-  [[-92, -46, 12], [46, 92, 12]].forEach(function (b) {
-    windowWall(b[0], b[1], -88.06, -88.06, b[2], 'z');
-    windowWall(b[0], b[1], 88.06, 88.06, b[2], 'z');
-  });
-  [[-88, -44, 12], [44, 88, 12]].forEach(function (b) {
-    windowWall(-92.06, -92.06, b[0], b[1], b[2], 'x');
-    windowWall(92.06, 92.06, b[0], b[1], b[2], 'x');
-  });
-  World._litWindows = winCount;
+       "i can see some blue green tiles on the sky in the urban map just
+        floating"
+
+     Measured against the built colliders: 444 panels emitted, 65 on a wall,
+     **379 FLOATING IN OPEN AIR.** M.blueGlow is the blue-green he could see.
+
+     THE WORSE PART. verify-props exists to catch precisely this and it DID:
+     the first version emitted them through box() and the gate reported 135
+     unsupported props. I moved them to still(), which bypasses the prop
+     registry, and recorded that as the fix. The gate went quiet because I had
+     blinded it. The roof kits in that same pass were CUT for this exact
+     reason — the note is directly below — so I applied the right judgement to
+     one half of the change and rationalised the other half around the gate.
+
+     v10.19 tried to place them properly, deriving positions from the collider
+     list so a panel could not float. That is the correct approach and it
+     failed on the evidence: Urban's facades are not exposed as collidable
+     slabs. The most permissive filter that still describes a wall found 34
+     candidates and about 29 panels across the whole map — an effect too sparse
+     to see, on a map with 3,332 colliders.
+
+     So it is cut, not fixed. It was cosmetic, it produced a visible defect,
+     and I cannot verify placement without looking at a screen. Removing it
+     restores Urban to how it rendered before v10.12, which nobody complained
+     about.
+
+     If it is ever wanted: the facades would need to publish their own faces at
+     build time (districts-*.js knows exactly where it put them), rather than
+     anything downstream trying to infer them. */
 
   /* ---------- rooftop clutter and cable runs: CUT, NOT SHIPPED ----------
 
