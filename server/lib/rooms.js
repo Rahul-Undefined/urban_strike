@@ -105,7 +105,23 @@ function addPlayer(room, socket, name) {
 }
 
 // Team assignment (alternating by join order = automatic balancing) + colors.
-function refreshTeamsAndColors(room) {
+/* v10.22 `preserve`: fill in only players who have no valid side, leaving every
+   settled assignment alone.
+
+   Rahul: "player A is in team 1 but in the game sometimes player A is added in
+   team 2, this doesn't happen everytime but it does happen most of the time."
+
+   startMatch called this with no argument, so it re-ran the join-order
+   round-robin over every unlocked player at the moment the match began. A host
+   who pressed Shuffle saw the shuffled teams in the lobby — shuffleTeams sets
+   teamLocked = false — and then watched them silently revert to join order on
+   the first frame of play.
+
+   Two changes together: shuffleTeams now LOCKS what it assigns, because a
+   deliberate arrangement is deliberate however it was produced; and startMatch
+   passes preserve = true, because by then the lobby is authoritative and
+   re-running the balancer can only disagree with what the players just saw. */
+function refreshTeamsAndColors(room, preserve) {
   const list = [...room.players.values()].sort((a, b) => a.joinOrder - b.joinOrder);
   const teams = modeInfo(room).teams;
   /* v8.27: `teamLocked` is set when the host places somebody by hand. The
@@ -136,6 +152,13 @@ function refreshTeamsAndColors(room) {
   let autoIdx = 0;
   list.forEach((p, i) => {
     if (teams) {
+      /* v10.22: in preserve mode any side the current mode fields is kept,
+         locked or not. Only a player with no team, or one stranded on a side
+         this mode does not field, is reassigned. */
+      if (preserve && ids.indexOf(p.team) >= 0) {
+        p.color = CFG.TEAMS[p.team].color;
+        return;
+      }
       if (p.teamLocked && ids.indexOf(p.team) >= 0) {
         p.color = CFG.TEAMS[p.team].color;
         return;

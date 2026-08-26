@@ -1,3 +1,112 @@
+# v10.22 - SEVEN, AND THREE OF THEM WERE THE SAME MISTAKE IN DIFFERENT CLOTHES
+
+## 1. THE NUKE RE-ARMED ON EVERY KILL AFTER THE FIFTH
+
+"player can use it unlimited time by pressing N and whole map is compromised."
+
+    if ((attacker.streak | 0) < REQ_STREAK) return;
+
+Spending a nuke cleared `nukeArmed` and left `streak` at five. So the next kill
+re-armed it, and the one after that, for as long as the player stayed alive. A
+twelve-kill run produced eight nukes.
+
+`nukeBase` now records the streak at which the last one was earned; the next
+needs five BEYOND it. Cleared on death alongside the streak reset combat.js
+already does, so five fresh kills after dying still earn one rather than ten.
+
+verify-nuke: twelve kills without dying award exactly 2.
+
+## 2 + 3. THE STAGING PANEL WAS A SECOND SOURCE OF TRUTH
+
+"if we use killhouse map in staging area but change it in the next slide... it
+will still play the killhouse. I want it this way but make the next slide just
+for show."
+
+He described the bug and prescribed the fix in one sentence. The create screen
+wrote the room settings and the lobby panel re-wrote them, and the two
+disagreed because the match had already been staged from the first. Rather than
+make the second one work, it stops pretending to be editable — MODE, SETUP, MAP
+and DURATION are readouts now, and nothing in that panel can emit a settings
+change. There is no second source left to drift.
+
+KILLS is gone entirely, from both screens. Every mode is unlimited and the
+clock ends the match; a selector whose only sane value is "unlimited" is a
+question with one answer.
+
+## 4. THE LOBBY SHOWED ONE SET OF TEAMS AND THE MATCH USED ANOTHER
+
+"player A is in team 1 but in the game sometimes player A is added in team 2."
+
+`shuffleTeams` set `teamLocked = false` on everyone it moved. `startMatch` then
+called `refreshTeamsAndColors(room)` with no arguments, which re-ran the
+join-order round-robin over every unlocked player — so a host who pressed
+Shuffle watched the arrangement they had just seen silently revert on the first
+frame of play. "Most of the time" is exactly right: it happened whenever
+shuffle had been used.
+
+Two changes, both needed. A shuffle now LOCKS what it assigns, because a
+deliberate arrangement is deliberate however it was produced. And startMatch
+passes `preserve = true`, so the balancer only fills in players with no valid
+side — by then the lobby is authoritative and re-running it can only disagree
+with what the players just read.
+
+## 6. AN ANGLED WALL COLLIDED AS ITS BOUNDING BOX
+
+"in the middle of the killhouse map there is a bug that treats the area as a
+wall but it doesn't show and player can't pass."
+
+Measured. PLAN row 16 is a 10 m partition at 0.52 rad. Rotated, its AABB is
+**8.8 x 5.2 m** — an invisible block that size, in the middle of the map, while
+the visible wall was a thin diagonal line. All four angled rows did it.
+
+The handoff names this exactly: "a rotated box collides through its AABB, which
+is not its shape." I wrote four rotated walls anyway.
+
+The visual stays one rotated box with collision off; the collision becomes a
+chain of short axis-aligned colliders stepped along the centreline at half the
+wall thickness, so they overlap and the union follows the diagonal. Largest
+blocking collider in the middle band is now 8 x 4.2 — the solid block at row 4,
+which is genuinely that size and visible.
+
+colliders 184 -> 666. draws, tris and meshSig UNCHANGED, which is the tell that
+nothing about the appearance moved.
+
+## 7. THE SERVER REFILLED THE MINES AND NEVER TOLD ANYONE
+
+"mines and all are coming when spawned but not everytime, after a certain spawn
+it is not showing."
+
+v10.15 refilled `p.mines` in spawnPlayer and the server was right from then on.
+But the client keeps its own mirror — `mineCount` in system.js — set once at
+match start and on a loot grant, never on respawn. So after the first death the
+HUD and the server disagreed for the rest of the match, and system.js refused
+to place a mine the server would have allowed.
+
+The `spawn` message now carries `mines` and `visor`, and net.js adopts them for
+the local player. A mirror that is only ever initialised is not a mirror.
+
+## 5. THE BLACK SCREEN, AND WHY THIS ENTRY FOUND TWO MORE OF THEM
+
+Making the staging panel read-only DELETED elements that code still referenced:
+
+    els['lobby-mode'].value              inside pushSettings
+    els['lobby-time'].addEventListener   unguarded, during UI init
+
+Both are TypeErrors on null. The second one throws during initialisation, which
+means nothing renders at all — the black screen, created by the fix for a
+different bug, in the same session.
+
+verify-endscreen caught it because it is the only gate that EXECUTES UI code
+rather than reading it. verify-scope caught a third: a `kf` variable left
+behind when the KILLS field was removed.
+
+Map and mode are echoed from the last lobby payload now, and every listener on
+a possibly-absent element is guarded. **Three of today's seven bugs were the
+same mistake: code still reaching for something that had been removed.**
+
+## GATE BOARD
+
+  Unchanged reds: verify-access 55/1, verify-arch 4/2, verify-climb 1/2.
 # v10.21 - A MEDIUM TIER, AND A FLAG THAT WAS NAMED AFTER HALF OF WHAT IT DID
 
 Rahul: "can u add few more medium sized maps as well with same game dynamics

@@ -76,7 +76,22 @@ module.exports = function initNukeModule(ctx) {
   function onKill(room, attacker) {
     if (!isSmallMap(room) || !attacker || attacker.bot) return;
     if (attacker.nukeArmed) return;                    // one at a time
-    if ((attacker.streak | 0) < REQ_STREAK) return;
+    /* ===== v10.22 - A SPENT NUKE NEEDS A FRESH FIVE, NOT THE SAME FIVE =====
+
+       Rahul: "the nuke when activated player can use it unlimited time by
+       pressing N and whole map is compromised."
+
+       The guard was `streak < REQ_STREAK`. Spending a nuke cleared `nukeArmed`
+       but left `streak` at 5 or more — so the VERY NEXT KILL re-armed it, and
+       the one after that, for as long as the player stayed alive. A ten-kill
+       run produced six nukes.
+
+       `nukeBase` records the streak at which the last one was earned, so the
+       next award needs REQ_STREAK kills BEYOND it. Cleared on death by
+       clearArmed, alongside the streak reset combat.js already does. */
+    var base = attacker.nukeBase | 0;
+    if ((attacker.streak | 0) - base < REQ_STREAK) return;
+    attacker.nukeBase = attacker.streak | 0;
     attacker.nukeArmed = true;
     io.to(attacker.id).emit('nukeReady', {
       radius: RADIUS, duration: DURATION, streak: attacker.streak
@@ -86,6 +101,11 @@ module.exports = function initNukeModule(ctx) {
   /* Called from combat.js when a player dies, and from the disconnect path.
      Silent when nothing was armed so it is safe to call unconditionally. */
   function clearArmed(room, p, reason) {
+    /* v10.22: the base resets even when nothing was armed — dying always
+       restarts the count, and combat.js has already zeroed `streak` by the
+       time this runs. Leaving a stale base would make the next nuke need ten
+       kills instead of five. */
+    if (p) p.nukeBase = 0;
     if (!p || !p.nukeArmed) return;
     p.nukeArmed = false;
     io.to(p.id).emit('nukeLost', { reason: reason || 'died' });

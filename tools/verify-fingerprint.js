@@ -174,6 +174,15 @@ const BASELINE = {
   /* v10.10: killhouse. Asserted from its first version so any later edit has to
      justify itself the way rural just did.
 
+     v10.22: colliders 184 -> 666 and colSig moves; draws, tris and meshSig are
+     UNCHANGED, which is the tell that nothing about the map's APPEARANCE
+     changed. The four angled partitions used to collide through their bounding
+     boxes — a 10 m wall at 0.52 rad blocked an 8.8 x 5.2 m rectangle while
+     showing a thin diagonal line, which is the invisible wall Rahul walked
+     into. Each now emits a chain of short axis-aligned colliders along its
+     centreline, so the collision follows the wall. +482 colliders is the cost
+     of that chain and it is the correct price.
+
      REBUILT IN v10.20 to Rahul's own top-down plan: portrait 40 x 68 m instead
      of landscape 58 x 34, a partition maze instead of a container yard. Every
      figure moves because it is a different map, not a modified one:
@@ -219,7 +228,7 @@ const BASELINE = {
      palette entries already present brought it back to 39. On this axis a new
      MATERIAL is expensive and geometry is nearly free. */
   sunsetrow: { colliders: 182, draws: 39, tris: 5112, casters: 17, lights: 3, bound: 34, colSig: 935596110, meshSig: -384905933 },
-killhouse: { colliders: 184, draws: 22, tris: 7192, casters: 10, lights: 3, bound: 38, colSig: 947646429, meshSig: -578993764 },
+killhouse: { colliders: 666, draws: 22, tris: 7192, casters: 10, lights: 3, bound: 38, colSig: -1221252213, meshSig: -578993764 },
   /* v10.14: the three new small maps, asserted from their first version so any
      later edit has to justify itself. Filled in below from a measured run. */
 freightyard: { colliders: 118, draws: 22, tris: 8184, casters: 13, lights: 3, bound: 21, colSig: 687692594, meshSig: 1215863378 },

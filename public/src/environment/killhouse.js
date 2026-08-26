@@ -44,6 +44,7 @@
 
   World._buildKillhouse = function (T) {
     var seg = T.seg, box = T.box, cyl = T.cyl, M = T.M, rnd = T.rnd;
+    var addCollider = T.addCollider;
 
     var HX = 20, HZ = 34, WALL_H = 9.0, PART_H = 2.4, TH = 0.30;
     var NCAST = { cast: false };
@@ -143,9 +144,40 @@
     /* ============ THE PLAN, BUILT ============ */
     function partition(cx, cz, len, rot) {
       var o = rot ? { rotY: rot } : undefined;
-      /* Breeze block, with a painted band at head height so a wall is legible
-         at a glance in a maze of identical ones. */
-      box(cx, PART_H / 2, cz, len, PART_H, TH, M.plaster, o);
+      /* ===== v10.22 - AN ANGLED WALL COLLIDED AS ITS BOUNDING BOX =====
+
+         Rahul: "in the middle of the killhouse map there is a bug that treats
+         the area as a wall but it doesn't show and player can't pass."
+
+         Measured: PLAN row 16 is a 10 m wall at 0.52 rad. Rotated, its AABB is
+         **8.8 x 5.2 m** — so an 8.8 by 5.2 metre invisible block sat in the
+         middle of the map while the visible wall was a thin diagonal line.
+         All four angled rows did it; row 16 was simply the biggest.
+
+         The handoff names this exactly: "a rotated box collides through its
+         AABB, which is not its shape." I wrote four rotated walls anyway.
+
+         The fix separates the two jobs. The VISUAL stays one rotated box with
+         collision off. The COLLISION becomes a chain of short axis-aligned
+         colliders stepped along the centreline — each one's own AABB is close
+         to its own shape, so the union follows the diagonal instead of
+         swallowing the rectangle around it. Step is half the thickness so the
+         boxes overlap and leave no gap to squeeze through.
+
+         Axis-aligned walls are unaffected: their AABB IS their shape, so they
+         keep the single collider they always had. */
+      if (rot) {
+        box(cx, PART_H / 2, cz, len, PART_H, TH,
+            M.plaster, { rotY: rot, collide: false });
+        var ux = Math.cos(rot), uz = Math.sin(rot);
+        var half = TH / 2, step = TH * 0.5;
+        for (var t = -len / 2; t <= len / 2 + 0.001; t += step) {
+          var px = cx + ux * t, pz = cz + uz * t;
+          addCollider(px - half, 0, pz - half, px + half, PART_H, pz + half);
+        }
+      } else {
+        box(cx, PART_H / 2, cz, len, PART_H, TH, M.plaster, o);
+      }
       box(cx, PART_H - 0.22, cz, len, 0.12, TH + 0.02,
           M.roadPaintY, rot ? { rotY: rot, cast: false, collide: false } : NBOTH);
       /* Exposed steel studs at each end — stops a partition reading as a slab. */

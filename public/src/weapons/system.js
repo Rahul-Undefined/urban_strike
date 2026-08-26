@@ -16,6 +16,15 @@ var Weapons = (function () {
   var recPitch = 0, recYaw = 0;      // exact un-recovered recoil, in radians
   var atts = { sight: null, muzzle: null, mag: null };   // equipped attachments by slot
   var mineCount = 0;                                     // server-authoritative mirror
+  /* v10.22: the mirror needs a way to be REFRESHED, not just initialised. It
+     was set at match start and on a loot grant, and never on respawn — so
+     after the first death the HUD and the server disagreed for the rest of the
+     match, and system.js refused to place a mine the server would have
+     allowed. Called from net.js on every 'spawn' for the local player. */
+  function setMines(n) {
+    mineCount = Math.max(0, n | 0);
+    UI.setGear(mineCount, throwsLeft.molotov);
+  }
   var fires = [];                                        // my molotov burn areas
   var bullets = [];                                      // simulated sniper rounds (travel + drop)
   var zoomFov = null, lastScoped = false;                // sniper wheel-zoom state
@@ -1022,6 +1031,7 @@ var Weapons = (function () {
   }
 
   return {
+    setMines: setMines,
     init: init,
     update: update,
     isReloading: isReloading,   // v7.9: remote players now play a reload pose

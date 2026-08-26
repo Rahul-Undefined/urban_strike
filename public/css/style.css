@@ -891,3 +891,15 @@ select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; p
 /* ---------- buttons with more weight ---------- */
 .btn-primary { box-shadow: 0 0 0 1px var(--amber-deep) inset, 0 6px 26px rgba(255,150,40,0.20); }
 .btn-primary:hover { box-shadow: 0 0 0 1px var(--amber) inset, 0 8px 34px rgba(255,170,60,0.34); }
+
+/* v10.22: read-only fields in the staging panel. MODE, SETUP, MAP and DURATION
+   are decided once on the create screen; this panel reports them. Styled to
+   look deliberately inert — a control-shaped thing that cannot be used is worse
+   than plain text, because it invites the click that does nothing. */
+.field.ro { display: flex; flex-direction: column; gap: 4px; }
+.field.ro > span { font-size: 10px; letter-spacing: 0.16em; color: var(--ink-dim); }
+.field.ro > b {
+  font-family: var(--mono); font-size: 13px; letter-spacing: 0.06em;
+  color: var(--amber); font-weight: 600; padding: 7px 0 6px;
+  border-bottom: 1px solid var(--line);
+}

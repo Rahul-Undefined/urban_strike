@@ -150,9 +150,9 @@
         </label>
       </div>
       <div class="field-row">
-        <label class="field"><span>KILLS TO WIN</span>
-          <select id="create-kills"></select>
-        </label>
+        <!-- v10.22: KILLS TO WIN removed. Every mode is unlimited kills and
+             the clock decides the match; a selector whose only sane value is
+             "unlimited" is a question with one answer. -->
         <label class="field"><span>MATCH DURATION</span>
           <select id="create-time"></select>
         </label>
@@ -236,18 +236,39 @@
       <div class="lobby-col">
         <div class="panel" id="lobby-settings">
           <div class="panel-head">MATCH RULES</div>
-          <div class="field-row">
-            <label class="field"><span>MODE</span><select id="lobby-cat"></select></label>
-            <label class="field" id="lobby-var-field"><span>SETUP</span><select id="lobby-mode"></select></label>
-            <label class="field"><span>MAP</span><select id="lobby-map"></select></label>
+          <!-- v10.22: MODE, SETUP and MAP are chosen ONCE, on the create
+               screen, and this panel only reports them.
+
+               Rahul: "if we use killhouse map in staging area but change it in
+               the next slide to any other, it will still play the killhouse. I
+               want it this way but make the next slide just for show."
+
+               He is describing a real split: the create screen wrote the room
+               settings, this panel re-wrote them, and the two disagreed because
+               the match had already been staged from the first. Rather than
+               make the second one work, it stops pretending to be editable —
+               which is what he asked for and the honest resolution of the two
+               having disagreed at all.
+
+               The selects are replaced by plain readouts. Nothing here can
+               emit a settings change, so there is no second source of truth
+               left to drift. -->
+          <div class="field-row" id="lobby-readout">
+            <div class="field ro"><span>MODE</span><b id="ro-cat">&mdash;</b></div>
+            <div class="field ro"><span>SETUP</span><b id="ro-mode">&mdash;</b></div>
+            <div class="field ro"><span>MAP</span><b id="ro-map">&mdash;</b></div>
           </div>
           <!-- v9.4: a one-line briefing for the mode the host has actually
                chosen, so the staging area opens by saying what this match IS
                rather than presenting the same eight controls to everybody. -->
           <div id="mode-brief" class="mode-brief"></div>
+          <!-- v10.22: the KILLS selector is gone. Rahul: "remove all the kills
+               game like 5 kills 10 kills game mode. There should be default
+               unlimited kills mode only and this option is not needed to show."
+               Every mode is unlimited now and the clock ends the match. -->
           <div class="field-row" id="kills-row">
-            <label class="field"><span id="kills-label">KILLS</span><select id="lobby-kills"></select></label>
-            <label class="field"><span>DURATION</span><select id="lobby-time"></select></label>
+            <div class="field ro"><span>DURATION</span><b id="ro-time">&mdash;</b></div>
+            <div class="field ro"><span>SCORING</span><b>UNLIMITED KILLS</b></div>
           </div>
           <!-- v8.38: bot controls, shown only in Overrun.
                v9.11: backfill. Shown for the human-vs-human modes only.

@@ -478,7 +478,23 @@ function spawnPlayer(room, p) {
   const prot = CFG.spawnProtectFor(room.settings.map || 'urban');
   p.protUntil = now() + prot * 1000;
   p.pos = [s[0], 0.95, s[1]]; p.ry = s[2]; p.history = [];
-  io.to(room.code).emit('spawn', { id: p.id, pos: p.pos, ry: p.ry, prot: prot });
+  /* v10.22: the spawn message now carries the refilled gear.
+
+     Rahul: "mines and all are coming when spawned but not everytime, after a
+     certain spawn it is not showing."
+
+     v10.15 refilled p.mines here on every respawn and the server was right
+     from then on — but the CLIENT keeps its own mirror (`mineCount` in
+     system.js, set once at match start) and nothing ever told it. So the
+     server had five and the HUD had whatever was left when you died, and
+     placing one was refused client-side before the request was even sent.
+
+     Sent to the whole room because `spawn` already is; only the owner reads
+     the gear fields. */
+  io.to(room.code).emit('spawn', {
+    id: p.id, pos: p.pos, ry: p.ry, prot: prot,
+    mines: p.mines | 0, visor: !!p.visor
+  });
 }
 
 // ---------- dynamic loot (server-authoritative) ----------
@@ -501,7 +517,7 @@ function startMatch(room) {
        cosmetic and everyone would still open the match with two. */
     p.drones = 0;
   }
-  refreshTeamsAndColors(room);
+  refreshTeamsAndColors(room, true);   // v10.22: preserve what the lobby showed
   initPickups(room);
   /* v8.38: bots must exist BEFORE the matchStart payload is built, or clients
      receive a roster without them and never render the ones they are fighting. */
@@ -1050,7 +1066,10 @@ io.on('connection', (socket) => {
     const ids = CFG.activeTeams(room.settings.mode);
     list.forEach((p, i) => {
       p.team = ids[i % ids.length];
-      p.teamLocked = false;
+      /* v10.22: LOCKED. A shuffle is a deliberate arrangement and must survive
+         the next join, leave or settings change — and, before v10.22, the
+         balancer that ran again at match start. */
+      p.teamLocked = true;
       p.color = CFG.TEAMS[p.team].color;
     });
     pushLobby(room);

@@ -68,6 +68,41 @@ Object.keys(CFG.MAPS).filter(m => !CFG.isArena(m)).forEach(m => {
   ok(!q.nukeArmed, m + ': is a full-size theatre and gets no killstreak');
 });
 
+console.log('\n--- v10.22: ONE nuke per five kills, not one per kill after five ---');
+{
+  /* The v10.21 guard was `streak < 5`. Spending cleared `nukeArmed` but left
+     the streak at 5, so the next kill re-armed it and the one after that.
+     Rahul: "player can use it unlimited time by pressing N and whole map is
+     compromised." A twelve-kill run must yield exactly two. */
+  const room = mkRoom('killhouse');
+  const p = mkP('N1', 'a', 0, 0);
+  const foe = mkP('N2', 'b', 40, 40, 999999);
+  room.players.set(p.id, p); room.players.set(foe.id, foe);
+  let awarded = 0, spent = 0;
+  for (let k = 1; k <= 12; k++) {
+    p.streak = k;
+    Nuke.onKill(room, p);
+    if (p.nukeArmed) { awarded++; Nuke.requestStrike(room, p, 0, 0); spent++; }
+  }
+  ok(awarded === 2,
+    'twelve kills without dying award exactly 2 nukes [' + awarded + ']');
+  ok(spent === awarded, 'and every award was spendable exactly once');
+  ok(!p.nukeArmed, 'nothing is left armed at the end of the run');
+}
+{
+  /* Dying resets the count: five more kills after a death must earn one, not
+     require ten. */
+  const room = mkRoom('sunsetrow');
+  const p = mkP('N3', 'a', 0, 0);
+  room.players.set(p.id, p);
+  for (let k = 1; k <= 6; k++) { p.streak = k; Nuke.onKill(room, p); }
+  Nuke.requestStrike(room, p, 0, 0);
+  p.streak = 0; Nuke.clearArmed(room, p, 'died');
+  for (let k = 1; k <= 5; k++) { p.streak = k; Nuke.onKill(room, p); }
+  ok(p.nukeArmed === true,
+    'after dying, five fresh kills earn another — the base resets with the streak');
+}
+
 console.log('\n--- dying loses it, which is the whole reward ---');
 sent.length = 0;
 Nuke.clearArmed(room, a, 'died');

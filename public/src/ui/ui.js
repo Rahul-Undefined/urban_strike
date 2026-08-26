@@ -8,10 +8,11 @@ var UI = (function () {
 
   function cache() {
     ['menu-layer', 'hud-layer', 'screen-main', 'screen-create', 'screen-join', 'screen-lobby',
-      'create-name', 'create-mode', 'create-kills', 'create-time', 'btn-create', 'btn-goto-create', 'btn-goto-join',
+      'create-name', 'create-mode', 'create-time', 'btn-create', 'btn-goto-create', 'btn-goto-join',
       'lobby-mode', 'lobby-cat', 'create-cat', 'lobby-var-field', 'create-var-field', 'btn-shuffle', 'lobby-map', 'create-map', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
       'join-name', 'join-code', 'btn-join',
-      'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count', 'lobby-kills', 'lobby-time',
+      'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count', 'lobby-time',
+      'ro-cat', 'ro-mode', 'ro-map', 'ro-time',
       'lobby-team-a', 'lobby-team-b', 'team-name-row', 'lobby-bots', 'lobby-skill', 'bot-row',
       'mode-brief', 'kills-row', 'kills-label', 'backfill-row', 'lobby-backfill', 'lobby-bfskill',
       'lobby-hint', 'btn-start', 'btn-leave',
@@ -94,7 +95,6 @@ var UI = (function () {
     fillSelect(els['create-cat'], catItems(), catOf(M.defaultMode));
     syncVariants(els['create-cat'], els['create-mode'], els['create-var-field'], M.defaultMode);
     fillSelect(els['create-map'], mapItems(), 'urban');
-    fillSelect(els['create-kills'], killItems(), M.defaultKills);
     fillSelect(els['create-time'], timeItems(), M.defaultMinutes);
     var botItems = [];
     for (var bi = 1; bi <= 19; bi++) botItems.push({ v: bi, t: bi + (bi === 1 ? ' bot' : ' bots') });
@@ -110,10 +110,6 @@ var UI = (function () {
     ];
     fillSelect(els['lobby-skill'], skillItems, 'regular');
     fillSelect(els['lobby-bfskill'], skillItems, 'regular');
-    fillSelect(els['lobby-cat'], catItems(), catOf(M.defaultMode));
-    syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], M.defaultMode);
-    fillSelect(els['lobby-map'], mapItems(), 'urban');
-    fillSelect(els['lobby-kills'], killItems(), M.defaultKills);
     fillSelect(els['lobby-time'], timeItems(), M.defaultMinutes);
     /* v10.12: the build number on the menu comes from the same /version the
        cache stamp uses. A hardcoded one on a screen whose whole job is to say
@@ -211,6 +207,7 @@ var UI = (function () {
       }).join('');
   }
   function updateLobby(d, myId) {
+    lastLobby = d;              // v10.22: pushSettings echoes map/mode from here
     renderBoard(d);
     var mode = CFG.MODES[d.settings.mode] || CFG.MODES.ffa;
     els['lobby-code'].textContent = d.code;
@@ -365,16 +362,7 @@ var UI = (function () {
       ' operator' + (notReady === 1 ? '' : 's') + ' to ready up.';
     els['lobby-hint'].textContent = hint;
 
-    els['lobby-mode'].disabled = !isHost;
-    if (els['lobby-map']) els['lobby-map'].disabled = !isHost;
-    els['lobby-kills'].disabled = !isHost;
     els['lobby-time'].disabled = !isHost;
-    els['lobby-mode'].value = d.settings.mode || 'ffa';
-    if (els['lobby-map']) els['lobby-map'].value = d.settings.map || 'urban';
-    if (els['lobby-cat'] && document.activeElement !== els['lobby-cat']) {
-      els['lobby-cat'].value = catOf(d.settings.mode);                       // v8.37
-      syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], d.settings.mode);
-    }
     if (els['btn-shuffle']) {
       els['btn-shuffle'].style.display =
         (isHost && CFG.activeTeams(d.settings.mode).length >= 2) ? '' : 'none';
@@ -408,7 +396,6 @@ var UI = (function () {
       els['lobby-skill'].value = d.settings.botSkill || 'regular';
       els['lobby-skill'].disabled = !isHost;
     }
-    els['lobby-kills'].value = String(d.settings.killTarget);
     /* v8.33: only meaningful in team modes, and only the host may edit. Skip
        writing the value back while the host is mid-typing, otherwise every
        lobby push would yank the caret to the end of the field. */
@@ -472,12 +459,11 @@ var UI = (function () {
        greyed control is still a question. DURATION stays, because a time limit
        is a real backstop in every mode including Last Stand. */
     if (els['kills-row']) {
-      var killsOff = isElim;
-      var kl = els['kills-label'];
-      if (kl) kl.textContent = mBrief.teams && !mBrief.vsBots ? 'TEAM KILLS' : 'KILLS';
-      var kf = els['lobby-kills'] && els['lobby-kills'].closest ? els['lobby-kills'].closest('.field') : null;
-      if (kf) kf.style.display = killsOff ? 'none' : '';
-      els['kills-row'].style.gridTemplateColumns = killsOff ? '1fr' : '1fr 1fr';
+      /* v10.22: the KILLS field and its label are gone — every mode is
+         unlimited — so the show/hide logic around them went with the removal,
+         and `kf` was left behind as an undeclared read. verify-scope caught it.
+         The row now holds two readouts and is always two columns. */
+      els['kills-row'].style.gridTemplateColumns = '1fr 1fr';
     }
     var sidesN = CFG.activeTeams(d.settings.mode).length;
     /* v9.4: and NOT in a vsBots mode. Strike Team fields two sides, so this
@@ -903,6 +889,9 @@ var UI = (function () {
   }
 
   // ---------- settings (pause panel) ----------
+  /* v10.22: the last lobby payload the server sent. pushSettings echoes map
+     and mode from here rather than reading controls that no longer exist. */
+  var lastLobby = null;
   var sensitivity = 1.0;
   function wireSettings() {
     els['sens-range'].addEventListener('input', function () {
@@ -933,7 +922,7 @@ var UI = (function () {
       Net.createRoom(name, {
         mode: els['create-mode'].value,
         map: els['create-map'] ? els['create-map'].value : 'urban',
-        killTarget: parseInt(els['create-kills'].value, 10),
+        killTarget: 0,          // v10.22: unlimited, always
         minutes: parseInt(els['create-time'].value, 10)
       }, function (res) {
         els['btn-create'].disabled = false;
@@ -962,11 +951,18 @@ var UI = (function () {
       toast('Code ' + code + ' copied');
     };
     function pushSettings() {
+      /* v10.22: MAP and MODE are echoed back from the last lobby payload, never
+         read from a control. The staging panel is a readout now — those selects
+         do not exist — and `els['lobby-mode'].value` on a null element is a
+         TypeError inside a settings push, which is the exact shape of fault
+         that blacks the screen. Echoing them keeps the server's updateSettings
+         contract intact without this side owning a value it can no longer see. */
+      var cur = (lastLobby && lastLobby.settings) || {};
       Net.updateSettings({
-        map: els['lobby-map'] ? els['lobby-map'].value : 'urban',
-        mode: els['lobby-mode'].value,
-        killTarget: parseInt(els['lobby-kills'].value, 10),
-        minutes: parseInt(els['lobby-time'].value, 10),
+        map: cur.map || 'urban',
+        mode: cur.mode || 'ffa',
+        killTarget: 0,          // v10.22: unlimited, always
+        minutes: parseInt((els['lobby-time'] && els['lobby-time'].value) || (cur.minutes || 10), 10),
         botCount: parseInt(els['lobby-bots'] ? els['lobby-bots'].value : 0, 10) || 0,
         /* Whichever difficulty select is VISIBLE owns the setting. Reading the
            hidden one would have the Overrun slider silently override a backfill
@@ -981,21 +977,22 @@ var UI = (function () {
         }
       });
     }
-    els['lobby-mode'].addEventListener('change', pushSettings);
-    /* v8.37: changing category rebuilds the setup list, then pushes, so the
-       server never sees a category without a valid mode under it. */
-    if (els['lobby-cat']) els['lobby-cat'].addEventListener('change', function () {
-      syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], els['lobby-mode'].value);
-      pushSettings();
-    });
     if (els['create-cat']) els['create-cat'].addEventListener('change', function () {
       syncVariants(els['create-cat'], els['create-mode'], els['create-var-field'], els['create-mode'].value);
     });
     if (els['btn-shuffle']) els['btn-shuffle'].addEventListener('click', function () {
       Net.shuffleTeams();
     });
-    els['lobby-kills'].addEventListener('change', pushSettings);
-    els['lobby-time'].addEventListener('change', pushSettings);
+    /* v10.22: GUARDED. The staging panel's DURATION select became a readout in
+       this same version and this listener was left pointing at it — an
+       unguarded addEventListener on null, thrown during UI init, which is the
+       exact shape of fault that blacks the screen before anything renders.
+       verify-endscreen caught it by being the only gate that executes UI code.
+
+       Duration is now decided on the create screen like map and mode, so there
+       is nothing here to listen to; the guard is what makes that safe rather
+       than fatal. */
+    if (els['lobby-time']) els['lobby-time'].addEventListener('change', pushSettings);
     if (els['lobby-bots']) els['lobby-bots'].addEventListener('change', pushSettings);
     if (els['lobby-skill']) els['lobby-skill'].addEventListener('change', pushSettings);
     if (els['lobby-bfskill']) els['lobby-bfskill'].addEventListener('change', pushSettings);
