@@ -14,7 +14,7 @@ var UI = (function () {
       'profile-name', 'btn-play', 'btn-howto', 'btn-howto-close', 'howto-overlay',
       'deploy-panel', 'btn-deploy-close', 'btn-create-quick', 'join-code', 'btn-join', 'deploy-hint',
       'reclaim-overlay', 'reclaim-body', 'btn-reclaim-yes', 'btn-reclaim-fresh',
-      'lobby-cat', 'lobby-mode', 'lobby-var-field', 'lobby-map', 'lobby-time',
+      'lobby-cat', 'lobby-mode', 'lobby-var-field', 'lobby-map', 'lobby-time', 'lobby-intel',
       'lobby-summary', 'cfg-role', 'intel-map-name', 'intel-map-meta',
       'btn-shuffle', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
       'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count',
@@ -161,31 +161,53 @@ var UI = (function () {
   function renderBoard(d) {
     var el = els['live-board'];
     if (!el || !d || !d.players) return;
-    var rows = d.players.slice().map(function (p) {
-      var s = (p.kills | 0) * 200 + (p.assists | 0) * 50 + Math.round((p.damage || 0) * 0.5);
-      return { n: p.name, k: p.kills | 0, dd: p.deaths | 0, a: p.assists | 0, s: s };
-    }).sort(function (a, b) { return b.s - a.s || b.k - a.k; }).slice(0, 10);
-    /* v8.34: two sides keep the A n — n B line. More than two and the mini
-       board shows the top three, which is what a squad player actually scans
-       for: am I winning, and who do I have to catch. */
-    var t = '';
-    if (d.teams && d.settings && d.settings.mode !== 'ffa') {
-      var tids = Object.keys(d.teams);
-      if (tids.length <= 2) {
-        t = '<div class="lb-teams">A ' + (d.teams.a | 0) + ' \u2014 ' + (d.teams.b | 0) + ' B</div>';
-      } else {
-        t = '<div class="lb-teams">' + tids.slice()
-          .sort(function (x, y) { return (d.teams[y] | 0) - (d.teams[x] | 0); })
-          .slice(0, 3)
-          .map(function (id) { return esc(teamName(id)) + ' ' + (d.teams[id] | 0); })
-          .join(' \u00b7 ') + '</div>';
-      }
+    function score(p) { return (p.kills | 0) * 200 + (p.assists | 0) * 50 + Math.round((p.damage || 0) * 0.5); }
+    var mode = d.settings && CFG.MODES[d.settings.mode];
+    var grouped = !!(mode && mode.teams && d.settings.mode !== 'ffa');
+    var html = '<div class="lb-title">' + esc(currentMapLabel).toUpperCase() + '</div>';
+    if (!grouped) {
+      /* Free-for-all keeps the flat top-10 it always had. */
+      var rows = d.players.slice().map(function (p) {
+        return { n: p.name, k: p.kills | 0, dd: p.deaths | 0, a: p.assists | 0, s: score(p) };
+      }).sort(function (a, b) { return b.s - a.s || b.k - a.k; }).slice(0, 10);
+      el.innerHTML = html +
+        '<div class="lb-row lb-h"><span>PLAYER</span><b>K</b><b>D</b><b>A</b><b>S</b></div>' +
+        rows.map(function (r) {
+          return '<div class="lb-row"><span>' + esc(r.n) + '</span><b>' + r.k + '</b><b>' + r.dd + '</b><b>' + r.a + '</b><b>' + r.s + '</b></div>';
+        }).join('');
+      return;
     }
-    el.innerHTML = '<div class="lb-title">' + esc(currentMapLabel).toUpperCase() + '</div>' + t +
-      '<div class="lb-row lb-h"><span>PLAYER</span><b>K</b><b>D</b><b>A</b><b>S</b></div>' +
-      rows.map(function (r) {
-        return '<div class="lb-row"><span>' + esc(r.n) + '</span><b>' + r.k + '</b><b>' + r.dd + '</b><b>' + r.a + '</b><b>' + r.s + '</b></div>';
-      }).join('');
+    /* ===== v12.0 - THE MINI BOARD SPEAKS TEAM FIRST (brief item 4) =====
+       The screenshot shows the truth of the old one: a TEAM match rendered a
+       flat individual list under a bare "A 0 — 0 B" line — the shape of the
+       answer was free-for-all with a hat on. Grouped now: sides ordered by
+       TEAM KILLS descending (the mode's own win condition, same number the
+       top-center A—B line and the end screen use), leader flagged, members
+       ranked inside their side. Squads get the same treatment with the SQUAD
+       label — ten tiny groups is still a readable answer to "who is winning
+       and where am I". Capped at 4 rows per side so a 10v10 does not paper
+       the screen; the TAB board is the full ledger. */
+    var tk = (Net.getTeamKills && Net.getTeamKills()) || d.teams || {};
+    var isSquads = (mode.cat === 'squads' || /^sq/.test(d.settings.mode));
+    var sides = CFG.activeTeams(d.settings.mode).filter(function (t) {
+      return d.players.some(function (p) { return p.team === t; });
+    }).sort(function (x, y) { return (tk[y] | 0) - (tk[x] | 0); });
+    var lead = sides.length ? (tk[sides[0]] | 0) : 0;
+    sides.forEach(function (t, ti) {
+      var members = d.players.filter(function (p) { return p.team === t; })
+        .sort(function (a, b) { return (b.kills | 0) - (a.kills | 0); });
+      var col = (CFG.TEAMS[t] && CFG.TEAMS[t].color) || '#888';
+      var tag = (isSquads ? 'SQUAD ' : '') + teamName(t);
+      var crown = (ti === 0 && lead > 0) ? ' <em class="lb-lead">LEAD</em>' : '';
+      html += '<div class="lb-side" style="border-left-color:' + col + '">' +
+        '<div class="lb-side-h"><span>' + esc(tag).toUpperCase() + crown + '</span><b>' + (tk[t] | 0) + '</b></div>' +
+        members.slice(0, 4).map(function (p) {
+          return '<div class="lb-row"><span>' + esc(p.name) + '</span><b>' + (p.kills | 0) + '</b><b>' + (p.deaths | 0) + '</b><b>' + (p.assists | 0) + '</b><b>' + score(p) + '</b></div>';
+        }).join('') +
+        (members.length > 4 ? '<div class="lb-more">+' + (members.length - 4) + ' more \u00b7 TAB</div>' : '') +
+        '</div>';
+    });
+    el.innerHTML = html;
   }
   function updateLobby(d, myId) {
     lastLobby = d;              // v10.22: pushSettings echoes map/mode from here
@@ -439,7 +461,7 @@ var UI = (function () {
        two-sources-of-truth split v10.22 documented. Counting-down locks the
        host out too: the server refuses changes then, so a live control would
        be a lie. */
-    ['lobby-cat', 'lobby-mode', 'lobby-map', 'lobby-time'].forEach(function (id) {
+    ['lobby-cat', 'lobby-mode', 'lobby-map', 'lobby-time', 'lobby-intel'].forEach(function (id) {
       if (els[id]) els[id].disabled = !isHost || counting;
     });
     if (els['cfg-role']) els['cfg-role'].textContent = isHost ? 'YOU ARE HOST' : 'HOST CONTROLS';
@@ -453,6 +475,23 @@ var UI = (function () {
       els['lobby-map'].value = d.settings.map || 'urban';
     if (els['lobby-time'] && document.activeElement !== els['lobby-time'])
       els['lobby-time'].value = String(d.settings.minutes);
+    if (els['lobby-intel'] && document.activeElement !== els['lobby-intel'])
+      els['lobby-intel'].value = d.settings.enemyIntel ? '1' : '0';   // v12.0 (item 10)
+    /* v12.0 (item 7): a bot mode is Urban-only. The map select is forced to
+       the lock and disabled FOR THE HOST TOO — the server coerces anyway, so
+       an enabled select here would be a control that lies. The title says why
+       instead of leaving a mysteriously dead dropdown. */
+    var lockedMap = (CFG.MODES[d.settings.mode] || {}).mapLock;
+    if (els['lobby-map']) {
+      if (lockedMap) {
+        els['lobby-map'].value = lockedMap;
+        els['lobby-map'].disabled = true;
+        els['lobby-map'].title = 'Bot modes are played on Urban only';
+      } else if (isHost && !counting) {
+        els['lobby-map'].disabled = false;   // un-stick after leaving a locked mode
+        els['lobby-map'].title = '';
+      }
+    }
 
     setTeamNames(d.settings && d.settings.teamNames);      // v8.33
     _mode = d.settings.mode || 'ffa';                     // v8.34
@@ -604,15 +643,33 @@ var UI = (function () {
          The mode is already resolved on the line above from Net.getMatch(),
          which is the authoritative source here; the lobby payload is not even
          available at this point in a match. */
-      CFG.activeTeams(Net.getMatch().mode || 'ffa').forEach(function (t) {   // v8.37: all sides
+      /* v12.0 (brief item 4): sides are ORDERED BY SCORE, not by roster
+         letter — the board's first job is "who is winning", and v8.37's fixed
+         a,b order made the reader do the subtraction. The score is the
+         server's own teamKills (the win condition), with member-kills as the
+         fallback for old payloads; squads say SQUAD; the leading side carries
+         the marker. Individual K/D/A/DMG/STREAK rows stay exactly as they
+         were inside each side — the brief keeps individual stats. */
+      var mid = Net.getMatch().mode || 'ffa';
+      var tkAll = (Net.getTeamKills && Net.getTeamKills()) || {};
+      var isSquads = (CFG.MODES[mid] && CFG.MODES[mid].cat === 'squads') || /^sq/.test(mid);
+      var sides = CFG.activeTeams(mid).map(function (t) {
         var members = roster.filter(function (p) { return p.team === t; });
-        if (!members.length) return;
-        var total = members.reduce(function (s, p) { return s + p.kills; }, 0);
+        var total = (tkAll[t] !== undefined) ? (tkAll[t] | 0)
+                  : members.reduce(function (s2, p) { return s2 + (p.kills | 0); }, 0);
+        return { t: t, members: members, total: total };
+      }).filter(function (g) { return g.members.length; })
+        .sort(function (a, b) { return b.total - a.total; });
+      sides.forEach(function (g, gi) {
         var hdr = document.createElement('tr');
-        hdr.className = 'team-hdr t' + t;
-        hdr.innerHTML = '<td>TEAM ' + teamName(t) + '</td><td>' + total + '</td><td></td><td></td><td></td><td></td><td></td>';
+        hdr.className = 'team-hdr t' + g.t + (gi === 0 && g.total > 0 ? ' team-lead' : '');
+        var col = (CFG.TEAMS[g.t] && CFG.TEAMS[g.t].color) || '#888';
+        hdr.innerHTML = '<td><i class="dot" style="background:' + col + '"></i>' +
+          (isSquads ? 'SQUAD ' : 'TEAM ') + teamName(g.t) +
+          (gi === 0 && g.total > 0 ? ' <em class="lead-tag">LEAD</em>' : '') +
+          '</td><td>' + g.total + '</td><td></td><td></td><td></td><td></td><td></td>';
         els['sb-body'].appendChild(hdr);
-        members.sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
+        g.members.sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
       });
     } else {
       roster.slice().sort(function (a, b) { return b.kills - a.kills || a.deaths - b.deaths; }).forEach(row);
@@ -1018,7 +1075,8 @@ var UI = (function () {
         map: els['lobby-map'] ? els['lobby-map'].value : 'urban',
         mode: els['lobby-mode'] ? els['lobby-mode'].value : 'ffa',
         killTarget: 0,
-        minutes: parseInt((els['lobby-time'] && els['lobby-time'].value) || 10, 10),
+        minutes: parseInt((els['lobby-time'] && els['lobby-time'].value) || CFG.MATCH.defaultMinutes, 10),
+        enemyIntel: !!(els['lobby-intel'] && els['lobby-intel'].value === '1'),   // v12.0 (item 10)
         teamNames: {                                    // v8.33
           a: els['lobby-team-a'] ? els['lobby-team-a'].value : '',
           b: els['lobby-team-b'] ? els['lobby-team-b'].value : ''
@@ -1176,6 +1234,7 @@ var UI = (function () {
     setGear: setGear, setCountdown: setCountdown, setDeathEliminated: setDeathEliminated, setTeamNames: setTeamNames, teamName: teamName,
     setLoadingMap: setLoadingMap,
     updateCompass: updateCompass,     // v11.0: one transform per frame, see game.js
+    renderBoard: renderBoard,         // v12.0: exported as a test seam — verify-endscreen drives it directly
 
     getMapLabel: function () { return currentMapLabel; },
     setTimer: setTimer, setKillTarget: setKillTarget,

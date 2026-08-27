@@ -530,6 +530,38 @@ var Minimap = (function () {
     var nowMs = performance.now();
     lastSeen = lastSeen || {};
 
+    /* ===== v12.0 - HOST-TOGGLED APPROXIMATE ENEMY BLOBS (brief item 10) =====
+       A third information class, on purpose distinct from the two above:
+         - v9.5 exact contacts answer "where IS that player" under radar rules;
+         - these blobs answer "which BLOCK is the enemy in", for everyone,
+           always, while the host has Enemy Intel ON.
+       The server does the blurring (server/lib/intel.js: 14 m cells, drifting
+       offset, error clamped to 3..15 m), so no client ever holds a pinpoint
+       to leak. Drawn FIRST, under the exact markers: a detected contact must
+       stay the sharpest thing on the board. Hostile = other team, or everyone
+       in a mode without sides. Feed older than 4 s is dropped — a frozen blob
+       is a lie about "real-time". No labels: a name on a blob reads as a
+       tracked player, which is exactly what this is not. */
+    var matchNow = Net.getMatch() || {};
+    if (matchNow.enemyIntel) {
+      var feed = Net.getIntel();
+      if (feed && feed.list && feed.list.length && (nowMs - feed.at) < 4000) {
+        var BLOB_R = 12 * S;                    // 12 world-metres at map scale
+        for (var bi = 0; bi < feed.list.length; bi++) {
+          var b = feed.list[bi];
+          if (b.i === Net.getMyId()) continue;
+          var hostile = myTeam ? (b.t !== myTeam) : (b.i !== Net.getMyId());
+          if (!hostile) continue;
+          var bmx = sx(b.x), bmz = sz(b.z);
+          g.beginPath(); g.arc(bmx, bmz, BLOB_R, 0, 6.2832);
+          g.fillStyle = 'rgba(226,64,64,0.13)'; g.fill();
+          g.setLineDash([5, 4]);
+          g.lineWidth = 1.5; g.strokeStyle = 'rgba(226,64,64,0.55)'; g.stroke();
+          g.setLineDash([]);
+        }
+      }
+    }
+
     function marker(wx, wz, radius, fill, solid, label) {
       var mx = sx(wx), mz = sz(wz);
       g.beginPath();

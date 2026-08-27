@@ -98,7 +98,7 @@
         <span class="bm-chev">&#9666;</span>
         <h1>URBAN<span>STRIKE</span></h1>
         <span class="bm-chev">&#9656;</span>
-        <em class="mn-serial">MK-XI &#183; BUILD <b id="brand-ver">&mdash;</b></em>
+        <em class="mn-serial">MK-XII &#183; TACTICAL OPERATIONS &#183; BUILD <b id="brand-ver">&mdash;</b></em>
       </div>
       <div class="profile-chip">
         <i class="pc-dot"></i>
@@ -193,6 +193,10 @@
             <label class="field" id="lobby-var-field"><span>SETUP</span><select id="lobby-mode"></select></label>
             <label class="field"><span>THEATRE</span><select id="lobby-map"></select></label>
             <label class="field"><span>DURATION</span><select id="lobby-time"></select></label>
+            <!-- v12.0 (item 10): host toggle for approximate enemy blobs on the M map.
+                 A select, not a checkbox: it inherits the host-lock styling and the
+                 change-listener plumbing every other config control already has. -->
+            <label class="field"><span>ENEMY INTEL &middot; M-MAP</span><select id="lobby-intel"><option value="0">OFF</option><option value="1">ON &middot; APPROX AREAS</option></select></label>
             <div class="cfg-chip">SCORING &mdash; <b>UNLIMITED KILLS</b> &#183; the clock decides</div>
             <div id="mode-brief" class="mode-brief"></div>
             <div class="field-row" id="team-name-row">
@@ -266,16 +270,23 @@
   <div id="nuke-flash"></div>
   <!-- v11.0 compass strip — bearings for callouts, PUBG-style. Ticks are
        built once by UI.initCompass; per-frame cost is one transform. -->
-  <div id="compass" aria-hidden="true">
-    <div id="compass-strip"></div>
-    <i class="cmp-notch"></i>
-    <b id="compass-deg">000</b>
-  </div>
-  <div id="hud-top">
+  <!-- v12.0: compass and clock share ONE positioned stack. They used to be two
+       independently absolute top-center boxes, which is a coordinate race —
+       at some widths the timer plate sat ON the compass tape (screenshot,
+       item 3). Flex column: overlap is now unrepresentable at any resolution,
+       not tuned away at one. -->
+  <div id="hud-topstack">
+    <div id="compass" aria-hidden="true">
+      <div id="compass-strip"></div>
+      <i class="cmp-notch"></i>
+      <b id="compass-deg">000</b>
+    </div>
+    <div id="hud-top">
     <div id="match-timer">10:00</div>
     <div id="team-score" class="hidden"></div>
     <div id="kill-target"></div>
   </div>
+  </div><!-- /hud-topstack -->
   <div id="live-board"></div>
   <div id="announce"></div>
 

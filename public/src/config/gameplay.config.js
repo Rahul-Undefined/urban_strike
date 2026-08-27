@@ -198,8 +198,17 @@
        two must be mutually exclusive or a match could never finish — test.js
        asserts this pairing so it cannot be broken by accident. */
     killOptions: [5, 10, 15, 20, 30, 0],
-    defaultMinutes: 10,
-    timeOptions: [5, 10, 15, 30, 60],
+    defaultMinutes: 15,
+    /* ===== v12.0 - ONE DURATION: 15 (brief item 8) =====
+       Rahul: "Remove the 30-minute and 60-minute timer options. The only
+       available/default match duration should be 15 minutes."
+       Both server clamps (rooms.js create, server.js updateSettings) and the
+       lobby select all validate against THIS list, so shrinking it here IS
+       the whole change: a client sending minutes:60 is clamped to the default
+       by the same clampOpt that always guarded it. 5 and 10 go too — "only
+       available duration" is the instruction, and a list of one also lets the
+       lobby render the value as a fixed chip rather than a one-option select. */
+    timeOptions: [15],
     startCountdown: 5,    // seconds between the host pressing START and the match beginning
     respawnDelay: 3,
     defaultMode: 'ffa',

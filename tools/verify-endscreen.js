@@ -208,5 +208,57 @@ ok(orphans.length === 0,
 ok(/#live-board\s*\{[^}]*width:\s*\d+px/.test(css),
   'the live scoreboard still has an explicit width (it sprayed full-screen without one)');
 
+/* ===== v12.0 - the two scoreboards group by side and rank by score ===== */
+console.log('\n--- v12.0: team-grouped boards (brief item 4) ---');
+try {
+  /* The harness's default Net is a get-trapped Proxy (every read is a noop
+     fn), so property assignment is invisible — REPLACE it with a plain object
+     for this block, then run UI's init again? No: UI captured `Net` at load.
+     ui.js reads Net.* at CALL time (Net.getMatch(), Net.getTeamKills()), and
+     `Net` resolves through the context global each call, so swapping the
+     global works. Mode comes from CFG so a renamed ladder cannot break the
+     gate. */
+  var teamMode = ctx.CFG.modesInCat('team')[0];
+  ctx.Net = {
+    getMatch: function () { return { mode: teamMode }; },
+    getTeamKills: function () { return { a: 2, b: 7 }; },
+    getMyTeam: function () { return 'a'; },
+    getMyId: function () { return '1'; }
+  };
+  var roster = [
+    { id: '1', name: 'Alfa', team: 'a', kills: 2, deaths: 1, assists: 0, damage: 100, streak: 0, ping: 20, color: '#f00' },
+    { id: '2', name: 'Bravo', team: 'b', kills: 4, deaths: 0, assists: 1, damage: 300, streak: 2, ping: 30, color: '#00f' },
+    { id: '3', name: 'Charlie', team: 'b', kills: 3, deaths: 2, assists: 0, damage: 220, streak: 0, ping: 25, color: '#00f' }
+  ];
+  ctx.UI.updateScoreboard(roster, '1', 'ABCDE', 20);
+  var sb = doc.getElementById('sb-body');
+  var sbRows = Array.prototype.map.call(sb.children || [], function (r) { return r.innerHTML; });
+  ok(/TEAM/.test(sbRows[0] || '') && /<td>7<\/td>/.test(sbRows[0] || ''),
+    'TAB board: the first header is the LEADING side with its team score (7)');
+  ok(/LEAD/.test(sbRows[0] || ''), 'TAB board: the leader is marked on the first header');
+  var lobby = { players: roster, settings: { mode: teamMode, minutes: 15, map: 'urban' }, teams: { a: 2, b: 7 }, hostId: '1', code: 'ABCDE' };
+  ctx.UI.renderBoard(lobby);   // exported seam — updateLobby drags the whole lobby DOM in, which is not under test here
+  var lb = doc.getElementById('live-board').innerHTML;
+  ok(lb.indexOf('lb-side') >= 0, 'mini board: sides are grouped blocks, not a flat list');
+  ok(lb.indexOf('LEAD') >= 0, 'mini board: the leading side is flagged');
+  ok(lb.indexOf('lb-side') < lb.indexOf('Alfa') || lb.indexOf('Bravo') < lb.indexOf('Alfa'),
+    'mini board: the leading side renders FIRST (Bravo\'s side before Alfa\'s)');
+} catch (e) { fail++; console.log('  FAIL  grouped-board execution threw: ' + e.message); }
+
+/* structural compass/clock non-overlap: one stack, no independent absolutes */
+console.log('\n--- v12.0: compass and clock share one stack (brief item 3) ---');
+var path12 = require('path'), ROOT12 = path12.join(__dirname, '..');
+var htmlSrc = fs.readFileSync(path12.join(ROOT12, 'public/index.html'), 'utf8');
+var stackI = htmlSrc.indexOf('id="hud-topstack"');
+ok(stackI >= 0, 'the hud-topstack exists');
+ok(htmlSrc.indexOf('id="compass"') > stackI && htmlSrc.indexOf('id="hud-top"') > stackI &&
+   htmlSrc.indexOf('id="compass"') < htmlSrc.indexOf('id="hud-top"'),
+  'compass and hud-top are BOTH children of the stack, compass first');
+var cssSrc = fs.readFileSync(path12.join(ROOT12, 'public/css/style.css'), 'utf8');
+ok(/#hud-topstack\s*\{[^}]*flex-direction:\s*column/.test(cssSrc),
+  'the stack is a flex column — overlap is unrepresentable, not tuned away');
+ok(!/#compass\s*\{[^}]*position:\s*absolute/.test(cssSrc) && !/#hud-top\s*\{[^}]*position:\s*absolute/.test(cssSrc),
+  'neither child positions itself absolutely anymore');
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -10,6 +10,10 @@ var World = (function () {
   var boxLog = null;
   var flickers = [];
   var scene = null, sun = null;
+  /* v12.0: every light the builder adds is registered here, so relight() can
+     remove exactly what lighting() created and the game-loop sentinel can
+     census by count instead of walking the graph every frame. */
+  var lights = [];
   var built = false;
 
   // Deterministic rng (mulberry32) — cover positions must match on every client.
@@ -803,21 +807,35 @@ var World = (function () {
   }
 
   // ---------- lighting, sky, ground, roads ----------
-  function lighting(urban) {
+  function lighting(urban, mapId) {
     /* v8.18: R is CFG.RENDER with the current map's `render` overrides merged
        over it, so Metro can be night without a second lighting path and
-       without adding a single light. See world.config.js NIGHT. */
-    var R = CFG.RENDER, ov = (CFG.MAPS[World.builtMap || 'urban'] || {}).render;
+       without adding a single light. See world.config.js NIGHT.
+
+       ===== v12.0 - THE OVERRIDE WAS DEAD, AND THE PROOF WAS A CENSUS =====
+       This used to read `CFG.MAPS[World.builtMap || 'urban']`. builtMap is
+       assigned AFTER the build completes and nulled by reset() BEFORE it — so
+       at the only moment this line runs, it is always null, and every map has
+       been built with urban's daylight since whichever refactor introduced
+       that ordering. Metro's NIGHT override was dead code. A headless
+       sequence-build census (urban→metro→urban) showed metro carrying urban's
+       exact sky/sun/fog values. The map is now a PARAMETER, threaded from
+       buildMap, because "read ambient global state mid-build" is the whole
+       class of bug: the v7.8 PRNG reseed note in reset() is the same lesson
+       wearing different clothes. tools/verify-lighting.js now builds the
+       sequence and asserts each map's own values, so this can never silently
+       regress to daylight again. */
+    var R = CFG.RENDER, ov = (CFG.MAPS[mapId || 'urban'] || {}).render;
     if (ov) { R = {}; for (var k in CFG.RENDER) R[k] = CFG.RENDER[k]; for (var k2 in ov) R[k2] = ov[k2]; }
 
     outer.background = new THREE.Color(R.sky);
     outer.fog = new THREE.FogExp2(R.fogColor, R.fogDensity);
 
     var hemi = new THREE.HemisphereLight(R.hemiSky, R.hemiGround, R.hemiIntensity);
-    scene.add(hemi);
+    scene.add(hemi); lights.push(hemi);
 
     var amb = new THREE.AmbientLight(R.ambColor, R.ambIntensity);
-    scene.add(amb);
+    scene.add(amb); lights.push(amb);
 
     sun = new THREE.DirectionalLight(R.sunColor, R.sunIntensity);
     sun.position.set(R.sunPos[0], R.sunPos[1], R.sunPos[2]);
@@ -846,7 +864,7 @@ var World = (function () {
        doing the work that was being forced out of it. */
     sun.shadow.bias = -0.0004;
     sun.shadow.normalBias = 0.045;
-    scene.add(sun);
+    scene.add(sun); lights.push(sun);
     scene.add(sun.target);
 
     // Interior lights — Urban buildings only. On other maps these are four
@@ -861,9 +879,9 @@ var World = (function () {
        discs in deco.js, which cost one draw call between them and zero shading.
        The two INTERIOR lights stay: they light building volumes that no
        emissive prop can fake, and they are the map's atmosphere. */
-    var wh = new THREE.PointLight(0xffb35c, 1.1, 36, 1.5); wh.position.set(-32, 6.8, -28); scene.add(wh);
+    var wh = new THREE.PointLight(0xffb35c, 1.1, 36, 1.5); wh.position.set(-32, 6.8, -28); scene.add(wh); lights.push(wh);
     flickers.push(wh);
-    var ap = new THREE.PointLight(0x8fb4ff, 0.7, 16, 1.7); ap.position.set(27, 4.6, -35); scene.add(ap);
+    var ap = new THREE.PointLight(0x8fb4ff, 0.7, 16, 1.7); ap.position.set(27, 4.6, -35); scene.add(ap); lights.push(ap);
   }
 
   function groundAndRoads() {
@@ -1087,11 +1105,12 @@ var World = (function () {
        and an Urban ground collider at y=0 that filled in the river fords. */
     _initPart1: function (sceneRef, opts) {
       var urban = !opts || opts.urban !== false;
+      var mapId = (opts && opts.map) || 'urban';   // v12.0: threaded to lighting
       outer = sceneRef;
       solids.length = 0;
       scene = new THREE.Group();
       outer.add(scene);
-      makeMaterials(); lighting(urban);
+      makeMaterials(); lighting(urban, mapId);
       if (urban) groundAndRoads();
     },
     _stairwells: function () { return stairwells(); },
@@ -1130,6 +1149,41 @@ var World = (function () {
                avg: used ? total / used : 0, max: max, colliders: colliders.length };
     },
     builtMap: null,
+    /* ===== v12.0 - RELIGHT: THE SENTINEL'S REPAIR ARM =====
+       Field screenshots show a state headless builds cannot reproduce: world
+       meshes render, minimap renders, background survives — every light gone.
+       Lambert geometry under zero lights is pure black; only emissive/basic
+       props show. Nothing in the deterministic build paths drops lights (the
+       sequence census proves it), so whatever does it is a browser-runtime
+       path we have not caught in the act. relight() makes the damage
+       repairable in one call: strip every registered light (and any stray
+       o.isLight survivors), re-run lighting() for the CURRENT map. Idempotent
+       — calling it on a healthy scene yields the same census. The game-loop
+       sentinel calls this once per match when it finds a lit world with no
+       lights, and REPORTS the census so the next occurrence names its
+       trigger instead of just going dark. */
+    lightCount: function () { return lights.length; },
+    /* v12.0: district builders add their own interior lights (tunnel lamp,
+       depot lamp — districts-south.js). They register here so the sentinel's
+       registry==census invariant holds and relight() strips them cleanly.
+       relight() recreates only lighting()'s core rig + urban interior pair;
+       district lamps are geometry-scoped mood, acceptable to lose in a repair
+       whose alternative is a black world. */
+    registerLight: function (l) { if (l) lights.push(l); return l; },
+    relight: function (mapId) {
+      if (!scene) return false;
+      for (var i = 0; i < lights.length; i++) {
+        try { scene.remove(lights[i]); if (lights[i].target) scene.remove(lights[i].target); } catch (e) {}
+      }
+      lights.length = 0;
+      var strays = [];
+      scene.traverse(function (o) { if (o.isLight) strays.push(o); });
+      strays.forEach(function (o) { try { (o.parent || scene).remove(o); } catch (e) {} });
+      flickers.length = 0;   // the two urban interior lights re-register below
+      var id = mapId || World.builtMap || 'urban';
+      lighting(id === 'urban', id);
+      return true;
+    },
     reset: function () {
       /* Reseed FIRST, and unconditionally. rnd() is a running PRNG shared by
          every district builder, and it was never reset — so a map's scattered
@@ -1153,6 +1207,8 @@ var World = (function () {
       if (World._lampSpots) World._lampSpots.length = 0;
       built = false;
       World.builtMap = null;
+      lights.length = 0;              // v12.0: the group they lived in is going away
+      if (outer) { outer.background = null; outer.fog = null; }   // v12.0: no stale sky on a failed rebuild
       if (!outer || !scene) return;
       outer.remove(scene);
       scene.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
@@ -1934,11 +1990,11 @@ World.buildMap = function (sceneRef, map) {
                    riverside: World._buildRiverside,
                    airfield: World._buildAirfield })[map] || null;
   if (map === 'urban' || !builder) {
-    World.build(sceneRef);
+    World.build(sceneRef);            // urban's own lighting: _initPart1 defaults map:'urban'
     World.builtMap = 'urban';
     return;
   }
-  World._initPart1(sceneRef, { urban: false });
+  World._initPart1(sceneRef, { urban: false, map: map });   // v12.0: the override finally reaches lighting()
   var H = World._internals();
   builder({
     seg: H.seg, box: H.box, cyl: H.cyl, stairFlight: H.stairFlight,

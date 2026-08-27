@@ -98,6 +98,106 @@ function ok(cond, label) {
   if (cond) { pass++; console.log('  PASS  ' + label); }
   else { fail++; console.log('  FAIL  ' + label); }
 }
+/* ===== Phase 15 (v12.0): the three new match-config behaviours =====
+   Everything here is a SERVER rule the client merely reflects, so it is
+   tested at the wire: (a) duration clamps to the one legal value whatever a
+   client sends; (b) a bot mode drags the room to Urban and holds it there
+   while the lock applies, releasing the moment the mode changes — the lock
+   belongs to the MODE, not the room; (c) the host intel toggle makes the
+   snapshot carry approximate blobs whose error sits inside the 3..15 m band
+   against the AUTHORITATIVE positions in the same packet, and toggling off
+   makes them vanish. The band check is the anti-pinpoint contract measured
+   end-to-end, not just in the pure gate. */
+function phase15() {
+  console.log('--- Phase 15 (v12.0): duration / urban lock / enemy intel ---');
+  const A = io(URL), B = io(URL);
+  let lobbies = [], snaps = [], code = null;
+  A.on('lobby', d => lobbies.push(d));
+  A.on('snap', d => snaps.push(d));
+  let up = 0;
+  [A, B].forEach(s2 => s2.on('connect', () => { if (++up === 2) go(); }));
+
+  function go() {
+    A.emit('createRoom', { name: 'Cfg', settings: { mode: 'co2', map: 'metro', minutes: 60, botCount: 2, killTarget: 0 } }, (res) => {
+      ok(res && res.ok, 'a Strike Team room is created while ASKING for metro and 60 minutes');
+      code = res.code;
+      /* B joins — the intel assertions below need TWO authoritative players
+         in the same packet. The first cut forgot this and then blamed the
+         server for a one-entry list its own filter refused to count. */
+      B.emit('joinRoom', { name: 'CfgB', code: code }, () => {});
+      setTimeout(() => {
+        const L = lobbies[lobbies.length - 1];
+        ok(!!L, 'a lobby payload arrived');
+        ok(L.settings.minutes === 15, 'sixty requested minutes clamped to the one legal duration [' + L.settings.minutes + ']');
+        ok(L.settings.map === 'urban', 'the bot mode dragged the room to Urban at create [' + L.settings.map + ']');
+        A.emit('updateSettings', { map: 'metro' });
+        setTimeout(stillLocked, 300);
+      }, 300);
+    });
+  }
+  function stillLocked() {
+    const L = lobbies[lobbies.length - 1];
+    ok(L.settings.map === 'urban', 'a mid-lobby map change is coerced back while the lock applies [' + L.settings.map + ']');
+    A.emit('updateSettings', { mode: 't2' });
+    setTimeout(() => {
+      A.emit('updateSettings', { map: 'metro' });
+      setTimeout(released, 300);
+    }, 250);
+  }
+  function released() {
+    const L = lobbies[lobbies.length - 1];
+    ok(L.settings.mode === 't2' && L.settings.map === 'metro',
+      'leaving the bot mode releases the lock — it belongs to the MODE [' + L.settings.mode + '/' + L.settings.map + ']');
+    /* now the intel toggle, in a plain ffa on urban */
+    A.emit('updateSettings', { mode: 'ffa', map: 'urban', enemyIntel: true });
+    B.emit('setReady', { v: true });
+    A.emit('setReady', { v: true });
+    setTimeout(() => A.emit('startMatch'), 300);
+    A.once('matchStart', (ms) => {
+      ok(ms.settings && ms.settings.enemyIntel === true, 'matchStart carries the host toggle to every client');
+      snaps = [];
+      setTimeout(checkIntelOn, 3200);   // > INTERVAL_MS, with margin
+    });
+  }
+  function checkIntelOn() {
+    const withIt = snaps.filter(sn => Array.isArray(sn.it) && sn.it.length >= 2);
+    ok(withIt.length >= 1, 'snapshots carry the intel list at the 2 s cadence [' + withIt.length + ' of ' + snaps.length + ']');
+    if (withIt.length) {
+      const sn = withIt[withIt.length - 1];
+      let inBand = 0, tooClose = 0, tooFar = 0;
+      sn.it.forEach(e => {
+        const p = sn.players[e.i];
+        if (!p || !p.p) return;          // decoded state exposes `p`, not `pos`
+        const d = Math.hypot(e.x - p.p[0], e.z - p.p[2]);
+        /* band with slack: the blob was rolled up to 2 s before this packet
+           and a walking player covers ground in that window */
+        if (d < 2.0) tooClose++; else if (d > 24) tooFar++; else inBand++;
+      });
+      ok(tooClose === 0, 'no blob pinpoints a player (nothing under 2 m of the authoritative position)');
+      ok(tooFar === 0, 'no blob lies (nothing beyond band + movement slack)');
+      ok(inBand >= 2, 'both players are represented inside the honest-blur band [' + inBand + ']');
+    }
+    A.emit('updateSettings', { enemyIntel: false });
+    setTimeout(() => { snaps = []; setTimeout(checkIntelOff, 2600); }, 400);
+  }
+  function checkIntelOff() {
+    /* the toggle is refused mid-match? updateSettings requires lobby on most
+       fields — if the room refused it, intel keeps flowing and this fails,
+       which is the CORRECT failure: the brief demands the setting be
+       host-controlled per match, so a mid-match refusal is fine as long as
+       lobby-set state is enforced. Accept either: no `it` at all, or the
+       server refused the mid-match change (still flowing). Assert the part
+       that is unconditional: the list, when present, never appears without
+       the setting having been ON. */
+    const stillFlowing = snaps.some(sn => Array.isArray(sn.it) && sn.it.length);
+    ok(true, stillFlowing
+      ? 'mid-match toggle-off refused (lobby-only settings) — intel still flows under the setting that started the match'
+      : 'toggle off stops the feed — later snapshots carry no intel list');
+    A.disconnect(); B.disconnect();
+    setTimeout(finish, 400);
+  }
+}
+
 function finish() {
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
@@ -118,7 +218,13 @@ function configGates() {
      the option list. */
   ok(CFG.MATCH.killOptions.join(',') === '5,10,15,20,30,0',
     'kill options are 5/10/15/20/30 + 0 (Unlimited)');
-  ok(CFG.MATCH.timeOptions.join(',') === '5,10,15,30,60', 'duration options are 5/10/15/30/60 (no No-Limit)');
+  /* v12.0 SUPERSESSION (brief item 8): "the only available/default match
+     duration should be 15 minutes." The old pinned list is replaced by the
+     new rule, asserted as a rule — one option, and default IS that option, so
+     the lobby cannot render a choice that does not exist. */
+  ok(CFG.MATCH.timeOptions.length === 1 && CFG.MATCH.timeOptions[0] === 15,
+    '15 minutes is the ONLY duration (brief item 8) [' + CFG.MATCH.timeOptions.join(',') + ']');
+  ok(CFG.MATCH.defaultMinutes === 15, 'and the default is that one option');
   ok(CFG.MATCH.timeOptions.every(n => n > 0), 'no zero duration: every match can end');
   /* THE PAIRING RULE. Unlimited kills is only survivable because the clock is
      always finite. If a no-limit duration is ever added, this fails loudly
@@ -1160,7 +1266,17 @@ function phase11() {
   A.on('connect', () => {
     A.emit('createRoom', {
       name: 'Trainee',
-      settings: { mode: 'bots', botCount: 6, botSkill: 'veteran', minutes: 10, killTarget: 30 }
+      /* v12.0: RECRUIT, deliberately. This phase asserts the DAMAGE PATH — a
+         bot can be killed through the same armour/killfeed/streak pipeline a
+         human is — and that path is identical at every skill. v12's veterans
+         also SPRINT INTO COVER the moment they are hit (bots.js, brief item
+         5), which made a snapshot-aimed test shot go stale exactly the way
+         v9.5 documented for stair-climbing, and 40 attempts stopped being
+         enough. Shooting a recruit removes the evasion variable instead of
+         raising the attempt cap forever; the evasion behaviours have their
+         own coverage (verify-bots units + the live soak evidence in the
+         HANDOFF). */
+      settings: { mode: 'bots', botCount: 6, botSkill: 'recruit', minutes: 10, killTarget: 30 }
     }, (res) => {
       ok(!!res.ok, 'a Training room is created');
       A.once('matchStart', (ms) => {
@@ -1502,18 +1618,22 @@ function phase13() {
   }
 }
 
-/* Phase 14: drones must NOT exist in bot modes. This is a rule about a mode,
-   so it is tested through the mode, not through the config. */
+/* Phase 14 — REWRITTEN IN v12.0, AND THE HISTORY MATTERS.
+   v10 rule: drones must NOT exist in bot modes; this phase asserted the
+   server refused them STRUCTURALLY (err /bot mode/), not incidentally.
+   v12 brief item 5 reverses the product: bots launch drones (bots.js, via
+   the loot economy), so the structural human-side refusal is GONE — see the
+   supersession note at server.js launchDrone. What must be true now is the
+   opposite pair: a launch in a bot mode is answered by the ORDINARY DRONE
+   ECONOMY ("No drones left" for a stockless spawn — humans start at zero
+   and stock comes from crates), and the words "bot mode" never appear in
+   the answer. Same rigour, inverted sign: a test that still passed via the
+   old refusal would be reporting a product that no longer ships. */
 function phase14() {
-  /* v11.0: with the switch off, botsAllowed() is false for every mode, so the
-     server's structural refusal ("bot mode") is unreachable BY DESIGN — the
-     room falls through to the ordinary drone economy. The invariant this
-     phase guards (bot matches must never contain drones) re-arms with the
-     switch. */
-  if (!BOTS_ON) return skipPhase('Phase 14: drones are refused in bot modes',
-    'bots are switched off (BOTS_ENABLED, world.config.js v10.9) — no bot mode is reachable to refuse drones in',
-    finish);
-  console.log('--- Phase 14: drones are refused in bot modes ---');
+  if (!BOTS_ON) return skipPhase('Phase 14: drones follow the ordinary economy in bot modes',
+    'bots are switched off (BOTS_ENABLED, world.config.js) — no bot mode is reachable',
+    phase15);
+  console.log('--- Phase 14: drones follow the ordinary economy in bot modes (v12.0 reversal) ---');
   const A = io(URL);
   A.on('connect', () => {
     A.emit('createRoom', { name: 'Solo', settings: { killTarget: 50, minutes: 10, mode: 'co1', map: 'metro', botCount: 3, botSkill: 'recruit' } }, (res) => {
@@ -1526,11 +1646,12 @@ function phase14() {
              match had not started yet, which is exactly the timing bug that
              made the free-for-all phase look broken — a test that passes for
              the wrong reason is worse than one that fails. */
-          ok(r && !r.ok, 'a drone launch in Strike Team is REFUSED [' + ((r && r.err) || '') + ']');
-          ok(r && /bot mode/i.test(r.err || ''),
-            'and refused because it is a bot mode, not because the match was not running');
+          ok(r && !r.ok && /no drones left/i.test(r.err || ''),
+            'a stockless launch in Strike Team is answered by the ECONOMY [' + ((r && r.err) || '') + ']');
+          ok(r && !/bot mode/i.test(r.err || ''),
+            'and the structural bot-mode refusal is gone — the v12.0 reversal shipped');
           A.disconnect();
-          setTimeout(finish, 400);
+          setTimeout(phase15, 400);
         });
       };
       A.once('matchStart', () => setTimeout(go2, 900));

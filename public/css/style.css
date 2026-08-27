@@ -118,7 +118,12 @@ button { font-family: var(--disp); cursor: pointer; }
   border-top: 3px solid rgba(226,80,60,0.9); border-radius: 50% 50% 0 0 / 100% 100% 0 0; filter: blur(0.4px); }
 @keyframes dmgArc { 0% { opacity: 1; } 62% { opacity: 0.85; } 100% { opacity: 0; } }
 
-#hud-top { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); text-align: center; }
+/* v12.0: #hud-topstack owns top-center; compass and clock are its flex
+   children, so they CANNOT overlap — the fix is structural, not a coordinate.
+   Item 3 screenshot: the timer plate sat on the compass tape. */
+#hud-topstack { position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+#hud-top { position: static; transform: none; text-align: center; }
 #match-timer { font-family: var(--mono); font-size: 26px; letter-spacing: 0.12em; color: var(--ink); text-shadow: 0 1px 4px #000;
   background: rgba(13,16,21,0.55); padding: 4px 18px; border: 1px solid var(--line); border-radius: 4px; }
 #match-timer.urgent { color: var(--red); border-color: var(--red); }
@@ -866,14 +871,41 @@ select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; p
   grid-template-areas: 'top top' 'rail hero'; align-items: stretch; }
 
 .mn-top { grid-area: top; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
-.mn-brand { display: flex; align-items: center; gap: 12px; }
-.mn-brand .bm-chev { font-size: 15px; }
-.mn-brand h1 { font-size: 26px; padding: 2px 12px; letter-spacing: 0.10em;
-  border-top-width: 1px; border-bottom-width: 1px; text-shadow: 0 0 18px rgba(255,171,46,0.25); }
-.mn-brand h1::before, .mn-brand h1::after { width: 3px; top: -1px; bottom: -1px; }
-.mn-brand h1::before { left: -3px; } .mn-brand h1::after { right: -3px; }
-.mn-serial { margin-left: 10px; font: 500 9px/1 var(--mono); letter-spacing: 0.30em; color: #5d6875; font-style: normal; }
+/* ===== v12.0 - THE WORDMARK IS THE MASTHEAD (brief item 2) =====
+   "Large, stylish, distinctive, premium ... a major focal point while still
+   keeping the screen clean." The v11 brand was a 26px caption above an empty
+   sky — screenshot-confirmed boring. The redesign is typographic, not
+   decorative — ONE big move (a split-tone display setting at up to 104px
+   with URBAN in cold steel and STRIKE in the game's amber, gradient-clipped so
+   the letterforms carry the light) and ONE supporting line (the mono serial,
+   tucked under like a spec plate). The chevrons are retired visually — at
+   this scale they read as clip-art — replaced by the side rules the h1
+   already owned, grown into full-height amber blades. No new DOM, no images,
+   no font downloads: Rajdhani at weight 700 IS the tactical voice, and
+   everything here degrades to plain bold text if gradients are unsupported. */
+.mn-brand { display: flex; align-items: flex-end; gap: 12px; position: relative; padding-bottom: 16px; }
+.mn-brand .bm-chev { display: none; }
+.mn-brand h1 { font-size: clamp(54px, 7vw, 104px); font-weight: 700; line-height: 0.88;
+  padding: 4px 22px 2px; letter-spacing: 0.04em;
+  border-top-width: 0; border-bottom-width: 0;
+  background: linear-gradient(180deg, #f4f7fb 0%, #c7d2df 55%, #8d9aab 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 0 rgba(8,10,14,0.85)) drop-shadow(0 0 26px rgba(255,171,46,0.18)); }
+.mn-brand h1 span {
+  background: linear-gradient(180deg, #ffd9a0 0%, var(--amber) 48%, #b96f12 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-fill-color: transparent; }
+.mn-brand h1::before, .mn-brand h1::after { width: 5px; top: 6px; bottom: 10px;
+  background: linear-gradient(180deg, var(--amber), rgba(240,162,50,0)); opacity: 0.9; }
+.mn-brand h1::before { left: 0; } .mn-brand h1::after { right: 0;
+  background: linear-gradient(0deg, var(--amber), rgba(240,162,50,0)); }
+.mn-serial { position: absolute; left: 24px; bottom: -4px;
+  font: 500 10px/1 var(--mono); letter-spacing: 0.34em; color: #6b7684; font-style: normal; white-space: nowrap; }
 .mn-serial b { color: var(--amber-deep); }
+/* the top row holds a tall mark and a small chip: pin the chip to the cap line */
+.mn-top { align-items: flex-start; }
+.mn-top .profile-chip { margin-top: 10px; }
 
 .profile-chip { display: flex; align-items: center; gap: 12px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 8px 14px; }
@@ -1001,7 +1033,7 @@ select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; p
 }
 
 /* ---------- v11.0 compass (HUD) ---------- */
-#compass { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+#compass { position: relative;   /* v12.0: a stack child now — no own top/left */
   width: min(360px, 44vw); height: 34px; overflow: hidden; pointer-events: none;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
           mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent); }
@@ -1019,3 +1051,16 @@ select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; p
 #compass-deg { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
   font: 700 9px/1 var(--mono); letter-spacing: 0.14em; color: var(--amber);
   text-shadow: 0 1px 3px #000; }
+
+
+/* ===== v12.0 - grouped mini-board sides + scoreboard leader ===== */
+.lb-side { border-left: 3px solid #888; margin: 6px 0 0; padding: 2px 0 3px 7px;
+  background: rgba(13,16,21,0.35); border-radius: 0 2px 2px 0; }
+.lb-side-h { display: flex; justify-content: space-between; align-items: baseline;
+  font: 700 10px/1.4 var(--mono); letter-spacing: 0.14em; color: var(--ink); }
+.lb-side-h b { font-size: 12px; color: var(--amber); }
+.lb-lead, .lead-tag { font: 700 8px/1 var(--mono); letter-spacing: 0.18em; color: #17110a;
+  background: var(--amber); border-radius: 2px; padding: 1px 4px; margin-left: 5px; font-style: normal; vertical-align: 1px; }
+.lb-more { font: 500 8px/1.6 var(--mono); letter-spacing: 0.12em; color: var(--ink-dim); padding-left: 2px; }
+.team-hdr td:first-child .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.team-hdr.team-lead td { border-bottom: 1px solid var(--amber); }

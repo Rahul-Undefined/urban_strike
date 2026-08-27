@@ -1,3 +1,239 @@
+# v12.0 - ELEVEN ASKS, AND THE BLACK SCREEN WAS DEAD CODE WEARING A NULL
+
+The brief: fix the Urban black/corrupted start, make the logo a masthead,
+stop the clock covering the compass, group the scoreboards by side, bring
+bots back as something that plays like a person, add humans-vs-machines,
+lock both to Urban, make 15 minutes the only duration, redesign the avatar
+without breaking a single doorway, give the host an approximate-enemy-intel
+toggle for the M map, and fix the load-to-black class for real. All eleven
+shipped. Two of them were not what they looked like, one reversed a rule this
+project had defended in writing, and the test suite caught two of my own
+bugs before a player could.
+
+## 1. THE PER-MAP LIGHTING WAS DEAD, AND EVERY MAP WAS URBAN AT NOON
+
+lighting() chose its render overrides through `CFG.MAPS[World.builtMap ||
+'urban']`. builtMap is assigned AFTER a build completes and nulled by reset()
+BEFORE one begins — so at the only instant that line ever runs, it is null,
+every time, on every path. Metro's NIGHT override has been dead code since
+whichever refactor introduced that ordering; a headless sequence census
+(urban→metro→urban) showed metro carrying urban's exact sky, fog and sun.
+The map is now a PARAMETER threaded from buildMap, because "read ambient
+global state mid-build" is a bug CLASS here — the v7.8 PRNG reseed note in
+reset() is the same lesson in different clothes. tools/verify-lighting.js
+builds the sequence with real three and asserts each map's OWN values, plus
+two repair surfaces that did not exist before:
+
+- World.relight(mapId): strips every registered light (and any stray
+  isLight survivor) and re-runs lighting() for the current map. Idempotent.
+- reset() now clears outer.background/fog, so a failed rebuild can no longer
+  inherit the previous map's sky as a stale look.
+
+## 2. THE FIELD BLACK-SCREEN IS A DIFFERENT ANIMAL, AND IT NOW GETS NAMED
+
+The screenshot shows world meshes rendering, the minimap alive, the sky a
+near-black slate — and every Lambert surface pure black. That is a scene
+with its LIGHTS gone and its background intact, a state no deterministic
+build path can produce (the census proves the builder always lights what it
+builds). v11's drawwatch is blind to it BY DESIGN: draw calls are not zero.
+
+So v12 watches the invariant instead of the symptom: a built, playing world
+must have at least one REGISTERED light. Every light the builder adds now
+registers (World.registerLight for the district lamps); the game loop checks
+registry count every 30 frames; on violation it reports a census — stray
+isLight count, background/fog state, map — and heals once per match through
+relight(). The census is the point: the next occurrence names its trigger
+instead of just going dark. Honest status: the browser-side trigger was NOT
+reproduced headlessly and remains open; what shipped is detection, evidence
+and recovery, not a claimed root-cause kill.
+
+## 3. LOAD-TO-BLACK HAD ONE UNGUARDED DOOR LEFT
+
+`new THREE.WebGLRenderer` THROWS when the browser refuses a context —
+blocked driver, exhausted contexts, acceleration off. Everything after that
+line, UI.init included, never ran: a silent black page with no menu and no
+message. The constructor is now guarded; on refusal a plain-DOM panel (text
+needs no GPU) says what happened and what to do, then rethrows for the
+console. Not recovery — WebGL denied is not recoverable from inside — but a
+black page became a diagnosis.
+
+## 4. THE COMPASS AND THE CLOCK STOPPED FIGHTING BY LOSING THEIR COORDINATES
+
+They were two independently absolute top-center boxes — a coordinate race
+the clock won at some widths (screenshot). Both now live in one flex column,
+#hud-topstack, compass first. Overlap is not tuned away at one resolution;
+it is UNREPRESENTABLE at any, because neither child positions itself.
+verify-endscreen asserts the structure, not the pixels.
+
+## 5. THE SCOREBOARDS SPEAK TEAM FIRST
+
+A team match rendered a flat individual list under a bare "A 0 — 0 B". Both
+surfaces are grouped now: the mini board shows sides as blocks ordered by
+TEAM KILLS (the mode's own win condition), leader flagged, four members per
+side then "+N more · TAB"; the TAB board orders its side headers by the same
+score instead of roster letter, names squads SQUAD, and marks the leader.
+Individual K/D/A/DMG rows are unchanged inside each side. verify-endscreen
+now EXECUTES both builders against a fake roster and asserts the leading
+side renders first — behaviour, not markup.
+
+## 6. BOTS ARE BACK ON, AND THE ONE-LINE PROMISE HELD
+
+v10.9 switched bots off behind BOTS_ENABLED and wrote "TO BRING BOTS BACK:
+return true from the function below. Nothing else." This release is the test
+of that sentence, and it held: one line re-armed seven modes, the lobby's
+bot controls, backfill, and 51 integration assertions that had been skipping
+with a printed note since v11 gated them on the same switch.
+
+WHAT RETURNS WITH IT, stated so nobody discovers it in production: BACKFILL
+IS ON BY DEFAULT (v9.11 design — under-filled human rooms fill with bots to
+seat count; the host can turn it off in the lobby). It was dormant behind
+the kill switch, it is live again, and a raw-socket probe confirmed a lone
+player's FFA room fills with fourteen machines unless backfill is declined.
+That is the documented v9.11 behaviour, kept deliberately: it is what makes
+a 7v7 playable without assembling fourteen humans.
+
+## 7. THE BOT BRAIN LEARNED THE HUMAN VERBS
+
+The v9-era engine already moved, climbed, held weapon-ideal range, threw
+frags and placed mines. v12 adds what the brief lists and the engine lacked:
+
+- WEAPON SWITCHING. Every loadout carries a backup with its own ideal range;
+  the tick holds whichever gun fits the current fight, with hysteresis so a
+  target dancing on the boundary does not strobe the bot's hands. bot.wp
+  updates at the swap, so the avatar's hands follow with no client change.
+- LOOTING. The same Loot.tryCollect a human's interact key reaches, at 2 Hz
+  per bot. Grants land on the bot's player record; per-player emits fall on
+  socketless rooms, which Socket.IO defines as a no-op. A hurt bot with
+  nobody in sight now walks to the nearest medkit instead of strolling to a
+  random spawn at 40 hp.
+- TAKING COVER. On taking damage past mid range: eight candidate points at
+  6.5 m, accepted only if the body fits, the ground is within a step, and
+  segmentBlocked back to the shooter is TRUE — the definition of cover, so
+  a window never qualifies. Committed dash, crouch on arrival, expires in
+  2.4 s. Cover is a beat, not a campsite. Skill-gated (recruits never).
+- DRONES. Through the same Drones.launch a human uses, with stock that comes
+  ONLY from looted drone crates — no free ammunition, the same economy.
+  Live soaks confirmed movement (80-110 m net displacement), fighting
+  (7-12 kills/30 s), looting (3-17 crates), mines, frags and a weapon swap;
+  a drone flight was not observed in short soaks because the crate roll is
+  random — the launch path is covered by verify-drone and phase 14.
+
+## 8. DRONES IN BOT MODES: A RULE REVERSED IN THE OPEN
+
+v10 refused human drone launches in bot modes, reasoning "against bots there
+is no opponent for it to be unfair to." The v12 brief lists drone launches
+among the things BOTS must do — and a mode where the machines fly drones at
+you while yours is refused would be the unfair one. The refusal is deleted
+in both directions, the reasoning recorded at the launchDrone handler, and
+test.js phase 14 REWRITTEN to assert the new truth: a stockless launch in a
+bot mode is answered by the ordinary economy ("No drones left"), and the
+words "bot mode" never appear in the refusal. A product change recorded as
+one — not a test quietly weakened.
+
+## 9. URBAN-ONLY, ENFORCED WHERE THE PAYLOAD LANDS — EVENTUALLY
+
+Every bot mode carries mapLock:'urban', enforced at room create, at
+updateSettings, and mirrored in the lobby (map select forced and disabled,
+with a title that says why, for the host too — the server coerces anyway,
+and a live control that lies is worse than a locked one).
+
+The first cut of the updateSettings coercion sat ABOVE the payload's map and
+mode assignments, so the payload overwrote the lock one line later. My own
+new integration phase caught it: asked for metro mid-lobby in a Strike Team
+room, got metro. PLACEMENT IS THE SEMANTICS — the lock now runs last, after
+every field the payload can move has moved, and covers both directions:
+switching INTO a bot mode drags the room to Urban; changing map while in one
+is silently coerced back; leaving the mode releases it, because the lock
+belongs to the MODE, not the room.
+
+## 10. FIFTEEN MINUTES, AND ONLY FIFTEEN
+
+timeOptions is [15], defaultMinutes 15. Both server clamps and the lobby
+select derive from that one list, so the config edit IS the feature: a
+client sending minutes:60 is clamped by the same clampOpt that always
+guarded the field (phase 15 sends exactly that and asserts 15 back).
+
+## 11. THE AVATAR GREW 5%, AND THREE NUMBERS WEAR THE WORD "SIZE"
+
+- VISUALS: RIG 1.52→1.60 wide/deep, 1.301→1.36 tall, plus a belt (the
+  cheapest "this is a person" signal a rig can buy) and knee pads that cull
+  with the boots past 30 m.
+- HIT GEOMETRY: follows automatically — HEAD_HALF derives from RIG, and the
+  new rendered torso half-width (0.336) still sits inside the 0.35 ray-box.
+  verify-hitbox's "every ray through the visible body hits" holds untouched:
+  zero combat-balance change.
+- MOVEMENT CAPSULE: not touched. Doorways behave identically because the
+  thing that collides did not change. tools/verify-doorfit.js pins the
+  radius AND bounds the rendered shoulder span (0.96 m) against the
+  narrowest door (1.14 m), so neither number can drift quietly.
+
+WHY IT MERGED WITH THE MAP: the old trousers (0x2f3540) and vest (0x3a3f34)
+are the same desaturated blue-grey family as Urban's sky (0x2b3348) and
+asphalt — an operator standing still was a column of map palette. Every gear
+tone moved to warm coyote/khaki, the one family no map surface uses.
+Warm-vs-cool separation survives distance and fog better than value contrast
+alone; the v8.23 rule (bright accent above, dark below, internal contrast)
+is kept, and the avatar part/draw budgets were raised BY the spend, with a
+new detail-shed ratchet so "detail" stays an honest label.
+
+## 12. ENEMY INTEL IS A CONTRACT: 3 TO 15 METRES OF HONEST BLUR
+
+Host toggle, default OFF. When ON, the server broadcasts every living
+player's position quantized to a 14 m cell plus a drifting per-player offset
+re-rolled every 5 s, with the ERROR clamped to 3..15 m — never closer (a
+cell-centre coincidence must not become a pinpoint), never further (blur,
+not misdirection). The M map draws hostiles as translucent dashed circles
+UNDER the exact v9.5 contacts, no labels — a name on a blob reads as a
+tracked player, which is exactly what it is not. The fuzz lives in a pure
+module (server/lib/intel.js) so tools/verify-intel.js proves the band, the
+cell-boundedness, the wander stability and determinism without a socket; a
+new integration phase then measures the SAME band end-to-end against the
+authoritative positions riding the same packet.
+
+The first cut of that phase reported the feature broken. It was not: the
+test had never made its second player JOIN, the list honestly had one entry,
+and the test's own filter refused to count it. An isolated probe (62/62
+snapshots carrying blobs) settled it in five minutes. The failure that
+teaches you to check the test before the server is cheap the first time.
+
+## 13. THE SUITE CAUGHT A ZOMBIE ANSWERING FOR THE BUILD
+
+One full test run was absorbed by a server that had failed to bind
+(EADDRINUSE), stayed alive under its own uncaught-exception handler, and
+left the PREVIOUS build answering port 3000 — so a just-shipped fix
+"failed" its test while never having run. The fix was re-verified against a
+proven-fresh process. Rule extracted to the handoff: before believing a
+red, prove which server answered.
+
+## 14. ONE TEST MOVED WITH A FEATURE, ON PURPOSE
+
+Phase 11 kills a bot through the normal damage path. v12's veterans SPRINT
+INTO COVER when hit, so snapshot-aimed test shots went stale — the exact
+class v9.5 documented when climbing was added, back when 12 attempts became
+40. Instead of raising the cap forever, the phase now shoots a RECRUIT
+(coverPct 0): the damage path under test is identical at every skill, and
+the evasion behaviours have their own unit and soak coverage. 275/0, twice
+consecutively, bot phases armed for the first time since v10.8.
+
+## LESSONS
+
+- A value read mid-build from state that build-order mutates is null or
+  stale by construction. Thread it as a parameter. (builtMap; v7.8 PRNG.)
+- A coercion placed above the assignment it polices is decoration. Guards
+  run LAST. My own test caught mine.
+- Watchdogs that count symptoms (draw calls) are blind to failures that keep
+  the count healthy. Watch the invariant (registry == graph census) and
+  report the census, so the next occurrence names its trigger.
+- Before believing a red test, prove which server answered. EADDRINUSE plus
+  a stay-alive handler equals a zombie impersonating your build.
+- When a new behaviour breaks an old test, decide which one measured the
+  invariant. Phase 11 measured the damage path, so the evading veteran left
+  the test; phase 14 measured a rule the product reversed, so the test
+  reversed with it, in writing.
+- The one-line kill switch honoured its own comment sixteen versions later.
+  Switches with documented re-arm paths are how features survive exile.
+
+
 # v11.0 - EIGHT ASKS, AND THE WORST BUG WAS ONE MISSING LINE
 
 The brief: welcome screen worthy of the game, merge Create Room into the

@@ -18,7 +18,7 @@ World._buildPart3 = function (T) {
     [-21, -18, -15].forEach(function (z) {                    // support ribs
       seg(45.4, 48.6, -0.45, -0.08, z - 0.15, z + 0.15, M.trim);
     });
-    var tl = new THREE.PointLight(0xffb35c, 0.85, 15, 1.5);
+    var tl = World.registerLight(new THREE.PointLight(0xffb35c, 0.85, 15, 1.5));   // v12.0: sentinel registry
     tl.position.set(47, -1.05, -18); scene.add(tl);
     World.flickers.push(tl);
     barrel(44.3, -26.5, true); barrel(49.8, -10.2, true);    // portal markers
@@ -114,7 +114,7 @@ World._buildPart3 = function (T) {
     seg(59.55, 59.65, 0, 5.1, 17.4, 17.5, M.trim); // landing support post
     // roof cover
     box(56, 10.72, 2, 2, 1.05, 1.6, M.metal); box(63, 10.68, -6, 1.8, 0.95, 1.5, M.rust);
-    var dl = new THREE.PointLight(0xffb35c, 1.0, 26, 1.5);
+    var dl = World.registerLight(new THREE.PointLight(0xffb35c, 1.0, 26, 1.5));   // v12.0: sentinel registry
     dl.position.set(60, 7.4, 2); scene.add(dl);
     World.flickers.push(dl);
     lamp(50.4, 10, 'e');

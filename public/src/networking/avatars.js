@@ -179,12 +179,24 @@ var Avatars = (function () {
        Torso keeps the accent, so team identity still reads at range. Legs go
        dark, which restores the waist line and the arm edges. Bright above,
        dark below is also the standard way this is done. */
-    fatigue: new THREE.MeshLambertMaterial({ color: 0x2f3540 }),   // trousers
-    webbing: new THREE.MeshLambertMaterial({ color: 0x2a2e26 }),   // boots, gloves, straps
-    vest:    new THREE.MeshLambertMaterial({ color: 0x3a3f34 }),
-    helmet:  new THREE.MeshLambertMaterial({ color: 0x33382e }),
+    /* ===== v12.0 - WARM GEAR AGAINST A COOL WORLD (brief item 9) =====
+       "The current avatar can visually merge with map colors." It did, and
+       the reason is right in the old hex values: trousers 0x2f3540 and vest
+       0x3a3f34 are the SAME desaturated blue-grey/olive family as Urban's
+       sky (0x2b3348), asphalt and walls — an operator standing still was a
+       column of map palette. The v8.23 lesson (bright above, dark below,
+       internal contrast makes a person) stays; what changes is TEMPERATURE:
+       every gear tone moves to warm coyote/khaki, the one family the maps
+       never use for surfaces. Warm-vs-cool separation survives distance and
+       fog better than value contrast alone, and it reads as fabric and
+       webbing — tactical, human — rather than as painted armour. Team accent
+       stays on torso and sleeves, exactly where it was. */
+    fatigue: new THREE.MeshLambertMaterial({ color: 0x5d5138 }),   // trousers - khaki drab
+    webbing: new THREE.MeshLambertMaterial({ color: 0x352f24 }),   // boots, gloves, straps, belt
+    vest:    new THREE.MeshLambertMaterial({ color: 0x4a4230 }),   // coyote plate carrier
+    helmet:  new THREE.MeshLambertMaterial({ color: 0x4d4432 }),
     visor:   new THREE.MeshLambertMaterial({ color: 0x14181c }),
-    pack:    new THREE.MeshLambertMaterial({ color: 0x40453a })
+    pack:    new THREE.MeshLambertMaterial({ color: 0x514936 })
   };
   /* One material per DISTINCT colour, not one per player. */
   var accentCache = {};
@@ -227,7 +239,22 @@ var Avatars = (function () {
      same 1.0667. The rig is proportioned against the capsule, so scaling one
      without the other is how a model ends up floating or with its head through
      the ceiling. x and z are UNCHANGED — a taller operator, not a wider one. */
-  var RIG = { x: 1.52, y: 1.301, z: 1.52 };
+  /* ===== v12.0 - THE OPERATOR GROWS ~5% (brief item 9) =====
+     "Slightly larger overall character proportions ... must not break
+     gameplay." Three different numbers wear the word "size" here, and only
+     two of them move:
+       - VISUALS: this RIG scale. 1.52->1.60 wide/deep, 1.301->1.36 tall.
+       - HIT GEOMETRY: follows automatically. HEAD_HALF below derives from
+         RIG, and the body ray-box half-width is CFG.PLAYER.radius (0.35) —
+         the new rendered torso half-width is 0.336, still inside it, so
+         verify-hitbox's "every ray through the visible torso hits" holds
+         with zero combat-balance change.
+       - MOVEMENT CAPSULE: CFG.PLAYER.radius/heights, UNTOUCHED. Doorways,
+         corridors and every verify-access route behave identically because
+         the thing that collides did not change; tools/verify-doorfit.js
+         bounds the SHOULDER SPAN so the wider render cannot visually clip
+         the narrowest door frame either. */
+  var RIG = { x: 1.60, y: 1.36, z: 1.60 };
 
   /* Growing Y is only safe with a matching lift. The group origin is pinned by
      the network to the CAPSULE CENTRE, and the legs hang half the stance height
@@ -252,12 +279,20 @@ var Avatars = (function () {
       part(knee, 0, -0.20, 0, 0.135, 0.40, 0.155, AVM.fatigue);    // shin
       var boot = part(knee, 0, -0.43, 0.025, 0.155, 0.14, 0.245, AVM.webbing);
       detail.push(boot);
+      /* v12.0: knee pad — distance-culled with the boot; tactical dress that
+         also marks the leg joint so a crouch reads at a glance. */
+      var pad = part(knee, 0, 0.02, 0.075, 0.145, 0.11, 0.06, AVM.webbing);
+      detail.push(pad);
       hip.knee = knee;
     });
 
     /* ---- torso ---- */
     var spine = joint(g, 0, 0.02, 0);
     part(spine, 0, 0.12, 0, 0.34, 0.24, 0.22, accent);             // abdomen
+    /* v12.0: a belt line. One shared-geometry box that breaks the torso
+       column where a person actually breaks — the single cheapest "this is a
+       human, not a crate" signal the rig can buy. */
+    part(spine, 0, 0.005, 0, 0.36, 0.06, 0.24, AVM.webbing);       // belt
     var chest = part(spine, 0, 0.40, 0, 0.42, 0.32, 0.25, accent);
     /* Identity colour lives on the SLEEVES, not on separate patch meshes. Two
        fewer parts per player, and a coloured upper arm reads at twice the

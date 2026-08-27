@@ -358,10 +358,10 @@ function insideAny(cols, x, y, z, r) {
 const SKILLS = {
   recruit: { label: 'Recruit', react: 950, aimErr: 0.34, fireMs: 700, range: 40, burst: 2, headPct: 0.02, moveMul: 0.72, dmgMul: 0.65,
              crouchPct: 0.00, pronePct: 0.00, sprintPct: 0.00, nadePct: 0.00, minePct: 0.00, verticality: 0.00, nadeCdMs: 99000,
-             groundOnly: true, oneWeapon: 'ak47', leash: 34 },
+             groundOnly: true, oneWeapon: 'ak47', leash: 34, coverPct: 0.00 },
   regular: { label: 'Regular', react: 580, aimErr: 0.19, fireMs: 460, range: 60, burst: 3, headPct: 0.06, moveMul: 0.88, dmgMul: 0.85,
              crouchPct: 0.18, pronePct: 0.00, sprintPct: 0.25, nadePct: 0.10, minePct: 0.05, verticality: 0.12, nadeCdMs: 18000,
-             leash: 70 },
+             leash: 70, coverPct: 0.25 },
   /* v9.7: VETERAN AND EXTREME SHARPENED.
      Reported as "very easy in the veteran mode as well", and the arithmetic
      agreed. Measured time-to-kill on the old numbers, AK-class weapon:
@@ -374,9 +374,9 @@ const SKILLS = {
      is gentler below. Recruit and regular are UNCHANGED: the bottom of the
      ladder is meant to be the pre-v9.2 experience. */
   veteran: { label: 'Veteran', react: 240, aimErr: 0.075, fireMs: 235, range: 95, burst: 5, headPct: 0.17, moveMul: 1.02, dmgMul: 1.0,
-             crouchPct: 0.42, pronePct: 0.08, sprintPct: 0.60, nadePct: 0.40, minePct: 0.16, verticality: 0.70, nadeCdMs: 10000 },
+             crouchPct: 0.42, pronePct: 0.08, sprintPct: 0.60, nadePct: 0.40, minePct: 0.16, verticality: 0.70, nadeCdMs: 10000, coverPct: 0.45 },
   extreme: { label: 'Extreme', react: 95, aimErr: 0.030, fireMs: 145, range: 140, burst: 7, headPct: 0.32, moveMul: 1.15, dmgMul: 1.0,
-             crouchPct: 0.55, pronePct: 0.12, sprintPct: 0.80, nadePct: 0.62, minePct: 0.26, verticality: 0.95, nadeCdMs: 6500 }
+             crouchPct: 0.55, pronePct: 0.12, sprintPct: 0.80, nadePct: 0.62, minePct: 0.26, verticality: 0.95, nadeCdMs: 6500, coverPct: 0.62 }
 };
 const SKILL_IDS = ['recruit', 'regular', 'veteran', 'extreme'];
 
@@ -399,20 +399,28 @@ const SKILL_IDS = ['recruit', 'regular', 'veteran', 'extreme'];
    with splash the probability model does not simulate, and a knife bot needs
    melee closing behaviour that does not exist yet. Leaving them out is honest;
    shipping them half-modelled is not. */
+/* ===== v12.0 - TWO GUNS PER KIT (brief item 5: "changing weapons") =====
+   Every loadout now carries a backup with its own ideal range, and the tick
+   holds whichever gun FITS THE CURRENT FIGHT — a sniper bot pushed in a
+   stairwell pulls its SMG, a shotgun bot caught crossing the plaza switches
+   to the pistol rather than pretending. `w2` mirrors the human primary/
+   secondary shape; the avatar renders the swap because bot.wp is updated at
+   the moment of the switch, the same field a human client sends. Recruits
+   keep one rifle (S.oneWeapon) — the bottom of the ladder stays pre-v9.2. */
 const LOADOUTS = [
-  { w: 'ak47',    ideal: 22, rateMul: 1.00, weight: 16 },
-  { w: 'm4a1',    ideal: 24, rateMul: 0.95, weight: 14 },
-  { w: 'scarh',   ideal: 26, rateMul: 1.05, weight: 10 },
-  { w: 'm249',    ideal: 20, rateMul: 0.90, weight: 6 },
-  { w: 'mk14',    ideal: 38, rateMul: 1.60, weight: 8 },
-  { w: 'uzi',     ideal: 12, rateMul: 0.75, weight: 8 },
-  { w: 'p90',     ideal: 13, rateMul: 0.75, weight: 8 },
-  { w: 'shotgun', ideal: 8,  rateMul: 2.10, weight: 7 },
-  { w: 'aa12',    ideal: 9,  rateMul: 1.30, weight: 4 },
-  { w: 'sniper',  ideal: 62, rateMul: 3.20, weight: 7 },
-  { w: 'kar98',   ideal: 66, rateMul: 3.60, weight: 5 },
-  { w: 'awm',     ideal: 74, rateMul: 3.80, weight: 3 },
-  { w: 'pistol',  ideal: 14, rateMul: 1.10, weight: 4 }
+  { w: 'ak47',    ideal: 22, rateMul: 1.00, weight: 16, w2: 'pistol',  ideal2: 12, rateMul2: 1.10 },
+  { w: 'm4a1',    ideal: 24, rateMul: 0.95, weight: 14, w2: 'pistol',  ideal2: 12, rateMul2: 1.10 },
+  { w: 'scarh',   ideal: 26, rateMul: 1.05, weight: 10, w2: 'pistol',  ideal2: 12, rateMul2: 1.10 },
+  { w: 'm249',    ideal: 20, rateMul: 0.90, weight: 6,  w2: 'pistol',  ideal2: 12, rateMul2: 1.10 },
+  { w: 'mk14',    ideal: 38, rateMul: 1.60, weight: 8,  w2: 'uzi',     ideal2: 12, rateMul2: 0.75 },
+  { w: 'uzi',     ideal: 12, rateMul: 0.75, weight: 8,  w2: 'shotgun', ideal2: 8,  rateMul2: 2.10 },
+  { w: 'p90',     ideal: 13, rateMul: 0.75, weight: 8,  w2: 'pistol',  ideal2: 12, rateMul2: 1.10 },
+  { w: 'shotgun', ideal: 8,  rateMul: 2.10, weight: 7,  w2: 'pistol',  ideal2: 14, rateMul2: 1.10 },
+  { w: 'aa12',    ideal: 9,  rateMul: 1.30, weight: 4,  w2: 'pistol',  ideal2: 14, rateMul2: 1.10 },
+  { w: 'sniper',  ideal: 62, rateMul: 3.20, weight: 7,  w2: 'uzi',     ideal2: 12, rateMul2: 0.75 },
+  { w: 'kar98',   ideal: 66, rateMul: 3.60, weight: 5,  w2: 'p90',     ideal2: 13, rateMul2: 0.75 },
+  { w: 'awm',     ideal: 74, rateMul: 3.80, weight: 3,  w2: 'uzi',     ideal2: 12, rateMul2: 0.75 },
+  { w: 'pistol',  ideal: 14, rateMul: 1.10, weight: 4,  w2: 'shotgun', ideal2: 8,  rateMul2: 2.10 }
 ];
 const LOADOUT_TOTAL = LOADOUTS.reduce((a, l) => a + l.weight, 0);
 function pickLoadout() {
@@ -519,7 +527,10 @@ module.exports = function initBotsModule(ctx) {
         ai: { cols, kit, target: null, seenAt: 0, nextFire: 0, wanderTo: null, repath: 0,
               vy: 0, plan: null, planAge: 0, planApex: 0, posture: 0,
               freeUntil: 0, freeDir: 1, stuckHits: 0, highSeek: 0, postureUntil: 0, nextNade: 0, nextMine: 0,
-              stuckFor: 0, lastX: 0, lastZ: 0, sprint: false }
+              stuckFor: 0, lastX: 0, lastZ: 0, sprint: false,
+              /* v12.0 (item 5): weapon slot, loot throttle, cover state, drone clock, damage memory */
+              slot: 1, nextSwap: 0, nextLoot: 0, coverTo: null, coverUntil: 0, coverCd: 0,
+              nextDrone: 0, lastHp: CFG.PLAYER.hp }
       };
       room.players.set(id, p);
     }
@@ -753,12 +764,31 @@ module.exports = function initBotsModule(ctx) {
           bot.ai.vy = 0; bot.crouch = 0; bot.ai.pendingNade = null;
           bot.ai.plan = null; bot.ai.wanderTo = null; bot.ai.repath = 0;
           bot.mines = CFG.GEAR.mine.start; bot.nades = CFG.THROWS.frag.count;
+          /* v12.0: fresh life, fresh damage memory and no stale cover dash;
+             looted drone stock is DELIBERATELY kept — a human keeps theirs. */
+          bot.ai.lastHp = CFG.PLAYER.hp; bot.ai.coverTo = null; bot.ai.coverUntil = 0;
+          bot.ai.slot = 1; bot.wp = Math.max(0, CFG.WEAPON_ORDER.indexOf((bot.ai.kit || LOADOUTS[0]).w));
         }
         continue;
       }
       const ai = bot.ai;
       const cols = ai.cols;
       const kit = ai.kit || LOADOUTS[0];
+      /* v12.0: damage memory — "was I just shot" drives the cover seek below.
+         Read BEFORE anything heals or respawns this tick. */
+      const hurt = ai.lastHp !== undefined && bot.hp < ai.lastHp - 1;
+      ai.lastHp = bot.hp;
+      /* v12.0: LOOTING. The same tryCollect a human's interact key reaches,
+         throttled to 2 Hz per bot — grants land on the bot's player record,
+         per-player emits fall on socketless rooms (a Socket.IO no-op), and the
+         room-wide 'pickup' event despawns the crate on every client. This is
+         also how bots ACQUIRE DRONES: no free stock, the same loot economy. */
+      if (t > ai.nextLoot) { ai.nextLoot = t + 500; ctx.botTakePickup && ctx.botTakePickup(room, bot); }
+      /* v12.0: WEAPON SWITCHING. Hold whichever gun fits the current fight.
+         Hysteresis (other must fit 28% better, 1.5 s between swaps) so a
+         target dancing on the boundary does not strobe the bot's hands. */
+      const alt = (!S.oneWeapon && kit.w2) ? { w: kit.w2, ideal: kit.ideal2, rateMul: kit.rateMul2 } : null;
+      let act = (ai.slot === 2 && alt) ? alt : kit;
 
       /* Elevated loot doubles as the map's list of "places that are up" — it is
          the only registry of reachable height this project has. Cached per room
@@ -790,6 +820,17 @@ module.exports = function initBotsModule(ctx) {
       if (best && ai.target !== best.id) { ai.target = best.id; ai.seenAt = t; }
       if (!best) ai.target = null;
 
+      if (alt && best && t > ai.nextSwap) {
+        const other = (ai.slot === 2) ? kit : alt;
+        if (Math.abs(bestD - other.ideal) < Math.abs(bestD - act.ideal) * 0.72) {
+          ai.slot = (ai.slot === 2) ? 1 : 2;
+          ai.nextSwap = t + 1500;
+          act = (ai.slot === 2) ? alt : kit;
+          /* the avatar's hands follow: wp is the same index a human client sends */
+          bot.wp = Math.max(0, CFG.WEAPON_ORDER.indexOf(act.w));
+        }
+      }
+
       choosePosture(bot, S, bestD, !!best, t);
 
       // --- aim + move ---
@@ -803,7 +844,7 @@ module.exports = function initBotsModule(ctx) {
         /* Hold the loadout's ideal range instead of a fixed fraction of the
            skill's sight range. A shotgun closes, a sniper backs off, and the
            same three lines do both. */
-        const want = kit.ideal;
+        const want = act.ideal;
         const sign = bestD > want * 1.15 ? 1 : (bestD < want * 0.7 ? -1 : -0.2);
         wantX = (dx / (bestD || 1)) * sign;
         wantZ = (dz / (bestD || 1)) * sign;
@@ -860,6 +901,49 @@ module.exports = function initBotsModule(ctx) {
             ai.sprint = false;                               // never sprint a staircase
           }
         }
+
+        /* ===== v12.0 - TAKE COVER (brief item 5) =====
+           Trigger: SHOT while engaged past mid range, off cooldown, skill roll.
+           The move is a short committed dash to a point that BREAKS the line
+           to the shooter — candidates are eight compass offsets at 6.5 m,
+           accepted only if the body fits there, the ground is within a step,
+           and segmentBlocked back to the target is TRUE. That last test is
+           the definition of cover, so the bot cannot 'cover' behind a window.
+           While the dash runs it overrides the approach (not a climb plan —
+           a bot half-way up a fire escape finishing its climb IS taking
+           cover). On arrival it crouches via the same setStance the posture
+           system uses. Expires in 2.4 s: cover is a beat, not a campsite. */
+        if (hurt && !ai.plan && bestD > 13 && t > ai.coverCd && Math.random() < (S.coverPct || 0)) {
+          const eyeC = CFG.PLAYER.eyeCrouch;
+          for (let a = 0; a < 8; a++) {
+            const ang = (a / 8) * Math.PI * 2 + Math.random() * 0.5;
+            const cx = bot.pos[0] + Math.cos(ang) * 6.5;
+            const cz = bot.pos[2] + Math.sin(ang) * 6.5;
+            const g2 = groundAt(cols, cx, cz, feetOf(bot) + 0.4, 0.42);
+            if (g2 === null || Math.abs(g2 - feetOf(bot)) > 1.1) continue;
+            if (bodyBlocked(cols, cx, g2, cz, 0.42, bodyH(bot), 0.55)) continue;
+            if (!segmentBlocked(cols, cx, g2 + eyeC, cz, best.pos[0], best.pos[1], best.pos[2])) continue;
+            ai.coverTo = [cx, cz]; ai.coverUntil = t + 2400; ai.coverCd = t + 8000;
+            break;
+          }
+        }
+        if (ai.coverTo && t < ai.coverUntil) {
+          const cdx = ai.coverTo[0] - bot.pos[0], cdz = ai.coverTo[1] - bot.pos[2];
+          const cd = Math.hypot(cdx, cdz);
+          if (cd < 0.9) { setStance(bot, 1); ai.coverTo = null; }
+          else { wantX = cdx / cd; wantZ = cdz / cd; ai.sprint = true; }
+        } else if (ai.coverTo && t >= ai.coverUntil) ai.coverTo = null;
+
+        /* ===== v12.0 - DRONES (brief item 5; supersedes the v10 ban) =====
+           Stock comes ONLY from looted drone pickups — the same economy a
+           human is under, which is why looting had to land first. Launch when
+           engaged at range, off a long cooldown, through the human
+           Drones.launch (per-owner stock + arm time + all client rendering
+           ride the normal snapshot's `dr` channel). Recruits never fly. */
+        if (!S.groundOnly && (bot.drones | 0) > 0 && best && bestD > 26 && t > ai.nextDrone) {
+          ai.nextDrone = t + 45000 + Math.random() * 20000;
+          ctx.botLaunchDrone && ctx.botLaunchDrone(room, bot);
+        }
       } else {
         /* --- wander ---
            Spawn points are still the only map graph available, but v9.2 also
@@ -880,6 +964,23 @@ module.exports = function initBotsModule(ctx) {
              The filter is cheap; caching it is only worth doing if the cache
              cannot go stale. */
           ai.plan = null; ai.wanderTo = null;
+          /* v12.0: a hurt bot with nobody in sight goes FOR A MEDKIT, the way
+             a person does, instead of strolling to a random spawn at 40 hp.
+             Nearest active heal within 45 m; the 2 Hz collect throttle above
+             picks it up on arrival. Falls through to the normal roll when the
+             map has nothing to offer. */
+          if (bot.hp < 62 && room.pickups && Math.random() < 0.65) {
+            let bestPk = null, bd = 45 * 45;
+            for (const pk of room.pickups) {
+              if (!pk.active) continue;
+              const it2 = CFG.LOOT_ITEMS[pk.t];
+              if (!it2 || it2.kind !== 'heal') continue;
+              const hdx = pk.pos[0] - bot.pos[0], hdz = pk.pos[2] - bot.pos[2];
+              const q2 = hdx * hdx + hdz * hdz;
+              if (q2 < bd) { bd = q2; bestPk = pk; }
+            }
+            if (bestPk) ai.wanderTo = [bestPk.pos[0], bestPk.pos[2]];
+          }
           /* groundOnly is a HARD refusal, not a low roll. A recruit that
              climbs one time in ten still surprises a player who has learned
              that recruits stay on the street, and "mostly like v9.0" is not
@@ -1074,14 +1175,14 @@ module.exports = function initBotsModule(ctx) {
          which is exactly how a player uses them. Placement goes through the
          same Mines.place the human path uses, so arming delay, friendly-fire
          rules and the client's minePlaced event all come along unchanged. */
-      if ((bot.mines | 0) > 0 && t > ai.nextMine && bestD < kit.ideal * 0.8
+      if ((bot.mines | 0) > 0 && t > ai.nextMine && bestD < act.ideal * 0.8
           && Math.random() < S.minePct) {
         ai.nextMine = t + 9000 + Math.random() * 9000;
         ctx.botPlaceMine(room, bot, [bot.pos[0], bot.pos[1], bot.pos[2]]);
       }
 
       if (t < ai.nextFire) continue;
-      ai.nextFire = t + Math.round(S.fireMs * kit.rateMul);
+      ai.nextFire = t + Math.round(S.fireMs * act.rateMul);
 
       /* ===== v10.7 - BOTS ARE SILENT AGAIN, AND IT IS A REAL TRADE =====
 
@@ -1122,13 +1223,13 @@ module.exports = function initBotsModule(ctx) {
          0.55 falloff and a 0.45 floor on fit keep a shotgun bot useless across
          a plaza without making a rifle bot harmless at the far end of a street. */
       const fall = Math.max(0.35, 1 - (bestD / S.range) * 0.55);
-      const off = Math.abs(bestD - kit.ideal) / Math.max(16, kit.ideal);
+      const off = Math.abs(bestD - act.ideal) / Math.max(16, act.ideal);
       const fit = Math.max(0.45, 1 - off * 0.38);
       const posture = bot.crouch ? 1.12 : 1;                 // steadier when set
       const pHit = Math.max(0.05, Math.min(0.95, (1 - S.aimErr) * fall * fit * posture));
       if (Math.random() > pHit) continue;
       const part = Math.random() < S.headPct ? 'head' : (Math.random() < 0.18 ? 'legs' : 'body');
-      ctx.botShoot(room, bot, best, part, S.dmgMul, kit.w);
+      ctx.botShoot(room, bot, best, part, S.dmgMul, act.w);
     }
   }
 

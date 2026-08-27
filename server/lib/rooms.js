@@ -46,9 +46,12 @@ function makeRoom(hostSocket, name, settings) {
     hostId: hostSocket.id,
     state: 'lobby', // lobby | playing | ended
     settings: {
+      /* v12.0 (item 7): a bot mode carries mapLock — the room is coerced to it
+         at creation, so no client payload shape can start Overrun on Metro. */
       map: (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false) ? settings.map : 'urban',
       killTarget: clampOpt(settings && settings.killTarget, CFG.MATCH.killOptions, CFG.MATCH.defaultKills),
       minutes: clampOpt(settings && settings.minutes, CFG.MATCH.timeOptions, CFG.MATCH.defaultMinutes),
+      enemyIntel: !!(settings && settings.enemyIntel),   // v12.0: M-map blobs, host toggle, default OFF
       airdropSec: settings && settings.airdropSec ? Math.max(5, Math.min(600, settings.airdropSec | 0)) : 0,
       mode,
       botCount: Math.max(0, Math.min(19, (settings && settings.botCount | 0) || 0)),
@@ -75,6 +78,9 @@ function makeRoom(hostSocket, name, settings) {
     timer: null,
     snapTimer: null
   };
+  /* v12.0 (item 7): enforce the mode's map lock server-side at create. */
+  { const mm = CFG.MODES[room.settings.mode]; if (mm && mm.mapLock) room.settings.map = mm.mapLock; }
+
   rooms.set(code, room);
   addPlayer(room, hostSocket, name);
   return room;

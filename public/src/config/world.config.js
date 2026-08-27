@@ -68,11 +68,14 @@
      there — a bare read is a ReferenceError swallowed by a try/catch, which is
      the same "check the field you are reading actually exists" mistake listed
      in HANDOFF section 6. tools/verify-scope.js caught it. */
-  var BOTS_ENABLED = (function () {
-    var g = (typeof globalThis !== 'undefined') ? globalThis : null;
-    var env = g && g.process && g.process.env;
-    return !!(env && env.US_BOTS === '1');
-  })();
+  /* ===== v12.0 - BOTS ARE BACK ON (brief items 5/6) =====
+     The v10.9 note above ends "will think of it later and add back later" —
+     this is later. The switch works exactly as designed: one line. The env
+     read is gone because the modes are product again, not a gated experiment;
+     tools/verify-bots.js's self-enable is now redundant and harmless.
+     v12.0 also LOCKS every bot mode to Urban (brief item 7) — see mapLock on
+     the mode entries and its enforcement in rooms.js/server.js/ui.js. */
+  var BOTS_ENABLED = true;
 
   var MODES = {
     /* v10.9 ROOM CAP 20 -> 15. Rahul asked for this to reduce load. The
@@ -128,8 +131,9 @@
        The internal id stays `practice` on purpose: it is what every guard, gate
        and settings check reads, and renaming a live identifier to improve a
        label is how you break three things to fix a word. */
-    bots: { label: 'Overrun', vlabel: 'One operator against the sector',
-            cat: 'practice', teams: false, teamCount: 0, maxPlayers: 15, practice: true, hidden: !BOTS_ENABLED },
+    bots: { label: 'Bot Match \u00b7 Overrun', vlabel: 'You against the machines \u2014 they fight like players',
+            cat: 'practice', teams: false, teamCount: 0, maxPlayers: 15, practice: true, hidden: !BOTS_ENABLED,
+            mapLock: 'urban' },   // v12.0 (item 7): bot modes exist on Urban only
     lsq4: { label: 'Last Stand \u00b7 Squads 5 \u00d7 3',  vlabel: '5 squads of 3',
             cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 3, maxPlayers: 15, lives: 1, fullMapContacts: true },
 
@@ -151,17 +155,23 @@
        maxPlayers is the HUMAN squad size; the room cap counts humans only, so
        bots arriving at match start cannot lock a team-mate out of a free slot. */
     co1:  { label: 'Strike Team \u00b7 Solo',    vlabel: '1 operator vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 1,  vsBots: true, hidden: !BOTS_ENABLED },
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 1,  vsBots: true, hidden: !BOTS_ENABLED,
+            mapLock: 'urban' },
     co2:  { label: 'Strike Team \u00b7 Duo',     vlabel: '2 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 2,  vsBots: true, hidden: !BOTS_ENABLED },
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 2,  vsBots: true, hidden: !BOTS_ENABLED,
+            mapLock: 'urban' },
     co3:  { label: 'Strike Team \u00b7 Trio',    vlabel: '3 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 3,  vsBots: true, hidden: !BOTS_ENABLED },
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 3,  vsBots: true, hidden: !BOTS_ENABLED,
+            mapLock: 'urban' },
     co4:  { label: 'Strike Team \u00b7 Squad',   vlabel: '4 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 4,  vsBots: true, hidden: !BOTS_ENABLED },
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 4,  vsBots: true, hidden: !BOTS_ENABLED,
+            mapLock: 'urban' },
     co6:  { label: 'Strike Team \u00b7 Section', vlabel: '6 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 6,  vsBots: true, hidden: !BOTS_ENABLED },
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 6,  vsBots: true, hidden: !BOTS_ENABLED,
+            mapLock: 'urban' },
     co10: { label: 'Strike Team \u00b7 Platoon', vlabel: '10 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 10, vsBots: true, hidden: !BOTS_ENABLED }
+            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 10, vsBots: true, hidden: !BOTS_ENABLED,
+            mapLock: 'urban' }
   };
 
   /* THE single source of truth for "does this mode put bots in the room".

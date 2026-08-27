@@ -41,7 +41,8 @@ var Net = (function () {
     try { sessionStorage.removeItem(SKEY); } catch (e) {}
     try { localStorage.removeItem(SKEY); } catch (e) {}
   }
-  var teamKills = {};                // v8.34: sized by the server, not assumed
+  var teamKills = {};
+  var intel = [], intelAt = 0;          // v12.0: latest approximate-enemy list + arrival time                // v8.34: sized by the server, not assumed
   var myTeam = null;
   var scene = null;
   var P = CFG.PLAYER;
@@ -230,6 +231,7 @@ var Net = (function () {
       snapCache = {}; slotToId = {};   // v9.8: never carry slots across a match
       Minimap.clearMarks();            // v9.10: markers do not survive a match
       match.mode = d.settings.mode || 'ffa';
+      match.enemyIntel = !!d.settings.enemyIntel;   // v12.0 (item 10): the map reads this gate
       var me = d.players.find(function (p) { return p.id === myIdV; });
       myTeam = me ? (me.team || null) : myTeam;
       d.players.forEach(function (p) {
@@ -275,6 +277,7 @@ var Net = (function () {
       snapCache = {}; slotToId = {};   // v9.8: never carry slots across a match
       Minimap.clearMarks();            // v9.10: markers do not survive a match
       match.mode = d.settings.mode || 'ffa';
+      match.enemyIntel = !!d.settings.enemyIntel;   // v12.0 (item 10): the map reads this gate
       match.startedAt = d.startedAt;
       match.serverOffset = d.serverNow - Date.now();
       roster = d.players;
@@ -304,6 +307,10 @@ var Net = (function () {
       var tSample = sampleTimeFor(d.n, tLocal);
       if (d.tk !== undefined) teamKills = d.tk || {};
       Pickups.droneSync(d.dr);          // undefined when none are airborne
+      /* v12.0 (item 10): approximate enemy blobs. Present only when the host
+         toggle is ON and the server hit its 2 s cadence; the timestamp lets
+         the map fade a stale feed instead of freezing a lie in place. */
+      if (d.it !== undefined) { intel = d.it || []; intelAt = performance.now(); }
       if (!d.e) return;
 
       var seen = {};
@@ -1009,6 +1016,7 @@ var Net = (function () {
     getRoomCode: function () { return roomCode; },
     getMyTeam: function () { return myTeam; },
     getTeamKills: function () { return teamKills; },
+    getIntel: function () { return { list: intel, at: intelAt }; },   // v12.0: M-map blobs
     isAlly: function (id) { var r = remotes[id]; return !!(myTeam && r && r.team === myTeam); },
     netDiag: netDiag,                 // v10.17 — read by the F3 panel
     setVisor: setVisor,               // v10.10 recon visor

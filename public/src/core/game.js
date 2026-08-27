@@ -20,6 +20,7 @@ var Game = (function () {
   /* v11.0 black-world guards — see the camguard/drawwatch steps in loop(). */
   var _camSafe = { pos: new THREE.Vector3(0, 3, 0), rx: 0, ry: 0 };
   var _blackFrames = 0, _rebuiltThisMatch = false;
+  var _lightFrames = 0, _relitThisMatch = false;   // v12.0 light sentinel latch
 
   /* v8.30 ERROR SURFACE.
 
@@ -77,11 +78,32 @@ var Game = (function () {
        resolution is exactly what v9.15 shipped. If the discrete GPU turns out
        to be enough, raising the cap is a one-number experiment to run LATER,
        on its own, with a match played in between. */
-    renderer = new THREE.WebGLRenderer({
-      canvas: canvas,
-      antialias: true,
-      powerPreference: 'high-performance'
-    });
+    /* ===== v12.0 - IF WEBGL ITSELF IS REFUSED, SAY SO ON SCREEN =====
+       `new WebGLRenderer` THROWS when the browser cannot create a context
+       (blacklisted driver, exhausted contexts, headless policy). Everything
+       after this line — UI.init included — then never ran, which is the one
+       remaining way to load into a silent black page with no menu and no
+       message. The catch paints a plain-DOM diagnostic (no WebGL needed to
+       render text) and rethrows so the console still has the real error. */
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas: canvas,
+        antialias: true,
+        powerPreference: 'high-performance'
+      });
+    } catch (glErr) {
+      try {
+        var died = document.createElement('div');
+        died.id = 'gl-denied';
+        died.innerHTML = '<b>GRAPHICS UNAVAILABLE</b><br>The browser refused a WebGL context, so the game cannot draw.' +
+          '<br>Usual causes: hardware acceleration disabled, a blocked GPU driver, or too many open 3D tabs.' +
+          '<br>Enable hardware acceleration / close other 3D tabs, then reload.';
+        died.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+          'background:#0d1015;color:#e9e4d8;font:14px/1.9 monospace;text-align:center;z-index:99;letter-spacing:0.06em;padding:24px;';
+        document.body.appendChild(died);
+      } catch (x) {}
+      throw glErr;
+    }
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     renderer.shadowMap.enabled = true;
@@ -431,6 +453,7 @@ var Game = (function () {
        see the black-screen note above this function. */
     try { if (window.Showcase) window.Showcase.stop(); } catch (e) { }
     _rebuiltThisMatch = false; _blackFrames = 0;   // v11.0: one watchdog rescue per match
+    _relitThisMatch = false; _lightFrames = 0;     // v12.0: light sentinel, same rule
     UI.setLoading(true);
     setTimeout(function () {           // let the loading bar paint before the ~1s map build
       var built = buildWorld((d.settings && d.settings.map) || 'urban', d.pickups);
@@ -896,6 +919,32 @@ var Game = (function () {
        side is gone, which floods the console and hides the one message that
        matters — the context-lost warning. */
     if (!contextLost) renderer.render(scene, camera);
+
+    /* ===== v12.0 - THE LIGHT SENTINEL (screenshot: world black, HUD alive) =====
+       Field evidence shows a state the deterministic paths cannot produce
+       (probed): meshes render, minimap renders, sky survives — every light
+       gone, so the whole Lambert world draws pure black while emissive props
+       float in it. drawwatch is blind to it BY DESIGN (draw calls > 0). This
+       sentinel checks the one cheap invariant instead: a built, playing world
+       must have at least one registered light. On violation it reports a
+       census (registered count, stray isLight count, background/fog state) —
+       so the NEXT occurrence names its trigger — and repairs through
+       World.relight(), once per match, same latch philosophy as drawwatch.
+       Every 30 frames: the check is three property reads, but there is no
+       reason to pay even that per-frame. */
+    step('lightwatch', function () {
+      if (contextLost || !playing || !World.isBuilt()) { _lightFrames = 0; return; }
+      if ((_lightFrames = (_lightFrames + 1) % 30) !== 0) return;
+      if (World.lightCount && World.lightCount() > 0) return;
+      if (_relitThisMatch) return;
+      _relitThisMatch = true;
+      var strays = 0; try { scene.traverse(function (o) { if (o.isLight) strays++; }); } catch (e) {}
+      reportError('lightwatch', 'built world has 0 registered lights (strays=' + strays +
+        ', bg=' + (scene.background ? 'set' : 'null') + ', fog=' + (scene.fog ? 'set' : 'null') +
+        ', map=' + (World.builtMap || '?') + ') — relighting');
+      try { if (World.relight(currentMapId || World.builtMap)) UI.toast('Lighting recovered'); }
+      catch (err) { reportError('lightwatch relight', err); }
+    });
 
     step('drawwatch', function () {
       if (contextLost || !playing || !World.isBuilt()) { _blackFrames = 0; return; }

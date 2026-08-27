@@ -72,10 +72,20 @@ const COLORS = ["#e8563e", "#63d968", "#3f8dff", "#f0a232", "#b06fd8",
 
    One mesh, one reason, recorded. If a later change needs part fifteen, it
    needs its own line here saying why. */
-const AV_BUDGET = { partsBase: 14, partsKitted: 17, matsBody: 18, perLobbyDraws: 200,
+/* v12.0: partsBase 14 -> 17, partsKitted 17 -> 20, lobby draws 200 -> 230 /
+   400 -> 460. RAISED DELIBERATELY, BY THE SAME RULE AS v8.32: a budget moves
+   only with the feature that spends it, named here. The spend is brief item 9
+   (avatar redesign): one belt (always visible — the cheapest human-silhouette
+   signal the rig can buy) and two knee pads (distance-culled with the boots,
+   so a firefight at range pays for the belt alone). The NEW assertion below —
+   detail-shed count — is the ratchet that keeps this honest: at range the rig
+   must fall back to 15 parts, so nobody can smuggle always-on greebles in
+   under a "detail" label. Materials budget UNCHANGED: all three parts reuse
+   AVM.webbing. */
+const AV_BUDGET = { partsBase: 17, partsKitted: 20, partsFar: 15, matsBody: 18, perLobbyDraws: 230,
   /* v8.33: the cap is 20 now, so there is a budget for 20. Set from the first
      measured run and treated as a ratchet from here — it may fall, never rise. */
-  perLobbyDraws20: 400, matsBody20: 30 };
+  perLobbyDraws20: 460, matsBody20: 30 };
 
 const built = COLORS.map((c, i) => vm.runInContext(
   `Avatars.buildAvatar("Op${i}", "${c}")`, ctx));
@@ -105,6 +115,19 @@ console.log("        " + a0.meshes + " meshes, " + a0.groups + " joint groups, "
 
 ok(a0.visible <= AV_BUDGET.partsBase,
   "unequipped avatar is " + a0.visible + " visible parts (budget " + AV_BUDGET.partsBase + ")");
+/* v12.0: THE DETAIL-SHED RATCHET. Pose once past the 30 m LOD line, count
+   again — the rig must drop to partsFar. This is what keeps "detail part" an
+   honest label: anything added under it MUST vanish at range or this fails. */
+{
+  ctx.__A = built[0];
+  vm.runInContext(`for (var f = 0; f < 5; f++) Avatars.poseAvatar(__A, { moved:0, mx:0, mz:0, run:false,
+    crouch:0, prone:0, dead:false, deadT:0, rx:0, ry:0, lean:0, reloading:false, dist:45, dt:0.016 });`, ctx);
+  const far = census(built[0]);
+  ok(far.visible <= AV_BUDGET.partsFar,
+    "past the LOD line the rig sheds to " + far.visible + " parts (budget " + AV_BUDGET.partsFar + ") - detail parts are honestly detail");
+  vm.runInContext(`for (var f = 0; f < 5; f++) Avatars.poseAvatar(__A, { moved:0, mx:0, mz:0, run:false,
+    crouch:0, prone:0, dead:false, deadT:0, rx:0, ry:0, lean:0, reloading:false, dist:10, dt:0.016 });`, ctx);
+}
 
 // equip everything and re-measure
 vm.runInContext("Avatars.setGear(__A, 3, 3)", Object.assign(ctx, { __A: built[0] }));

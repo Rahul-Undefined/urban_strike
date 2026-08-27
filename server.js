@@ -240,7 +240,14 @@ const Bots = require('./server/lib/bots.js')({
   botExplode: (room, bot, victim, dmg, weapon, pointBlank) => {
     Combat.applyDamage(room, victim, dmg, bot.id, weapon || 'frag', false, !!pointBlank);
   },
-  botPlaceMine: (room, bot, pos) => Mines.place(room, bot, pos)
+  botPlaceMine: (room, bot, pos) => Mines.place(room, bot, pos),
+  /* v12.0 (item 5): the last two human verbs bots lacked, through the same
+     paths humans use. Loot.tryCollect grants to the bot's player record and
+     its per-player emits fall on empty rooms (bots have no socket) — a no-op
+     by Socket.IO's own rules, not by luck. Drones.launch spends bot.drones
+     stock and refuses a second launch the same way it does for a person. */
+  botTakePickup: (room, bot) => Loot.tryCollect(room, bot),
+  botLaunchDrone: (room, bot) => Drones.launch(room, bot)
 });
 const Loot = require('./server/lib/loot.js')({ io, now, mapData });
 const { initPickups, pickupList, tryCollect, respawnPickups,
@@ -316,6 +323,7 @@ function netstat(room, packet) {
 }
 
 const Drones = require('./server/lib/drones.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo, CFG });
+const Intel = require('./server/lib/intel');   // v12.0: approximate enemy blobs (brief item 10)
 
 /* ===== v9.5 — WARM THE BOT COLLIDER CACHE BEFORE ANYBODY NEEDS IT =====
 
@@ -711,6 +719,25 @@ function startSnapshots(room) {
        not snapcodec: the wire format proper is untouched. */
     packet.n = room.snapN;
     if (keyframe) packet.k = 1;
+    /* v12.0 intel blobs: envelope field, wire codec untouched (packet.n
+       precedent). Host-gated, playing only, INTERVAL_MS cadence; wander state
+       lives on the room and dies with it. */
+    if (room.settings.enemyIntel && room.state === 'playing') {
+      const nowI = now();
+      if (!room._intelAt || nowI - room._intelAt >= Intel.INTERVAL_MS) {
+        room._intelAt = nowI;
+        room._intelSt = room._intelSt || {};
+        const list = [];
+        for (const p of room.players.values()) {
+          if (p.bot ? p.dead : (p.dead || p.connected === false)) continue;
+          if (!p.pos) continue;
+          const a = Intel.approxOne(p.id, p.pos[0], p.pos[2], nowI, room._intelSt, Math.random);
+          list.push({ i: p.id, t: p.team || null, x: a.x, z: a.z });
+        }
+        room._intel = list;
+      }
+      if (room._intel && room._intel.length) packet.it = room._intel;
+    }
     /* v9.4: drones ride the normal snapshot rather than a channel of their own,
        so every client renders them with the code that already interpolates
        remote entities. Omitted entirely when none are airborne. */
@@ -935,6 +962,9 @@ io.on('connection', (socket) => {
     if (room.cdTimer) return;                     // no rule changes mid-countdown
     room.settings.killTarget = clampOpt(s && s.killTarget, CFG.MATCH.killOptions, room.settings.killTarget);
     room.settings.minutes = clampOpt(s && s.minutes, CFG.MATCH.timeOptions, room.settings.minutes);
+    /* v12.0 (item 10): host toggle for approximate enemy blobs on the M map.
+       A boolean, not an option list — clampOpt has nothing to clamp. */
+    if (s && s.enemyIntel !== undefined) room.settings.enemyIntel = !!s.enemyIntel;
     if (s && s.map && CFG.MAPS[s.map] && CFG.MAPS[s.map].ready !== false) room.settings.map = s.map;
     /* v8.33: only the host may rename a team, and only in the lobby — both
        already guaranteed by the guard at the top of this handler. */
@@ -965,6 +995,15 @@ io.on('connection', (socket) => {
         refreshTeamsAndColors(room);
       }
     }
+    /* ===== v12.0 (item 7) - THE MAP LOCK RUNS LAST, AND THAT IS THE FIX =====
+       First cut of this coercion sat ABOVE the `s.map` and `s.mode`
+       assignments, so the payload overwrote the lock one line later — caught
+       by test.js phase 15, which asked for metro mid-lobby in a Strike Team
+       room and got it. Placement IS the semantics here: the lock must be the
+       final word after every field the payload can move has moved, covering
+       both directions at once — switching INTO a bot mode drags the room to
+       Urban, and a map change while IN one is silently coerced back. */
+    { const mm = CFG.MODES[room.settings.mode]; if (mm && mm.mapLock) room.settings.map = mm.mapLock; }
     pushLobby(room);
   });
 
@@ -974,19 +1013,21 @@ io.on('connection', (socket) => {
     p.ready = !!(d && d.v);
     pushLobby(room);   // the START gate is derived from this payload, client-side
   });
-  /* DRONES ARE NOT AVAILABLE IN BOT MODES.
-     Rahul: "Drone mode should be in Free for all, squad, team battle only.
-     Drone should not be there in Bot fight." The reasoning holds up — a drone
-     that auto-finds a target is aim-free pressure, and against bots there is no
-     opponent for it to be unfair to, so all it does is trivialise a mode whose
-     entire point is practising your aim. The check is CFG.botsAllowed, the same
-     predicate that decides whether a room has bots at all, so Overrun and every
-     Strike Team size are covered by one rule. */
+  /* ===== v12.0 - DRONES RETURN TO BOT MODES: A DOCUMENTED REVERSAL =====
+     The v10 rule here refused human drone launches in Overrun/Strike Team,
+     quoting "Drone should not be there in Bot fight", reasoning there was no
+     opponent to be unfair to. The v12 brief supersedes it explicitly — item 5
+     lists "launching drones" among the things BOTS must now do, and a mode
+     where the machines fly drones at you while yours is refused would be the
+     unfair one. So the refusal is gone in both directions: bots launch
+     (bots.js, skill-gated + long cooldown) and humans launch, through the one
+     Drones.launch path. test.js phase 14, which asserted the old refusal, is
+     rewritten to assert the new symmetry — a product change recorded as one,
+     not a weakened test. */
   socket.on('launchDrone', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};
     const room = getRoom(socket);
     if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
-    if (CFG.botsAllowed(room.settings.mode)) return ack({ ok: false, err: 'Drones are disabled in bot modes' });
     const p = room.players.get(socket.id);
     if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
     ack(Drones.launch(room, p));

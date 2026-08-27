@@ -509,24 +509,36 @@ ok(CFG.MODES.bots.teams === false, 'Training is free-for-all shaped: every bot i
       botModesVisible: botModes.filter(m => !CFG.MODES[m].hidden),
       anyBotsAllowed: Object.keys(CFG.MODES).filter(m => CFG.botsAllowed(m)),
       anyBackfill: Object.keys(CFG.MODES).filter(m => CFG.backfillAllowed(m)),
-      overMax: Object.keys(CFG.MODES).filter(m => CFG.MODES[m].maxPlayers > 15)
+      overMax: Object.keys(CFG.MODES).filter(m => CFG.MODES[m].maxPlayers > 15),
+      botModeLocks: botModes.map(m => CFG.MODES[m].mapLock || null),
+      humanModeLocks: Object.keys(CFG.MODES).filter(m => !CFG.MODES[m].practice && !CFG.MODES[m].vsBots && CFG.MODES[m].mapLock)
     }));`;
   const env = Object.assign({}, process.env); delete env.US_BOTS;
   const r = JSON.parse(execFileSync(process.execPath, ['-e', probe], { env, encoding: 'utf8' }));
 
-  console.log('\n--- v10.9: the shipped default exposes no bots ---');
-  ok(r.enabled === false, 'BOTS_ENABLED is false without US_BOTS');
-  ok(r.botModes.length === 7, 'all 7 bot modes still exist in the table [' + r.botModes.length + ']');
-  ok(r.botModesVisible.length === 0,
-    'and none of them is selectable' + (r.botModesVisible.length ? ' (' + r.botModesVisible.join(', ') + ')' : ''));
-  ok(r.anyBotsAllowed.length === 0,
-    'botsAllowed() is false for every mode' + (r.anyBotsAllowed.length ? ' (' + r.anyBotsAllowed.join(', ') + ')' : ''));
-  ok(r.anyBackfill.length === 0,
-    'backfillAllowed() is false for every mode' + (r.anyBackfill.length ? ' (' + r.anyBackfill.join(', ') + ')' : ''));
-  ok(r.cats.indexOf('practice') === -1 && r.cats.indexOf('coop') === -1,
-    'the Overrun and Strike Team CATEGORIES are gone from the picker [' + r.cats.join(', ') + ']');
-  ok(r.allCats.indexOf('practice') !== -1 && r.allCats.indexOf('coop') !== -1,
-    'but both survive in ALL_MODE_CATS, so switching bots back on restores them');
+  /* ===== v12.0 - THE SWITCH IS FLIPPED, AND THE GATE FLIPS WITH IT =====
+     v10.9's half of this gate asserted the shipped default exposed NO bots —
+     that WAS the product. The v12 brief (items 5/6/7) reverses the product:
+     bot modes ship ON, and gain a new invariant of their own — every one of
+     them is LOCKED TO URBAN via mapLock. These assertions are the v10.9 set
+     INVERTED plus the new lock, not deleted: a gate must assert the product
+     that ships, and "the switch nobody checks gets flipped back by an
+     unrelated edit" cuts in both directions. */
+  console.log('\n--- v12.0: the shipped default exposes bots, urban-locked ---');
+  ok(r.enabled === true, 'BOTS_ENABLED is true in the shipped default');
+  ok(r.botModes.length === 7, 'all 7 bot modes exist in the table [' + r.botModes.length + ']');
+  ok(r.botModesVisible.length === 7,
+    'and every one of them is selectable [' + r.botModesVisible.join(', ') + ']');
+  ok(r.anyBotsAllowed.length === 7,
+    'botsAllowed() is true for exactly the 7 bot modes [' + r.anyBotsAllowed.join(', ') + ']');
+  ok(r.anyBackfill.length > 0,
+    'backfill is available again in the human modes [' + r.anyBackfill.length + ' modes]');
+  ok(r.cats.indexOf('practice') !== -1 && r.cats.indexOf('coop') !== -1,
+    'the Bot Match and Strike Team CATEGORIES are in the picker [' + r.cats.join(', ') + ']');
+  ok(r.botModeLocks.every(x => x === 'urban') && r.botModeLocks.length === 7,
+    'every bot mode carries mapLock \'urban\' (brief item 7) [' + r.botModeLocks.join(', ') + ']');
+  ok(r.humanModeLocks.length === 0,
+    'no human mode carries a map lock' + (r.humanModeLocks.length ? ' (' + r.humanModeLocks.join(', ') + ')' : ''));
   /* v10.9 room cap. Lives here rather than in its own file because a mode that
      can seat more than the cap is the same class of defect: a table entry that
      disagrees with a global rule. */
