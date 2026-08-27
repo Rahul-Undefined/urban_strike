@@ -1,0 +1,763 @@
+# Urban Strike — Project Handoff (v8.11)
+
+**Upload this file plus `urban-strike-v8.11.zip` into a new chat. Read this file
+completely before touching anything.**
+
+---
+
+## 0. READ THIS FIRST — how this project fails
+
+This codebase has one repeated failure signature. Understanding it matters more
+than any individual fact below.
+
+**Automated gates pass. The browser disagrees.**
+
+| Incident | Gates said | Browser said |
+|---|---|---|
+| v4.4 static merge | syntax OK | crashed `World.build()` in every browser |
+| Rural polygon-offset road | map validator PASS | **entire map rendered black** |
+| Rural ground flicker | 358/358 PASS | full-screen z-fighting for 3 versions |
+| v6.0 tower stairs | ascent gate 18/18 PASS | **not one staircase was climbable** |
+| ~40 interior stairs | never tested at all | unclimbable since the day they shipped |
+| **v7.5 crater disc** | **all gates PASS** | **6.2 m black slab at the crossroads** |
+
+The v7.5 case is the most recent and the most instructive. Converting the crater
+scorch from `CircleGeometry` to `CylinderGeometry` (to make it mergeable) left
+the old `rotation.x = -PI/2` in place. A circle needs rotating flat; a cylinder
+already is. The disc stood on its edge. Every gate was green.
+
+**Therefore:**
+- Never say a feature "works". Say "passes gate X" or "confirmed in browser by
+  Rahul on date Y". These are different claims.
+- When Rahul reports something broken that a gate says passes, **the gate is
+  wrong**. Debug the gate first.
+- Render-stage failures are invisible headlessly. Prefer geometric solutions
+  over material/shader tricks, always.
+- **A new gate is wrong until it has agreed with a human once.** The v7.7
+  architecture gate reported eight floating buildings on its first run; all
+  eight were the gate not understanding cantilevers. It was believed for about
+  four minutes before being checked.
+
+**The changelog has lied twice** (v4.7 claimed the `polygonOffset` revert that
+never happened, and a `damaged` field that did not exist). Treat historical
+entries as *claims*.
+
+---
+
+## 1. What this is
+
+Browser multiplayer FPS. **Rahul** owns it, is a beginner coder, deploys via
+GitHub → Render (build `npm install`, start `node server.js` — unchanged since
+v4.0).
+
+- **Server:** Node/Express/Socket.IO. `server.js` + `server/lib/{rooms,loot,combat,mines}.js`
+- **Client:** Three.js **r128 via CDN script tags, no bundler**. Load order in
+  `public/index.html` is load-bearing.
+- Synthesized Web Audio (zero asset files). AABB collision. Zero image files —
+  every texture is canvas-generated or a gradient.
+- **Trust model:** client-authoritative movement/ammo; server-authoritative
+  HP/armor/helmet/loot/mines.
+- `three@0.128` is a devDependency (test harnesses only). This is the **only**
+  package.json change in project history. Keep it that way.
+- **Never ship `package-lock.json`** — it has never been in the repo.
+
+### Communication preferences (apply to EVERY reply)
+1. First sentence challenges an assumption or leads with the uncomfortable
+   truth. Never open with agreement.
+2. Confidence tags before claims: `[Certain]` / `[Likely]` / `[Guessing]`.
+3. Banned phrases: "Great question", "You're absolutely right", "That makes a
+   lot of sense", "Absolutely", "Definitely".
+4. Disagree with structure: "I disagree because X. Instead I'd do Y. The risk in
+   your approach is Z."
+5. Goldman-Sachs-style structure: clear sections, concise, tables over prose.
+6. Beginner-friendly code explanations.
+7. Hold positions under pushback unless given genuinely new information.
+
+Rahul responds well to being told no with a reason. He has accepted a scope
+reduction several times when given the engineering rationale. He has also
+corrected the project's design philosophy twice and both corrections were right.
+
+### Release cadence (changed by Rahul at v7.7)
+**Fewer, larger milestone releases.** Group related work into a coherent
+milestone, complete it properly, then ship. Do not ship small incremental
+versions. Every release must include **both** a changelog entry and an updated
+copy of this handoff.
+
+---
+
+## 2. Current state
+
+**Shipped:** `urban-strike-v8.11.zip` — cumulative, contains everything.
+
+**v8.9 changed no map geometry.** It corrected five gates that were building an
+incomplete world, and added the F3 diagnostic overlay. Read the v8.9 CHANGELOG
+entry before planning any map work: the numbers those gates were reporting for
+rural, and for every loot/spawn/airdrop assertion, were measured on a world
+that does not ship.
+
+**Every deployment is browser-tested by Rahul.** Verification is tracked per
+FEATURE in section 8, not per version — see that ledger for what is confirmed,
+what is awaiting his report, and the short list that has genuinely never been
+rendered by anyone (Metro City, Metro's underground lifts, voice chat).
+
+### Rollback ladder
+```
+v8.0  current — Container Yard, mall/yard collision fix, legible minimap
+v7.9  operator rig + animation, Warehouse district, frame-cost metrics
+v7.8  Milestone 9 pt1: Residential, Apartment, Shopping districts
+v7.7  architecture gate + fake-architecture pass
+v7.6  railway district rebuilt; crater-disc and countdown bugs fixed
+v7.5  material consolidation (233 -> 55 draw calls) — SHIPPED THE CRATER BUG
+v7.4.1 menu overlap fix, 5s countdown
+v7.4  Milestone 8a: lobby overhaul, Metro selectable, host-gated launch
+v7.3  Metro City complete
+v6.2  ~40 staircases fixed
+v6.0  BROKEN: no tower stair climbable. Do not roll back here.
+v4.8  last browser-CONFIRMED good state
+v4.4 and the FIRST v4.5 build are BROKEN — never roll back to those.
+```
+
+### Three maps
+| Map | Theme | Colliders | Draw calls | Lights | Tris |
+|---|---|---|---|---|---|
+| urban | 6 rebuilt districts + airport, harbour, towers, construction | **3208** | **98** | 7 | **81.7k** |
+| rural | forest, rivers, village, farm, watchtowers | 525 | 17 | 3 | 21.9k |
+| metro | downtown, skyscrapers, mall, subway, construction | 946 | 19 | 3 | 12.7k |
+
+**Budget the frame, not the draw call.** A shadow-casting batch is submitted
+TWICE per frame — shadow map, then main pass. Urban's "98 draw calls" is really
+155 geometry submissions with 71.1k of its 81.7k triangles rasterised twice.
+`verify-batch` budgets all three:
+
+| Map | draws / budget | shadow casters / budget | tris / budget |
+|---|---|---|---|
+| urban | 98 / 115 | 57 / 62 | 81.7k / 120k |
+| rural | 17 / 40 | 13 / 20 | 21.9k / 30k |
+| metro | 19 / 45 | 14 / 22 | 12.7k / 26k |
+
+Players are budgeted separately (`verify-avatar`): ten AND twenty kitted operators visible
+at once = 180 draw calls, budget 200. Avatars CANNOT be static-merged — they
+move every frame — so the only levers are part count, material sharing and LOD.
+
+---
+
+## 3. Verification gates — run ALL before shipping
+
+| Gate | Command | Current | Proves |
+|---|---|---|---|
+| Integration | `node server.js & sleep 3; node test.js` | 211 | full server gameplay + lobby/launch gate + config invariants. **Run 3x** |
+| Models + weapons + keybinds | `node verify-models.js` | 139 | viewmodels, grants, loot exclusivity, scope ladder, weapon/viewmodel parity, sniper rules, keybind collisions |
+| Scope + loop isolation | `node tools/verify-scope.js` | 20 | cross-IIFE identifier leaks, drawHpBar ally paths, per-subsystem frame guards |
+| Training bots | `node tools/verify-bots.js` | 42 | collider build, ground-slab trap, LOS, ordering, difficulty ladder |
+| Hitbox + prone orientation | `node tools/verify-hitbox.js` | 27 | fires the real castRay at the real posed avatar in all 3 stances |
+| Map | `node tools/verify-map.js` | **1054** | loot support / spawn clearance / airdrop landing, all 3 maps |
+| Build chain | `node tools/verify-build.js` | PASS | real-three vm build of all 3 maps + reset + coplanar-ground gate |
+| Ascent | `node tools/verify-access.js` | **55/56** *(1 known, see below)* | walks a capsule up every staircase |
+| Lifts | `node tools/verify-lifts.js` | 98 | every lift stop has floor + head clearance |
+| Cover | `node tools/verify-cover.js` | PASS | dead-ground budget (<6%); `--report` prints an ASCII map |
+| **Batching** | `node tools/verify-batch.js` | 36 | draw-call budget + the four batching invariants + edge-on decals |
+| **Architecture** | `node tools/verify-arch.js` | **3/6 — RED BY DESIGN** | floating geometry (0 everywhere) + broken-promise roofs |
+| **Avatar** | `node verify-avatar.js` | **25** | player rig: parts, material sharing, joints, stance, strafe, turn, reload, LOD, lobby cost |
+| **Collision** | `node tools/verify-collision.js` | **19** | the resolver itself: order independence, auto-step, no downward resolve, void plane, world-edge probe |
+| **Stair quality** | `node tools/verify-stairs-quality.js` | **15** | support, rise, width, headroom, landing — per flight, from a build-time registry |
+| **Map flow** | `node tools/verify-flow.js` | **3** | walkable ground reachable from spawn; enumerates sealed pockets |
+| **Z-fighting** | `node tools/verify-zfight.js` | **2** | surfaces sharing a plane that will flicker |
+| **Props** | `node tools/verify-props.js` | **2** | props buried in structure; props standing on nothing |
+| Merge | `node tools/verify-merge.js` | 9 | StaticMerge geometry math |
+| **Climb** | `node tools/verify-climb.js` | **RED BY DESIGN — urban 20, rural 1** | walks a capsule up EVERY registered flight, not a hand-written route list. Budget 0. Drive it down, never raise it |
+| **DevHUD** | `node tools/verify-devhud.js` | **13** | the F3 overlay is inert when hidden, and its HEAD / arrival verdicts agree with `verify-stairs-quality` |
+| Parse sweep | `node --check` every .js | clean | syntax only |
+
+**`verify-arch` is deliberately red.** Its `broken` budget is 0 and there are 10
+broken promises on urban, 7 on rural, 25 on metro — all in districts not yet
+rebuilt. Each district pass drives the number down. That is the acceptance
+criterion for Milestone 9, not a bug. Do not raise the budget to make it green.
+
+**Two ascent failures are known and pre-existing:**
+
+| Test | Needs | Foot reached |
+|---|---|---|
+| `south office -> 3.20` | 3.20 m | **FIXED in v8.10** by the stairwell cut |
+| `north block A -> 3.60` | 3.60 m | **0.05 m — the walker never leaves the ground.** Still open |
+
+Not regressions, but do NOT describe these as "garage fire escape 4.30" and
+"warehouse fire escape 9.15". Those two **pass** (4.47 m and 9.32 m) and have
+for several versions. The session-start prompt carried the wrong pair until
+v8.9. `north block A` reaching 0.05 m is a different defect class from a
+connector gap and belongs in Milestone A.
+
+### A GATE MUST LOAD WHAT `index.html` LOADS (v8.9)
+
+The single highest-value bug found in v8.9 was not in the map. It was five
+gates building a different world from the one that ships, and going green
+against it.
+
+`public/index.html` loads **eight** config files before any environment
+module: weapons, gameplay, loot, world, maps-rural, maps-metro, districts,
+index. Any gate whose file list is a subset builds a different world.
+
+Two concrete failures, both silent for multiple versions:
+
+- **`verify-map` never loaded `districts.config.js`.** `districtSigns()` opens
+  `if (typeof DISTRICTS === 'undefined') return;` and emitted nothing.
+  24 sign-post colliders missing; 978 assertions validated on a map with no
+  signs in it.
+- **Four gates omitted `maps-rural` and `maps-metro`.** Rural built with
+  `CFG.MAPS_RURAL` undefined: 510 colliders instead of 525.
+
+And the trap underneath the obvious fix: **`window` must BE the sandbox
+global.** Config files publish onto `window`; `world.js` reads bare globals.
+A `window: {}` literal makes those two different objects, so adding the file
+to the load list is not enough — the gate stays broken while looking fixed.
+Every sandbox now does `ctx.self = ctx.window = ctx.globalThis = ctx`.
+
+**Checklist when you add or touch a gate:** diff its file list against
+`index.html`, then assert the collider count matches `verify-build`. If two
+gates disagree about how many colliders a map has, at least one of them is
+inspecting a world nobody plays.
+
+### Rule: never weaken a validator
+If a gate fails, fix the implementation. Every time a gate has been believed
+over a hunch, it found a real bug. Extending a *stub* to model what the build
+actually constructs is not weakening (see verify-map's THREE stub).
+
+---
+
+## 4. Hard-won gotchas — READ BEFORE WRITING CODE
+
+### Batching and performance (v7.5)
+`StaticMerge` batches by `material.uuid | castShadow | receiveShadow`. Four
+mistakes make geometry unmergeable, and all four have shipped:
+1. A static mesh created with `new THREE.Mesh` and never given
+   `matrixAutoUpdate = false`.
+2. `MeshBasicMaterial` for unlit surfaces. **Use a Lambert with
+   `color: 0x000000` and a full `emissive`** — byte-identical pixels, and it
+   merges. Districts get this as `T.emissive`.
+3. Materials minted inside a per-call builder function. Hoist to the shared `M`
+   palette. `bus()` used to mint six materials *per bus*.
+4. Props parented to a `THREE.Group` — Group children are not scene children.
+Only Box, Cylinder and Cone are merge-whitelisted. Sprites never batch; use
+`THREE.Points`.
+
+### Geometry
+- **Never create two large coplanar surfaces of different materials** (>200 m²,
+  tops within 4 mm). The build gate catches it.
+- **Prefer geometric separation over material/shader tricks for z-fighting.**
+- **Derive roof/structure heights**, never guess. Use a vm stub and scan
+  `_colliders()`.
+- `CircleGeometry` lies in XY and needs rotating flat. `CylinderGeometry` is
+  already flat in XZ. Do not carry a rotation across a conversion.
+
+### Stairs and vertical access
+- `stairFlight(sx, sy, sz, dirX, dirZ, steps, stepH, stepD, width, mat)`.
+  The flight occupies `sx .. sx + dirX*steps*stepD`; last tread top is
+  `sy + steps*stepH`. **Land flush on the destination top.**
+- **Never place a landing box on a stair run.** This has appeared five times.
+- **Never start a flight inside the destination footprint.**
+- Leave **at least 1.5 m of standing room** at the foot of a flight. The v7.6
+  station stair had 0.7 m and the ascent walker was squeezed into the wall.
+- `CFG.MOVE.step` is 0.42 m. Any rise above that needs a lift or a flight.
+- Lifts are the robust vertical mechanic; stairs are the fragile one.
+- **Every lift shaft position must be derived by search, never by eye.**
+
+### Adding a new district file — the wiring checklist
+A new environment file is invisible to every gate until wired by hand:
+1. `public/index.html` script tag, in load order
+2. `World.build` → the `World._buildPartN({...})` call with the helper bundle
+3. File lists in **all six** harnesses: verify-map, verify-build, verify-access,
+   verify-cover, verify-lifts, verify-batch, verify-arch, verify-collision,
+   verify-stairs-quality, verify-flow, verify-zfight, verify-props
+Adding a district to an EXISTING file avoids all of this. v7.6 put the rebuilt
+railway inside `districts-north.js` for exactly that reason.
+
+### Determinism (v7.8)
+`rnd()` is a running PRNG shared by every district builder. `World.reset()` now
+**reseeds it first and unconditionally**. Before that fix, a map's scattered
+props depended on how many `rnd()` calls the previous map made in the same
+process — editing Urban silently moved Rural's crates, and every gate was
+non-deterministic. If a gate number moves without a matching code change,
+suspect determinism before believing the number.
+
+### The "run must be ~0.5" rule is DEAD
+`stairFlight` used to skirt each tread with a 1.2 m box that reached into the
+climber's chest, so any run under ~0.5 m was unclimbable. **v6.2 made the tread
+collider a thin slab.** Runs of 0.30 are correct and gate-proven across the
+terrace, the colony and the station. The old rule survives only as a comment
+correction in `districts-outer.js`; do not reintroduce it.
+
+### Districts can stand INSIDE each other, and no gate looks for it
+v6.0's cargo yard put six container stacks inside the mall's floor plate, and
+v7.8 built shop units on top of them. The map gate checks loot and spawns, the
+coplanar gate checks large flat surfaces, the architecture gate checks floating
+and unreachable decks — **none of them checks whether one building occupies
+another's footprint.** It surfaced only because a stair walked into a bus from a
+different district. Before adding any district, scan the target band for
+existing colliders and write the footprint into the block comment.
+
+### The minimap saturates before it goes stale (v8.0)
+`addCollider` auto-captures eye-height footprints. By v7.9 Urban was capturing
+1,100 shapes with a median area of 0.9 m2 — every crate and bollard drawn at a
+wall's visual weight. Capture is now filtered (>= 3.5 m2 and >= 1.8 m in one
+direction) and drawn in two weights. `verify-batch` gates shape count AND median
+footprint. If the map looks wrong, check saturation before assuming staleness.
+
+### The player rig (v7.9)
+Avatars move every frame, so they can NEVER be static-merged. Cost is controlled
+by three things only:
+1. **Part count.** 13 visible unequipped, 16 fully kitted. Every part multiplies
+   by the player count — a mag pouch nobody can resolve costs ten draw calls.
+2. **Shared materials.** All body materials are module-level. The ONLY
+   per-player material is the identity accent, cached by colour, so ten players
+   on two teams cost two accents. Never mint a material inside `buildAvatar`.
+3. **LOD.** Small parts hide past 30 m.
+
+The rig is a JOINT HIERARCHY: nested Groups at hip, knee, shoulder, elbow.
+Groups are free. Rotating a limb mesh directly makes it scissor about its own
+centre. Crouch and prone are POSES — never `scale.y`, which squashes the head.
+
+Equipment is `.visible` toggling on meshes built once. Three.js skips invisible
+objects, so hidden gear costs nothing. Add new equipment as another hidden mesh
+plus a line in `setGear`, never as a second character model.
+
+Snapshot fields the rig reads: `cr` (0/1/2 stance), `mv` (0/1/2 speed), `rx`,
+`ry`, `ln`, `hl` (helmet), `lv` (armor), `rl` (reloading). Movement DIRECTION,
+turn rate and stride are derived client-side from interpolated position and yaw
+— do not add network fields for them.
+
+### Container / tooling
+- **`pkill -f "node server.js"` kills its own shell.** Use `fuser -k 3000/tcp`.
+- **Long bash batches silently time out** (~90 s). Split gate runs. The
+  integration suite takes ~110 s; run it in the background and poll.
+- `grep -c` exits 1 on zero matches — don't chain under `&&`.
+- Python heredoc `assert old in src` needs byte-exact anchors.
+- Container may reset mid-session. Re-unzip and `npm install --no-audit
+  --no-fund`, then `rm -f package-lock.json`.
+- **Verify gates from the extracted zip**, not just the working copy.
+
+### Deploy ritual (tell Rahul every time)
+Delete **all** files in the GitHub repo → upload the new zip's contents → wait
+for Render → hard-refresh (Ctrl+Shift+R). Mixed uploads have produced ghost bugs
+that looked like code regressions and were stale-file artifacts.
+
+---
+
+## 5. Game systems reference
+
+**Weapons (14):** ak47, m4a1, sniper, uzi, shotgun, pistol, rocket, knife, scarh,
+mk14, p90, m249, aa12, awm. Start with ak47, m4a1, uzi, shotgun, pistol, knife.
+Looted-only (`ex: 1`, slot 9): sniper, rocket, scarh, mk14, p90, m249, awm, aa12.
+**aa12 is airdrop-exclusive.** Snipers are real projectiles with travel and drop.
+
+**Attachments:** reddot, x2, x3, x4, x6, x8, extmag, quick, supp, flashh, comp.
+4x/6x/8x are marksman-only (scarh, mk14).
+
+**Armour/Helmet:** `CFG.ARMOR` L1/L2/L3, `CFG.HELMET` H1/H2/H3. Helmet cuts only
+the headshot bonus. *No test assertion covers the absorb maths yet.*
+
+**Regen:** `CFG.REGEN` — 6 hp/s after 7 quiet seconds, server-side, 4 Hz.
+**Scheduled for REMOVAL in Milestone 10**, replaced by consumable-gated healing.
+Flag it to Rahul as a removal, not an addition.
+
+**Match settings (v7.4):** modes ffa / t2 / t3 / t5. Kill targets 5/10/15/20/30.
+Durations 5/10/15/30/60 min — **no zero option; every match can end.**
+
+**Lobby launch (v7.4):** every connected player must press READY (solo hosts are
+not special-cased). `startMatch` is refused server-side unless `allReady`. Host
+presses START → `CFG.MATCH.startCountdown` (5 s) → match. A committed countdown
+runs to completion; a late unready cannot grief-cancel it. `lobbyPayload`
+publishes `notReady`, `allReady`, `counting` so clients recompute nothing.
+**The countdown handler must be bound at connect**, not in
+`bindGameplayEvents()` — it used to be, and every tick was dropped.
+
+**Key bindings** (`public/src/core/game.js`): G frag (hold to cook), H molotov,
+F flash, B smoke, V mine, R reload, X prone, Z lift, Tab scoreboard, C crouch,
+Q/E lean, T push-to-talk.
+
+**Nameplates are ALLY-ONLY.** The sprite uses `depthTest: false`; enemy tags
+would be a free wallhack. Any future loot label must be depth-tested and
+range-limited or it recreates the same bug.
+
+**Voice chat:** WebRTC P2P mesh, PTT on T. **STUN-only — needs TURN credentials
+from Rahul.** Two peers behind symmetric NAT cannot connect without it; no code
+change fixes that. Diagnostics panel `#voice-diag`.
+
+**Menu (v7.4/7.4.1):** layered CSS + inline SVG skyline. No WebGL, no image
+files, no `filter: blur()`. All animation on transform/opacity.
+`#menu-layer` is `display:none` in-match so it costs nothing while playing.
+
+---
+
+## 6. Milestone plan
+
+### Milestone 9 — THE CITY DISTRICTS (IN PROGRESS — 6 of 9 done)
+
+| District | Status | Identity |
+|---|---|---|
+| Railway (Sector 7 Central) | **DONE v7.6** | platforms, walkable coach, footbridge, water tower |
+| Residential (Old Town Terrace) | **DONE v7.8** | interiors, back alley, terrace roof run, corner shop |
+| Apartment (The Colony) | **DONE v7.8** | vertical, deck access, courtyard, water tank gantry |
+| Shopping (Market Cross) | **DONE v7.8** | medium range, arcade, colonnade, fountain, market square |
+| Warehouse (Irongate Depot) | **DONE v7.9** | close quarters, container lanes, dock, gantry crane |
+| Construction | pending | scaffolding, cranes, unfinished structures, vertical risk |
+| Industrial | pending | machinery, pipes, utility buildings, elevation changes |
+| Office | pending | corridors, room-to-room |
+| Container Yard (Eastgate Yard) | **DONE v8.0** | vertical stack maze, three heights, rail gantry |
+
+Rahul's rule: the design PHILOSOPHY is consistent (street / interior / flank /
+upstairs / roof layering, landmark, palette, callouts) but the COMBAT must feel
+different per district. He also asked explicitly that the space BETWEEN
+buildings be as interesting as the buildings — vehicles, dumpsters,
+transformers, barriers, stalls, benches, playgrounds, fountains, statues,
+planters, fences. All of that must reuse existing materials.
+
+Turn the rest of Urban into recognisable districts, the way the Railway District
+was done in v7.6. Per district: architecture pass, palette, landmark, interiors,
+loot, roof classification.
+
+Districts: Residential · Shopping · Warehouse · Construction · Industrial ·
+Container Yard · Office · Apartment.
+
+Acceptance: `verify-arch` broken-promises on urban → **0**; every district has a
+landmark and a distinct palette; every important building has ≥2 entrances,
+interior cover and a reason to enter; loot in every meaningful building; Urban
+minimap rebaked **last**, after geometry settles. Draw calls stay under 95.
+
+### Milestone 10 — SURVIVAL SYSTEMS
+Backpack/inventory; bandages, med kits, painkillers; **healing only if the
+player carries an item** (this REMOVES `CFG.REGEN`); loot labels on the ground
+(proximity-gated, depth-tested, range-limited); elimination feedback (collapse,
+better hitmarkers, kill confirmation, kill feed, natural loot drop). New
+`verify-inventory` gate.
+
+### Milestone 11 — PRESENTATION & FEEL
+Human-proportioned player model (Box/Cylinder/Cone only — correct proportions,
+separated limbs, real joints, gear silhouette are achievable; smooth organic
+geometry is not). Always-visible diagnostic overlay (Rahul approved). Helmet
+absorb assertion. Rural minimap rebake.
+
+### Milestone 12 — RURAL PASS
+Blocked: Rahul is still reviewing Rural and will supply direction.
+
+### Banked design answers — do not re-ask
+| Topic | Rahul's answer |
+|---|---|
+| Rooftop movement | Ziplines between rooftops |
+| Environment interaction | Doors you can open, close and block |
+| Tower reward | Spotting station that pings nearby enemies |
+| Game modes | No new modes — polish what exists |
+| Anti-cheat | Deferred ("friends only for now") |
+| Tower stairs | Deleted — lifts only |
+| Lift behaviour | ~2 s ride, vulnerable in the shaft |
+| Roof philosophy | **Not every roof must be playable. Every roof that LOOKS climbable must be.** Decorative roofs are good for skyline variety |
+| Release cadence | Fewer, larger milestones |
+
+---
+
+## 7. Known technical debt
+
+| Item | Detail |
+|---|---|
+| **Metro City never rendered** | Built headlessly across four versions. The Rural black-screen regression is the precedent for why this matters |
+| Broken-promise roofs | urban **11** (was 10; the v8.10 stairwell cuts fixed one and exposed the CONSTRUCTION SITE 6.90 deck, reachable only via a floating flight), rural 7, metro 25. All in districts not yet rebuilt. Coordinates printed by `verify-arch` |
+| Frame headroom | urban 98/115 draws, **57/62 shadow casters**, 81.7k/120k tris with **three districts left**. Remaining headroom is 17 draws, 5 casters, 38.3k tris — and casters are counted PER MESH AFTER MERGE, so geometry reusing an existing material costs zero. Every NEW material family costs a draw call and may cost a caster. Shadow casters are by far the tightest — design remaining districts with non-casting geometry |
+| Player cost is untested in a browser | Ten kitted operators = 180 draw calls on top of the map. That number has never been rendered |
+| Minimaps stale | Urban and Rural do not reflect v6/v7 geometry at all |
+| Two ascent failures | urban `south office` (reaches 1.18 of 3.20) and `north block A` (reaches **0.05** of 3.60). Pre-existing. The garage and warehouse fire escapes PASS — do not quote those |
+| No jump gate | Ascent proves stairs. Crate-to-container hops and canopy-to-coach crossings are unverified by anything |
+| Helmet absorb | No assertion covers the maths |
+| Anti-cheat | Movement, ammo and fire rate are fully client-trusted. The Render URL is public. Social boundary, not a technical one. Raise once if the audience widens; don't nag |
+| Voice TURN | Blocked on Rahul supplying credentials |
+
+---
+
+## 8a. v9.0 — HOLLOW RIDGE (rural)
+
+**Stair flights must start OUTSIDE the platform they serve.** `_stairwells()`
+cuts a hole through any floor a flight crosses, so a flight starting above its
+own deck DELETES that deck — it still renders and you fall through it.
+run = steps * stepDepth; make the run END at the platform edge.
+
+**A flight's total rise must equal the deck top**, or the walker stops one tread
+short and the gate calls the deck unreachable. If the cutter eats the top
+treads, LOWER THE DECK to what the flight delivers rather than lengthening the
+flight into the wall.
+
+**Reserve stair corridors from random scatter.** `onStairCorridor()` in
+rural.js exists because deleting one unrelated stair shifted the RNG stream and
+dropped a rock on a stair mouth.
+
+**Derive loot heights from the built colliders, never by hand.**
+
+**`World.BOUND` is per map** (`CFG.MAPS[x].bound`). Urban 100, rural 150.
+
+**Rural budgets are rural's**: triangles 70k, casters 26, minimap 215, dead
+ground 15%. Raised deliberately in v9.0 with measured figures recorded; ratchets
+from here.
+
+## 8a. v8.35 — PRONE, AND THE LESSON IN IT
+
+Prone lay backwards from whenever it was written until v8.35: the body rotation
+had the wrong SIGN, so the operator was on their back, feet-first, rifle aimed
+at the sky. Detail in CHANGELOG v8.35.
+
+**THE LESSON, which matters more than the fix:** thirteen versions of gates
+never caught it because every one of them measured HEIGHTS. A body lying the
+wrong way round is exactly the right height. When you add a gate, ask which
+AXIS the failure would live on — position, direction, orientation, timing — and
+make sure something measures that axis. `verify-hitbox` now measures direction.
+
+**The rig's forward is +Z.** Boot toe `+0.025` Z, rifle carried at `+Z`. Any
+rotation you write is measured against that.
+
+**The prone weapon counter-rotation is deliberately written as the negated body
+rotation**, not as the solved constant `-1.45`. If you retune the 0.92 lie-flat
+factor the barrel follows automatically. Do not "simplify" it back to a number.
+
+**Server survives a bad packet.** `process.on('uncaughtException')` logs and
+keeps serving rather than exiting, because one malformed message must not drop
+twenty operators. If you see repeated traces in the log, that is the handler
+doing its job — fix the cause, do not remove the net.
+
+## 8b. v8.34 — N TEAMS
+
+Ten modes now share one team system. Full detail in CHANGELOG v8.34.
+
+**THE RULE:** `CFG.activeTeams(modeId)` is the only thing allowed to decide
+which sides are in play. Do not write `'a'` or `'b'` as a literal anywhere in
+server or client team logic again — nine places did, and that was the ceiling.
+
+**The trap that will bite you:** `combat.js` does
+`room.teamKills[attacker.team]++`. If that key was never seeded the result is
+`undefined++` = **NaN**, which propagates into every snapshot and NEVER THROWS.
+Always build the bucket with `zeroTeamKills(mode)`. A gate asserts no squad
+score is NaN — keep it.
+
+**Team locks are validated against the current mode.** A player locked to squad
+'g' in sq2 must not survive a switch to 5v5, or they sit on a side that cannot
+score.
+
+**Squad sizes are deliberately unenforced** so a host can run 4-vs-2. Do not
+"fix" this.
+
+**pickSpawn needs no team tags for squads** — its v8.27 empty-set fallback
+already routes c-j to the full spawn set and picks the point furthest from
+enemies. Leave that fallback alone; it is load-bearing for squads now.
+
+**Free-for-all is the default and must stay first in CFG.MODES.** Six gates
+enforce it.
+
+## 8b. v8.33 — WEAPONS, CAPACITY, TEAMS, VOICE REMOVAL
+
+Full detail in CHANGELOG v8.33. What a future session needs to know:
+
+**Global hotkeys must skip text fields.** `game.js`'s keydown handler now bails
+when the event target is an INPUT/TEXTAREA/SELECT. It is at the TOP of the
+handler on purpose — every letter key that handler claims would otherwise eat
+that character out of the callsign box. Do not move a letter binding above it.
+
+**Snipers are hitscan.** `bullet` / `bulletSpeed` / `bulletDrop` are gone from
+all three bolt rifles. Nothing else in the game uses the projectile path any
+more except the rocket. Sniper lethality is a rule, not a vibe: body >= 100,
+head >= 100, legs ~80. `verify-models` enforces all three.
+
+**Every weapon in WEAPON_ORDER needs a viewmodel** or it is invisible in the
+hands. Gated now — that is the failure a new gun introduces.
+
+**Voice chat is gone and gated gone.** Do not reintroduce half of it.
+
+**Capacity is 20.** `verify-avatar` bills a real twenty-player lobby: 380 draw
+calls, 16 materials. The material count is the one to watch — it stayed at 16
+going from 10 to 20 players because body materials are module-level. If it ever
+starts climbing with player count, something began minting per-instance
+materials and that is a much bigger problem than the draw count.
+
+**Team names come from `room.settings.teamNames`, never from CFG directly.**
+`CFG.TEAMS[t].name` is the FALLBACK inside `UI.teamName()` and nowhere else.
+Sanitised server-side because they land in innerHTML.
+
+## 8b. v8.32 — RIG AND HITBOX
+
+Weapon carry, neck, and head hit detection all fixed; shadow acne on walls
+fixed. Numbers and reasoning in CHANGELOG v8.32.
+
+**The rule this release exists to enforce:** the hit box must be derived FROM
+the rendered model, never calculated alongside it. `net.js` caches the real head
+mesh world position each frame and `castRay` reads it. Do not reintroduce a
+parallel calculation from `CFG.PLAYER.eyeHeight` — that is exactly what let
+bullets pass through visible heads for thirteen versions while every gate
+passed. `tools/verify-hitbox.js` fires the real castRay at the real posed model
+and is now part of the required sweep.
+
+**Watch out:** `RIG` is non-uniform (1.52 / 1.22 / 1.52). Any limb rotated
+toward horizontal is stretched 1.52x instead of 1.22x, so changing an arm angle
+also changes how far the hand reaches. Angles and mount offsets have to be
+solved together, not one after the other.
+
+**Known, unfixed:** PRONE LIES BACKWARDS. Head at z -0.40, feet at z +1.01, +Z
+being forward — the body is laid out feet-first with the weapon pointing
+skyward. Separate defect, deserves its own change.
+
+## 8b. v8.31 — THE TEAM-MODE BUG, SOLVED
+
+`avatars.js` `drawHpBar` read `myTeam`, which is private to the Net IIFE in
+`net.js`. Every ally health bar threw `ReferenceError`. FFA never hit it because
+`myTeam` is null there, so `ally` is always false and short-circuit evaluation
+skips the branch entirely.
+
+The throw was inside `Net.updateRemotes()`, upstream of `FX.update`,
+`Pickups.update`, `Minimap.update`, the clock and the team score — and, before
+v8.30, upstream of `renderer.render()` itself. That was the black screen. The
+v8.30 error boundary converted it into the visible symptoms captured on video:
+permanent muzzle flashes and tracers, clock frozen at 10:00, score stuck 0-0.
+
+**Fixed** by using `Net.getMyTeam()` as `minimap.js` already did. **Contained**
+by giving every frame subsystem its own `step()` guard. **Gated** by
+`tools/verify-scope.js` — run it; it is now part of the required sweep.
+
+**Lesson for the next person:** these modules are bare IIFEs with no bundler. A
+variable private to one file is unreachable from another and NOTHING warns you —
+not a linter, not the parse sweep, not a gate that only checks function calls.
+`verify-scope` is the only thing that catches it. Do not weaken it.
+
+## 8b. v8.30 — what changed and what is still open
+
+**Fixed and gated.** `mat()` restored in `weapons/system.js` (frag, smoke, flash
+and the rocket all threw `ReferenceError` — molotov worked only because its
+branch returns before the shared line). Smoke moved off `KeyT`, which
+push-to-talk already owned in `ui.js`; smoke is `B`, HUD labels updated. Match
+end now also fires from the snapshot tick using the same `startedAt + duration`
+the HUD reads, so 0:00 and the real end cannot drift. Unlimited kill target (0).
+
+**Black screen: mechanism removed, trigger still unknown.** Reproduction was
+attempted and FAILED — live 2v2/3v3/5v5, odd counts, mid-countdown joins and
+joins into a running match were all healthy server-side, and a harness booting
+all 30 real client modules against a captured joiner event stream threw nothing.
+What was fixed is the reason any such fault was invisible and terminal:
+
+- `onMatchStart` now wraps the build and runs `setLoading(false)` / `showHUD()` /
+  `showClickToPlay()` in a `finally`. Previously a throw anywhere in the build
+  chain left the near-black `#loading` overlay up permanently.
+- the render loop now guards its gameplay block so `renderer.render()` — the
+  last statement — can never be skipped.
+- `window.onerror` and `unhandledrejection` route to a rate-limited on-screen
+  toast.
+
+**If the black screen recurs, the toast now names the error. Get that text
+before changing anything.** That is the missing evidence every previous attempt
+lacked.
+
+**Open, deliberately not fixed: the head hitbox disagrees with the model.**
+Measured with the real `castRay` against a settled rig, firing 11 rays up the
+visible head from 20 m:
+
+| Stance | head | body | passes straight through |
+|---|---|---|---|
+| Standing | 2 / 11 | 5 / 11 | **4 / 11** |
+| Crouching | 2 / 11 | 1 / 11 | **8 / 11** |
+| Prone | 1 / 11 | 10 / 11 | 0 / 11 |
+
+The head box is positioned from `CFG.PLAYER.eyeHeight`; the rendered head comes
+from the rig's joint chain (`spine 0.02` -> `neck +0.625` -> `head +0.105`, all
+scaled by `RIG`, plus `RIG_LIFT`). They agree prone and diverge badly standing
+and crouching. v8.19 scaled the boxes by `RIG` but never re-derived the head
+CENTRE, which is why `castRay` reading `Avatars.RIG` at runtime did not fix it.
+
+The right fix is to take the head position from the avatar's actual rendered
+head rather than recomputing it, and to add a gate that fires rays at the
+rendered head in all three stances and asserts `head`. **Do it in its own build**
+— it changes how aiming feels.
+
+**Other small items found in the v8.30 audit, not fixed:** `room.insights = null`
+sits inside the per-player loop in `startMatch` (harmless, misplaced); the client
+`socket.on('proj')` and `socket.on('throw')` handlers do no validation of `d.o`,
+`d.v` or `d.type`; the server has no `uncaughtException` handler; avatar feet sit
+~5.5cm below ground standing and ~6cm above it crouched/prone. A scan for
+undefined function references across all 30 client modules came back clean apart
+from `mat()`, so there are no other landmines of that class.
+
+---
+
+## 8. Browser verification status
+
+Rahul browser-tests **every** deployment: replace files -> push to GitHub ->
+Render deploys -> play the build -> report with screenshots. So a feature that
+has shipped and been played is VERIFIED, and this document must say so. Do not
+describe confirmed features as unverified.
+
+Two rules keep this ledger honest:
+
+1. **Verification is per FEATURE, not per version.** v7.5 was deployed and
+   played, and the material optimisation was confirmed working in that same
+   session that revealed a 6.2 m black slab at the crossroads. "v7.5 verified"
+   would have been wrong. "Material optimisation verified, crater disc broken"
+   was right.
+2. **Move an item up only when Rahul confirms it**, or when the evidence is
+   unambiguous (a screenshot showing it, or a bug report that proves the
+   surrounding feature rendered). Never promote on a general "looks good".
+
+### Browser verified
+
+| Feature | Evidence |
+|---|---|
+| Welcome screen: backdrop, skyline, brand, buttons, stat strip | v7.4 screenshot |
+| Menu grid, vignette, corner brackets | v7.4 screenshot |
+| Create Room flow and CFG-driven dropdowns | reached a live match in v7.5 |
+| Staging area / ready system / match launch | reached a live match in v7.5 |
+| Urban builds and plays in-browser | v7.5 in-game screenshots |
+| **Material optimisation (233 -> 55 draw calls)** | v7.5 in-game screenshots |
+| Emissive-Lambert unlit surfaces (road markings, crosswalks, lane lines) | visible in v7.5 screenshots |
+| Streetlamp halos as a single `THREE.Points` cloud | visible in v7.5 screenshots |
+| Shared vehicle paint palette | distinct car colours visible in v7.5 screenshots |
+| HUD: timer, kill target, live board, minimap, weapon, crosshair | v7.5 screenshots |
+| Match settings propagating ("FIRST TO 15") | v7.5 screenshots |
+
+### Pending browser verification
+
+Shipped but not yet reported on by Rahul:
+
+| Feature | Release |
+|---|---|
+| Metro City map selection end-to-end | v7.4 |
+| 2v2 mode | v7.4 |
+| START disabled + "waiting for N operators" reason text | v7.4 |
+| 5 s launch countdown rendering on the staging screen | v7.4.1 / fixed v7.6 |
+| Crater disc lying flat (the black slabs) | v7.6 |
+| **Railway district** — station hall, platforms, walkable coach, canopy, footbridge, engine shed, water tower | v7.6 |
+| Station gate cut into the inner city wall | v7.6 |
+| Container step stacks (jump route — no gate covers jumps) | v7.7 |
+| Canopy wide bays -> train roof crossings (jump route) | v7.7 |
+| **Old Town Terrace** — six houses, interiors, back alley, roof run, corner shop | v7.8 |
+| **The Colony** — deck-access blocks, courtyard, water tank gantry | v7.8 |
+| **Market Cross** — mall arcade, shop units, colonnade, market square, service yard | v7.8 |
+| Mall gate cut into the inner city wall | v7.8 |
+| Terrace / colony / market loot distribution (33 new points) | v7.8 |
+| Stall-crate and colonnade jump routes | v7.8 |
+| **Tactical operator rig** — proportions, joints, posture | v7.9 |
+| **Animation**: stride-by-distance, strafe, turning, prone transition, reload, idle breathing, 3-stage death | v7.9 |
+| **Visible helmet and vest** from equipped tiers | v7.9 |
+| **Irongate Depot** — container lanes, gantry crane, loading dock, north yard | v7.9 |
+| Container-top step stacks (jump routes) | v7.9 |
+| Depot loot distribution (9 new points) | v7.9 |
+| **Eastgate Yard** — three-height stack maze, rail gantry, yard office, reefer row | v8.0 |
+| Container climb chains (pallet -> 2.6 -> 5.2 -> 7.8) | v8.0 |
+| **Legible minimap** — 1,100 shapes down to 198, two-weight drawing | v8.0 |
+| Yard loot distribution (8 new points) | v8.0 |
+
+### Still never rendered by anyone
+
+| Item | Why it matters |
+|---|---|
+| **Metro City** | Built headlessly only, across four versions. The Rural black-screen regression is the precedent |
+| Lifts on Metro's underground shafts | A failure means standing inside solid ground |
+| Voice chat | Blocked on TURN credentials from Rahul |
+
+## 9. Working agreement
+
+- Phase large work internally and run a full gate sweep between phases. Metro
+  City took 4 phases; attempting it in one pass is how v6.0 shipped broken.
+- Prefer one fully-validated feature over several partial ones.
+- When uncertain, **stop and document rather than guess.**
+- Update `CHANGELOG.md` **and this handoff** whenever a version lands. Record
+  known-incomplete items in the entry itself.
+- Every zip is cumulative. Never a patch.
+- Performance is a first-class requirement in every milestone, not a phase.
