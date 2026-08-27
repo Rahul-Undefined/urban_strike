@@ -202,9 +202,19 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
        open. This is the rule that makes the reward cost something — see the
        header of server/lib/nuke.js. One call, one place. */
     if (ctx.onDeathClearStreakReward) ctx.onDeathClearStreakReward(room, victim);
+    /* v11.0: kill distance rides the death event. Rahul: "players need to
+       clearly understand where shots are coming from and who killed whom" —
+       the death screen now names killer, weapon AND range, which is the fact
+       that tells you whether you were rushed or sniped. Envelope event, not
+       the snapshot, so the wire format is untouched. */
+    const _atk = room.players.get(attackerId);
+    const _dist = (_atk && _atk.pos && victim.pos)
+      ? Math.round(Math.hypot(_atk.pos[0] - victim.pos[0], _atk.pos[1] - victim.pos[1],
+                              _atk.pos[2] - victim.pos[2]))
+      : null;
     io.to(room.code).emit('death', {
       victimId: victim.id, victimName: victim.name,
-      killerId: attackerId, killerName, killerStreak, assistIds,
+      killerId: attackerId, killerName, killerStreak, assistIds, dist: _dist,
       weapon, headshot: !!headshot, self: attackerId === victim.id,
       out: !!victim.out, livesLeft: CFG.livesFor(room.settings.mode)
         ? Math.max(0, CFG.livesFor(room.settings.mode) - victim.deaths) : null

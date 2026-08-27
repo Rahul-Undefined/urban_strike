@@ -17,6 +17,9 @@ var Game = (function () {
   var baseSens = 0.0023;
   var timerAccum = 0;
   var landDip = 0;
+  /* v11.0 black-world guards — see the camguard/drawwatch steps in loop(). */
+  var _camSafe = { pos: new THREE.Vector3(0, 3, 0), rx: 0, ry: 0 };
+  var _blackFrames = 0, _rebuiltThisMatch = false;
 
   /* v8.30 ERROR SURFACE.
 
@@ -427,56 +430,10 @@ var Game = (function () {
        chasing. Guarded because nothing in the match-start path may throw —
        see the black-screen note above this function. */
     try { if (window.Showcase) window.Showcase.stop(); } catch (e) { }
+    _rebuiltThisMatch = false; _blackFrames = 0;   // v11.0: one watchdog rescue per match
     UI.setLoading(true);
     setTimeout(function () {           // let the loading bar paint before the ~1s map build
-      var built = false;
-      try {
-        var mapId = (d.settings && d.settings.map) || 'urban';
-        currentMapId = mapId;
-        UI.setLoadingMap((CFG.MAPS[mapId] || CFG.MAPS.urban).label);
-        World.buildMap(scene, mapId);
-        Minimap.invalidate();
-        Weapons.matchReset();
-        Pickups.build(scene);
-        Pickups.init(d.pickups);
-        Minimap.init();
-        if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
-        AudioSys.ambient();
-        built = true;
-      } catch (err) {
-        /* v9.5 RETRY ONCE. A half-built world is the other way to end up
-           staring at black: the builder threw partway, leaving a scene with
-           some geometry and no ground. reset() clears it and a second attempt
-           usually succeeds, because the common causes (a transient allocation
-           failure, a texture that was not ready) do not repeat. If it fails
-           twice the message stays on screen and says so, which is far better
-           than a silent black screen the player cannot diagnose. */
-        reportError('match start', err);
-        try {
-          World.reset();
-          World.buildMap(scene, currentMapId);
-          Minimap.invalidate();
-          Weapons.matchReset();
-          Pickups.build(scene);
-          Pickups.init(d.pickups);
-          Minimap.init();
-          if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
-          AudioSys.ambient();
-          built = true;
-          UI.toast('Recovered after a map build error');
-        } catch (err2) {
-          reportError('match start (retry)', err2);
-          try { UI.toast('The map could not be built \u2014 leave and rejoin the room', true); } catch (x) {}
-        }
-      } finally {
-        /* These four own the screen. They run whether the build succeeded or
-           not, so a failure is a visible, playable-or-leavable state rather
-           than a black hole. */
-        UI.setLoading(false);
-        UI.hideEnd(); UI.hideDeath();
-        UI.setCountdown(-1);
-        UI.showHUD();
-      }
+      var built = buildWorld((d.settings && d.settings.map) || 'urban', d.pickups);
       try {
         var teams = CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams;
         UI.setKillTarget(killTargetLabel(d.settings.killTarget, teams));
@@ -492,6 +449,123 @@ var Game = (function () {
       UI.showClickToPlay(true);
       if (!built) UI.toast('Map failed to load \u2014 press ESC and rejoin the room', true);
     }, 60);
+  }
+
+  /* ===== v11.0 - ONE BUILD PATH, TWO CALLERS =====
+     onMatchStart and onRejoin need the identical sequence — build, minimap,
+     weapons, pickups, gameplay binds, ambience — with the identical guards and
+     the identical retry. Duplicating it is how the two would drift; the rejoin
+     path in particular exists precisely because a reconnect must land in a
+     world indistinguishable from the one a match start builds. Returns true if
+     the world stands. The finally block owns the screen either way, exactly as
+     the v8.30 note above demands. */
+  function buildWorld(mapId, pickups) {
+    var built = false;
+    try {
+      currentMapId = mapId;
+      UI.setLoadingMap((CFG.MAPS[mapId] || CFG.MAPS.urban).label);
+      World.buildMap(scene, mapId);
+      Minimap.invalidate();
+      Weapons.matchReset();
+      Pickups.build(scene);
+      Pickups.init(pickups);
+      Minimap.init();
+      if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
+      AudioSys.ambient();
+      built = true;
+    } catch (err) {
+      /* v9.5 RETRY ONCE. A half-built world is the other way to end up
+         staring at black: the builder threw partway, leaving a scene with
+         some geometry and no ground. reset() clears it and a second attempt
+         usually succeeds, because the common causes (a transient allocation
+         failure, a texture that was not ready) do not repeat. If it fails
+         twice the message stays on screen and says so, which is far better
+         than a silent black screen the player cannot diagnose. */
+      reportError('match start', err);
+      try {
+        World.reset();
+        World.buildMap(scene, currentMapId);
+        Minimap.invalidate();
+        Weapons.matchReset();
+        Pickups.build(scene);
+        Pickups.init(pickups);
+        Minimap.init();
+        if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
+        AudioSys.ambient();
+        built = true;
+        UI.toast('Recovered after a map build error');
+      } catch (err2) {
+        reportError('match start (retry)', err2);
+        try { UI.toast('The map could not be built \u2014 leave and rejoin the room', true); } catch (x) {}
+      }
+    } finally {
+      /* These four own the screen. They run whether the build succeeded or
+         not, so a failure is a visible, playable-or-leavable state rather
+         than a black hole. */
+      UI.setLoading(false);
+      UI.hideEnd(); UI.hideDeath();
+      UI.setCountdown(-1);
+      UI.showHUD();
+    }
+    return built;
+  }
+
+  /* ===== v11.0 - A REJOIN LANDS YOU BACK IN THE MATCH, NOT IN LIMBO =====
+     Rahul: reconnecting must "preserve their active-match state... handle
+     repeated disconnect/reconnect scenarios reliably."
+
+     net.js has called Game.onRejoin since v9.11 and NOTHING ANSWERED — the
+     call was guarded on existence and the function never existed. So a token
+     rejoin restored the seat server-side and left the client wherever it was:
+     after a page refresh that meant the WELCOME SCREEN with a live match's
+     snapshots arriving behind it, and even in the same tab the player was
+     dead with no death screen, no countdown, and no way to ask for a respawn.
+     "The game dropped me" was the only reasonable description a player could
+     give of that, and it is half of the long-match disconnect report.
+
+     The other half was one missing line on the server (socket.data.roomCode,
+     see the rejoin handler) that made every input from a rejoined player fall
+     into a void. Both halves are fixed in this version; either alone leaves
+     reconnect broken. */
+  function onRejoin(res) {
+    try {
+      if (!res || res.state !== 'playing') {
+        UI.hideEnd(); UI.hideDeath();
+        UI.showMenu(); UI.showScreen('screen-lobby');
+        return;
+      }
+      var mapId = (res.settings && res.settings.map) || 'urban';
+      var needBuild = !World.isBuilt() || World.builtMap !== mapId;
+      var after = function () {
+        var teams = CFG.MODES[res.settings.mode] && CFG.MODES[res.settings.mode].teams;
+        try { UI.setKillTarget(killTargetLabel(res.settings.killTarget, teams)); } catch (e) {}
+        stopSpectating();
+        UI.showHUD();
+        UI.showClickToPlay(true);
+        /* The server put us on the respawn clock the moment the seat was
+           restored; mirror it. The death overlay is the honest state — you
+           are not alive — and the countdown ends in the same requestRespawn
+           an ordinary death uses. */
+        onLocalDeath({ self: true, killerName: '', weapon: null, silent: true });
+      };
+      if (needBuild) {
+        try { if (window.Showcase) window.Showcase.stop(); } catch (e) { }
+        UI.setLoading(true);
+        setTimeout(function () { buildWorld(mapId, res.pickups); after(); }, 60);
+      } else {
+        if (res.pickups) { try { Pickups.init(res.pickups); } catch (e) { reportError('rejoin pickups', e); } }
+        after();
+      }
+    } catch (err) { reportError('rejoin', err); }
+  }
+
+  /* v11.0: transport recovery (same socket id, world still built). All that is
+     needed is to get a dead player back on the respawn clock — the forced
+     keyframe repairs everything visual. */
+  function onRecovered() {
+    try {
+      if (!PlayerCtl.alive) onLocalDeath({ self: true, killerName: '', weapon: null, silent: true });
+    } catch (err) { reportError('recovered', err); }
   }
 
   /* v8.30: 0 kills means UNLIMITED — the match runs until the clock expires.
@@ -581,7 +655,10 @@ var Game = (function () {
     clearInput();
     UI.setCrosshair(false);
     UI.setScope(false);
-    UI.showDeath(d);
+    /* v11.0 silent: the rejoin/recovery paths reuse this to get back on the
+       respawn clock — the overlay reads REDEPLOYING rather than K.I.A. because
+       nobody killed anyone. */
+    UI.showDeath(d && d.silent ? Object.assign({}, d, { rejoin: true }) : d);
     /* v8.37 LAST STAND: one life. There is no countdown to show because there
        is no coming back — the server refuses the respawn either way, so a
        ticking clock that leads nowhere would be a lie. The player keeps the
@@ -629,6 +706,10 @@ var Game = (function () {
     UI.hideEnd();
     UI.showMenu();
     UI.showScreen('screen-lobby');
+    /* v11.0: the hero renderer was stopped for the match; the menu without it
+       is the fail-safe look, not the intended one. Guarded like every other
+       showcase entry point. */
+    try { if (window.Showcase) window.Showcase.start(); } catch (e) { }
   }
 
   function setShadows(on) {
@@ -727,6 +808,10 @@ var Game = (function () {
       });
       step('pickups', function () { Pickups.update(dt); });
       step('minimap', function () { Minimap.update(); });
+      /* v11.0 PUBG-style compass strip, top of the HUD. One transform per
+         frame on a strip built once — see UI.updateCompass. Its own step so a
+         DOM fault in it cannot starve audio or the clock below. */
+      step('compass', function () { UI.updateCompass(PlayerCtl.yaw); });
 
       step('audio', function () {
         camera.getWorldDirection(fwdV);
@@ -773,10 +858,62 @@ var Game = (function () {
        last frame's. */
     updateSpectator(dt);
 
+    /* ===== v11.0 - THE LAST TWO ROUTES TO A BLACK WORLD =====
+
+       Context loss (v9.5) and the outside-the-guard throws (v10.16) are
+       handled above. What remained:
+
+       1. A NaN CAMERA. One bad frame of physics (a NaN velocity, a corrupted
+          collider) poisons camera.position, and three.js then culls the entire
+          scene against NaN planes — every mesh fails the test and the frame
+          renders pure black while the loop hums along at 60 fps. Input still
+          works, the HUD still draws (it is DOM), which is exactly the "map
+          turned black but I can move the screen" report. The guard restores
+          the last finite camera pose and names the fault once.
+
+       2. A SILENT ZERO-DRAW FRAME. Whatever the cause — a future regression,
+          a driver event the context handlers missed — if the world is built,
+          the match is on, and the renderer reports 0 draw calls for two whole
+          seconds, something upstream has emptied the scene. The watchdog
+          rebuilds once per match and says so. It is a net, not a fix: the
+          reportError names it so the actual trigger can be found, which is the
+          same philosophy as v8.30's error surface. */
+    step('camguard', function () {
+      if (isFinite(camera.position.x) && isFinite(camera.position.y) &&
+          isFinite(camera.position.z) && isFinite(camera.rotation.x) &&
+          isFinite(camera.rotation.y)) {
+        _camSafe.pos.copy(camera.position);
+        _camSafe.rx = camera.rotation.x; _camSafe.ry = camera.rotation.y;
+      } else {
+        camera.position.copy(_camSafe.pos);
+        camera.rotation.x = _camSafe.rx; camera.rotation.y = _camSafe.ry;
+        camera.rotation.z = 0;
+        reportError('camera', 'non-finite camera pose restored from last good frame');
+      }
+    });
+
     /* v9.5: never draw into a dead context. Every call throws while the GPU
        side is gone, which floods the console and hides the one message that
        matters — the context-lost warning. */
     if (!contextLost) renderer.render(scene, camera);
+
+    step('drawwatch', function () {
+      if (contextLost || !playing || !World.isBuilt()) { _blackFrames = 0; return; }
+      var calls = renderer.info && renderer.info.render ? renderer.info.render.calls : 1;
+      if (calls > 0) { _blackFrames = 0; return; }
+      if (++_blackFrames < 120) return;                    // ~2 s of provably empty frames
+      _blackFrames = 0;
+      if (_rebuiltThisMatch) return;                       // one rescue per match, then it is a report
+      _rebuiltThisMatch = true;
+      reportError('blackscreen', 'renderer drew 0 calls for 2s — rebuilding the world');
+      try {
+        World.reset();
+        World.buildMap(scene, currentMapId || 'urban');
+        Minimap.invalidate(); Minimap.init();
+        Pickups.build(scene);
+        UI.toast('Display recovered');
+      } catch (err) { reportError('blackscreen rebuild', err); }
+    });
   }
 
   return {
@@ -786,6 +923,8 @@ var Game = (function () {
     getCamera: function () { return camera; },
     init: init,
     onMatchStart: onMatchStart,
+    onRejoin: onRejoin,               // v11.0: token/name reclaim resume
+    onRecovered: onRecovered,         // v11.0: transport-recovery resume
     onLocalSpawn: onLocalSpawn,
     onLocalDeath: onLocalDeath,
     cycleSpectate: cycleSpectate,

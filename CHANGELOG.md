@@ -1,3 +1,166 @@
+# v11.0 - EIGHT ASKS, AND THE WORST BUG WAS ONE MISSING LINE
+
+The brief: welcome screen worthy of the game, merge Create Room into the
+lobby, fix map jitter / black screens / ~15-minute disconnects, make combat
+feedback readable, add a compass, fix the avatar freeze-teleport cluster,
+kill four invisible walls in Killhouse and make it look intentional, restock
+equipment on respawn, never move a player's team mid-match, and make
+reconnection actually work. All eight shipped. What follows is what each one
+actually was, because half of them were not what they looked like.
+
+## 1. RECONNECT WAS TWO BUGS, AND EITHER ALONE KEEPS IT BROKEN
+
+"players automatically disconnect... the system should recognize the
+disconnected player and prompt to restore."
+
+The token-rejoin path has existed since v9.11. It restored the seat, re-keyed
+the record, forced a keyframe — and never set `socket.data.roomCode`. Every
+handler on the server resolves the room THROUGH that field. So a rejoined
+player received the world perfectly and could send NOTHING into it: every
+movement input, every shot, every respawn request looked up `undefined` and
+was dropped. A ghost with a working monitor. That is one missing line,
+sixteen versions old.
+
+The client half: net.js has called `Game.onRejoin` since v9.11 — guarded on
+existence. The function never existed. A guard on a function nobody wrote is
+a silent no-op with a comment that reads like a feature. So even when rejoin
+half-worked, the player was left on whatever screen they were on, dead, with
+no respawn clock. v11.0 writes the function: rebuild the world if the map
+changed, mirror the seat, put the player on the ordinary respawn countdown
+with a REDEPLOYING overlay instead of a fabricated killer.
+
+On top of the repair: socket.io `connectionStateRecovery` (2-minute window,
+same socket id, server replays the keyframe), the reclaim-by-name flow — join
+a room holding a disconnected seat under your callsign and the client offers
+to restore it, team CONFIRMED in the dialog and never reassigned — a 180 s
+seat hold (was 45), and the session token in localStorage as well as
+sessionStorage, TTL-matched to the hold, so a crashed tab can come back.
+
+## 2. THE ~15-MINUTE DISCONNECTS WERE THE TRANSPORT, PROBABLY
+
+pingInterval 25s/pingTimeout 20s meant one late pong at minute N killed the
+socket. Now 20s/30s, plus recovery above, plus the reclaim flow as the
+backstop. Stated honestly: an infrastructure idle-timeout at ~900 s matches
+the report exactly and cannot be fixed from inside the process — what v11.0
+guarantees is that the drop, whatever causes it, is a two-second hiccup
+instead of a lost seat. [Likely, not Certain — the fix is defense in depth.]
+
+## 3. THE FREEZE-TELEPORT CLUSTER HAD FOUR CAUSES, NOT ONE
+
+v10.15 diagnosed the frozen-unkillable body correctly and fixed the drain
+guard. Three causes remained, and one was created later:
+
+- Arrival-time stamping. Snapshots were buffered at performance.now() ON
+  ARRIVAL, so network jitter was transcribed into the buffer as MOTION. The
+  server now sends its tick number (`packet.n`); the client reconstructs
+  sample time on a one-sided min filter (a packet can be late, never early)
+  with a 4 ms/s drift chase. Arrival noise stops existing below the
+  interpolator.
+- The 1.15 overshoot clamp. Every late sample pushed the body 15% PAST its
+  newest known position, then dragged it back. Permanent
+  overshoot-and-retract, visible on a healthy link. Now clamps at 1.0: hold
+  at the truth, invent nothing.
+- Volatile snapshots (v10.17, correct) DROP under congestion, and a fixed
+  190 ms buffer absorbs exactly one drop. The delay is now adaptive:
+  p95 of measured arrival gaps plus headroom, floor 190 (the verify-interp
+  invariant), ceiling 320, fast up / slow down. The freeze's fuel — a dry
+  buffer — is priced by the link's own measured behaviour.
+- The 20 Hz client vs 15 Hz snapshot beat put a 5 Hz pulse in remote
+  velocity. A ~40 ms critically-damped follow integrates it out — reset to
+  identity on every genuine snap (spawn, teleport, dry-buffer catch-up), so a
+  jump is a jump and never a glide. Extrapolation stays banned.
+
+Found while in there: the buffer push dropped `rl`/`hl`/`lv`, so remote
+reload animations and helmet/vest visuals have been silently dead since the
+fields were added to the codec. They ride the buffer now.
+
+## 4. KILLHOUSE'S PHANTOM WALLS WERE A SIGN CONVENTION
+
+All four reported coordinates sit 0.62-0.63 m perpendicular off walls that do
+not exist — the MIRROR IMAGES of PLAN rows 17 and 9. The chain segment
+builder stepped along (cos, +sin); rotY places geometry along (cos, MINUS
+sin). Every angled chain in the map was built z-mirrored: collider where no
+wall renders, wall that no collider backs. One character (`uz = -Math.sin`),
+plus the same fix in the end-stud. tools/verify-collision.js now drives the
+resolver through all four reported points and along BOTH faces of every
+angled PLAN row (63 assertions), so the convention can never silently flip
+again. The visual makeover (sector colour bands, floor chevrons, hazard
+brackets, muster pads) rebaselines the fingerprint with the reason
+documented: colliders 666, draws 22, tris 7984, casters 10.
+
+## 5. THE MINE REFILL EXISTED FOR SIX VERSIONS; NOBODY TOLD THE HUD
+
+The server refilled mines on every respawn since v10.15 and has SENT the
+count in the spawn message since v10.22. The client handler dropped it on the
+floor, so the local mirror stayed at whatever death left and refused the
+plant client-side. `Weapons.setMines` existed, exported, called by nothing.
+Two lines in the spawn handler. Grenades were never broken.
+
+## 6. TEAMS ARE NOW STRUCTURALLY FROZEN AT MATCH START
+
+v10.22 fixed the startMatch call site. The one it missed: a MID-MATCH JOIN
+runs `refreshTeamsAndColors` with no preserve flag and re-round-robined every
+unlocked player mid-firefight. Two independent guarantees now: startMatch
+locks every seated player, and the balancer itself forces preserve whenever
+the room is not in lobby — a newcomer is placed on the emptier side and
+locked immediately. No call site can get this wrong again, because the rule
+lives in the function rather than in its callers.
+
+## 7. THE MENU IS A LOBBY, THE LOBBY IS THE CREATE SCREEN
+
+Welcome: small brand plate, operator profile chip (callsign persists in
+localStorage), a live OPERATOR HERO — the game's own avatar rig holding the
+featured weapon via the same `setRemoteGun` every match uses, individually
+degradable back to the weapon-only reel on any rig fault — and one loud PLAY.
+Create and Join live in the deploy sheet PLAY opens; creating takes zero
+forms. The v10.22 rule "settings are written once, on the create screen" is
+formally superseded: there is no create screen, the lobby config column is
+the ONLY writer, and the two-sources-of-truth fault that rule guarded against
+is now unrepresentable. Host edits live selects; everyone else sees them
+locked; the server still clamps. The four computed stat counters moved to the
+lobby intel column. Death screen now names killer, weapon, DISTANCE, and
+headshot. Damage direction spawns stacked per-hit arcs (cap 6) so crossfire
+reads as two bearings instead of a thrashing arrow. A PUBG-style compass
+strip tops the HUD — ticks built once, one transform per frame, same yaw
+convention as the minimap so the two can never disagree.
+
+## 8. TWO WATCHDOGS FOR THE BLACK SCREEN, BOTH SELF-REPORTING
+
+A NaN camera pose makes three.js cull everything against NaN planes — 60 fps
+of pure black with a working HUD. The camera guard restores the last finite
+pose and names the fault. Independently: if the renderer reports 0 draw calls
+for 120 consecutive frames mid-match, the world is rebuilt once per match and
+the incident is reported. Nets, not fixes — they name their trigger so the
+real cause can be found — but the player keeps playing either way.
+
+## 9. THE INTEGRATION SUITE IS GREEN FOR THE FIRST TIME SINCE v10.9
+
+Pristine v10.22 fails its own test.js 223/27. The rot: v10.9 switched bots
+off and hid modes; the suite kept asserting the pre-switch world; every
+handoff since said "test.js NOT RUN" (v10.18 disproved that), so nobody saw
+27 permanent reds teaching everyone that red means nothing. v11.0: the bot
+phases gate on the SAME switch the server reads (skip with a note when off,
+assertion bodies retained verbatim, re-armed by the one-line flip world.config
+documents); capacity/category/squad assertions now derive from CFG instead of
+pinning literals — the "magic total" mistake test.js itself warns about at
+its v9.2 note. 209 passed, 0 failed, exit 0. The armed-run behaviour of the
+bot phases is untested in v11.0 and listed as open in the handoff.
+
+## LESSONS
+
+- A guard on a function that does not exist is a no-op wearing a seatbelt.
+  Grep for `Game.on*` callers when adding lifecycle events; the guard hid a
+  sixteen-version hole.
+- Every socket re-key must set `socket.data.roomCode`. Both re-key paths
+  (token rejoin, reclaim) now do; it is in the handoff rules.
+- When a body must turn, check which trig convention the PLACER uses before
+  writing the STEPPER. rotY is (cos, -sin) here, everywhere.
+- A permanently red test suite is worse than no suite. Gate on the feature
+  switch or derive from config; never pin a content count.
+- interpDelay is a FLOOR, not a value. The gate now asserts the clamp, not
+  the constant.
+
+
 # v10.22 - SEVEN, AND THREE OF THEM WERE THE SAME MISTAKE IN DIFFERENT CLOTHES
 
 ## 1. THE NUKE RE-ARMED ON EVERY KILL AFTER THE FIFTH

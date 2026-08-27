@@ -169,7 +169,24 @@
       if (rot) {
         box(cx, PART_H / 2, cz, len, PART_H, TH,
             M.plaster, { rotY: rot, collide: false });
-        var ux = Math.cos(rot), uz = Math.sin(rot);
+        /* ===== v11.0 - THE CHAIN RAN DOWN THE WRONG DIAGONAL =====
+
+           v10.22 built this chain along (cos rot, +sin rot). A three.js rotY
+           maps the box's length axis to (cos rot, -sin rot) — rotation about Y
+           is x' = x cos + z sin, z' = -x sin + z cos, so local +X lands at
+           world (cos, -sin). The sign error MIRRORED every angled chain in z:
+           the drawn wall ran one diagonal with NO collision on it, and a
+           phantom wall ran the opposite diagonal through open floor.
+
+           Rahul's four reported block points — (4.85, 2.66), (2.50, 4.00),
+           (-3.73, -11.44), (-0.00, -10.38) — all sit 0.62-0.63 m
+           (capsule radius 0.35 + collider half 0.15 + skin) perpendicular to
+           the MIRRORED lines of PLAN rows 17 and 9, on both sides: players
+           walking into the phantom from either direction. Measured before this
+           edit, gated after it — verify-collision now probes all four
+           coordinates as free ground and drives the resolver INTO each drawn
+           diagonal to prove the visible wall finally collides. */
+        var ux = Math.cos(rot), uz = -Math.sin(rot);
         var half = TH / 2, step = TH * 0.5;
         for (var t = -len / 2; t <= len / 2 + 0.001; t += step) {
           var px = cx + ux * t, pz = cz + uz * t;
@@ -180,8 +197,11 @@
       }
       box(cx, PART_H - 0.22, cz, len, 0.12, TH + 0.02,
           M.roadPaintY, rot ? { rotY: rot, cast: false, collide: false } : NBOTH);
-      /* Exposed steel studs at each end — stops a partition reading as a slab. */
-      var hc = Math.cos(rot || 0) * (len / 2), hs = Math.sin(rot || 0) * (len / 2);
+      /* Exposed steel studs at each end — stops a partition reading as a slab.
+         v11.0: -sin, same rotY convention as the collider chain above. The +sin
+         version put the end studs of every angled row off in open floor,
+         mirrored from the wall they were meant to cap. */
+      var hc = Math.cos(rot || 0) * (len / 2), hs = -Math.sin(rot || 0) * (len / 2);
       [-1, 1].forEach(function (e) {
         box(cx + e * hc, PART_H / 2, cz + e * hs, 0.16, PART_H + 0.06, TH + 0.06, M.metal, NCAST);
       });
@@ -285,6 +305,61 @@
       box(q[0], 0.55, q[1], 2.6, 1.10, 1.6, M.contGray);
       box(q[0], 1.16, q[1], 2.7, 0.12, 1.7, M.rust, NBOTH);
     });
+
+    /* ============ v11.0 ORIENTATION LANGUAGE ============
+       Rahul: the map "feels like a puzzle". The maze is the point of a
+       shoot-house, so the walls stay — what was missing is a way to KNOW WHERE
+       YOU ARE inside it and to say so to a team-mate. Everything below is
+       paint and trim: collide:false, cast:false, every material already in the
+       batch list, so cover, dead ground and the collider set are untouched and
+       only meshSig moves (rebaselined in verify-fingerprint with this note).
+
+       Four devices, each of which is a WORD a player can use on comms:
+         - the long walls are colour-banded: WEST is steel-blue, EAST is rust.
+         - the end walls differ: NORTH white band, SOUTH hazard band.
+         - three lanes of floor chevrons run spawn-to-spawn, so "left lane /
+           centre / right lane" is legible at a glance.
+         - each solid block gets hazard corner brackets and each spawn room a
+           painted muster disc, so "on the block" and "at spawn" read too. */
+    segx(-HX, -(HX - 0.18), 2.2, 2.55, -HZ + 0.5, HZ - 0.5, M.steelBlue, NBOTH); // WEST band
+    segx(HX - 0.18, HX, 2.2, 2.55, -HZ + 0.5, HZ - 0.5, M.rust, NBOTH);          // EAST band
+    seg(-HX + 0.5, HX - 0.5, 2.2, 2.55, -HZ, -HZ + 0.18, M.paperWhite, NBOTH);   // NORTH band
+    seg(-HX + 0.5, HX - 0.5, 2.2, 2.55, HZ - 0.18, HZ, M.hazard, NBOTH);         // SOUTH band
+
+    /* Lane chevrons: two short strokes in a V, pointing outward from centre so
+       both spawns read them as "toward the enemy". Painted, never cover. */
+    function chevron(cx, cz, dir) {
+      var o1 = { rotY: dir * 0.6, cast: false, collide: false };
+      var o2 = { rotY: -dir * 0.6, cast: false, collide: false };
+      box(cx - 0.42, 0.012, cz - dir * 0.18, 1.05, 0.012, 0.16, M.roadPaintY, o1);
+      box(cx + 0.42, 0.012, cz - dir * 0.18, 1.05, 0.012, 0.16, M.roadPaintY, o2);
+    }
+    [-12, 0, 12].forEach(function (lx) {
+      for (var cz2 = 8; cz2 <= 24; cz2 += 8) {
+        chevron(lx, -cz2, -1);
+        chevron(lx, cz2, 1);
+      }
+    });
+
+    /* Hazard corner brackets around each solid block's footprint. */
+    function brackets(cx, cz, len) {
+      var hx2 = len / 2 + 0.55, hz2 = 4.2 / 2 + 0.55, L = 1.0, W = 0.16;
+      [-1, 1].forEach(function (sx2) {
+        [-1, 1].forEach(function (sz2) {
+          box(cx + sx2 * (hx2 - L / 2), 0.014, cz + sz2 * hz2, L, 0.012, W, M.hazard, NBOTH);
+          box(cx + sx2 * hx2, 0.014, cz + sz2 * (hz2 - L / 2), W, 0.012, L, M.hazard, NBOTH);
+        });
+      });
+    }
+    brackets(-2, -17, 8); brackets(-2, -2, 5); brackets(1, 17, 8);
+
+    /* Muster pads: blue on the north spawn floor, rust on the south, matching
+       the wall band you are facing when you leave it. Boxes, not cyl(): cyl()
+       hard-sets castShadow=true and ignores the option (measured here — one
+       disc cost the caster budget +1; recorded in the handoff, not fixed, as
+       fixing cyl would move every map's recorded caster count at once). */
+    box(0, 0.008, -(HZ - 9), 4.2, 0.014, 4.2, M.steelBlue, NBOTH);
+    box(0, 0.008, (HZ - 9), 4.2, 0.014, 4.2, M.rust, NBOTH);
 
     /* Loose scatter, with the KEEP_CLEAR discipline v10.11 learned the hard
        way: tested against the crate's FULL footprint, never its centre. */

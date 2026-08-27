@@ -122,6 +122,17 @@ function addPlayer(room, socket, name) {
    passes preserve = true, because by then the lobby is authoritative and
    re-running the balancer can only disagree with what the players just saw. */
 function refreshTeamsAndColors(room, preserve) {
+  /* ===== v11.0 - OUTSIDE THE LOBBY, PRESERVE IS NOT OPTIONAL =====
+     Rahul: "player A is in team 1 but in the game sometimes player A is added
+     in team 2." v10.22 fixed the startMatch call site; the one it missed is a
+     MID-MATCH JOIN — addPlayer calls this with no argument, and the join-order
+     round-robin re-ran over every unlocked player while they were fighting.
+     The rule is now structural rather than per-call-site: while a room is
+     playing (or ended), every settled side is preserved and the balancer may
+     only fill players who have none. A newcomer filled here is locked at once,
+     so the NEXT join cannot move them either. */
+  const inLobby = room.state === 'lobby';
+  if (!inLobby) preserve = true;
   const list = [...room.players.values()].sort((a, b) => a.joinOrder - b.joinOrder);
   const teams = modeInfo(room).teams;
   /* v8.27: `teamLocked` is set when the host places somebody by hand. The
@@ -164,7 +175,9 @@ function refreshTeamsAndColors(room, preserve) {
         return;
       }
       p.team = ids[autoIdx++ % ids.length];
-      p.teamLocked = false;                      // a stale lock is cleared, not carried
+      /* v11.0: a fill that happens while the match is running is immediately a
+         settled fact — lock it, or the next joiner's refresh moves this one. */
+      p.teamLocked = !inLobby;
       p.color = CFG.TEAMS[p.team].color;
     } else {
       p.team = null; p.teamLocked = false;

@@ -344,12 +344,44 @@ console.log('\n--- v10.16: updateRemotes survives every buffer shape ---');
   ok(got === 30, 'a badly stale buffer snaps to the newest sample, not the oldest [' + got + ']');
 }
 
-console.log('\n--- the shipped interpolator is the v9.15 one ---');
-ok(/renderT = performance\.now\(\) - CFG\.NET\.interpDelay/.test(netSrc),
-  'the fixed interpDelay is what runs');
-ok(!/effDelay/.test(netSrc), 'no adaptive buffer is in the shipped path');
+console.log('\n--- the shipped interpolator honours the v11.0 invariants ---');
+/* v11.0 SUPERSESSION NOTE — why these assertions changed shape.
+
+   The v9.15 checks pinned the IMPLEMENTATION (a fixed delay, a 1.15 clamp).
+   v11.0 changes the implementation and KEEPS the invariants those checks were
+   standing in for, so the gate now tests the invariants directly — each one
+   strictly as strong or stronger than what it replaces:
+
+   1. The render point never sits closer to the present than interpDelay.
+      Was: renderT = now - interpDelay (fixed). Now: renderT = now -
+      stepDelay(), where stepDelay is floor-clamped to interpDelay and
+      ceiling-clamped to interpMax. The simulation above is the justification
+      for the FLOOR; the adaptive part only ever ADDS buffer.
+   2. Never invent position. Was: clamp 1.15 (15% invention allowed!). Now:
+      clamp 1.00 — hold at the newest truth, invent nothing. Stronger.
+   3. No extrapolation. Unchanged.
+   4. The v9.13 teleport snap and buffer drop. Unchanged.
+   5. NEW: the drain is the canonical two-ahead form and the v10.15 wedge
+      guard (`> 2`) is gone — that guard is what froze bodies for good.
+   6. NEW: the display smoothing resets on every genuine snap, so a teleport
+      is never smeared into a glide (which would recreate the unshootable-
+      body defect at the visual layer). */
+ok(/renderT = performance\.now\(\) - stepDelay\(dt\)/.test(netSrc),
+  'renderT is derived from the adaptive delay');
+ok(/if \(delayNow < CFG\.NET\.interpDelay\) delayNow = CFG\.NET\.interpDelay/.test(netSrc),
+  'the adaptive delay is floor-clamped to interpDelay — the fixed delay is the minimum, never undercut');
+ok(/CFG\.NET\.interpMax \|\| 320/.test(netSrc),
+  'and ceiling-clamped to interpMax — congestion cannot inflate it without bound');
 ok(!/EXTRAP_MS/.test(netSrc), 'no extrapolation is in the shipped path');
-ok(/Math\.min\(1\.15/.test(netSrc), 'the v9.15 clamp is back');
+ok(/Math\.min\(1, Math\.max\(0/.test(netSrc),
+  'f clamps at exactly 1.0 — hold at the newest truth, never invent past it (was 1.15)');
+ok(!/Math\.min\(1\.15/.test(netSrc), 'the 15% overshoot clamp is gone');
+ok(/while \(buf\.length >= 2 && buf\[1\]\.t <= renderT\) buf\.shift\(\)/.test(netSrc),
+  'the drain is the canonical two-ahead form');
+ok(!/buf\.length > 2 && buf\[1\]\.t < renderT/.test(netSrc),
+  'the v10.15 wedge guard (`> 2`) is gone from the drain');
+ok(/if \(snapped\) \{ r\.smooth\.copy\(r\.renderPos\); r\.smoothRy = r\.ry; \}/.test(netSrc),
+  'display smoothing resets on the dry-buffer snap — a jump is a jump, never a glide');
 /* The one interpolation fix that PREDATES the bandwidth work and must survive
    every revert: v9.13's teleport snap. Without it a respawn is lerped across
    the map and every shot at that player is refused for the whole slide. */

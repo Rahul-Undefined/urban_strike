@@ -112,7 +112,15 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
 
    Bandwidth impact of this rise, stated plainly: 15,375 -> ~14,700 fresh loads
    per 5 GB. */
-const GZ_BUDGET_KB = 355;
+/* ===== v11.0 — 355 -> 375 KB. THE RISE IS FEATURES, STATED PLAINLY =====
+   What the ~10 KB gzipped bought: the merged operations lobby + welcome
+   redesign (markup/CSS/logic), the HUD compass, the reclaim flow, the
+   operator hero, and the adaptive-delay netcode with its teaching comments —
+   the house style ships its reasoning, and that is a deliberate cost. 20 KB
+   grants ~10 KB of headroom, the same allowance the v10.14 rise left.
+   Bandwidth impact: ~14,700 -> ~13,980 fresh loads per 5 GB. The real fix
+   remains the one v10.14 names: per-map builder loading, its own build. */
+const GZ_BUDGET_KB = 375;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

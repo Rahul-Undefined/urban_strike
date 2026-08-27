@@ -398,5 +398,84 @@ for (const map of MAPS) {
     (bad.length ? " — " + bad.length + " BAD: " + bad.slice(0, 3).join(" ") : ""));
 }
 
+/* ===== v11.0 - AN ANGLED WALL'S COLLISION MUST LIE UNDER ITS DRAWING =====
+
+   v10.22 replaced each rotated killhouse wall's AABB with a chain of small
+   axis-aligned colliders — correct idea, wrong diagonal. The chain was stepped
+   along (cos rot, +sin rot); a three.js rotY places the drawn box along
+   (cos rot, -sin rot). Every angled chain was therefore MIRRORED in z: a
+   phantom wall crossed open floor and the drawn wall collided with nothing.
+   Rahul reported four exact block points; all four sit 0.62-0.63 m
+   perpendicular to the mirrored lines of PLAN rows 17 and 9.
+
+   Two halves, both against the REAL resolver on the REAL map, because the
+   defect was invisible to everything that reads coordinates without walking
+   them:
+
+     C1. The four reported coordinates are driven THROUGH. If any phantom
+         remains, the walk stalls and this fails with the coordinate named.
+     C2. Every angled PLAN row is driven INTO from both sides. The player must
+         STOP at the drawn line — proving the visible wall finally collides —
+         and must stop NEAR it, proving the chain is not somewhere else.
+
+   The rows are read out of killhouse.js's own PLAN table rather than retyped,
+   so a future row edit is covered without touching this gate. */
+console.log("\n--- v11.0: killhouse angled chains lie under their drawn walls ---");
+{
+  buildMap("killhouse");
+  const src = fs.readFileSync(path.join(ROOT, "public/src/environment/killhouse.js"), "utf8");
+  const planBlock = (src.match(/var PLAN = \[([\s\S]*?)\];/) || [, ""])[1];
+  const rows = [...planBlock.matchAll(/\[\s*(-?[\d.]+),\s*(-?[\d.]+),\s*(-?[\d.]+),\s*(-?[\d.]+),\s*'w'\]/g)]
+    .map(m => m.slice(1, 5).map(Number)).filter(r => Math.abs(r[3]) > 0.01 && Math.abs(r[3] - 1.5708) > 0.01);
+  ok(rows.length >= 4, `killhouse PLAN carries ${rows.length} angled partitions to test`);
+
+  const yawFor = (dx, dz) => Math.atan2(dx, -dz);   // forward = (sin yaw, -cos yaw), see controller.js
+  function drive(sx, sz, dx, dz, frames) {
+    spawn(sx, HALF + 0.02, sz);
+    vm.runInContext("PlayerCtl.yaw = " + yawFor(dx, dz).toFixed(5) + ";", ctx);
+    const input = blank(); input.fwd = true;
+    for (let f = 0; f < frames; f++) step(input, 1 / 60);
+    return P();
+  }
+
+  // C1 — the four coordinates from the report, walked across the OLD mirrored
+  // line's normal. A survivor phantom would stop the walk short.
+  const REPORTED = [
+    { p: [4.85, 2.66],   row: [3, 3, -0.52] },
+    { p: [2.50, 4.00],   row: [3, 3, -0.52] },
+    { p: [-3.73, -11.44], row: [-2, -11, 0.61] },
+    { p: [-0.00, -10.38], row: [-2, -11, 0.61] }
+  ];
+  for (const r of REPORTED) {
+    const th = r.row[2];
+    // normal of the OLD (mirrored) chain direction (cos th, +sin th):
+    const nx = -Math.sin(th), nz = Math.cos(th);
+    const s0 = [r.p[0] - nx * 1.1, r.p[1] - nz * 1.1];
+    const end = drive(s0[0], s0[1], nx, nz, 70);
+    const gained = (end.x - s0[0]) * nx + (end.z - s0[1]) * nz;
+    ok(gained > 1.6,
+      `reported phantom at (${r.p[0].toFixed(2)}, ${r.p[1].toFixed(2)}) is open ground ` +
+      `(walked ${gained.toFixed(2)} m across it)`);
+  }
+
+  // C2 — every angled row, approached perpendicular from both sides at its
+  // centre. TH/2 + capsule radius = 0.50; allow skin + one resolve step.
+  const TH = 0.30, R2 = 0.35, STOP_MIN = TH / 2 + R2 - 0.08, STOP_MAX = 1.15;
+  for (const [cx2, cz2, len2, th] of rows) {
+    const ux = Math.cos(th), uz = -Math.sin(th);       // drawn wall direction
+    const nx = -uz, nz = ux;                           // its normal
+    for (const side of [-1, 1]) {
+      const sx = cx2 + nx * side * 1.6, sz = cz2 + nz * side * 1.6;
+      const end = drive(sx, sz, -nx * side, -nz * side, 80);
+      const perp = Math.abs((end.x - cx2) * nx + (end.z - cz2) * nz);
+      const along = Math.abs((end.x - cx2) * ux + (end.z - cz2) * uz);
+      const held = perp >= STOP_MIN && perp <= STOP_MAX && along <= len2 / 2 + 0.8;
+      ok(held,
+        `angled row (${cx2},${cz2},${len2},${th}) blocks from side ${side > 0 ? "+" : "-"} ` +
+        `at ${perp.toFixed(2)} m off the drawn line (want ${STOP_MIN.toFixed(2)}-${STOP_MAX.toFixed(2)})`);
+    }
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

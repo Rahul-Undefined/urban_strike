@@ -34,6 +34,19 @@ var Showcase = (function () {
   var REEL = ['ak47', 'm4a1', 'aug', 'awm', 'vector', 'aa12', 'scarh', 'mp5'];
 
   var cv, renderer, scene, cam, holder, raf = 0, idx = -1, tNext = 0, live = false;
+  var oper = null;   // v11.0 operator rig: { av, gunName } — the fake remote setRemoteGun expects
+
+  /* v11.0: degrade the operator alone. The weapon reel is proven ground; a
+     rig fault must cost the character, never the panel. */
+  function killOperator() {
+    try {
+      if (oper && oper.av) {
+        if (scene) scene.remove(oper.av.group);
+        Avatars.disposeAvatar(oper.av);
+      }
+    } catch (e) { }
+    oper = null;
+  }
 
   function fail(why) {
     live = false;
@@ -69,6 +82,13 @@ var Showcase = (function () {
       m.rotation.set(0, 0, 0);
       m.scale.setScalar(1);
       holder.add(m);
+      /* v11.0: the operator HOLDS the featured weapon. setRemoteGun is the
+         exact code every match uses to arm a remote body, fed a duck-typed
+         record — so the hero's rifle can never drift from the real third-
+         person models. Wrapped separately: an operator failure degrades to
+         the proven weapon-only reel, never to a dead menu. */
+      try { if (oper) Avatars.setRemoteGun(oper, Math.max(0, CFG.WEAPON_ORDER.indexOf(id))); }
+      catch (e2) { killOperator(); }
     } catch (e) { fail('model build threw'); return; }
 
     var nm = document.getElementById('sc-name');
@@ -85,6 +105,19 @@ var Showcase = (function () {
       var t = performance.now();
       holder.rotation.y = t * 0.00042;
       holder.position.y = Math.sin(t * 0.0011) * 0.012;
+      if (oper) {
+        try {
+          var sway = Math.sin(t * 0.00035) * 0.22;
+          /* Same PI reconciliation as net.js v8.36 — the rig faces +Z. */
+          oper.av.group.rotation.y = Math.PI + sway;
+          oper.av.baseY = 0;
+          Avatars.poseAvatar(oper.av, {
+            moved: 0, mx: 0, mz: 1, run: false, crouch: false, prone: false,
+            dead: false, deadT: 0, rx: -0.05, ry: -sway, lean: 0,
+            reloading: false, dist: 3, dt: 1 / 60
+          });
+        } catch (e2) { killOperator(); }
+      }
       if (t >= tNext) next();
       renderer.render(scene, cam);
     } catch (e) { fail('render threw'); }
@@ -106,6 +139,31 @@ var Showcase = (function () {
       cam = new THREE.PerspectiveCamera(30, w / Math.max(1, h), 0.05, 20);
       cam.position.set(0, 0.02, 1.15);
       cam.lookAt(0, 0, 0);
+
+      /* ===== v11.0 - THE TACTICAL OPERATOR =====
+         The brief's CoD-Mobile lobby is a CHARACTER standing in light, not a
+         floating gun. This game already owns a fully-rigged operator — the
+         avatar every match renders fifteen of — so the hero costs no art:
+         build one, hide its match furniture (tag, hp bar, x-ray shell), stand
+         it left of frame, and let poseAvatar breathe it. Fully wrapped and
+         individually degradable: if the rig or Avatars is unavailable the
+         weapon reel carries the panel alone, exactly as it did in v10.12. */
+      try {
+        if (typeof Avatars !== 'undefined') {
+          var av = Avatars.buildAvatar('', '#f0a232');
+          if (av && av.group) {
+            if (av.tag) av.tag.visible = false;
+            if (av.hb && av.hb.sprite) av.hb.sprite.visible = false;
+            if (av.xray) av.xray.visible = false;
+            av.group.position.set(-0.46, -1.06, -0.55);
+            av.group.rotation.y = Math.PI;
+            scene.add(av.group);
+            oper = { av: av, gunName: null };
+            cam.position.set(0.16, 0.10, 1.55);
+            cam.lookAt(-0.05, -0.12, 0);
+          }
+        }
+      } catch (eOp) { oper = null; }
 
       /* Three lights, warm key from the accent side. The menu's colour identity
          is the amber; lighting the hero asset with the same hue is what ties
@@ -133,6 +191,7 @@ var Showcase = (function () {
     live = false;
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     try {
+      killOperator();                          // v11.0: the rig owns GPU textures (tag/hp) — dispose, do not orphan
       if (holder) while (holder.children.length) holder.remove(holder.children[0]);
       if (renderer) {
         var gl = renderer.getContext && renderer.getContext();

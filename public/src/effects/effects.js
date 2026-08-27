@@ -337,15 +337,22 @@ var FX = (function () {
     clearTimeout(vignetteT);
     vignetteT = setTimeout(function () { vignetteEl.style.opacity = 0; }, 350);
   }
+  /* ===== v11.0 - EVERY HIT GETS ITS OWN BEARING =====
+     One element, rotated and re-faded per hit, meant a second attacker ERASED
+     the first: under crossfire the arrow thrashed between bearings and told
+     you nothing — the exact "players need to clearly understand where shots
+     are coming from" complaint. Each hit now spawns its own arc, several live
+     at once, CSS animates the fade, and the node removes itself. Capped and
+     pooled-by-removal so crossfire cannot grow the DOM. Signature unchanged:
+     every caller keeps passing the same relative angle it always did. */
   function damageDirection(angle) {
     if (!indEl) return;
-    indEl.style.transform = 'rotate(' + angle + 'rad)';
-    indEl.style.opacity = 1;
-    indEl.style.transition = 'none';
-    requestAnimationFrame(function () {
-      indEl.style.transition = 'opacity 0.9s';
-      indEl.style.opacity = 0;
-    });
+    while (indEl.children.length >= 6) indEl.removeChild(indEl.firstChild);
+    var arc = document.createElement('i');
+    arc.className = 'dmg-arc';
+    arc.style.transform = 'rotate(' + angle + 'rad)';
+    indEl.appendChild(arc);
+    setTimeout(function () { if (arc.parentNode) arc.parentNode.removeChild(arc); }, 950);
   }
   var hmT = null;
   function hitmarker(kill) {

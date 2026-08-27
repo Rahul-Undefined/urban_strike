@@ -29,10 +29,30 @@
 <canvas id="game-canvas"></canvas>
 
 <!-- ============ MENU LAYER ============ -->
+<!-- v11.0 WELCOME + OPERATIONS LOBBY, rebuilt to the CoD-Mobile-lobby brief.
+
+     What changed and why, in one place:
+       - The centred wordmark, the stat strip and the two stacked buttons are
+         GONE. A lobby is a place you stand in, not a landing page you read:
+         the hero (a live operator holding the featured weapon, showcase.js)
+         fills the frame, the brand sits small in the corner where a AAA menu
+         keeps it, and PLAY is the one loud thing on screen.
+       - CREATE and JOIN are secondary actions inside the deploy sheet PLAY
+         opens. Creating a room takes ZERO forms: the callsign lives in the
+         profile chip, the room opens on defaults, and every match setting is
+         configured in the lobby itself — which is the v11.0 merge of the old
+         Create screen and Staging Area into one room. The v10.22 rule "match
+         settings are written once, on the create screen" is deliberately
+         superseded: there is no create screen anymore, so the lobby's config
+         column is the ONLY writer and the two-sources-of-truth fault that
+         rule existed to prevent cannot recur. Selects live only here.
+       - The four computed stat counters moved to the lobby intel column,
+         where a player deciding on a map can actually use them. Same ids,
+         same CFG-computed values, so verify-menu's invariant (no literal
+         numbers) holds unchanged.
+     The backdrop below is untouched from v10.12 — compositor-only, no image
+     files — because it was already the right kind of expensive. -->
 <div id="menu-layer">
-  <!-- Backdrop: pure CSS + one inline SVG silhouette. No WebGL, no image files,
-       no blur filters. Everything animated here is transform/opacity only, so it
-       stays on the compositor and never touches the game's frame budget. -->
   <div class="backdrop" aria-hidden="true">
     <div class="bd-sky"></div>
     <svg class="bd-skyline" viewBox="0 0 1600 420" preserveAspectRatio="xMidYMax slice">
@@ -49,9 +69,7 @@
                  L470,290 L560,290 L560,320 L660,320 L660,255 L760,255 L760,320 L860,320 L860,300 L960,300
                  L960,320 L1060,320 L1060,262 L1160,262 L1160,320 L1260,320 L1260,285 L1380,285 L1380,320
                  L1480,320 L1480,248 L1600,248 L1600,420 Z"/>
-        <!-- gantry crane over the yard -->
         <path d="M980,255 L980,150 M1180,255 L1180,150 M960,150 L1260,150 M1255,150 L1255,178 M1240,178 L1270,178"/>
-        <!-- comms mast -->
         <path d="M1520,248 L1520,120 M1500,180 L1540,180 M1506,150 L1534,150"/>
       </g>
       <g class="sky-near">
@@ -75,238 +93,156 @@
 
   <!-- MAIN MENU -->
   <section class="screen active" id="screen-main">
-    <div class="brand">
-      <!-- v9.9: STRIPPED. This screen carried an eyebrow line, a title, a rule
-           with a subtitle, a two-line pitch and a footer — five separate pieces
-           of copy competing for the same two seconds before a player clicks
-           CREATE ROOM. Reported simply as "too much text", and it was.
-           What survives is the name, one line saying what the game is, and the
-           two buttons. The stat strip stays because it is numbers, not prose,
-           and it is read at a glance. -->
-      <!-- v10.12 LOGO LOCKUP. Rahul: "the welcome screen is kindoff boring...
-           get ideas from cod mobile". What that menu actually does, stripped of
-           its art budget, is four things: a hero 3D asset, a logo with weight
-           and a plate behind it, one strong accent colour, and motion that
-           responds to you. All four are below; none needs an artist.
-
-           The stencil bar behind the wordmark is what turns type into a LOGO.
-           The chevrons and the serial line are the military-hardware grammar
-           the reference leans on. -->
-      <div class="brand-mark">
+    <header class="mn-top">
+      <div class="mn-brand">
         <span class="bm-chev">&#9666;</span>
         <h1>URBAN<span>STRIKE</span></h1>
         <span class="bm-chev">&#9656;</span>
+        <em class="mn-serial">MK-XI &#183; BUILD <b id="brand-ver">&mdash;</b></em>
       </div>
-      <div class="brand-rule"><i></i><b>TACTICAL COMBAT SIMULATION</b><i></i></div>
-      <div class="brand-serial">MK-X &#183; FIELD BUILD <b id="brand-ver">10.12</b></div>
-    </div>
+      <div class="profile-chip">
+        <i class="pc-dot"></i>
+        <div class="pc-col">
+          <label for="profile-name">OPERATOR</label>
+          <input type="text" id="profile-name" maxlength="14" placeholder="CALLSIGN" autocomplete="off" spellcheck="false">
+        </div>
+        <em class="pc-status">ONLINE</em>
+      </div>
+    </header>
 
-    <!-- v10.12 FEATURED WEAPON. The single highest-value thing this menu was
-         missing, and it costs no new art: viewmodels.js already contains 25
-         fully-built weapon models. This renders one of them live, slowly
-         turning, and cycles. See public/src/ui/showcase.js — it is wrapped so
-         that if a second WebGL context cannot be created the menu simply
-         renders without it, rather than the whole build becoming untestable. -->
-    <div class="showcase" id="showcase">
+    <!-- The hero: a second, contained WebGL context (showcase.js). Operator
+         rig + the featured weapon it is holding; on any failure the panel
+         collapses and the menu still works — the v10.12 contract, unchanged. -->
+    <div class="showcase hero" id="showcase">
       <canvas id="showcase-cv" aria-hidden="true"></canvas>
       <div class="sc-meta">
-        <div class="sc-tag">FEATURED</div>
+        <div class="sc-tag">FEATURED LOADOUT</div>
         <div class="sc-name" id="sc-name">&mdash;</div>
         <div class="sc-stats" id="sc-stats"></div>
       </div>
     </div>
-    <div class="menu-actions">
-      <button class="btn btn-primary" id="btn-goto-create"><span>CREATE ROOM</span></button>
-      <button class="btn" id="btn-goto-join"><span>JOIN WITH CODE</span></button>
-    </div>
-    <div class="menu-stats">
-      <div class="mstat"><b id="stat-maps">3</b><span>THEATRES</span></div>
-      <div class="mstat"><b id="stat-weapons">21</b><span>WEAPONS</span></div>
-      <div class="mstat"><b id="stat-attach">11</b><span>ATTACHMENTS</span></div>
-      <div class="mstat"><b id="stat-seats">15</b><span>MAX OPERATORS</span></div>
-    </div>
-    <div class="menu-foot">No download. No account. Just a five-letter code.</div>
-  </section>
 
-  <!-- CREATE -->
-  <section class="screen" id="screen-create">
-    <h2 class="screen-title">CREATE ROOM</h2>
-    <div class="panel">
-      <label class="field"><span>CALLSIGN</span>
-        <input type="text" id="create-name" maxlength="14" placeholder="Your name" autocomplete="off">
-      </label>
-      <!-- Selects are populated from CFG by UI.populateSelects(). They are left
-           empty here on purpose: hardcoding options in markup is exactly why
-           Metro City existed for three versions but could not be chosen. -->
-      <div class="field-row">
-        <label class="field"><span>MODE</span>
-          <select id="create-cat"></select>
-        </label>
-        <label class="field" id="create-var-field"><span>SETUP</span>
-          <select id="create-mode"></select>
-        </label>
-        <label class="field"><span>MAP</span>
-          <select id="create-map"></select>
-        </label>
+    <nav class="nav-rail">
+      <button class="rail-btn primary" id="btn-play"><i></i><span>PLAY</span><em>DEPLOY TO A MATCH</em></button>
+      <button class="rail-btn" id="btn-howto"><i></i><span>FIELD MANUAL</span><em>CONTROLS &amp; INTEL</em></button>
+      <div class="rail-foot">NO DOWNLOAD &#183; NO ACCOUNT &#183; ONE FIVE-LETTER CODE</div>
+    </nav>
+
+    <!-- Deploy sheet: PLAY opens it; CREATE and JOIN live here as the two
+         secondary actions the brief asks for. Creating takes no form — the
+         room opens on defaults and the LOBBY is where the host configures. -->
+    <div class="deploy-panel hidden" id="deploy-panel">
+      <div class="dp-head"><b>DEPLOY</b><button class="dp-close" id="btn-deploy-close" aria-label="close">&times;</button></div>
+      <button class="btn btn-primary wide" id="btn-create-quick"><span>CREATE ROOM</span><em>host a new match &mdash; configure it in the lobby</em></button>
+      <div class="dp-or"><i></i><b>OR JOIN A SQUAD</b><i></i></div>
+      <div class="dp-join">
+        <input type="text" id="join-code" maxlength="5" placeholder="CODE" autocomplete="off" class="code-input">
+        <button class="btn" id="btn-join">JOIN</button>
       </div>
-      <div class="field-row">
-        <!-- v10.22: KILLS TO WIN removed. Every mode is unlimited kills and
-             the clock decides the match; a selector whose only sane value is
-             "unlimited" is a question with one answer. -->
-        <label class="field"><span>MATCH DURATION</span>
-          <select id="create-time"></select>
-        </label>
+      <div class="dp-hint" id="deploy-hint">Callsign is set in your operator profile, top right.</div>
+    </div>
+
+    <!-- Field manual, moved from the old staging column to an on-demand sheet. -->
+    <div class="howto-overlay hidden" id="howto-overlay">
+      <div class="howto-panel panel">
+        <div class="panel-head">FIELD MANUAL <button class="dp-close" id="btn-howto-close" aria-label="close">&times;</button></div>
+        <div class="manual">
+          <div class="mrow"><b>MOVE</b><span>WASD &middot; SHIFT sprint &middot; C crouch &middot; X prone &middot; Q/E lean</span></div>
+          <div class="mrow"><b>FIGHT</b><span>LMB fire &middot; RMB aim &middot; R reload &middot; wheel scope zoom</span></div>
+          <div class="mrow"><b>GEAR</b><span>hold G frag &middot; B smoke &middot; F flash &middot; H molotov &middot; V mine</span></div>
+          <div class="mrow"><b>GUNS</b><span>1-9 select &middot; 9 exclusive loot</span></div>
+          <div class="mrow"><b>INTEL</b><span>TAB scoreboard &middot; M full map &middot; compass up top &middot; ESC release cursor</span></div>
+          <div class="mrow mnote"><b>TIP</b><span>In Last Stand you get ONE life. Press M often &mdash; camping shows up on the map.</span></div>
+        </div>
       </div>
-      <button class="btn btn-primary wide" id="btn-create">CREATE & GET CODE</button>
-      <button class="btn wide ghost" data-back>BACK</button>
+    </div>
+
+    <!-- v11.0 seat reclaim: joinRoom found a disconnected seat under this
+         callsign. The team is CONFIRMED here, per the brief — restored, never
+         reassigned. -->
+    <div class="howto-overlay hidden" id="reclaim-overlay">
+      <div class="howto-panel panel reclaim">
+        <div class="panel-head">WELCOME BACK, OPERATOR</div>
+        <div class="reclaim-body" id="reclaim-body"></div>
+        <button class="btn btn-primary wide" id="btn-reclaim-yes">REJOIN AS THAT OPERATOR</button>
+        <button class="btn wide ghost" id="btn-reclaim-fresh">JOIN AS A NEW OPERATOR</button>
+      </div>
     </div>
   </section>
 
-  <!-- JOIN -->
-  <section class="screen" id="screen-join">
-    <h2 class="screen-title">JOIN ROOM</h2>
-    <div class="panel">
-      <label class="field"><span>CALLSIGN</span>
-        <input type="text" id="join-name" maxlength="14" placeholder="Your name" autocomplete="off">
-      </label>
-      <label class="field"><span>ROOM CODE</span>
-        <input type="text" id="join-code" maxlength="5" placeholder="e.g. K7X2P" autocomplete="off" class="code-input">
-      </label>
-      <button class="btn btn-primary wide" id="btn-join">JOIN</button>
-      <button class="btn wide ghost" data-back>BACK</button>
-    </div>
-  </section>
-
-  <!-- LOBBY -->
+  <!-- OPERATIONS LOBBY — the merged Create Room + Staging Area. -->
   <section class="screen" id="screen-lobby">
-    <h2 class="screen-title">STAGING AREA</h2>
-    <!-- Three real grid columns. v7.3 shipped one extra closing tag here, which
-         ended .lobby-grid early and left the rules panel outside the grid. -->
-    <div class="lobby-grid">
-
-      <!-- LEFT: room code + room information -->
-      <div class="lobby-col">
-        <div class="panel code-panel">
-          <div class="code-label">ROOM CODE — SHARE THIS</div>
-          <div class="container-plate" id="lobby-code">·····</div>
-          <button class="btn small wide" id="btn-copy-code">COPY CODE</button>
+    <div class="lobby-shell">
+      <header class="lobby-top">
+        <button class="btn ghost danger lt-leave" id="btn-leave">&#10094; LEAVE</button>
+        <div class="lt-code">
+          <span class="code-label">ROOM CODE</span>
+          <b class="container-plate" id="lobby-code">&#183;&#183;&#183;&#183;&#183;</b>
+          <button class="btn small" id="btn-copy-code">COPY</button>
         </div>
-        <div class="panel">
-          <div class="panel-head">ROOM INFORMATION</div>
-          <ul class="info-list">
-            <li><span>THEATRE</span><b id="info-map">—</b></li>
-            <li><span>ENGAGEMENT</span><b id="info-mode">—</b></li>
-            <li><span>KILL TARGET</span><b id="info-kills">—</b></li>
-            <li><span>DURATION</span><b id="info-time">—</b></li>
-            <li><span>SLOTS</span><b id="info-slots">—</b></li>
-            <li><span>YOUR ROLE</span><b id="info-role">—</b></li>
-          </ul>
-        </div>
-      </div>
+        <div class="lt-sum" id="lobby-summary">&mdash;</div>
+      </header>
 
-      <!-- CENTER: operators, host, ready -->
-      <div class="lobby-col">
-        <div class="panel grow">
-          <div class="panel-head">OPERATORS <span id="lobby-count">0/4</span></div>
-          <ul class="player-list" id="lobby-players"></ul>
-          <div class="ready-meter">
-            <div class="ready-bar"><i id="ready-fill"></i></div>
-            <div class="ready-text" id="ready-text">0 of 0 ready</div>
+      <div class="lobby-main">
+        <!-- LEFT: match config. The selects the host drives; everyone else
+             sees them locked. This column IS the old create screen. -->
+        <div class="lobby-col cfg">
+          <div class="panel">
+            <div class="panel-head">MATCH CONFIG <em class="ph-tag" id="cfg-role">&mdash;</em></div>
+            <label class="field"><span>MODE</span><select id="lobby-cat"></select></label>
+            <label class="field" id="lobby-var-field"><span>SETUP</span><select id="lobby-mode"></select></label>
+            <label class="field"><span>THEATRE</span><select id="lobby-map"></select></label>
+            <label class="field"><span>DURATION</span><select id="lobby-time"></select></label>
+            <div class="cfg-chip">SCORING &mdash; <b>UNLIMITED KILLS</b> &#183; the clock decides</div>
+            <div id="mode-brief" class="mode-brief"></div>
+            <div class="field-row" id="team-name-row">
+              <label class="field"><span>TEAM A</span><input type="text" id="lobby-team-a" maxlength="12" placeholder="AMBER" autocomplete="off"></label>
+              <label class="field"><span>TEAM B</span><input type="text" id="lobby-team-b" maxlength="12" placeholder="COBALT" autocomplete="off"></label>
+            </div>
+            <button class="btn wide ghost" id="btn-shuffle" style="display:none">SHUFFLE TEAMS</button>
           </div>
-          <!-- v8.37: host tools. Hidden entirely for non-hosts and in FFA. -->
-          <button class="btn wide ghost" id="btn-shuffle" style="display:none">SHUFFLE TEAMS</button>
         </div>
 
-        <!-- v8.37 FIELD MANUAL — moved off the welcome screen, where nobody was
-             reading it, to the staging area, where a player is waiting anyway. -->
-        <div class="panel">
-          <div class="panel-head">FIELD MANUAL</div>
-          <div class="manual">
-            <div class="mrow"><b>MOVE</b><span>WASD &middot; SHIFT sprint &middot; C crouch &middot; X prone &middot; Q/E lean</span></div>
-            <div class="mrow"><b>FIGHT</b><span>LMB fire &middot; RMB aim &middot; R reload &middot; wheel scope zoom</span></div>
-            <div class="mrow"><b>GEAR</b><span>hold G frag &middot; B smoke &middot; F flash &middot; H molotov &middot; V mine</span></div>
-            <div class="mrow"><b>GUNS</b><span>1-9 select &middot; 3 AWM-S &middot; 7 Kar98 &middot; 9 exclusive loot</span></div>
-            <div class="mrow"><b>INTEL</b><span>TAB scoreboard &middot; M full map &middot; ESC release cursor</span></div>
-            <div class="mrow mnote"><b>TIP</b><span>In Last Stand you get ONE life. Press M often &mdash; camping shows up on the map.</span></div>
+        <!-- CENTER: the operators. -->
+        <div class="lobby-col roster">
+          <div class="panel grow">
+            <div class="panel-head">OPERATORS <span id="lobby-count">0/0</span></div>
+            <ul class="player-list" id="lobby-players"></ul>
+            <div class="ready-meter">
+              <div class="ready-bar"><i id="ready-fill"></i></div>
+              <div class="ready-text" id="ready-text">0 of 0 ready</div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- RIGHT: match rules, settings, actions -->
-      <div class="lobby-col">
-        <div class="panel" id="lobby-settings">
-          <div class="panel-head">MATCH RULES</div>
-          <!-- v10.22: MODE, SETUP and MAP are chosen ONCE, on the create
-               screen, and this panel only reports them.
-
-               Rahul: "if we use killhouse map in staging area but change it in
-               the next slide to any other, it will still play the killhouse. I
-               want it this way but make the next slide just for show."
-
-               He is describing a real split: the create screen wrote the room
-               settings, this panel re-wrote them, and the two disagreed because
-               the match had already been staged from the first. Rather than
-               make the second one work, it stops pretending to be editable —
-               which is what he asked for and the honest resolution of the two
-               having disagreed at all.
-
-               The selects are replaced by plain readouts. Nothing here can
-               emit a settings change, so there is no second source of truth
-               left to drift. -->
-          <div class="field-row" id="lobby-readout">
-            <div class="field ro"><span>MODE</span><b id="ro-cat">&mdash;</b></div>
-            <div class="field ro"><span>SETUP</span><b id="ro-mode">&mdash;</b></div>
-            <div class="field ro"><span>MAP</span><b id="ro-map">&mdash;</b></div>
+        <!-- RIGHT: theatre intel + the relocated computed roster stats. -->
+        <div class="lobby-col intel">
+          <div class="panel">
+            <div class="panel-head">THEATRE INTEL</div>
+            <div class="intel-map"><b id="intel-map-name">&mdash;</b><span id="intel-map-meta">&mdash;</span></div>
+            <div class="intel-chips">
+              <div class="mstat"><b id="stat-maps">0</b><span>THEATRES</span></div>
+              <div class="mstat"><b id="stat-weapons">0</b><span>WEAPONS</span></div>
+              <div class="mstat"><b id="stat-attach">0</b><span>ATTACHMENTS</span></div>
+              <div class="mstat"><b id="stat-seats">0</b><span>MAX OPERATORS</span></div>
+            </div>
           </div>
-          <!-- v9.4: a one-line briefing for the mode the host has actually
-               chosen, so the staging area opens by saying what this match IS
-               rather than presenting the same eight controls to everybody. -->
-          <div id="mode-brief" class="mode-brief"></div>
-          <!-- v10.22: the KILLS selector is gone. Rahul: "remove all the kills
-               game like 5 kills 10 kills game mode. There should be default
-               unlimited kills mode only and this option is not needed to show."
-               Every mode is unlimited now and the clock ends the match. -->
-          <div class="field-row" id="kills-row">
-            <div class="field ro"><span>DURATION</span><b id="ro-time">&mdash;</b></div>
-            <div class="field ro"><span>SCORING</span><b>UNLIMITED KILLS</b></div>
+          <div class="panel">
+            <div class="panel-head">QUICK INTEL</div>
+            <div class="manual small">
+              <div class="mrow"><b>READY</b><span>everyone readies &#183; host launches</span></div>
+              <div class="mrow"><b>COMPASS</b><span>top of the HUD &#183; call bearings, not "over there"</span></div>
+              <div class="mrow"><b>RECONNECT</b><span>drop out? rejoin with the same code &amp; callsign</span></div>
+            </div>
           </div>
-          <!-- v8.38: bot controls, shown only in Overrun.
-               v9.11: backfill. Shown for the human-vs-human modes only.
-               v10.9: BOTH ROWS DEFAULT TO HIDDEN. Bots are switched off
-               (world.config.js BOTS_ENABLED) and backfillAllowed() now returns
-               false everywhere, so ui.js hides this row on the first lobby
-               update — but markup paints before script runs, and this row had
-               no display:none while bot-row did. That is one frame of "FILL
-               EMPTY SLOTS WITH BOTS" on a build with no bots. Hidden here;
-               ui.js is still the only thing that shows it. -->
-          <div class="field-row" id="backfill-row" style="display:none">
-            <label class="field"><span>FILL EMPTY SLOTS WITH BOTS</span>
-              <select id="lobby-backfill">
-                <option value="1">Yes — start with any number of players</option>
-                <option value="0">No — humans only</option>
-              </select>
-            </label>
-            <label class="field"><span>BOT DIFFICULTY</span><select id="lobby-bfskill"></select></label>
-          </div>
-          <div class="field-row" id="bot-row" style="display:none">
-            <label class="field"><span>BOTS</span><select id="lobby-bots"></select></label>
-            <label class="field"><span>DIFFICULTY</span><select id="lobby-skill"></select></label>
-          </div>
-          <!-- v8.33: host-editable team names. Hidden entirely in free-for-all,
-               where there are no teams to name. -->
-          <div class="field-row" id="team-name-row">
-            <label class="field"><span>TEAM A</span><input type="text" id="lobby-team-a" maxlength="12" placeholder="AMBER" autocomplete="off"></label>
-            <label class="field"><span>TEAM B</span><input type="text" id="lobby-team-b" maxlength="12" placeholder="COBALT" autocomplete="off"></label>
-          </div>
-        </div>
-        <div class="panel actions-panel">
-          <div class="panel-head">ACTIONS</div>
-          <button class="btn wide ghost" id="btn-ready" data-r="0">READY UP</button>
-          <button class="btn btn-primary wide" id="btn-start" disabled>START MATCH</button>
-          <div class="hint" id="lobby-hint">Waiting for host to start…</div>
-          <button class="btn wide ghost danger" id="btn-leave">LEAVE ROOM</button>
         </div>
       </div>
+
+      <footer class="lobby-actions">
+        <button class="btn wide ghost" id="btn-ready" data-r="0">READY UP</button>
+        <button class="btn btn-primary wide" id="btn-start" disabled>START MATCH</button>
+        <div class="hint" id="lobby-hint">Waiting for host to start&hellip;</div>
+      </footer>
     </div>
   </section>
 </div>
@@ -328,6 +264,13 @@
   <div id="nuke-banner"><div id="nuke-banner-t">NUKE ACTIVATED</div><div id="nuke-banner-s">PRESS <b>N</b> TO CALL THE STRIKE</div></div>
   <div id="visor-pip">RECON VISOR</div>
   <div id="nuke-flash"></div>
+  <!-- v11.0 compass strip — bearings for callouts, PUBG-style. Ticks are
+       built once by UI.initCompass; per-frame cost is one transform. -->
+  <div id="compass" aria-hidden="true">
+    <div id="compass-strip"></div>
+    <i class="cmp-notch"></i>
+    <b id="compass-deg">000</b>
+  </div>
   <div id="hud-top">
     <div id="match-timer">10:00</div>
     <div id="team-score" class="hidden"></div>

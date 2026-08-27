@@ -228,7 +228,16 @@ const BASELINE = {
      palette entries already present brought it back to 39. On this axis a new
      MATERIAL is expensive and geometry is nearly free. */
   sunsetrow: { colliders: 182, draws: 39, tris: 5112, casters: 17, lights: 3, bound: 34, colSig: 935596110, meshSig: -384905933 },
-killhouse: { colliders: 666, draws: 22, tris: 7192, casters: 10, lights: 3, bound: 38, colSig: -1221252213, meshSig: -578993764 },
+/* v11.0 REBASELINE — deliberate, two changes, both documented in killhouse.js:
+   1. colSig: the v10.22 angled-wall collider chains were stepped along
+      (cos, +sin) where three.js rotY places the drawn wall along (cos, -sin).
+      Every angled chain was mirrored in z — a phantom wall in open floor and a
+      drawn wall with no collision. The chains now sit under their visuals.
+      Collider COUNT is unchanged (666): same chains, correct diagonal.
+   2. tris/meshSig: orientation paint and trim (sector wall bands, lane
+      chevrons, block brackets, muster pads) — all collide:false cast:false, so
+      draws (22) and casters (10) hold and cover/dead-ground are untouched. */
+killhouse: { colliders: 666, draws: 22, tris: 7984, casters: 10, lights: 3, bound: 38, colSig: 1337392587, meshSig: -1595018151 },
   /* v10.14: the three new small maps, asserted from their first version so any
      later edit has to justify itself. Filled in below from a measured run. */
 freightyard: { colliders: 118, draws: 22, tris: 8184, casters: 13, lights: 3, bound: 21, colSig: 687692594, meshSig: 1215863378 },

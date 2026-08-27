@@ -84,7 +84,10 @@ ok(/function fail\(/.test(sc), 'showcase has an explicit failure path');
 });
 ok(/classList\.remove\('live'\)/.test(sc),
   'failure removes the live class, which is what collapses the panel');
-ok(/\.showcase:not\(\.live\)\s*\{[^}]*height:\s*0/.test(css),
+/* v11.0: the hero panel collapses with display:none — strictly stronger than
+   the old height:0 (no border, no background, no layout slot survives). The
+   invariant is unchanged: a dead context must leave NO black rectangle. */
+ok(/\.showcase(\.hero)?:not\(\.live\)\s*\{[^}]*(height:\s*0|display:\s*none)/.test(css),
   'and the CSS collapses a non-live showcase to zero height');
 ok(/WEBGL_lose_context/.test(sc),
   'stop() drops the WebGL context rather than only disposing the renderer');

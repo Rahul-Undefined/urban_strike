@@ -20,17 +20,27 @@ var Net = (function () {
      ends with the tab, which is the right lifetime for a match seat. */
   var SKEY = 'us.session';
   function saveSession(code, token) {
-    try { sessionStorage.setItem(SKEY, JSON.stringify({ code: code, token: token, at: Date.now() })); } catch (e) {}
+    var v = JSON.stringify({ code: code, token: token, at: Date.now() });
+    try { sessionStorage.setItem(SKEY, v); } catch (e) {}
+    /* v11.0: localStorage as well. A crashed tab or a "reopen the game" after
+       a browser kill is the exact moment reconnect matters most, and
+       sessionStorage dies with the tab. TTL below keeps a stale token from
+       outliving the seat it names. */
+    try { localStorage.setItem(SKEY, v); } catch (e) {}
   }
   function loadSession() {
     try {
       var v = JSON.parse(sessionStorage.getItem(SKEY) || 'null');
-      /* Older than the server's 45 s hold plus slack is not worth trying. */
-      if (!v || Date.now() - v.at > 90000) return null;
+      if (!v) { try { v = JSON.parse(localStorage.getItem(SKEY) || 'null'); } catch (e2) { v = null; } }
+      /* Older than the server's 180 s hold plus slack is not worth trying. */
+      if (!v || Date.now() - v.at > 240000) return null;
       return v;
     } catch (e) { return null; }
   }
-  function clearSession() { try { sessionStorage.removeItem(SKEY); } catch (e) {} }
+  function clearSession() {
+    try { sessionStorage.removeItem(SKEY); } catch (e) {}
+    try { localStorage.removeItem(SKEY); } catch (e) {}
+  }
   var teamKills = {};                // v8.34: sized by the server, not assumed
   var myTeam = null;
   var scene = null;
@@ -92,6 +102,64 @@ var Net = (function () {
     }
     sgLast = t;
   }
+  /* ===== v11.0 - SAMPLE TIME COMES FROM THE SERVER TICK, NOT THE MODEM =====
+
+     Every snapshot used to be stamped with performance.now() AT ARRIVAL. Two
+     packets that left the server exactly 66.7 ms apart could land 5 ms apart
+     (a burst after a hitch) or 130 ms apart (one queued behind a hiccup), and
+     the interpolator faithfully rendered those numbers as MOTION: a body that
+     lurches, hangs, lurches. Arrival jitter was being transcribed into the
+     buffer as if the player had actually moved unevenly.
+
+     The server now sends its tick number (packet.n, server.js) and this maps
+     tick -> local time with a one-sided filter:
+
+       est = arrival - n * TICK        // what "tick 0 happened at" implies
+       base = min(base, est)           // a packet can be LATE, never early,
+                                       // so the smallest estimate is the truth
+       base += drift * dt              // and creeps up a few ms/s so slow
+                                       // clock skew cannot strand it
+
+     sampleT = base + n * TICK is then perfectly spaced whatever the network
+     did on the way, and interpolation between samples is exactly as smooth as
+     the sender's own movement. Late packets change nothing but their own
+     lateness — which is the adaptive delay's problem, below, not the buffer's. */
+  var TICK_MS = 1000 / CFG.NET.snapRate;
+  var tickBase = 0, tickSeen = false, lastTickN = -1, tickBaseAt = 0;
+  function sampleTimeFor(n, arrival) {
+    if (typeof n !== 'number' || !isFinite(n)) return arrival;   // old server: fall back
+    var est = arrival - n * TICK_MS;
+    if (!tickSeen || n < lastTickN - 300) {        // fresh match or server restart
+      tickBase = est; tickSeen = true; tickBaseAt = arrival;
+    } else {
+      if (est < tickBase) tickBase = est;          // fast down: found an earlier truth
+      else tickBase += Math.min(4, (arrival - tickBaseAt) * 0.004); // slow up: ~4 ms/s drift chase
+      tickBaseAt = arrival;
+    }
+    lastTickN = n;
+    return tickBase + n * TICK_MS;
+  }
+  /* The adaptive render delay. Floor is CFG.NET.interpDelay — the invariant
+     verify-interp guards — ceiling and slew rates are named in the config. */
+  var delayNow = CFG.NET.interpDelay;
+  function jitterTarget() {
+    if (sgSeen < 12) return CFG.NET.interpDelay;
+    var a = Array.prototype.slice.call(snapGaps, 0, sgSeen).sort(function (x, y) { return x - y; });
+    var p95 = a[Math.min(a.length - 1, (a.length * 0.95) | 0)];
+    /* One whole missing tick plus the worst observed gap's excess, plus skin.
+       "p95 gap" already contains the nominal 66.7 ms, so the target is that
+       gap survived once more, not stacked twice. */
+    return Math.max(CFG.NET.interpDelay,
+      Math.min(CFG.NET.interpMax || 320, p95 + TICK_MS * 0.8 + 12));
+  }
+  function stepDelay(dt) {
+    var want = jitterTarget();
+    var up = (CFG.NET.interpUp || 120) * dt, dn = (CFG.NET.interpDown || 18) * dt;
+    if (want > delayNow) delayNow = Math.min(want, delayNow + up);
+    else delayNow = Math.max(want, delayNow - dn);
+    if (delayNow < CFG.NET.interpDelay) delayNow = CFG.NET.interpDelay;
+    return delayNow;
+  }
   /* What the dev HUD reads. `worstStale` is the number that matters: how far
      behind the newest sample of the most out-of-date remote is. A frozen body
      IS a large worstStale, so this turns an invisible bug into a number. */
@@ -111,6 +179,7 @@ var Net = (function () {
       if (age > worst) { worst = age; worstName = r.name || id; }
     }
     return { gaps: gaps, sinceSnap: sgLast ? t - sgLast : 0,
+             delay: Math.round(delayNow),                 // v11.0: the adaptive buffer, live
              worstStale: worst, worstName: worstName, remotes: n };
   }
 
@@ -178,7 +247,26 @@ var Net = (function () {
     });
 
     s.on('toast', function (d) { UI.toast(d.msg); });
-    s.on('playerLeft', function (d) { removeRemote(d.id); UI.toast(d.name + ' disconnected'); });
+    s.on('playerLeft', function (d) {
+      removeRemote(d.id);
+      /* v11.0 silent: a reconnect re-keys the seat, and the retirement of the
+         old id must not toast "disconnected" under the "reconnected" it rode
+         in with. */
+      if (!d.silent) UI.toast(d.name + ' disconnected');
+    });
+    /* ===== v11.0 - TRANSPORT RECOVERY (see server.js io options) =====
+       The server restored our OLD socket id and seat; nothing needs re-keying
+       on either side. What the client must do is stop treating the world as
+       lost: refresh the local mirrors the gap starved and, if we are dead
+       because the disconnect handler killed us, get back on the respawn
+       clock. Everything else — roster, positions, scores — arrives in the
+       keyframe the server forced. */
+    s.on('recovered', function (d) {
+      UI.toast('Reconnected');
+      if (d && typeof d.mines === 'number' && Weapons.setMines) Weapons.setMines(d.mines);
+      if (d && d.state === 'playing' && phase === 'playing' &&
+          typeof Game !== 'undefined' && Game.onRecovered) Game.onRecovered(d);
+    });
 
     s.on('matchStart', function (d) {
       phase = 'playing';
@@ -211,6 +299,9 @@ var Net = (function () {
     s.on('snap', function (d) {
       var tLocal = performance.now();
       noteSnapArrival(tLocal);          // v10.17: measured, not assumed
+      /* v11.0: the time written into the buffer is the tick's, not the
+         modem's. See sampleTimeFor above. */
+      var tSample = sampleTimeFor(d.n, tLocal);
       if (d.tk !== undefined) teamKills = d.tk || {};
       Pickups.droneSync(d.dr);          // undefined when none are airborne
       if (!d.e) return;
@@ -261,9 +352,11 @@ var Net = (function () {
             r.buf.length = 0;
             r.renderPos.set(st.p[0], st.p[1], st.p[2]);
             if (r.lastRP) r.lastRP.copy(r.renderPos);
+            if (r.smooth) r.smooth.copy(r.renderPos);        // v11.0: never glide a teleport
+            r.smoothRy = st.ry;
           }
         }
-        r.buf.push({ t: tLocal, p: st.p, ry: st.ry, rx: st.rx, cr: st.cr, mv: st.mv, ln: st.ln });
+        r.buf.push({ t: tSample, p: st.p, ry: st.ry, rx: st.rx, cr: st.cr, mv: st.mv, ln: st.ln, rl: st.rl, hl: st.hl, lv: st.lv });
         Avatars.setRemoteGun(r, st.wp); // replicate equipped weapon (switches, pickups, late sync)
         if (r.buf.length > 40) r.buf.shift();
         if (st.hp < r.hp) r.lastDamagedAt = tLocal;
@@ -299,10 +392,34 @@ var Net = (function () {
     s.on('lootAdd', function (d) { Pickups.onAdd(d.items); });
 
     s.on('spawn', function (d) {
-      if (d.id === myIdV) { Game.onLocalSpawn(d.pos, d.ry, d.prot); }
+      if (d.id === myIdV) {
+        Game.onLocalSpawn(d.pos, d.ry, d.prot);
+        /* ===== v11.0 - THE REFILL FINALLY REACHES THE HUD =====
+           Rahul: "mines are only 5 in the game per player, once those are
+           utilised there is no option to get another 5."
+
+           The SERVER has refilled p.mines on every respawn since v10.15, and
+           since v10.22 this very message has CARRIED the refilled count — and
+           this handler dropped it on the floor. The client mirror (mineCount,
+           system.js) kept whatever was left at death, so placing a mine was
+           refused client-side before the request was ever sent. The server was
+           right the whole time; nobody told the HUD. Grenades/smoke/flash/
+           molotov were never broken — resetLoadout() refills them in
+           onLocalSpawn — the mine mirror was the one expendable with a second
+           copy and it was the one that stuck. */
+        if (typeof d.mines === 'number' && Weapons.setMines) Weapons.setMines(d.mines);
+        if (d.visor !== undefined) setVisor(!!d.visor);
+      }
       else {
         var r = remotes[d.id];
-        if (r) { r.buf = []; r.alive = true; r.renderPos.set(d.pos[0], d.pos[1], d.pos[2]); }
+        if (r) {
+          r.buf = []; r.alive = true;
+          r.renderPos.set(d.pos[0], d.pos[1], d.pos[2]);
+          /* v11.0: a spawn is a genuine snap — never glide into it. */
+          if (r.smooth) r.smooth.copy(r.renderPos); else r.smooth = new THREE.Vector3().copy(r.renderPos);
+          r.smoothRy = d.ry || 0;
+          if (r.lastRP) r.lastRP.copy(r.renderPos);
+        }
       }
     });
 
@@ -388,15 +505,24 @@ var Net = (function () {
     var send = function () { socket.emit('createRoom', { name: name, settings: settings }, wrapCb(cb)); };
     socket.connected ? send() : socket.once('connect', send);
   }
-  function joinRoom(name, code, cb) {
+  function joinRoom(name, code, cb, fresh) {
     connect();
-    var send = function () { socket.emit('joinRoom', { name: name, code: code }, wrapCb(cb)); };
+    var send = function () { socket.emit('joinRoom', { name: name, code: code, fresh: !!fresh }, wrapCb(cb)); };
+    socket.connected ? send() : socket.once('connect', send);
+  }
+  /* v11.0: the confirmed half of the reclaim offer. Same wrapCb as join, so a
+     successful reclaim saves the session token and sets the phase exactly the
+     way a join does — one contract, two doors in. */
+  function reclaimSeat(name, code, cb) {
+    connect();
+    var send = function () { socket.emit('reclaimSeat', { name: name, code: code }, wrapCb(cb)); };
     socket.connected ? send() : socket.once('connect', send);
   }
   function wrapCb(cb) {
     return function (res) {
       if (res && res.ok) {
-        phase = res.inProgress ? 'playing' : 'lobby'; roomCode = res.code;
+        phase = (res.inProgress || res.state === 'playing') ? 'playing' : 'lobby';
+        roomCode = res.code;
         if (res.token) saveSession(res.code, res.token);   // v9.11
       }
       cb(res);
@@ -422,7 +548,8 @@ var Net = (function () {
         saveSession(res.code, res.token);
         snapCache = {}; slotToId = {};     // the old wire slots died with the old id
         if (res.pickups) Pickups.init(res.pickups);
-        UI.toast('Reconnected');
+        if (typeof res.mines === 'number' && Weapons.setMines) Weapons.setMines(res.mines);
+        UI.toast('Reconnected' + (res.team ? ' \u00b7 TEAM ' + (UI.teamName ? UI.teamName(res.team) : res.team).toUpperCase() : ''));
         if (typeof Game !== 'undefined' && Game.onRejoin) Game.onRejoin(res);
       } else {
         clearSession();
@@ -576,57 +703,58 @@ var Net = (function () {
   // ---------- remote interpolation ----------
   var _camPos = new THREE.Vector3();
   function updateRemotes(dt, camera) {
-    var renderT = performance.now() - CFG.NET.interpDelay;
+    /* ===== v11.0 - THE INTERPOLATOR, REBUILT AT THE MECHANISM =====
+
+       Rahul's four symptoms — render late, freeze, snap back to life,
+       teleport — plus the heavy jitter, and what each actually was:
+
+       JITTER had two sources. (1) Arrival-time stamping: network noise was
+       transcribed into the buffer as motion — fixed at the source, see
+       sampleTimeFor. (2) f clamped at 1.15: when a sample ran late the body
+       was pushed 15% PAST its newest known position, then dragged BACK when
+       the real sample landed. A permanent overshoot-and-retract at every late
+       edge. f now clamps at 1.0 — hold, never invent — and the brief hold is
+       hidden by the smoothing below and absorbed by the adaptive delay.
+
+       FREEZE: v10.17 made snapshots volatile (correct), which means bursts of
+       congestion now DROP packets, and a fixed 190 ms buffer only absorbs one.
+       The delay now tracks measured jitter (stepDelay): a link that starts
+       dropping gets a wider buffer within a second; a clean link drifts back
+       to the 190 ms floor. verify-interp's 2.5-tick invariant is the FLOOR of
+       this number, never violated.
+
+       TELEPORT stays for genuine teleports (respawns, 2.5 m rule) — those are
+       snapped by design. The recovery-teleport after a freeze shrinks to
+       whatever the shortened freeze leaves, and the smoothing takes the single-
+       frame edge off it without adding perceptible lag: a critically-damped
+       ~40 ms follow, reset to identity on every genuine snap so a teleport is
+       never smeared into a glide.
+
+       The DRAIN below replaces v10.15's two half-loops with the canonical
+       form: advance while the SECOND sample is already due. It terminates with
+       buf[0] <= renderT < buf[1] whenever a bracketing pair exists, holds on
+       the newest otherwise, and cannot wedge on a stale pair — the exact
+       defect the v10.15 note documents — because nothing about it treats
+       "two entries" as special. */
+    var renderT = performance.now() - stepDelay(dt);
+    /* The floor of that delay is CFG.NET.interpDelay — asserted by
+       verify-interp against this file: delayNow is clamped in stepDelay and
+       starts at the floor, so renderT can never sit closer to the present
+       than the fixed delay used to put it. */
     if (camera) camera.getWorldPosition(_camPos);
     for (var id in remotes) {
       var r = remotes[id];
       var buf = r.buf;
-      /* ===== v10.15 - THE FREEZE-AND-TELEPORT, FIXED AT THE CAUSE =====
-
-         Rahul: "player ek jagah rehta h aur uss time woh khada rehta hai aur
-         usko goli maarne se bhi nahi marta lekin woh player online h... achanak
-         se yeh avatar active hota h aur woh dusre jagah aa jata h."
-
-         Every symptom in that sentence comes from ONE line, which used to read:
-
-             while (buf.length > 2 && buf[1].t < renderT) buf.shift();
-
-         The guard is `> 2`. Once the buffer drains to exactly two entries it
-         STOPS ADVANCING, however far in the past both of them are. From then
-         on `a` and `b` are stale, `f` clamps at 1.15, and the avatar stands
-         frozen 15% past a position it left seconds ago.
-
-         It cannot be shot there because the SERVER knows where the player
-         actually is: the shot is aimed at the stale body, the 4 m plausibility
-         check in combat.js measures it against the real position and refuses
-         the hit. "Goli maarne se bhi nahi marta" is not a hit-detection bug —
-         it is this bug, one layer down.
-
-         And when a packet finally lands the buffer refills, the shift resumes,
-         and the body jumps to the present in a single frame. The teleport is
-         the recovery, not a second fault.
-
-         WHY IT RUNS DRY. interpDelay was 120 ms against a 66.7 ms tick — 1.8
-         ticks of buffer, so anything over ~53 ms of arrival jitter empties it.
-         Fifty-three milliseconds is an ordinary hiccup over the public
-         internet, and it gets likelier the longer a match runs.
-
-         THREE PARTS TO THE FIX, and none of them is the plausibility check:
-
-         1. interpDelay 120 -> 190 ms (see gameplay.config.js). 2.85 ticks,
-            about 123 ms of jitter tolerated instead of 53.
-         2. This loop now drains to the NEWEST usable pair rather than stopping
-            at two, so a late burst of packets is consumed at once instead of
-            being walked through one frame at a time.
-         3. If the newest state we hold is older than SNAP_MS, stop pretending
-            to interpolate and JUMP to it. A visible hitch is honest and lasts
-            one frame; a frozen unkillable body is neither. */
-      while (buf.length > 2 && buf[1].t < renderT) buf.shift();
-      /* Part 2: the two-entry case the old guard refused to touch. Advance
-         while the SECOND entry is already in the past and something newer
-         exists behind it. */
-      while (buf.length > 1 && buf[buf.length - 1].t < renderT && buf.length > 2) buf.shift();
+      while (buf.length >= 2 && buf[1].t <= renderT) buf.shift();
       var vis = r.alive && phase === 'playing' && buf.length > 0;
+      /* v10.15's three-part fix lived here; v11.0 supersedes it at the
+         mechanism (see the block above): tick-time stamping removes the noise,
+         the canonical drain cannot wedge, the adaptive delay absorbs volatile
+         drops, and the SNAP catch-up below is retained as the last resort. The
+         v10.15 diagnosis — a stale pair held forever, unshootable because the
+         4 m plausibility check measures the REAL position — remains the correct
+         description of what the freeze IS, and is why freezes must never be
+         "ridden out" by extrapolation. */
       /* v8.23 THE BODY USED TO BE DELETED 50ms AFTER IT FINISHED FALLING.
 
          The collapse in poseAvatar runs to completion at deadT = 0.85s. This
@@ -678,13 +806,20 @@ var Net = (function () {
          produces a better answer than the freshest thing we have. */
       var SNAP_MS = (1000 / CFG.NET.snapRate) * 3;
       var newest = buf[buf.length - 1];
+      var snapped = false;
       if (renderT - newest.t > SNAP_MS) {
         a = newest; b = newest;
         if (buf.length > 1) buf.splice(0, buf.length - 1);
+        snapped = true;
       }
 
       var span = Math.max(1, b.t - a.t);
-      var f = Math.min(1.15, Math.max(0, (renderT - a.t) / span));
+      /* v11.0: 1.15 -> 1.0. The 15% overshoot was a permanent
+         overshoot-and-retract at every late sample edge — visible as jitter on
+         a healthy link. Hold at the newest known truth; the adaptive delay is
+         what buys the headroom, and the smoothing below hides the sub-frame
+         hold. Extrapolation stays off the table (handoff 7c). */
+      var f = Math.min(1, Math.max(0, (renderT - a.t) / span));
       r.renderPos.set(
         a.p[0] + (b.p[0] - a.p[0]) * f,
         a.p[1] + (b.p[1] - a.p[1]) * f,
@@ -701,8 +836,31 @@ var Net = (function () {
       r.mv = b.mv;
       r.ln = a.ln + (b.ln - a.ln) * f;
 
+      /* ===== v11.0 - A ~40 ms CRITICALLY-DAMPED FOLLOW =====
+         The 20 Hz client rate against the 15 Hz snapshot rate aliases: some
+         ticks repeat a position, some skip one, so remote velocity pulses at
+         the 5 Hz beat even on a perfect link. The follow integrates that out.
+         It is NOT extrapolation — it only ever lags the interpolated truth by
+         a frame or two — and it is reset to identity on every genuine snap
+         (teleport rule above, spawn handler, and the dry-buffer catch-up here)
+         so a jump is a jump, never a glide across the map. */
+      if (!r.smooth) { r.smooth = new THREE.Vector3().copy(r.renderPos); r.smoothRy = r.ry; }
+      if (snapped) { r.smooth.copy(r.renderPos); r.smoothRy = r.ry; }
+      else {
+        var k = 1 - Math.exp(-dt * 24);
+        r.smooth.lerp(r.renderPos, k);
+        var dsy = r.ry - r.smoothRy;
+        if (dsy > Math.PI) dsy -= Math.PI * 2;
+        if (dsy < -Math.PI) dsy += Math.PI * 2;
+        r.smoothRy += dsy * k;
+        /* If the follow ever falls more than half a body behind — a burst the
+           reset paths did not classify — jump it. Smoothing must never become
+           a second interpolator with its own lag. */
+        if (r.smooth.distanceToSquared(r.renderPos) > 0.36) { r.smooth.copy(r.renderPos); r.smoothRy = r.ry; }
+      }
+
       var g = r.av.group;
-      g.position.copy(r.renderPos);
+      g.position.copy(r.smooth);
       /* v8.36 EVERY REMOTE PLAYER WAS DRAWN FACING BACKWARDS.
 
          Rahul: "the player is looking forward but the other player sees his
@@ -724,11 +882,11 @@ var Net = (function () {
          directly and never went through the rig, and prone lies along the
          body's own local axis so it rotates with the correction rather than
          against it. */
-      g.rotation.y = -r.ry + Math.PI;
+      g.rotation.y = -r.smoothRy + Math.PI;
       /* v8.15: guard at the source too. A NaN reaching baseY makes the avatar
          invisible and permanently stationary, and nothing downstream repairs
          it. Belt and braces with the isFinite check in poseAvatar. */
-      if (isFinite(r.renderPos.y)) r.av.baseY = r.renderPos.y;
+      if (isFinite(r.smooth.y)) r.av.baseY = r.smooth.y;
 
       /* Equipment visibility straight off the snapshot. setGear only touches
          .visible when a tier actually changes, so this is free per frame. */
@@ -740,14 +898,16 @@ var Net = (function () {
 
       /* Movement DIRECTION is derived here, not networked: take the world-space
          step since last frame and rotate it into the avatar's own frame. That
-         gives strafe and back-pedal for free at 0 bytes. */
-      var dxw = r.renderPos.x - r.lastRP.x, dzw = r.renderPos.z - r.lastRP.z;
+         gives strafe and back-pedal for free at 0 bytes. v11.0: derived from
+         the DRAWN (smoothed) position, so the stride matches what the eye sees
+         rather than the pre-smooth target it used to shadow. */
+      var dxw = r.smooth.x - r.lastRP.x, dzw = r.smooth.z - r.lastRP.z;
       var movedNow = Math.sqrt(dxw * dxw + dzw * dzw) +
-        Math.abs(r.renderPos.y - r.lastRP.y) * 0.25;
-      var cs = Math.cos(r.ry), sn = Math.sin(r.ry);
+        Math.abs(r.smooth.y - r.lastRP.y) * 0.25;
+      var cs = Math.cos(r.smoothRy), sn = Math.sin(r.smoothRy);
       var lz = dxw * sn + dzw * cs, lx = dxw * cs - dzw * sn;
       var mag = Math.sqrt(lx * lx + lz * lz) || 1;
-      r.lastRP.copy(r.renderPos);
+      r.lastRP.copy(r.smooth);
       Avatars.poseAvatar(r.av, {
         moved: movedNow, mx: lx / mag, mz: lz / mag,
         run: r.mv === 2, crouch: r.crouch, prone: r.prone,
@@ -819,7 +979,7 @@ var Net = (function () {
   return {
     init: init,
     connect: connect,
-    createRoom: createRoom, joinRoom: joinRoom, leaveRoom: leaveRoom,
+    createRoom: createRoom, joinRoom: joinRoom, reclaimSeat: reclaimSeat, leaveRoom: leaveRoom,
     updateSettings: updateSettings, startMatch: startMatch, returnLobby: returnLobby,
     sendState: sendState, sendShoot: sendShoot, sendHit: sendHit, pickup: pickup,
     sendProj: sendProj, sendThrow: sendThrow, requestRespawn: requestRespawn,

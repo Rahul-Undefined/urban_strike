@@ -275,7 +275,8 @@ var DevHUD = (function () {
     try { d = Net.netDiag(); } catch (e) { return 'NET   unavailable'; }
     var g = d.gaps
       ? 'gap p50 ' + d.gaps.p50.toFixed(0) + ' / p90 ' + d.gaps.p90.toFixed(0) +
-        ' / max ' + d.gaps.max.toFixed(0) + ' ms'
+        ' / max ' + d.gaps.max.toFixed(0) + ' ms' +
+        (typeof d.delay === 'number' ? '   buf ' + d.delay + ' ms' : '')
       : 'gap measuring...';
     var stale = d.worstStale > 250
       ? '  STALE ' + (d.worstStale / 1000).toFixed(1) + 's (' + d.worstName + ')  <-- THIS IS THE BUG'

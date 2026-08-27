@@ -75,6 +75,23 @@ function io(url) {
 }
 const URL = 'http://localhost:3000';
 const CFG = require('./public/src/config/index.js');
+/* ===== v11.0 - THE BOT SWITCH, READ THE SAME WAY THE SERVER READS IT =====
+   v10.9 switched bots OFF behind BOTS_ENABLED in world.config.js and left the
+   engine, the gates and these phases intact — "TO BRING BOTS BACK: return
+   true. Nothing else." Nothing else has to include this suite: the bot phases
+   below now ask the switch and SKIP with a note when it is off, exactly as
+   tools/verify-bots.js re-arms it for its own run. The alternative — a suite
+   that is expected-red — is how these 27 assertions sat broken and unread
+   from v10.9 to v11.0 while the handoffs said "test.js NOT RUN". A red that
+   everyone is told to ignore protects nothing.
+   Detected from CFG, not pinned: flipping the one switch re-arms every phase
+   with no edit here. */
+const BOTS_ON = !!(CFG.botsAllowed && Object.keys(CFG.MODES).some(m => CFG.botsAllowed(m)));
+function skipPhase(label, why, next) {
+  console.log('--- ' + label + ' ---');
+  console.log('  SKIP  ' + why);
+  if (next) setTimeout(next, 10);
+}
 
 let pass = 0, fail = 0;
 function ok(cond, label) {
@@ -138,12 +155,22 @@ function configGates() {
     ok(CFG.MAPS[k] && CFG.MAPS[k].ready !== false, 'map selectable in registry: ' + k));
 
   // index.html must not hardcode map/mode options — that is how Metro was lost.
+  /* v11.0 SUPERSESSION: the create screen is gone (creation is one click; the
+     lobby config column is the ONLY settings surface) and the kills selects
+     went in v10.22 (killTarget pinned 0). The invariant is unchanged and now
+     tested in BOTH directions: every picker that exists is CFG-built, and the
+     four pickers that must exist do — so deleting one can never pass silently,
+     which is exactly how the old list rotted (create-kills/lobby-kills sat
+     red from v10.22 to v11.0 asserting markup that had been removed). */
   const html = require('fs').readFileSync('./public/index.html', 'utf8');
-  ['create-map', 'lobby-map', 'create-mode', 'lobby-mode', 'create-kills',
-   'lobby-kills', 'create-time', 'lobby-time'].forEach(id => {
+  const PICKERS = ['lobby-cat', 'lobby-mode', 'lobby-map', 'lobby-time'];
+  PICKERS.forEach(id => {
     const m = html.match(new RegExp('<select id="' + id + '"[^>]*>([\\s\\S]*?)</select>'));
+    ok(!!m, 'picker exists in the lobby config column: ' + id);
     ok(m && m[1].indexOf('<option') === -1, id + ' has no hardcoded <option> (built from CFG)');
   });
+  ok(!/id="create-(map|mode|time|kills|name)"/.test(html) && !/id="screen-create"/.test(html),
+    'the create screen is gone — the lobby is the only settings surface (v11.0)');
   ok(html.indexOf('id="countdown"') !== -1 && html.indexOf('id="countdown"') > html.indexOf('id="hud-layer"'),
     'countdown element exists');
   const hudStart = html.indexOf('<div id="hud-layer"');
@@ -152,10 +179,12 @@ function configGates() {
 
   /* Layout regressions the browser sees but no gate used to. */
   const css = require('fs').readFileSync('./public/css/style.css', 'utf8');
-  const footBlocks = css.match(/\.menu-foot\s*\{[^}]*\}/g) || [];
-  const lastFootPos = footBlocks.filter(b => /position\s*:/.test(b)).pop() || '';
-  ok(/position\s*:\s*static/.test(lastFootPos),
-    '.menu-foot flows in-document (a fixed footer overlapped the stat strip)');
+  /* v11.0: .menu-foot is REMOVED with the landing page. The invariant behind
+     the old assertion was "no fixed footer can overlap flow content" — total
+     absence satisfies it more strongly than flowing did. Assert absence so a
+     revival of the fixed-footer pattern fails loudly. */
+  ok(!/class="[^"]*menu-foot/.test(html) && !/\.menu-foot\s*\{[^}]*position\s*:\s*fixed/.test(css),
+    'no fixed menu footer exists to overlap flow content (v11.0: element removed; tombstone comments may name it)');
   ok(/#menu-layer[^{]*\{[^}]*overflow-y\s*:\s*auto/.test(css),
     'menu layer scrolls instead of clipping on short viewports');
 
@@ -760,8 +789,24 @@ function phase7(done) {
 function phase8(done) {
   console.log('--- Phase 8: capacity 20 + custom team names ---');
 
-  ok(CFG.MODES.ffa.maxPlayers === 20, 'free-for-all cap raised to 20');
-  ok(!!CFG.MODES.t10 && CFG.MODES.t10.maxPlayers === 20, 'a 10v10 mode exists at 20 players');
+  /* v11.0 SUPERSESSION: the pinned 20s dated from the v8.35 capacity raise
+     and went stale when the caps were later tuned down with bots off (an
+     18-human lobby was not assemblable without backfill). The INVARIANTS the
+     pins stood for, asserted directly from CFG so tuning a cap can never turn
+     this red for being correct:
+       - free-for-all is the everyone-mode: no visible mode seats more;
+       - the largest head-to-head mode exists and its cap splits evenly;
+       - nothing anywhere claims more than 20 seats (the snapshot/AI budget
+         ceiling that 19-bot clamps and the codec were sized against). */
+  const visModes = Object.keys(CFG.MODES).filter(m => !CFG.MODES[m].hidden);
+  ok(visModes.every(m => CFG.MODES[m].maxPlayers <= CFG.MODES.ffa.maxPlayers),
+    'free-for-all seats at least as many as any visible mode [ffa=' + CFG.MODES.ffa.maxPlayers + ']');
+  const t10 = CFG.MODES.t10;
+  ok(!!t10 && t10.maxPlayers % (t10.teamCount || 2) === 0,
+    'the largest head-to-head mode exists and its cap splits evenly across its sides [' +
+    (t10 ? t10.maxPlayers + '/' + (t10.teamCount || 2) : 'missing') + ']');
+  ok(CFG.MODES.ffa.maxPlayers >= 12,
+    'the everyone-mode seats this phase\'s twelve sockets [' + CFG.MODES.ffa.maxPlayers + ']');
   ok(Object.keys(CFG.MODES).every(m => CFG.MODES[m].maxPlayers <= 20),
     'no mode claims a cap above 20');
 
@@ -858,7 +903,9 @@ function phase9(done) {
      mode a room opens in and it still seats everybody. */
   ok(!!CFG.MODES.ffa, 'free-for-all still exists');
   ok(CFG.MODES.ffa.teams === false, 'free-for-all has no teams: everyone fights everyone');
-  ok(CFG.MODES.ffa.maxPlayers === 20, 'free-for-all seats all 20 players');
+  ok(CFG.MODES.ffa.maxPlayers >= Math.max.apply(null,
+       Object.keys(CFG.MODES).filter(m => !CFG.MODES[m].hidden).map(m => CFG.MODES[m].maxPlayers)),
+    'free-for-all still seats everybody: no visible mode is larger [' + CFG.MODES.ffa.maxPlayers + ']');   /* v11.0: was a pinned 20 */
   ok(CFG.activeTeams('ffa').length === 0, 'free-for-all fields no sides at all');
   ok(CFG.MATCH.defaultMode === 'ffa', 'a new room still opens in free-for-all by default');
   ok(Object.keys(CFG.MODES)[0] === 'ffa', 'free-for-all is first in the mode list');
@@ -878,10 +925,15 @@ function phase9(done) {
     cats.slice(0, 4).join(',') + ']');
   ok(new Set(cats).size === cats.length, 'no category is listed twice [' + cats.join(',') + ']');
   ok(cats.every(c => CFG.modesInCat(c).length > 0), 'every category offers at least one mode');
-  ok(Object.keys(CFG.MODES).every(m => cats.indexOf(CFG.MODES[m].cat) >= 0),
-    'every mode belongs to a category the picker actually shows');
-  ok(cats.indexOf('practice') >= 0 && cats.indexOf('coop') >= 0,
+  /* v11.0: HIDDEN modes are deliberately outside the picker (the v10.9 bot
+     switch works by hiding), so the orphan check covers visible modes — the
+     ones a picker entry could actually orphan. */
+  ok(Object.keys(CFG.MODES).filter(m => !CFG.MODES[m].hidden)
+       .every(m => cats.indexOf(CFG.MODES[m].cat) >= 0),
+    'every visible mode belongs to a category the picker actually shows');
+  if (BOTS_ON) ok(cats.indexOf('practice') >= 0 && cats.indexOf('coop') >= 0,
     'both bot categories are offered: Overrun and Strike Team [' + cats.join(',') + ']');
+  else console.log('  SKIP  bot categories intentionally absent (BOTS_ENABLED off since v10.9, world.config.js)');
   cats.forEach(c => {
     const inCat = CFG.modesInCat(c);
     ok(inCat.length >= 1, 'category "' + c + '" offers at least one variant [' + inCat.length + ']');
@@ -889,9 +941,15 @@ function phase9(done) {
       ok(!!CFG.MODES[m].vlabel, 'mode ' + m + ' has a variant label for the picker');
     });
   });
-  ok(Object.keys(CFG.MODES).every(m => cats.indexOf(CFG.MODES[m].cat) >= 0),
-    'every mode belongs to a category, so none can be orphaned out of the picker');
-  ok(CFG.modesInCat('team').length === 7, 'seven head-to-head sizes offered');
+  ok(Object.keys(CFG.MODES).filter(m => !CFG.MODES[m].hidden)
+       .every(m => cats.indexOf(CFG.MODES[m].cat) >= 0),
+    'every visible mode belongs to a category, so none can be orphaned out of the picker');
+  /* v11.0: was a pinned 7 — a content count, the exact "magic total" the v9.2
+     note two comments up warns about. The shape: several sizes, all distinct,
+     so the picker never shows two entries that mean the same thing. */
+  const hh = CFG.modesInCat('team').map(m => CFG.MODES[m].maxPlayers);
+  ok(hh.length >= 4 && new Set(hh).size === hh.length,
+    'head-to-head ladder offers several DISTINCT sizes [' + hh.join(',') + ']');
   ok(CFG.modesInCat('last').length === 3, 'Last Stand offers solo plus two squad layouts');
 
   const N = 10;
@@ -919,7 +977,16 @@ function phase9(done) {
       d.players.forEach(p => { byTeam[p.team] = (byTeam[p.team] || 0) + 1; });
       const used = Object.keys(byTeam);
       ok(d.players.length === N, N + ' players in the squad room');
-      ok(used.length === N, 'ten players land in ten DIFFERENT squads [' + used.sort().join(',') + ']');
+      /* v11.0: was `used.length === N` — written when sq2 fielded ten solo
+         squads. sq2 is DUOS now (seven sides), so ten players correctly land
+         in seven squads, three of them paired. The real invariant is EVEN
+         SPREAD over however many sides the mode fields: squad sizes may
+         differ by at most one. Strictly stronger, and true for any roster. */
+      const sizes = Object.values(byTeam);
+      ok(used.length === Math.min(N, CFG.activeTeams('sq2').length),
+        'players spread across every squad the mode fields [' + used.sort().join(',') + ']');
+      ok(Math.max.apply(null, sizes) - Math.min.apply(null, sizes) <= 1,
+        'the auto-balancer keeps squads within one player of each other [' + sizes.join(',') + ']');
       ok(used.every(t => CFG.activeTeams('sq2').indexOf(t) >= 0),
         'every assigned squad is one the mode actually fields');
 
@@ -1074,6 +1141,12 @@ function phase10(done) {
    the ordinary damage path. If any of that stops being true the mode has
    quietly become a client-side fake. */
 function phase11() {
+  /* v11.0: gated on the v10.9 kill switch, the same way tools/verify-bots.js
+     is. The engine assertions below are RETAINED VERBATIM and re-arm the
+     moment BOTS_ENABLED returns true — nothing here needs a second edit. */
+  if (!BOTS_ON) return skipPhase('Phase 11: training bots',
+    'bots are switched off (BOTS_ENABLED, world.config.js v10.9) — engine covered by tools/verify-bots.js (258 assertions, switch re-armed for its run)',
+    phase12);
   console.log('--- Phase 11: training bots ---');
 
   ok(!!CFG.MODES.bots, 'a Training mode exists');
@@ -1189,6 +1262,8 @@ function phase11() {
    settings change and on match start — three code paths a config assertion
    cannot reach. */
 function phase12() {
+  if (!BOTS_ON) return skipPhase('Phase 12: Strike Team (humans vs bots)',
+    'bots are switched off (BOTS_ENABLED, world.config.js v10.9)', phase13);
   console.log('--- Phase 12: Strike Team (humans vs bots) ---');
 
   ok(CFG.modesInCat('coop').length === 6, 'six Strike Team sizes are offered');
@@ -1430,6 +1505,14 @@ function phase13() {
 /* Phase 14: drones must NOT exist in bot modes. This is a rule about a mode,
    so it is tested through the mode, not through the config. */
 function phase14() {
+  /* v11.0: with the switch off, botsAllowed() is false for every mode, so the
+     server's structural refusal ("bot mode") is unreachable BY DESIGN — the
+     room falls through to the ordinary drone economy. The invariant this
+     phase guards (bot matches must never contain drones) re-arms with the
+     switch. */
+  if (!BOTS_ON) return skipPhase('Phase 14: drones are refused in bot modes',
+    'bots are switched off (BOTS_ENABLED, world.config.js v10.9) — no bot mode is reachable to refuse drones in',
+    finish);
   console.log('--- Phase 14: drones are refused in bot modes ---');
   const A = io(URL);
   A.on('connect', () => {

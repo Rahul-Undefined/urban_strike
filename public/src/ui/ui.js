@@ -7,15 +7,20 @@ var UI = (function () {
   var feedTimers = [];
 
   function cache() {
-    ['menu-layer', 'hud-layer', 'screen-main', 'screen-create', 'screen-join', 'screen-lobby',
-      'create-name', 'create-mode', 'create-time', 'btn-create', 'btn-goto-create', 'btn-goto-join',
-      'lobby-mode', 'lobby-cat', 'create-cat', 'lobby-var-field', 'create-var-field', 'btn-shuffle', 'lobby-map', 'create-map', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
-      'join-name', 'join-code', 'btn-join',
-      'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count', 'lobby-time',
-      'ro-cat', 'ro-mode', 'ro-map', 'ro-time',
-      'lobby-team-a', 'lobby-team-b', 'team-name-row', 'lobby-bots', 'lobby-skill', 'bot-row',
-      'mode-brief', 'kills-row', 'kills-label', 'backfill-row', 'lobby-backfill', 'lobby-bfskill',
-      'lobby-hint', 'btn-start', 'btn-leave',
+    ['menu-layer', 'hud-layer', 'screen-main', 'screen-lobby',
+      /* v11.0: the create/join screens are gone — creation is one click and
+         every match setting lives in the lobby config column. The old ids are
+         simply absent; anything still guarded on them resolves null. */
+      'profile-name', 'btn-play', 'btn-howto', 'btn-howto-close', 'howto-overlay',
+      'deploy-panel', 'btn-deploy-close', 'btn-create-quick', 'join-code', 'btn-join', 'deploy-hint',
+      'reclaim-overlay', 'reclaim-body', 'btn-reclaim-yes', 'btn-reclaim-fresh',
+      'lobby-cat', 'lobby-mode', 'lobby-var-field', 'lobby-map', 'lobby-time',
+      'lobby-summary', 'cfg-role', 'intel-map-name', 'intel-map-meta',
+      'btn-shuffle', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
+      'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count',
+      'lobby-team-a', 'lobby-team-b', 'team-name-row',
+      'mode-brief', 'lobby-hint', 'btn-start', 'btn-leave',
+      'compass', 'compass-strip', 'compass-deg',
       'crosshair', 'scope-overlay', 'match-timer', 'kill-target', 'killfeed',
       'hp-fill', 'hp-num', 'armor-fill', 'armor-num',
       'weapon-name', 'ammo-mag', 'ammo-reserve', 'tc-frag', 'tc-smoke', 'tc-flash', 'reload-hint',
@@ -26,7 +31,6 @@ var UI = (function () {
       'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading',
       'announce', 'cook-bar', 'cook-fill', 'att-list',
       'tc-mine', 'tc-molotov', 'countdown', 'btn-ready',
-      'info-map', 'info-mode', 'info-kills', 'info-time', 'info-slots', 'info-role',
       'ready-fill', 'ready-text', 'stat-maps', 'stat-weapons', 'stat-attach', 'stat-seats', 'brand-ver'
     ].forEach(function (id) { els[id] = $(id); });
   }
@@ -92,24 +96,13 @@ var UI = (function () {
   }
   function populateSelects() {
     var M = CFG.MATCH;
-    fillSelect(els['create-cat'], catItems(), catOf(M.defaultMode));
-    syncVariants(els['create-cat'], els['create-mode'], els['create-var-field'], M.defaultMode);
-    fillSelect(els['create-map'], mapItems(), 'urban');
-    fillSelect(els['create-time'], timeItems(), M.defaultMinutes);
-    var botItems = [];
-    for (var bi = 1; bi <= 19; bi++) botItems.push({ v: bi, t: bi + (bi === 1 ? ' bot' : ' bots') });
-    fillSelect(els['lobby-bots'], botItems, 5);
-    /* Both difficulty selects are filled from ONE list. Overrun uses
-       `lobby-skill`, backfill uses `lobby-bfskill`, and they write the same
-       room setting — two lists would drift the moment a rung is retuned. */
-    var skillItems = [
-      { v: 'recruit', t: 'Recruit \u00b7 stays on the street, one rifle' },
-      { v: 'regular', t: 'Regular \u00b7 a fair fight' },
-      { v: 'veteran', t: 'Veteran \u00b7 they take the high ground' },
-      { v: 'extreme', t: 'Extreme \u00b7 they play like people' }
-    ];
-    fillSelect(els['lobby-skill'], skillItems, 'regular');
-    fillSelect(els['lobby-bfskill'], skillItems, 'regular');
+    /* v11.0: the lobby config column is the ONLY writer of match settings —
+       the create screen is gone, so these four selects are the whole surface.
+       Values are seeded to the defaults; updateLobby then keeps them mirroring
+       the server payload for everyone and editable for the host. */
+    fillSelect(els['lobby-cat'], catItems(), catOf(M.defaultMode));
+    syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], M.defaultMode);
+    fillSelect(els['lobby-map'], mapItems(), 'urban');
     fillSelect(els['lobby-time'], timeItems(), M.defaultMinutes);
     /* v10.12: the build number on the menu comes from the same /version the
        cache stamp uses. A hardcoded one on a screen whose whole job is to say
@@ -123,12 +116,12 @@ var UI = (function () {
           .catch(function () { });
       } catch (e) { }
     }
+    /* v11.0: the four computed counters moved from the welcome strip to the
+       lobby intel column — same ids, same CFG-derived values, so the
+       verify-menu invariant (a number on screen is COMPUTED, never typed)
+       carries over unchanged. They are useful where a player is choosing a
+       map; on the welcome screen they were furniture. */
     if (els['stat-maps']) els['stat-maps'].textContent = String(mapItems().length);
-    /* v10.12: both of these were hardcoded — "3 THEATRES" and "25 WEAPONS" —
-       and both were wrong the moment killhouse shipped and the v10.9 cull
-       retired four guns. A number on the front page that contradicts the game
-       is worse than no number, and a hardcoded one goes stale silently.
-       Counted from CFG so they cannot drift again. */
     if (els['stat-weapons']) {
       var playable = CFG.WEAPON_ORDER.filter(function (w) {
         var it = CFG.LOOT_ITEMS['wpn_' + w];
@@ -137,9 +130,6 @@ var UI = (function () {
       els['stat-weapons'].textContent = String(playable);
     }
     if (els['stat-attach']) els['stat-attach'].textContent = String(Object.keys(CFG.ATTACH).length);
-    /* MAX OPERATORS read 20 and had been wrong since v10.9 dropped the cap to
-       15. The largest SELECTABLE mode is the honest number — counting hidden
-       modes would advertise a lobby size nobody can choose. */
     if (els['stat-seats']) {
       var seats = 0;
       for (var mk in CFG.MODES) {
@@ -148,15 +138,6 @@ var UI = (function () {
       }
       els['stat-seats'].textContent = String(seats);
     }
-    /* v9.9: THIS was the wall of text.
-       It listed EVERY mode label joined by dots. That read fine at eight modes
-       in v8.x; by v9.7 there are twenty-five, and the welcome screen was
-       carrying a paragraph of comma-soup nobody reads before clicking CREATE
-       ROOM. The stat strip above already says how many theatres, weapons and
-       operators there are, in numbers, which is what a player actually scans.
-       The element is gone from index.html and this block with it. A line that
-       grows every time a feature is added is a line that will be too long
-       again in two versions. */
   }
 
   // ---------- screens ----------
@@ -362,40 +343,15 @@ var UI = (function () {
       ' operator' + (notReady === 1 ? '' : 's') + ' to ready up.';
     els['lobby-hint'].textContent = hint;
 
-    els['lobby-time'].disabled = !isHost;
     if (els['btn-shuffle']) {
       els['btn-shuffle'].style.display =
         (isHost && CFG.activeTeams(d.settings.mode).length >= 2) ? '' : 'none';
     }
-    /* v8.38: bot controls belong to Overrun only.
-       v9.2: and to Strike Team. The test is CFG.botsAllowed rather than a
-       category string, so the controls follow the same rule the server guard
-       does — a mode that gets bots always gets the sliders to configure them. */
+    /* v11.0: the bot/backfill rows are gone from the markup along with the
+       bot modes (off since v10.9); their guarded sync blocks went with them.
+       CFG.botsAllowed still gates the server side, so re-enabling bots later
+       is a markup + one-flag job, exactly as the v10.9 note promises. */
     var isPractice = (CFG.MODES[d.settings.mode] || {}).cat === 'practice';
-    var hasBots = CFG.botsAllowed(d.settings.mode);
-    if (els['bot-row']) els['bot-row'].style.display = hasBots ? '' : 'none';
-    /* v9.11 BACKFILL ROW — the human modes only. A mode that already fields
-       bots must not offer to fill its slots with more of them. */
-    var canFill = CFG.backfillAllowed(d.settings.mode);
-    if (els['backfill-row']) els['backfill-row'].style.display = canFill ? '' : 'none';
-    if (els['lobby-backfill'] && document.activeElement !== els['lobby-backfill']) {
-      els['lobby-backfill'].value = (d.settings.backfill === false) ? '0' : '1';
-      els['lobby-backfill'].disabled = !isHost;
-    }
-    if (els['lobby-bfskill'] && document.activeElement !== els['lobby-bfskill']) {
-      els['lobby-bfskill'].value = d.settings.botSkill || 'regular';
-      els['lobby-bfskill'].disabled = !isHost;
-    }
-    if (els['lobby-bots'] && document.activeElement !== els['lobby-bots']) {
-      /* Strike Team shows 0 = "match the squad", which is what the server does
-         with an unset count. Showing 5 there would be a lie about the default. */
-      els['lobby-bots'].value = String(d.settings.botCount || (isPractice ? 5 : 0));
-      els['lobby-bots'].disabled = !isHost;
-    }
-    if (els['lobby-skill'] && document.activeElement !== els['lobby-skill']) {
-      els['lobby-skill'].value = d.settings.botSkill || 'regular';
-      els['lobby-skill'].disabled = !isHost;
-    }
     /* v8.33: only meaningful in team modes, and only the host may edit. Skip
        writing the value back while the host is mid-typing, otherwise every
        lobby push would yank the caret to the end of the field. */
@@ -458,13 +414,8 @@ var UI = (function () {
     /* KILLS is meaningless in an elimination mode. Hidden, not disabled — a
        greyed control is still a question. DURATION stays, because a time limit
        is a real backstop in every mode including Last Stand. */
-    if (els['kills-row']) {
-      /* v10.22: the KILLS field and its label are gone — every mode is
-         unlimited — so the show/hide logic around them went with the removal,
-         and `kf` was left behind as an undeclared read. verify-scope caught it.
-         The row now holds two readouts and is always two columns. */
-      els['kills-row'].style.gridTemplateColumns = '1fr 1fr';
-    }
+    /* v11.0: the kills readout row is gone with the readout panel — scoring
+       is a static chip in the config column (always UNLIMITED, v10.22 rule). */
     var sidesN = CFG.activeTeams(d.settings.mode).length;
     /* v9.4: and NOT in a vsBots mode. Strike Team fields two sides, so this
        used to offer the host two rename boxes — one for their squad and one for
@@ -480,23 +431,42 @@ var UI = (function () {
       el.disabled = !isHost;
       if (document.activeElement !== el) el.value = teamName(t);
     });
-    els['lobby-time'].value = String(d.settings.minutes);
+    /* ===== v11.0 - THE CONFIG COLUMN MIRRORS THE ROOM, HOST EDITS IT =====
+       One writer (these selects), one reader (this sync). Values are written
+       back only when the control is not focused, so a host mid-choice never
+       has the caret yanked; non-hosts see the same controls locked, which is
+       clearer than a second read-only rendering of the same facts — the exact
+       two-sources-of-truth split v10.22 documented. Counting-down locks the
+       host out too: the server refuses changes then, so a live control would
+       be a lie. */
+    ['lobby-cat', 'lobby-mode', 'lobby-map', 'lobby-time'].forEach(function (id) {
+      if (els[id]) els[id].disabled = !isHost || counting;
+    });
+    if (els['cfg-role']) els['cfg-role'].textContent = isHost ? 'YOU ARE HOST' : 'HOST CONTROLS';
+    if (els['lobby-cat'] && document.activeElement !== els['lobby-cat'] &&
+        document.activeElement !== els['lobby-mode']) {
+      var wantCat = catOf(d.settings.mode);
+      if (els['lobby-cat'].value !== wantCat) fillSelect(els['lobby-cat'], catItems(), wantCat);
+      syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], d.settings.mode);
+    }
+    if (els['lobby-map'] && document.activeElement !== els['lobby-map'])
+      els['lobby-map'].value = d.settings.map || 'urban';
+    if (els['lobby-time'] && document.activeElement !== els['lobby-time'])
+      els['lobby-time'].value = String(d.settings.minutes);
 
-    // ---- LEFT column: room information ----
     setTeamNames(d.settings && d.settings.teamNames);      // v8.33
     _mode = d.settings.mode || 'ffa';                     // v8.34
     var mapCfg = CFG.MAPS[d.settings.map] || CFG.MAPS.urban;
-    if (els['info-map'])   els['info-map'].textContent   = mapCfg ? mapCfg.label : d.settings.map;
-    if (els['info-mode'])  els['info-mode'].textContent  = mode.label;
-    if (els['info-kills']) els['info-kills'].textContent =
-      d.settings.killTarget > 0 ? (d.settings.killTarget + ' kills') : 'Unlimited';
-    if (els['info-time'])  els['info-time'].textContent  = d.settings.minutes + ' min';
-    if (els['info-slots']) els['info-slots'].textContent =
-      isPractice ? (total + ' + ' + (d.settings.botCount || 0) + ' bots')
-      : hasBots  ? (total + ' / ' + mode.maxPlayers + '  vs ' +
-                    (d.settings.botCount ? d.settings.botCount : total || 1) + ' bots')
-                 : (total + ' / ' + mode.maxPlayers);
-    if (els['info-role'])  els['info-role'].textContent  = isHost ? 'HOST' : 'OPERATOR';
+    /* Header summary + intel card: the at-a-glance facts the old three-panel
+       info list carried, without the acreage. */
+    if (els['lobby-summary']) els['lobby-summary'].textContent =
+      (mapCfg ? mapCfg.label : d.settings.map) + ' \u00b7 ' + mode.label +
+      ' \u00b7 ' + d.settings.minutes + ' min \u00b7 ' + total + '/' + mode.maxPlayers;
+    if (els['intel-map-name']) els['intel-map-name'].textContent = (mapCfg ? mapCfg.label : d.settings.map).toUpperCase();
+    if (els['intel-map-meta']) els['intel-map-meta'].textContent =
+      'up to ' + mode.maxPlayers + ' operators \u00b7 ' +
+      (mapCfg && mapCfg.bound ? (mapCfg.bound * 2) + ' m across' : '') +
+      (CFG.isArena && CFG.isArena(d.settings.map) ? ' \u00b7 arena rules' : '');
   }
 
   // ---------- HUD ----------
@@ -655,12 +625,24 @@ var UI = (function () {
     /* v8.37: reset the elimination wording. Without this a Last Stand match
        would leave the overlay saying ELIMINATED for every ordinary death in
        every later match on the same page load. */
-    if (els['death-title']) els['death-title'].textContent = 'K.I.A.';
     els['death-overlay'].classList.remove('hidden');
+    /* v11.0 rejoin variant: the respawn clock after a reconnect reuses this
+       overlay, and nobody died — so it says so instead of inventing a killer. */
+    if (d && d.rejoin) {
+      if (els['death-title']) els['death-title'].textContent = 'REDEPLOYING';
+      els['death-info'].textContent = 'Connection restored \u2014 back in the fight in a moment.';
+      return;
+    }
+    if (els['death-title']) els['death-title'].textContent = 'K.I.A.';
     var wl = (CFG.WEAPONS[d.weapon] && CFG.WEAPONS[d.weapon].label) ||
              (CFG.THROWS[d.weapon] && CFG.THROWS[d.weapon].label) || '';
+    /* v11.0: the range rides the death event (combat.js). Killer, weapon and
+       DISTANCE together answer "where did that come from" — 8 m and 80 m are
+       different lessons, and until now the screen taught neither. */
     els['death-info'].textContent = d.self ? 'Careful with those explosives.'
-      : 'Taken out by ' + d.killerName + (wl ? ' \u00b7 ' + wl : '') + (d.headshot ? ' \u00b7 HEADSHOT' : '');
+      : 'Taken out by ' + d.killerName + (wl ? ' \u00b7 ' + wl : '') +
+        (typeof d.dist === 'number' ? ' \u00b7 ' + d.dist + ' m' : '') +
+        (d.headshot ? ' \u00b7 HEADSHOT' : '');
   }
   function setDeathCountdown(sec) {
     els['death-timer'].textContent = sec > 0 ? 'Redeploying in ' + sec + '\u2026' : 'Redeploying\u2026';
@@ -909,94 +891,151 @@ var UI = (function () {
 
   // ---------- menu wiring ----------
   function wireMenus() {
-    els['btn-goto-create'].onclick = function () { showScreen('screen-create'); els['create-name'].focus(); };
-    els['btn-goto-join'].onclick = function () { showScreen('screen-join'); els['join-name'].focus(); };
-    document.querySelectorAll('[data-back]').forEach(function (b) {
-      b.onclick = function () { showScreen('screen-main'); };
-    });
+    /* ===== v11.0 - THE DEPLOY FLOW =====
+       PLAY opens the deploy sheet; CREATE takes zero forms (callsign lives in
+       the profile chip, settings live in the lobby); JOIN is a code. Every
+       listener is guarded on existence — verify-endscreen executes this init
+       against a stub DOM, and the v10.22 black screen was one unguarded
+       addEventListener on an element a redesign had removed. */
+    var CALLSIGN_KEY = 'us.callsign';
+    function callsign() {
+      var el = els['profile-name'];
+      var v = el ? el.value.trim() : '';
+      if (v) { try { localStorage.setItem(CALLSIGN_KEY, v); } catch (e) {} }
+      return v;
+    }
+    if (els['profile-name']) {
+      try {
+        var saved = localStorage.getItem(CALLSIGN_KEY);
+        if (saved) els['profile-name'].value = saved;
+      } catch (e) {}
+      els['profile-name'].addEventListener('change', callsign);
+    }
+    function needCallsign() {
+      toast('Set your callsign first \u2014 operator profile, top right', true);
+      if (els['profile-name']) els['profile-name'].focus();
+    }
+    function showDeploy(on) {
+      if (els['deploy-panel']) els['deploy-panel'].classList.toggle('hidden', !on);
+      if (on && els['join-code']) els['join-code'].value = '';
+    }
+    if (els['btn-play']) els['btn-play'].onclick = function () { showDeploy(true); };
+    if (els['btn-deploy-close']) els['btn-deploy-close'].onclick = function () { showDeploy(false); };
+    if (els['btn-howto']) els['btn-howto'].onclick = function () {
+      if (els['howto-overlay']) els['howto-overlay'].classList.remove('hidden');
+    };
+    if (els['btn-howto-close']) els['btn-howto-close'].onclick = function () {
+      if (els['howto-overlay']) els['howto-overlay'].classList.add('hidden');
+    };
 
-    els['btn-create'].onclick = function () {
-      var name = els['create-name'].value.trim();
-      if (!name) { toast('Enter a callsign first', true); els['create-name'].focus(); return; }
-      els['btn-create'].disabled = true;
+    if (els['btn-create-quick']) els['btn-create-quick'].onclick = function () {
+      var name = callsign();
+      if (!name) return needCallsign();
+      els['btn-create-quick'].disabled = true;
+      /* Defaults only. The lobby config column is where the host shapes the
+         match — that is the whole point of the merge. */
       Net.createRoom(name, {
-        mode: els['create-mode'].value,
-        map: els['create-map'] ? els['create-map'].value : 'urban',
-        killTarget: 0,          // v10.22: unlimited, always
-        minutes: parseInt(els['create-time'].value, 10)
+        mode: CFG.MATCH.defaultMode, map: 'urban',
+        killTarget: 0, minutes: CFG.MATCH.defaultMinutes
       }, function (res) {
-        els['btn-create'].disabled = false;
-        if (res && res.ok) showScreen('screen-lobby');
+        els['btn-create-quick'].disabled = false;
+        if (res && res.ok) { showDeploy(false); showScreen('screen-lobby'); }
         else toast((res && res.error) || 'Could not create room', true);
       });
     };
 
-    els['btn-join'].onclick = function () {
-      var name = els['join-name'].value.trim();
-      var code = els['join-code'].value.trim().toUpperCase();
-      if (!name) { toast('Enter a callsign first', true); return; }
+    /* v11.0 reclaim: joinRoom may answer with a held seat instead of a join.
+       The overlay confirms the TEAM before restoring — the brief's exact ask
+       — and declining joins fresh with the offer suppressed. */
+    var reclaimCtx = null;
+    function showReclaim(offer, name) {
+      reclaimCtx = { code: offer.code, name: name };
+      var seat = offer.seats[0] || {};
+      var tid = seat.team, tname = seat.teamName || (tid ? teamName(tid) : null);
+      var tint = tid && CFG.TEAMS[tid] ? CFG.TEAMS[tid].color : 'var(--amber)';
+      if (els['reclaim-body']) els['reclaim-body'].innerHTML =
+        'A seat is being held for <b>' + esc(seat.name || name) + '</b>' +
+        (tname ? ' on <b style="color:' + tint + '">TEAM ' + esc(tname).toUpperCase() + '</b>' : '') +
+        ' \u00b7 ' + (seat.kills | 0) + ' kills / ' + (seat.deaths | 0) + ' deaths.' +
+        '<br>Rejoin to keep your identity, team and score \u2014 your team is restored, never reassigned.';
+      if (els['reclaim-overlay']) els['reclaim-overlay'].classList.remove('hidden');
+    }
+    function hideReclaim() {
+      if (els['reclaim-overlay']) els['reclaim-overlay'].classList.add('hidden');
+    }
+    function joinOk(res) {
+      hideReclaim(); showDeploy(false);
+      if (!res.inProgress && res.state !== 'playing') showScreen('screen-lobby');
+    }
+    function doJoin(fresh) {
+      var name = callsign();
+      var code = els['join-code'] ? els['join-code'].value.trim().toUpperCase() : '';
+      if (!name) return needCallsign();
       if (code.length !== 5) { toast('Room codes are 5 characters', true); return; }
-      els['btn-join'].disabled = true;
+      if (els['btn-join']) els['btn-join'].disabled = true;
       Net.joinRoom(name, code, function (res) {
-        els['btn-join'].disabled = false;
-        if (res && res.ok) { if (!res.inProgress) showScreen('screen-lobby'); }
-        else toast((res && res.error) || 'Could not join', true);
+        if (els['btn-join']) els['btn-join'].disabled = false;
+        if (res && res.ok) return joinOk(res);
+        if (res && res.reclaim) return showReclaim(res.reclaim, name);
+        toast((res && res.error) || 'Could not join', true);
+      }, fresh);
+    }
+    if (els['btn-join']) els['btn-join'].onclick = function () { doJoin(false); };
+    if (els['join-code']) {
+      els['join-code'].addEventListener('input', function () { this.value = this.value.toUpperCase(); });
+      els['join-code'].addEventListener('keydown', function (e) { if (e.key === 'Enter') doJoin(false); });
+    }
+    if (els['btn-reclaim-yes']) els['btn-reclaim-yes'].onclick = function () {
+      if (!reclaimCtx) return hideReclaim();
+      Net.reclaimSeat(reclaimCtx.name, reclaimCtx.code, function (res) {
+        if (res && res.ok) {
+          joinOk(res);
+          if (typeof Game !== 'undefined' && Game.onRejoin) Game.onRejoin(res);
+        } else {
+          hideReclaim();
+          toast((res && res.error) || 'Seat no longer held \u2014 joining fresh', true);
+        }
       });
     };
-    els['join-code'].addEventListener('input', function () { this.value = this.value.toUpperCase(); });
+    if (els['btn-reclaim-fresh']) els['btn-reclaim-fresh'].onclick = function () {
+      hideReclaim(); doJoin(true);
+    };
 
-    els['btn-copy-code'].onclick = function () {
+    if (els['btn-copy-code']) els['btn-copy-code'].onclick = function () {
       var code = els['lobby-code'].textContent;
       if (navigator.clipboard) navigator.clipboard.writeText(code);
       toast('Code ' + code + ' copied');
     };
+
+    /* ===== v11.0 - pushSettings READS THE LIVE CONFIG COLUMN =====
+       The v10.22 echo-from-payload dance existed because the staging panel had
+       lost its controls while pushSettings still fired. The controls are back
+       — as the only ones — so this reads them directly; the server clamps and
+       broadcasts, updateLobby mirrors the result to everyone. killTarget is
+       pinned 0: every mode is unlimited kills (v10.22 rule, unchanged). */
     function pushSettings() {
-      /* v10.22: MAP and MODE are echoed back from the last lobby payload, never
-         read from a control. The staging panel is a readout now — those selects
-         do not exist — and `els['lobby-mode'].value` on a null element is a
-         TypeError inside a settings push, which is the exact shape of fault
-         that blacks the screen. Echoing them keeps the server's updateSettings
-         contract intact without this side owning a value it can no longer see. */
-      var cur = (lastLobby && lastLobby.settings) || {};
       Net.updateSettings({
-        map: cur.map || 'urban',
-        mode: cur.mode || 'ffa',
-        killTarget: 0,          // v10.22: unlimited, always
-        minutes: parseInt((els['lobby-time'] && els['lobby-time'].value) || (cur.minutes || 10), 10),
-        botCount: parseInt(els['lobby-bots'] ? els['lobby-bots'].value : 0, 10) || 0,
-        /* Whichever difficulty select is VISIBLE owns the setting. Reading the
-           hidden one would have the Overrun slider silently override a backfill
-           choice the host just made. */
-        botSkill: (els['backfill-row'] && els['backfill-row'].style.display !== 'none' && els['lobby-bfskill'])
-          ? els['lobby-bfskill'].value
-          : (els['lobby-skill'] ? els['lobby-skill'].value : 'regular'),
-        backfill: els['lobby-backfill'] ? els['lobby-backfill'].value === '1' : true,
+        map: els['lobby-map'] ? els['lobby-map'].value : 'urban',
+        mode: els['lobby-mode'] ? els['lobby-mode'].value : 'ffa',
+        killTarget: 0,
+        minutes: parseInt((els['lobby-time'] && els['lobby-time'].value) || 10, 10),
         teamNames: {                                    // v8.33
           a: els['lobby-team-a'] ? els['lobby-team-a'].value : '',
           b: els['lobby-team-b'] ? els['lobby-team-b'].value : ''
         }
       });
     }
-    if (els['create-cat']) els['create-cat'].addEventListener('change', function () {
-      syncVariants(els['create-cat'], els['create-mode'], els['create-var-field'], els['create-mode'].value);
+    if (els['lobby-cat']) els['lobby-cat'].addEventListener('change', function () {
+      syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'],
+        els['lobby-mode'] ? els['lobby-mode'].value : CFG.MATCH.defaultMode);
+      pushSettings();
     });
+    if (els['lobby-mode']) els['lobby-mode'].addEventListener('change', pushSettings);
+    if (els['lobby-map']) els['lobby-map'].addEventListener('change', pushSettings);
+    if (els['lobby-time']) els['lobby-time'].addEventListener('change', pushSettings);
     if (els['btn-shuffle']) els['btn-shuffle'].addEventListener('click', function () {
       Net.shuffleTeams();
     });
-    /* v10.22: GUARDED. The staging panel's DURATION select became a readout in
-       this same version and this listener was left pointing at it — an
-       unguarded addEventListener on null, thrown during UI init, which is the
-       exact shape of fault that blacks the screen before anything renders.
-       verify-endscreen caught it by being the only gate that executes UI code.
-
-       Duration is now decided on the create screen like map and mode, so there
-       is nothing here to listen to; the guard is what makes that safe rather
-       than fatal. */
-    if (els['lobby-time']) els['lobby-time'].addEventListener('change', pushSettings);
-    if (els['lobby-bots']) els['lobby-bots'].addEventListener('change', pushSettings);
-    if (els['lobby-skill']) els['lobby-skill'].addEventListener('change', pushSettings);
-    if (els['lobby-bfskill']) els['lobby-bfskill'].addEventListener('change', pushSettings);
-    if (els['lobby-backfill']) els['lobby-backfill'].addEventListener('change', pushSettings);
     /* Push on blur and on Enter rather than on every keystroke: a rename is a
        whole word, and one socket message per character would be silly. */
     ['lobby-team-a', 'lobby-team-b'].forEach(function (id) {
@@ -1005,10 +1044,13 @@ var UI = (function () {
       els[id].addEventListener('blur', pushSettings);
       els[id].addEventListener('keydown', function (e) { if (e.key === 'Enter') els[id].blur(); });
     });
-    els['btn-start'].onclick = function () { Net.startMatch(); };
-    els['btn-leave'].onclick = function () { Net.leaveRoom(); showScreen('screen-main'); };
-    els['btn-back-lobby'].onclick = function () { Net.returnLobby(); };
-    els['btn-quit'].onclick = function () { location.reload(); };
+    if (els['btn-start']) els['btn-start'].onclick = function () { Net.startMatch(); };
+    if (els['btn-leave']) els['btn-leave'].onclick = function () {
+      Net.leaveRoom(); showScreen('screen-main');
+      try { if (window.Showcase) window.Showcase.start(); } catch (e) { }
+    };
+    if (els['btn-back-lobby']) els['btn-back-lobby'].onclick = function () { Net.returnLobby(); };
+    if (els['btn-quit']) els['btn-quit'].onclick = function () { location.reload(); };
     // btn-resume is wired by main.js (needs pointer lock).
   }
 
@@ -1061,6 +1103,54 @@ var UI = (function () {
     els['crosshair'].style.setProperty('--chgap', (px | 0) + 'px');
   }
 
+  /* ===== v11.0 - THE COMPASS =====
+     A PUBG-style bearing strip at the top of the HUD, because "he's north-east,
+     40 degrees" is a callout and "over there by the thing" is not. Built ONCE:
+     three copies of a 0-359 tick tape so the wrap never shows a seam, then one
+     transform per frame — the strip slides, a fixed notch reads the heading.
+     Headings follow the engine's own convention (yaw 0 faces -z = NORTH, +x =
+     EAST at 90), the same frame the minimap and the spot cone already use, so
+     the compass, the map and the world can never disagree. */
+  var CMP_PPD = 4;                     // pixels per degree — one knob
+  function initCompass() {
+    var strip = els['compass-strip'];
+    if (!strip || strip.dataset.built) return;
+    strip.dataset.built = '1';
+    var CARD = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+    var html = '';
+    for (var copy = 0; copy < 3; copy++) {
+      for (var deg = 0; deg < 360; deg += 5) {
+        var x = (copy * 360 + deg) * CMP_PPD;
+        if (CARD[deg] !== undefined) {
+          html += '<b class="ct card' + (deg % 90 === 0 ? ' main' : '') +
+                  '" style="left:' + x + 'px">' + CARD[deg] + '</b>';
+        } else if (deg % 30 === 0) {
+          html += '<b class="ct num" style="left:' + x + 'px">' +
+                  ('00' + deg).slice(-3) + '</b>';
+        } else if (deg % 15 === 0) {
+          html += '<i class="ct t15" style="left:' + x + 'px"></i>';
+        } else {
+          html += '<i class="ct t5" style="left:' + x + 'px"></i>';
+        }
+      }
+    }
+    strip.innerHTML = html;
+    strip.style.width = (3 * 360 * CMP_PPD) + 'px';
+  }
+  var _cmpLast = -1;
+  function updateCompass(yaw) {
+    var strip = els['compass-strip'], degEl = els['compass-deg'], host = els['compass'];
+    if (!strip || !host) return;
+    var deg = ((yaw * 180 / Math.PI) % 360 + 360) % 360;
+    /* Centre the MIDDLE copy of the tape under the notch; the outer copies are
+       what make +-180 degrees of visible strip seamless. */
+    var half = (host.clientWidth || 320) / 2;
+    var x = half - (360 + deg) * CMP_PPD;
+    strip.style.transform = 'translateX(' + x.toFixed(1) + 'px)';
+    var d3 = Math.round(deg) % 360;
+    if (d3 !== _cmpLast && degEl) { _cmpLast = d3; degEl.textContent = ('00' + d3).slice(-3); }
+  }
+
   function wireV43() {
     if (els['btn-ready']) els['btn-ready'].addEventListener('click', function () {
       Net.setReady(this.dataset.r !== '1');
@@ -1073,6 +1163,7 @@ var UI = (function () {
     wireMenus();
     wireSettings();
     wireV43();
+    initCompass();       // v11.0: ticks built once, moved per frame
   }
 
   return {
@@ -1084,6 +1175,8 @@ var UI = (function () {
     setAttachments: setAttachments, setCooking: setCooking, announce: announce, setCrosshairGap: setCrosshairGap,
     setGear: setGear, setCountdown: setCountdown, setDeathEliminated: setDeathEliminated, setTeamNames: setTeamNames, teamName: teamName,
     setLoadingMap: setLoadingMap,
+    updateCompass: updateCompass,     // v11.0: one transform per frame, see game.js
+
     getMapLabel: function () { return currentMapLabel; },
     setTimer: setTimer, setKillTarget: setKillTarget,
     addFeed: addFeed, updateScoreboard: updateScoreboard, showScoreboard: showScoreboard,

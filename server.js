@@ -167,7 +167,39 @@ if (process.env.NETSTATS === '1') {
 }
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+/* ===== v11.0 - THE ~15-MINUTE DISCONNECT =====
+
+   Rahul: "players sometimes automatically disconnect during long matches,
+   especially around 15 minutes."
+
+   tools/soak.js proved the server and the stream clean over long runs (v10.18),
+   and v10.17 removed the only thing that ACCUMULATED. A drop that clusters on a
+   round number of minutes and does not correlate with load is the signature of
+   the path, not the process: reverse proxies and NATs recycle long-lived
+   WebSocket connections on fixed lifetimes (900 s is a common default), and
+   nothing either end does prevents that.
+
+   So the fix is to make a transport death invisible instead of hoping it stops:
+
+   1. connectionStateRecovery — on a short gap socket.io restores the SAME
+      socket id and room membership, so every player record keyed by id is
+      simply valid again. The recovered flag is handled in io.on('connection').
+      Volatile snapshots are not replayed, which is exactly right: a stale
+      snapshot has no value (v10.17) and the next keyframe repairs the world.
+   2. pingInterval/pingTimeout widened from the 25/20 s defaults. A laptop
+      lid-blink or a mobile tower change routinely exceeds 20 s; declaring the
+      seat dead that fast is what turned blips into losses.
+   3. Longer gaps fall through to the token rejoin (v9.11) and, from v11.0,
+      the name-based reclaim flow — see the 'reclaimSeat' handler. */
+const io = new Server(server, {
+  cors: { origin: '*' },
+  pingInterval: 20000,
+  pingTimeout: 30000,
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000,
+    skipMiddlewares: true
+  }
+});
 
 const rooms = new Map();
 
@@ -261,7 +293,12 @@ const KEYFRAME_EVERY = 30;
 /* v9.11: how long a seat is held for a dropped player. Long enough for a phone
    changing towers or a laptop resuming from sleep; short enough that a genuine
    quitter does not hold a slot for a whole round. */
-const RECONNECT_WINDOW = 45000;
+/* v11.0: 45 s -> 180 s. Rahul's brief asks for reconnect-by-code to restore the
+   same operator reliably, including repeated drops. 45 s was shorter than one
+   router reboot; three minutes still frees a genuine quitter's seat well inside
+   a ten-minute match. connectionStateRecovery (above) covers the first two
+   minutes transparently; this window is what the token/name reclaim path gets. */
+const RECONNECT_WINDOW = 180000;
 /* Bandwidth instrumentation, off unless NETSTATS=1 is set in the environment.
    Counting bytes means stringifying the packet a second time, which is real
    CPU on the hot path — it must never run in production by accident. */
@@ -518,6 +555,20 @@ function startMatch(room) {
     p.drones = 0;
   }
   refreshTeamsAndColors(room, true);   // v10.22: preserve what the lobby showed
+  /* ===== v11.0 - THE LOBBY'S TEAMS ARE THE MATCH'S TEAMS. FROZEN. =====
+     Rahul: "Players must never be automatically moved to another team after
+     the game begins."
+
+     v10.22's preserve flag stopped THIS call from re-balancing, but any later
+     refreshTeamsAndColors — a mid-match join runs one from addPlayer — would
+     still round-robin every UNLOCKED player. Locking every seat the moment the
+     match starts closes the class: from here on the balancer may only fill a
+     genuinely empty side on a genuinely new player, never touch a settled one.
+     rooms.js additionally forces preserve whenever the room is not a lobby,
+     so both halves of the guarantee hold independently. */
+  for (const p of room.players.values()) {
+    if (p.team) p.teamLocked = true;
+  }
   initPickups(room);
   /* v8.38: bots must exist BEFORE the matchStart payload is built, or clients
      receive a roster without them and never render the ones they are fighting. */
@@ -651,6 +702,14 @@ function startSnapshots(room) {
     room.snapTk = tkNow;
 
     const packet = { e: ents };
+    /* v11.0: the SERVER TICK NUMBER rides the envelope. The client used to
+       timestamp every snapshot with its own performance.now() AT ARRIVAL —
+       so network jitter and main-thread hitches were written straight into
+       the interpolation buffer as if the players had actually moved unevenly.
+       With the tick number the client reconstructs each sample's true time on
+       a smoothed clock and arrival noise stops being motion. Envelope field,
+       not snapcodec: the wire format proper is untouched. */
+    packet.n = room.snapN;
     if (keyframe) packet.k = 1;
     /* v9.4: drones ride the normal snapshot rather than a channel of their own,
        so every client renders them with the code that already interpolates
@@ -763,6 +822,35 @@ function endMatch(room, winnerId, reason) {
 
 // ---------- combat validation ----------
 io.on('connection', (socket) => {
+  /* ===== v11.0 - A RECOVERED SOCKET IS THE SAME SEAT =====
+     connectionStateRecovery hands the reconnecting client its OLD id and its
+     room membership back. Every player record here is keyed by that id, so the
+     seat does not need re-keying — it needs un-marking: the disconnect handler
+     below set connected=false / alive=false and armed the purge timer. Undo
+     exactly that, force a keyframe (the volatile snapshots missed during the
+     gap were rightly dropped), and put the player on the respawn clock the way
+     the token rejoin always has. */
+  if (socket.recovered) {
+    const room = rooms.get(socket.data.roomCode);
+    const p = room && room.players.get(socket.id);
+    if (room && p) {
+      if (p.purgeTimer) { clearTimeout(p.purgeTimer); p.purgeTimer = null; }
+      const wasOut = !p.connected;
+      p.connected = true;
+      if (room.state === 'playing' && !p.alive && !p.out) {
+        p.respawnAt = now() + CFG.MATCH.respawnDelay * 1000;
+      }
+      room.snapKeyframe = true;
+      if (wasOut) io.to(room.code).emit('toast', { msg: p.name + ' reconnected' });
+      socket.emit('recovered', {
+        state: room.state, settings: room.settings,
+        startedAt: room.startedAt, serverNow: now(),
+        team: p.team || null, mines: p.mines | 0
+      });
+      pushLobby(room);
+    }
+  }
+
   socket.on('createRoom', (data, cb) => {
     const room = makeRoom(socket, data && data.name, data && data.settings);
     /* v9.11: the reconnect token, read from the record rather than a local —
@@ -776,6 +864,40 @@ io.on('connection', (socket) => {
     const code = String((data && data.code) || '').toUpperCase().trim();
     const room = rooms.get(code);
     if (!room) return cb && cb({ ok: false, error: 'Room not found. Check the code.' });
+    /* ===== v11.0 - RECONNECT BY CODE, WITH THE TEAM CONFIRMED =====
+       Rahul: rejoining with the same room code must "recognize the returning
+       player correctly... ask/confirm which team they were previously on...
+       never automatically place them into another team... prevent duplicate
+       player entries."
+
+       The v9.11 token already does all of that silently when the same tab
+       comes back. The case it cannot cover is the one people actually hit — a
+       crashed browser, a different device — where the token is gone and the
+       only identity left is the callsign they type. So: if a DISCONNECTED seat
+       in this room carries the same cleaned name, the join is paused and the
+       seat is OFFERED, with its team, for the player to confirm. Confirming
+       re-keys the original record (score, team, gear — nothing is rebuilt), so
+       a duplicate entry cannot exist; declining joins fresh and the old seat
+       purges on its own clock.
+
+       The v9.11 warning about name-guessing still holds, which is why this is
+       an OFFER gated on the seat being disconnected and on an explicit human
+       confirmation — a guessed name can only ever pick up a seat its owner has
+       genuinely dropped, inside the reconnect window. */
+    if (!(data && data.fresh)) {
+      const nm = cleanName(data && data.name);
+      const held = [];
+      for (const q of room.players.values()) {
+        if (!q.bot && q.connected === false && q.name === nm) {
+          held.push({ name: q.name, team: q.team || null,
+            teamName: q.team ? ((room.settings.teamNames || {})[q.team] || (CFG.TEAMS[q.team] || {}).name) : null,
+            kills: q.kills | 0, deaths: q.deaths | 0 });
+        }
+      }
+      if (held.length) {
+        return cb && cb({ ok: false, reclaim: { code: room.code, seats: held } });
+      }
+    }
     const cap = modeInfo(room).maxPlayers;
     /* v9.2: count HUMANS, not room.players.size. Bots live in the same map as
        real players, so once a Strike Team or Overrun match starts, size is
@@ -1221,6 +1343,45 @@ io.on('connection', (socket) => {
 
   socket.on('pingCheck', (t, cb) => { if (cb) cb(t); });
 
+  /* v11.0: the confirmed half of the joinRoom reclaim offer above. Shares the
+     re-key shape with 'rejoin' below — the record moves to the new socket id,
+     so identity, team, score and gear are the SAME OBJECT and cannot drift. */
+  socket.on('reclaimSeat', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    if (!d || !d.code || !d.name) return ack({ ok: false, error: 'Nothing to reclaim.' });
+    const room = rooms.get(String(d.code).toUpperCase().trim());
+    if (!room) return ack({ ok: false, error: 'That match has ended.' });
+    const nm = cleanName(d.name);
+    let oldId = null;
+    for (const [id, q] of room.players) {
+      if (!q.bot && q.connected === false && q.name === nm) { oldId = id; break; }
+    }
+    if (!oldId) return ack({ ok: false, error: 'That seat is no longer held.' });
+    const p = room.players.get(oldId);
+    if (p.purgeTimer) { clearTimeout(p.purgeTimer); p.purgeTimer = null; }
+    room.players.delete(oldId);
+    p.id = socket.id;
+    p.connected = true;
+    /* THE TEAM IS RESTORED, NEVER REASSIGNED. It was on the record the whole
+       time; locking it here makes any later balancer pass leave it alone. */
+    p.teamLocked = !!p.team;
+    p.respawnAt = now() + CFG.MATCH.respawnDelay * 1000;
+    room.players.set(socket.id, p);
+    if (room.hostId === oldId) room.hostId = socket.id;
+    if (room.snapSlots) room.snapSlots.delete(oldId);
+    room.snapKeyframe = true;
+    socket.join(room.code);
+    socket.data.roomCode = room.code;
+    io.to(room.code).emit('playerLeft', { id: oldId, name: p.name, silent: true });
+    io.to(room.code).emit('toast', { msg: p.name + ' reconnected' });
+    ack({ ok: true, code: room.code, id: socket.id, token: p.token,
+          team: p.team || null, mines: p.mines | 0,
+          settings: room.settings, state: room.state,
+          startedAt: room.startedAt, serverNow: now(),
+          pickups: room.pickups.filter(k => k.active).map(k => ({ id: k.id, t: k.t, p: k.pos, active: true })) });
+    pushLobby(room);
+  });
+
   /* Rejoin by TOKEN, not by name. A name is guessable and a name collision
      would let one player steal another's seat and score; the token is issued
      once, on join, and never broadcast in the lobby payload. */
@@ -1241,6 +1402,7 @@ io.on('connection', (socket) => {
     room.players.delete(oldId);
     p.id = socket.id;
     p.connected = true;
+    p.teamLocked = !!p.team;   // v11.0: a restored seat's team is a settled fact
     p.respawnAt = now() + CFG.MATCH.respawnDelay * 1000;
     room.players.set(socket.id, p);
     if (room.hostId === oldId) room.hostId = socket.id;
@@ -1249,9 +1411,14 @@ io.on('connection', (socket) => {
     if (room.snapSlots) room.snapSlots.delete(oldId);
     room.snapKeyframe = true;
     socket.join(room.code);
-    io.to(room.code).emit('playerLeft', { id: oldId, name: p.name });
+    socket.data.roomCode = room.code;   // v11.0: was missing — every getRoom() after a token rejoin read undefined
+    /* v11.0 silent: this playerLeft only retires the OLD avatar on every
+       client. Toasting "<name> disconnected" one line above "<name>
+       reconnected" read as a contradiction. */
+    io.to(room.code).emit('playerLeft', { id: oldId, name: p.name, silent: true });
     io.to(room.code).emit('toast', { msg: p.name + ' reconnected' });
     ack({ ok: true, code: room.code, id: socket.id, token: p.token,
+          team: p.team || null, mines: p.mines | 0,
           settings: room.settings, state: room.state,
           startedAt: room.startedAt, serverNow: now(),
           pickups: room.pickups.filter(k => k.active).map(k => ({ id: k.id, t: k.t, p: k.pos, active: true })) });

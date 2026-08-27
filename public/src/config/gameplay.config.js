@@ -164,6 +164,24 @@
        is a real cost and it is worth it: a body that is 70 ms behind is still
        shootable, and a body that is frozen is not. */
     interpDelay: 190,
+    /* ===== v11.0 - THE DELAY ADAPTS UPWARD FROM THAT FLOOR =====
+       v10.17 made snapshots volatile, which was right — but a volatile stream
+       DROPS packets under congestion, and a fixed 190 ms buffer only absorbs
+       one drop. Two in a row (a 200 ms sample gap) ran it dry again: freeze,
+       then the catch-up teleport. Rahul's report survived three fixes because
+       each one raised a constant against a moving target.
+
+       So the client now MEASURES its own arrival jitter (the v10.17 gap ring)
+       and holds the render delay just above it: never below interpDelay — the
+       2.5-tick invariant verify-interp guards is the floor, not the value —
+       and never above interpMax, because past a third of a second the cure is
+       worse than the freeze. Slew rates are asymmetric on purpose: the delay
+       climbs quickly when the network turns bad (interpUp ms per second) and
+       creeps back down slowly when it recovers (interpDown), because widening
+       late shows as a freeze while narrowing early shows as one — the two
+       mistakes are not the same size. */
+    interpMax: 320,
+    interpUp: 120, interpDown: 18,
     hitTolerance: 4.0, historyMs: 1200,
     detectMs: 3500        // ms an unsuppressed shot pings the minimap
   };

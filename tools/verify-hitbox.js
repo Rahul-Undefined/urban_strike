@@ -201,7 +201,10 @@ facing.forEach(f => {
     Math.round(f.yaw * 180 / Math.PI) + ' deg [dot ' + f.dot.toFixed(2) + ']');
 });
 const nsrc = fs.readFileSync('public/src/networking/net.js', 'utf8');
-ok(/g\.rotation\.y\s*=\s*-r\.ry\s*\+\s*Math\.PI/.test(nsrc),
+/* v11.0: the group is rotated from the SMOOTHED yaw (r.smoothRy) — same value
+   once settled, same +PI correction; the functional facing test above measures
+   the actual rendered direction either way, so this grep only names the symbol. */
+ok(/g\.rotation\.y\s*=\s*-r\.(smoothRy|ry)\s*\+\s*Math\.PI/.test(nsrc),
   'net.js applies the camera/rig convention correction');
 
 /* A head balanced straight on the shoulders reads as a crate. */
