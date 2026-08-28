@@ -52,6 +52,7 @@
          numbers) holds unchanged.
      The backdrop below is untouched from v10.12 — compositor-only, no image
      files — because it was already the right kind of expensive. -->
+<div id="wave-banner" class="hidden"><b id="wave-title"></b><span id="wave-sub"></span></div>
 <div id="menu-layer">
   <div class="backdrop" aria-hidden="true">
     <div class="bd-sky"></div>
@@ -124,6 +125,7 @@
 
     <nav class="nav-rail">
       <button class="rail-btn primary" id="btn-play"><i></i><span>PLAY</span><em>DEPLOY TO A MATCH</em></button>
+      <button class="rail-btn accent" id="btn-botmode"><i></i><span>BOT MODE</span><em>SOLO &middot; TEAM &middot; BATTLE vs MACHINES</em></button>
       <button class="rail-btn" id="btn-howto"><i></i><span>FIELD MANUAL</span><em>CONTROLS &amp; INTEL</em></button>
       <div class="rail-foot">NO DOWNLOAD &#183; NO ACCOUNT &#183; ONE FIVE-LETTER CODE</div>
     </nav>
@@ -142,6 +144,30 @@
       <div class="dp-hint" id="deploy-hint">Callsign is set in your operator profile, top right.</div>
     </div>
 
+    <!-- v14.0 BOT MODE entry panel. Deliberately its own sheet rather than a
+         mode inside DEPLOY: the brief wants a separate experience, and the
+         separation starts at the front door. Difficulty and mode are picked
+         HERE; the room then opens into the standard staging screen wearing
+         Bot Mode identity (Blacksite locked, 15:00 locked, difficulty
+         adjustable until launch). -->
+    <div class="deploy-panel hidden" id="botmode-panel">
+      <div class="dp-head"><b>BOT MODE</b><button class="dp-close" id="btn-botmode-close" aria-label="close">&times;</button></div>
+      <div class="bm-row"><b>MODE</b>
+        <div class="bm-seg" id="bm-mode-seg">
+          <button data-v="bm_solo" class="on">SOLO</button><button data-v="bm_team">TEAM</button><button data-v="bm_battle">BATTLE</button>
+        </div>
+      </div>
+      <div class="bm-row" id="bm-diff-row"><b>DIFFICULTY</b>
+        <div class="bm-seg" id="bm-diff-seg">
+          <button data-v="easy">EASY</button><button data-v="medium" class="on">MEDIUM</button><button data-v="hard">HARD</button>
+        </div>
+      </div>
+      <div class="bm-row bm-facts"><b>MAP</b><span>BLACKSITE &middot; bot-mode only</span></div>
+      <div class="bm-row bm-facts"><b>TIME</b><span>15:00 &middot; fixed</span></div>
+      <div class="bm-hint" id="bm-hint">Solo: you vs 8 machines. Team: bring squadmates by room code. Battle: waves of 5 &rarr; 10 &rarr; 15 &rarr; 20, smarter every wave.</div>
+      <button class="btn btn-primary wide" id="btn-botmode-launch"><span>OPEN BOT LOBBY</span><em>ready up &mdash; hostiles seat at launch</em></button>
+    </div>
+
     <!-- Field manual, moved from the old staging column to an on-demand sheet. -->
     <div class="howto-overlay hidden" id="howto-overlay">
       <div class="howto-panel panel">
@@ -152,6 +178,7 @@
           <div class="mrow"><b>GEAR</b><span>hold G frag &middot; B smoke &middot; F flash &middot; H molotov &middot; V mine</span></div>
           <div class="mrow"><b>GUNS</b><span>1-9 select &middot; 9 exclusive loot</span></div>
           <div class="mrow"><b>INTEL</b><span>TAB scoreboard &middot; M full map &middot; compass up top &middot; ESC release cursor</span></div>
+          <div class="mrow"><b>BOT MODE</b><span>from the main menu &middot; Blacksite only &middot; machines get smarter with difficulty, never stronger &middot; BATTLE waves 5&rarr;20</span></div>
           <div class="mrow"><b>VIEW</b><span>P toggles first / third person &middot; scoped aim is always first person</span></div>
           <div class="mrow"><b>MARKERS</b><span>team modes: open map, LEFT-CLICK to place your pin (re-click moves it) &middot; RIGHT-CLICK removes it &middot; team-mates see it with your name</span></div>
           <div class="mrow mnote"><b>TIP</b><span>In Last Stand you get ONE life. Press M often &mdash; camping shows up on the map.</span></div>
@@ -384,6 +411,7 @@
   <script src="src/config/maps-sunsetrow.config.js"></script>
   <script src="src/config/maps-small.config.js"></script>
   <script src="src/config/maps-medium.config.js"></script>
+  <script src="src/config/botmode.config.js"></script>
   <script src="src/config/districts.config.js"></script>
   <script src="src/config/index.js"></script>
   <script src="src/audio/audio.js"></script>
@@ -399,6 +427,7 @@
   <script src="src/environment/sunsetrow.js"></script>
   <script src="src/environment/smallmaps.js"></script>
   <script src="src/environment/medium.js"></script>
+  <script src="src/environment/blacksite.js"></script>
   <script src="src/environment/access.js"></script>
   <script src="src/effects/effects.js"></script>
   <script src="src/player/controller.js"></script>

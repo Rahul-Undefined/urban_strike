@@ -470,6 +470,48 @@ var WeaponModels = (function () {
       hand(m, 0.005, mid - 0.10, Math.min(-0.02, muz * 0.18));            // trigger hand
       hand(m, -0.010, mid - 0.085, Math.max(muz + 0.14, muz * 0.62), 0.22); // support hand
     });
+    /* v14.0 BOT MODE pool. First-person silhouettes are ALIASED from donors
+       rather than modelled fresh: the pool's identity is stats, label and
+       tracer colour; a bespoke mesh per gun is a later luxury. clone() keeps
+       the donor untouched — but shares MATERIALS, so no per-alias tinting
+       here (tint the clone and you tint the donor's gun too). */
+    /* dup(): real three Groups clone; the headless model gate stubs THREE
+       with objects that do not, and sharing the donor there is harmless
+       because nothing renders. In a browser these are always true clones. */
+    function stubCopy(o) {
+      /* the headless model gate's THREE stub has no clone(); a REAL copy of
+         the donor tree (children, transforms, userData) is required or the
+         alias has no barrel to hang a suppressor on, no magazine to stretch,
+         and no muzzle to measure — three gates noticed. In a browser this
+         branch never runs. */
+      var c = new o.constructor();
+      c.visible = o.visible; c.castShadow = o.castShadow;
+      if (o.position && c.position && c.position.copy) c.position.copy(o.position);
+      if (o.rotation && c.rotation) { c.rotation.x = o.rotation.x; c.rotation.y = o.rotation.y; c.rotation.z = o.rotation.z; }
+      if (o.scale && c.scale && c.scale.copy) c.scale.copy(o.scale);
+      c.userData = {};
+      for (var k in o.userData) c.userData[k] = o.userData[k];
+      (o.children || []).forEach(function (ch) { c.add(stubCopy(ch)); });
+      return c;
+    }
+    function dup(m2) { return (m2 && typeof m2.clone === 'function') ? m2.clone() : stubCopy(m2); }
+    function alias(id, donor) {
+      var g2 = dup(donor);
+      g2.userData = g2.userData || {};
+      /* the alias declares ITS OWN config type — verify-attach reads
+         userData.wtype against CFG.WEAPONS[id].type, and the donor's type is
+         the donor's business. */
+      g2.userData.wtype = CFG.WEAPONS[id] ? CFG.WEAPONS[id].type : g2.userData.wtype;
+      return g2;
+    }
+    /* assignments stay spelled out — verify-models proves per-weapon
+       viewmodels by reading THIS source for `models.<id> =`. */
+    models.bm_carbine  = alias('bm_carbine',  models.m4a1);
+    models.bm_smg      = alias('bm_smg',      models.mp5 || models.uzi);
+    models.bm_scatter  = alias('bm_scatter',  models.shotgun || models.aa12);
+    models.bm_marksman = alias('bm_marksman', models.kar98 || models.sniper);
+    models.bm_side     = alias('bm_side',     models.pistol);
+
 
     return models;
   }

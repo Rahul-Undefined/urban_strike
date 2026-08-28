@@ -128,7 +128,14 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
    the v11 discipline above: the next feature argues for its own bytes, this
    line does not pre-pay for it.
    Bandwidth impact, stated plainly: ~13,970 -> ~13,700 fresh loads per 5 GB. */
-const GZ_BUDGET_KB = 382;
+/* ===== v14.0 — 382 -> 392 KB. THE RISE IS A GAME MODE, STATED PLAINLY =====
+   Measured 391 gzipped. What the ~9 KB bought: botmode.config (5 weapons,
+   Blacksite spawn/loot tables, difficulty ladders, wave plan), the Blacksite
+   builder, the BOT MODE panel + wave banner (markup, css, ui logic), and the
+   loot labels. One spare KB against gzip jitter, same margin every previous
+   raise carried. The v10.14 note still names the real fix: per-map builder
+   loading. */
+const GZ_BUDGET_KB = 392;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

@@ -185,7 +185,21 @@
             mapLock: 'urban' },
     co10: { label: 'Strike Team \u00b7 Platoon', vlabel: '10 operators vs the machines',
             cat: 'coop', teams: true, teamCount: 2, maxPlayers: 10, vsBots: true, hidden: !BOTS_ENABLED,
-            mapLock: 'urban' }
+            mapLock: 'urban' },
+    /* ===== v14.0 BOT MODE — three modes, one wall (brief items 1/5/12) =====
+       Registered here because rooms, teams, snapshots and scoreboards are the
+       shared utilities the brief permits — but the entries are FENCED:
+       cat 'botmode' is deliberately NOT in ALL_MODE_CATS, so the multiplayer
+       picker cannot list them even with every switch armed; `botmode: true`
+       is what the dedicated UI, the bot driver and the server guards key on;
+       `vsBots: true` keeps the LEGACY dormant engine's own accounting honest
+       (verify-bots separates legacy seven from these three); mapLock rides
+       the v12 coercion machinery unchanged. All are humans-vs-machines team
+       games: humans are side 'a', bots side 'b', so the grouped scoreboards
+       and team damage rules work without one new line. */
+    bm_solo:   { label: 'Bot Mode \u00b7 Solo',   vlabel: 'Solo vs Bots',   cat: 'botmode', teams: true, teamCount: 2, maxPlayers: 21, botmode: true, vsBots: true, mapLock: 'blacksite' },
+    bm_team:   { label: 'Bot Mode \u00b7 Team',   vlabel: 'Team vs Bots',   cat: 'botmode', teams: true, teamCount: 2, maxPlayers: 24, botmode: true, vsBots: true, mapLock: 'blacksite' },
+    bm_battle: { label: 'Bot Mode \u00b7 Battle', vlabel: 'Battle Waves',   cat: 'botmode', teams: true, teamCount: 2, maxPlayers: 24, botmode: true, vsBots: true, mapLock: 'blacksite' },
   };
 
   /* THE single source of truth for "does this mode put bots in the room".
@@ -352,6 +366,13 @@
        players: between the arenas' 8-10 and the theatres' 15. */
     riverside:   { label: 'Riverside',   ready: true, bound: 66, maxPlayers: 12, arena: true },
     airfield:    { label: 'Airfield',    ready: true, bound: 70, maxPlayers: 12, arena: true },
+    /* v14.0 BLACKSITE — the bot-mode-only map. `botOnly` is enforced
+       server-side at create/updateSettings (a non-bot mode asking for it is
+       coerced away) and client-side in the map picker; the three bm_ modes
+       mapLock to it, so the pairing is exclusive in BOTH directions. Arena
+       rules at theatre-ish size; maxPlayers 24 seats 4 humans plus the
+       BATTLE ceiling of 20 machines. */
+    blacksite:   { label: 'Blacksite',   ready: true, bound: 52, maxPlayers: 24, arena: true, botOnly: true },
   };
 
   /* v8.25: alwaysShowPlayers. Rahul asked for player locations on the map and

@@ -304,8 +304,13 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
        bots have been off since v10.9. A floor of two here would have refused
        the mode that gives the game back to a solo player. */
     const seatFloor = (M.vsBots || M.outbreak) ? 1 : 2;
-    ok(M.maxPlayers >= seatFloor && M.maxPlayers <= 20,
-      m + ' seats ' + seatFloor + '-20 players [' + M.maxPlayers + ']');
+    /* v14.0: the 20-seat ceiling was measured for the MULTIPLAYER avatar
+       budget. Bot Mode's Blacksite seats 24 by design — up to 4 humans plus
+       BATTLE's ceiling of 20 machines — and carries its own map cap. The
+       ceiling stays the law for everything without the botmode flag. */
+    const seatCeil = M.botmode ? 24 : 20;
+    ok(M.maxPlayers >= seatFloor && M.maxPlayers <= seatCeil,
+      m + ' seats ' + seatFloor + '-' + seatCeil + ' players [' + M.maxPlayers + ']');
     const ids = CFG.activeTeams(m);
     if (!M.teams) {
       ok(ids.length === 0, m + ' fields no teams (free-for-all)');

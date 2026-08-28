@@ -60,7 +60,8 @@ const EXEMPT = {
      free, but it fires nothing — tryFire() intercepts it and calls the launcher.
      Its damage lives in CFG.GEAR.drone where the server reads it, so testing it
      against a firearm damage class would be testing the wrong number. */
-  drone:   'gear slot — launches a drone, fires no round; damage lives in CFG.GEAR.drone'
+  drone:   'gear slot — launches a drone, fires no round; damage lives in CFG.GEAR.drone',
+  bm_scatter: 'pellet spread — Blacksite pool scattergun, 88 at point blank by design (mirrors the shotgun/aa12 exemption)',
 };
 
 Object.keys(W).forEach(k => {

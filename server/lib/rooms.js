@@ -62,7 +62,12 @@ function makeRoom(hostSocket, name, settings) {
     settings: {
       /* v12.0 (item 7): a bot mode carries mapLock — the room is coerced to it
          at creation, so no client payload shape can start Overrun on Metro. */
-      map: (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false) ? settings.map : 'urban',
+      /* v14.0: a botOnly map is refused to any mode that is not botmode —
+         the exclusivity is enforced in BOTH directions (bm modes are dragged
+         TO blacksite by mapLock below; everything else is kept OFF it here). */
+      map: (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false
+            && !(CFG.MAPS[settings.map].botOnly && !(CFG.MODES[settings && settings.mode] || {}).botmode))
+        ? settings.map : 'urban',
       killTarget: clampOpt(settings && settings.killTarget, CFG.MATCH.killOptions, CFG.MATCH.defaultKills),
       minutes: clampOpt(settings && settings.minutes, CFG.MATCH.timeOptions, CFG.MATCH.defaultMinutes),
       enemyIntel: !!(settings && settings.enemyIntel),   // v12.0: M-map blobs, host toggle, default OFF

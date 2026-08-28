@@ -1,5 +1,10 @@
 # URBAN STRIKE — browser multiplayer FPS (2–10 players · FFA / 3v3 / 5v5)
 
+**v14.0 — BOT MODE.** From the welcome rail: SOLO (you vs 8 machines), TEAM
+(squad up by room code vs 10), or BATTLE (waves 5-10-15-20 over 15 minutes,
+smarter every wave) — on Blacksite, a bot-only arena with its own weapon pool.
+Difficulty scales intelligence, never damage.
+
 A Counter-Strike-inspired shooter you run yourself. No accounts, no downloads for your friends — you share a 5-letter room code, they open a link.
 
 **Map:** "Sector 7" industrial district — enterable warehouse, 3-floor apartment with rooftop sniper nest, office with a **roof fire-escape**, garage, watchtower, container yards, a **sunken tunnel**, a **construction site** with crane and open sniper decks, the huge **Depot B** warehouse with roof access, **row houses** — all three roofs climbable, each with a **floor-2 balcony** — and a west **rail yard bunker**.

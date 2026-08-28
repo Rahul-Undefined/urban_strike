@@ -1988,7 +1988,8 @@ World.buildMap = function (sceneRef, map) {
                    bazaar: World._buildBazaar,
                    substation: World._buildSubstation,
                    riverside: World._buildRiverside,
-                   airfield: World._buildAirfield })[map] || null;
+                   airfield: World._buildAirfield,
+                   blacksite: World._buildBlacksite })[map] || null;   /* v14.0: bot-mode-only */
   if (map === 'urban' || !builder) {
     World.build(sceneRef);            // urban's own lighting: _initPart1 defaults map:'urban'
     World.builtMap = 'urban';

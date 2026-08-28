@@ -13,7 +13,21 @@ function initPickups(room) {
      CFG.WEAPON_ORDER indices, viewmodels and the bot kits keep resolving, but
      it never spawns for a player. This is the ONE place the cull is applied,
      so a retired weapon cannot leak back in through a second code path. */
-  for (const t in items) if (!items[t].drop && !items[t].retired) byRar[items[t].rar].push(t);
+  /* v14.0 BOT MODE — THE POOL WALL, applied at the same single choke point
+     as the retired-cull, for the same reason: one place, no second path.
+     A botmode room's weapon rolls see ONLY pool:'botmode' guns; every other
+     room sees NONE of them. Non-weapon items (heals, ammo, armor, gear) have
+     no pool and stay shared — consumables are the "genuinely safe utilities"
+     the brief allows. */
+  const bmRoom = !!(CFG.MODES[room.settings.mode] && CFG.MODES[room.settings.mode].botmode);
+  for (const t in items) {
+    if (items[t].drop || items[t].retired) continue;
+    if (items[t].kind === 'weapon') {
+      const inPool = !!(CFG.WEAPONS[items[t].w] && CFG.WEAPONS[items[t].w].pool === 'botmode');
+      if (bmRoom !== inPool) continue;
+    }
+    byRar[items[t].rar].push(t);
+  }
   room.nextLootId = 0;
   room.pickups = [];
   let hasA3 = false, hasLegW = false;
@@ -165,7 +179,14 @@ function dropCrate(room) {
   io.to(room.code).emit('airdrop', { x: pt[0], z: pt[1], landAt: now() + CFG.AIRDROP.fallSec * 1000 });
   room.dropFall = setTimeout(() => {
     if (room.state !== 'playing') return;
-    const wp = CFG.AIRDROP.weaponPool, ap = CFG.AIRDROP.attPool;
+    /* v14.0: airdrops obey the same wall — a botmode room's drop draws from
+       the bm pool; a multiplayer drop can never carry a bm gun (the config
+       pool list contains none, but the filter holds even if someone edits it). */
+    const bmRoom2 = !!(CFG.MODES[room.settings.mode] && CFG.MODES[room.settings.mode].botmode);
+    const wp = bmRoom2
+      ? Object.keys(CFG.WEAPONS).filter(k => CFG.WEAPONS[k].pool === 'botmode')
+      : CFG.AIRDROP.weaponPool.filter(k => !(CFG.WEAPONS[k] && CFG.WEAPONS[k].pool === 'botmode'));
+    const ap = CFG.AIRDROP.attPool;
     const types = [wp[(Math.random() * wp.length) | 0], 'armor3', 'medkit', ap[(Math.random() * ap.length) | 0]];
     /* v9.4: two extra RANDOM slots on top of the guaranteed four. Unknown items
        are what make a crate worth contesting — see the note in loot.config.js.

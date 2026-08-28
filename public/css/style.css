@@ -1064,3 +1064,22 @@ select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; p
 .lb-more { font: 500 8px/1.6 var(--mono); letter-spacing: 0.12em; color: var(--ink-dim); padding-left: 2px; }
 .team-hdr td:first-child .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 .team-hdr.team-lead td { border-bottom: 1px solid var(--amber); }
+
+
+/* ===== v14.0 BOT MODE panel + wave banner ===== */
+.rail-btn.accent i { background: #e0b34a; }
+#botmode-panel .bm-row { display: flex; align-items: center; gap: 12px; margin: 10px 0; }
+#botmode-panel .bm-row > b { width: 92px; font-size: 12px; letter-spacing: .12em; color: #9fb0c0; }
+.bm-seg { display: flex; gap: 6px; flex: 1; }
+.bm-seg button { flex: 1; padding: 9px 0; background: #141b23; border: 1px solid #2a3644; color: #c8d4e0;
+  font: 600 12px Rajdhani, sans-serif; letter-spacing: .14em; cursor: pointer; }
+.bm-seg button.on { background: #24344a; border-color: #e0b34a; color: #ffe9b0; }
+.bm-facts span { color: #8fa0b2; font-size: 12px; letter-spacing: .06em; }
+.bm-hint { margin: 8px 0 12px; color: #7e8ea0; font-size: 12px; line-height: 1.5; }
+#wave-banner { position: fixed; top: 18%; left: 50%; transform: translateX(-50%);
+  text-align: center; z-index: 60; pointer-events: none;
+  padding: 14px 34px; background: rgba(10,14,20,.82); border: 1px solid #e0b34a;
+  box-shadow: 0 0 40px rgba(224,179,74,.25); transition: opacity .4s; }
+#wave-banner.hidden { display: none; }
+#wave-banner b { display: block; font: 700 30px Rajdhani, sans-serif; letter-spacing: .3em; color: #ffe9b0; }
+#wave-banner span { display: block; font: 600 13px Rajdhani, sans-serif; letter-spacing: .2em; color: #b8c6d6; margin-top: 4px; }

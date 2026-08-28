@@ -4,6 +4,17 @@
 })(typeof self !== 'undefined' ? self : this, function () {
 
   var LOOT_ITEMS = {
+    /* ===== v14.0 BOT MODE pool entries. Same schema as every weapon entry
+       below; whether a room's loot roll can SEE them is decided in
+       server/lib/loot.js by CFG.WEAPONS[w].pool — botmode rooms roll ONLY
+       these, everything else rolls NONE of them. Heals/ammo/armor stay
+       shared: consumables are the "genuinely safe utilities" the brief
+       allows, and a bandage has no pool. ===== */
+    wpn_bm_carbine: { kind: 'weapon', w: 'bm_carbine',  rar: 'c', label: 'VK Carbine' },
+    wpn_bm_smg:  { kind: 'weapon', w: 'bm_smg',      rar: 'c', label: 'Rook SMG' },
+    wpn_bm_scatter: { kind: 'weapon', w: 'bm_scatter',  rar: 'r', label: 'Ward 12' },
+    wpn_bm_marksman: { kind: 'weapon', w: 'bm_marksman', rar: 'l', label: 'Longeye DMR' },
+    wpn_bm_side: { kind: 'weapon', w: 'bm_side',     rar: 'c', label: 'P9 Side' },
     bandage:  { kind: 'heal', heal: 25, rar: 'c', label: 'Bandage' },
     health:   { kind: 'heal', heal: 50, rar: 'c', label: 'Health Pack' },
     energy:   { kind: 'heal', heal: 15, rar: 'c', label: 'Energy Drink' },

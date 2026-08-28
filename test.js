@@ -137,6 +137,11 @@ const CFG = require('./public/src/config/index.js');
    everyone is told to ignore protects nothing.
    Detected from CFG, not pinned: flipping the one switch re-arms every phase
    with no edit here. */
+/* v14.0: the multiplayer-surface filter — botmode entries are a third state
+   (visible to code, fenced from the MP picker) and the MP-table invariants
+   read the table through this. Module-level: two phases use it. */
+function mpVisible(m2) { return !CFG.MODES[m2].hidden && !CFG.MODES[m2].botmode; }
+
 const BOTS_ON = !!(CFG.botsAllowed && Object.keys(CFG.MODES).some(m => CFG.botsAllowed(m)));
 function skipPhase(label, why, next) {
   console.log('--- ' + label + ' ---');
@@ -231,11 +236,117 @@ function phase16() {
               'the removal reached the team-mate for the same id [' + rem.length + ']');
             ok(got[foe].length === 0, 'the opponent saw none of it — place, move or remove');
             [A, B, C].forEach(s2 => s2.disconnect());
-            setTimeout(finish, 400);
+            setTimeout(phase17, 400);
           }, 700);
         }, 900);
       }, 800);
     }, 700);
+  }
+}
+
+/* ===== Phase 17 (v14.0): BOT MODE, LIVE =====
+   The separated system end to end: the fence (an MP mode cannot take
+   Blacksite; hardplus cannot be chosen), the seat deal (one human + eight
+   machines on opposite sides), the loot wall (every weapon on Blacksite's
+   floor is pool-tagged), and BATTLE's opening wave. Runs with the legacy
+   bot switch OFF — that is the whole point: the two products do not share
+   a switch. */
+function phase17() {
+  console.log('\n--- Phase 17 (v14.0): Bot Mode live ---');
+  const A = io(URL);
+  let lastLobby = null, toasts = [], msD = null;
+  A.on('lobby', d => lastLobby = d);
+  A.on('toast', d => toasts.push((d && d.msg) || ''));
+  A.once('matchStart', d => msD = d);
+  A.on('connect', () => {
+    /* fence, direction one: multiplayer cannot take the botOnly map */
+    A.emit('createRoom', { name: 'Fz', settings: { mode: 'ffa', map: 'blacksite' } }, (r0) => {
+      ok(r0 && r0.ok, 'an MP room asking for Blacksite is created anyway');
+      setTimeout(() => {
+        ok(lastLobby.settings.map !== 'blacksite',
+          'and lands on urban — botOnly maps refuse every non-bot mode [' + lastLobby.settings.map + ']');
+        A.emit('leaveRoom');
+        setTimeout(soloRoom, 350);
+      }, 300);
+    });
+  });
+  function soloRoom() {
+    A.emit('createRoom', { name: 'BmA', settings: { mode: 'bm_solo', map: 'urban', minutes: 60 } }, (r) => {
+      ok(r && r.ok, 'a Bot Mode Solo room opens');
+      setTimeout(() => {
+        ok(lastLobby.settings.mode === 'bm_solo' && lastLobby.settings.map === 'blacksite'
+          && lastLobby.settings.minutes === 15,
+          'the room is dragged to Blacksite at 15:00 whatever was asked [' +
+          lastLobby.settings.mode + '/' + lastLobby.settings.map + '/' + lastLobby.settings.minutes + ']');
+        A.emit('updateSettings', { bmDiff: 'hardplus' });
+        setTimeout(() => {
+          ok(lastLobby.settings.bmDiff !== 'hardplus',
+            'hardplus is refused — it belongs to the wave director alone [' + lastLobby.settings.bmDiff + ']');
+          A.emit('updateSettings', { bmDiff: 'hard' });
+          setTimeout(() => {
+            ok(lastLobby.settings.bmDiff === 'hard', 'a legal difficulty is accepted and echoed');
+            A.emit('setReady', { v: true });
+            setTimeout(() => A.emit('startMatch'), 250);
+            waitStart();
+          }, 300);
+        }, 300);
+      }, 350);
+    });
+  }
+  function waitStart() {
+    const t0 = Date.now();
+    (function poll() {
+      if (!msD) {
+        if (Date.now() - t0 > 12000) { ok(false, 'bot-mode solo match started'); return finish(); }
+        return setTimeout(poll, 200);
+      }
+      ok(true, 'bot-mode solo match started');
+      setTimeout(inMatch, 2200);
+    })();
+  }
+  function inMatch() {
+    const roster = (lastLobby && lastLobby.players) || [];
+    const me = roster.find(p2 => p2.name === 'BmA');
+    const machines = roster.filter(p2 => p2 !== me);
+    ok(!!me && me.team === 'a', 'the human holds side a [' + (me && me.team) + ']');
+    ok(machines.length === 8 && machines.every(p2 => p2.team === 'b'),
+      'exactly eight machines hold side b [' + machines.length + ']');
+    /* the loot wall, live: every weapon on this floor wears the pool prefix */
+    const wpns = (msD.pickups || []).filter(e => CFG.LOOT_ITEMS[e.t] && CFG.LOOT_ITEMS[e.t].kind === 'weapon');
+    ok(wpns.length > 0 && wpns.every(e => e.t.indexOf('wpn_bm_') === 0),
+      'every weapon on Blacksite ground is pool-tagged [' + wpns.length + ' rolled, none foreign]');
+    ok(toasts.some(t2 => t2.indexOf('8 HOSTILES') !== -1 && t2.indexOf('HARD') !== -1),
+      'the seat announcement names the count and the chosen difficulty');
+    A.disconnect();
+    setTimeout(battleRoom, 400);
+  }
+  function battleRoom() {
+    const B = io(URL);
+    let waves = [], bl = null, started = false;
+    B.on('wave', d => waves.push(d));
+    B.on('lobby', d => bl = d);
+    B.once('matchStart', () => started = true);
+    B.on('connect', () => {
+      B.emit('createRoom', { name: 'BmB', settings: { mode: 'bm_battle' } }, () => {
+        B.emit('setReady', { v: true });
+        setTimeout(() => B.emit('startMatch'), 300);
+        const t0 = Date.now();
+        (function poll() {
+          if (!started) {
+            if (Date.now() - t0 > 12000) { ok(false, 'battle started'); B.disconnect(); return finish(); }
+            return setTimeout(poll, 200);
+          }
+          setTimeout(() => {
+            ok(waves.length >= 1 && waves[0].stage === 1 && waves[0].count === 5,
+              'BATTLE opens on wave 1 with five hostiles [' + JSON.stringify(waves[0]) + ']');
+            const bots = ((bl && bl.players) || []).filter(p2 => p2.name !== 'BmB');
+            ok(bots.length === 5, 'five machines are seated at wave one [' + bots.length + ']');
+            B.disconnect();
+            setTimeout(finish, 400);
+          }, 2200);
+        })();
+      });
+    });
   }
 }
 
@@ -1080,7 +1191,18 @@ function phase8(done) {
        - the largest head-to-head mode exists and its cap splits evenly;
        - nothing anywhere claims more than 20 seats (the snapshot/AI budget
          ceiling that 19-bot clamps and the codec were sized against). */
-  const visModes = Object.keys(CFG.MODES).filter(m => !CFG.MODES[m].hidden);
+  const visModes = Object.keys(CFG.MODES).filter(m => mpVisible(m));
+  /* v14.0: the mode table now holds a THIRD state — botmode entries are
+     visible to code but FENCED from the multiplayer picker (their category
+     is deliberately absent from MODE_CATS; their own UI reaches them by id).
+     The invariants below protect the MULTIPLAYER surface, so they read the
+     table through mpVisible(); the fence itself gets its own assertions. */
+  ok(Object.keys(CFG.MODES).filter(m2 => CFG.MODES[m2].botmode).length === 3,
+    'exactly three botmode modes exist beside the multiplayer table');
+  ok(Object.keys(CFG.MODES).filter(m2 => CFG.MODES[m2].botmode)
+      .every(m2 => CFG.MODE_CATS.indexOf(CFG.MODES[m2].cat) === -1 && !CFG.MODES[m2].hidden
+                   && (CFG.MODES[m2].maxPlayers | 0) <= 24),
+    'botmode modes are fenced from the picker, not hidden, and capped at 24 (20 machines + 4 humans)');
   ok(visModes.every(m => CFG.MODES[m].maxPlayers <= CFG.MODES.ffa.maxPlayers),
     'free-for-all seats at least as many as any visible mode [ffa=' + CFG.MODES.ffa.maxPlayers + ']');
   const t10 = CFG.MODES.t10;
@@ -1089,8 +1211,8 @@ function phase8(done) {
     (t10 ? t10.maxPlayers + '/' + (t10.teamCount || 2) : 'missing') + ']');
   ok(CFG.MODES.ffa.maxPlayers >= 12,
     'the everyone-mode seats this phase\'s twelve sockets [' + CFG.MODES.ffa.maxPlayers + ']');
-  ok(Object.keys(CFG.MODES).every(m => CFG.MODES[m].maxPlayers <= 20),
-    'no mode claims a cap above 20');
+  ok(Object.keys(CFG.MODES).filter(m => mpVisible(m) || CFG.MODES[m].hidden).every(m => CFG.MODES[m].maxPlayers <= 20),
+    'no MULTIPLAYER mode claims a cap above 20 (botmode seats 24 by design: 20 machines + 4 humans, asserted above)');
 
   const socks = [];
   for (let i = 0; i < 12; i++) socks.push(io(URL));
@@ -1186,7 +1308,7 @@ function phase9(done) {
   ok(!!CFG.MODES.ffa, 'free-for-all still exists');
   ok(CFG.MODES.ffa.teams === false, 'free-for-all has no teams: everyone fights everyone');
   ok(CFG.MODES.ffa.maxPlayers >= Math.max.apply(null,
-       Object.keys(CFG.MODES).filter(m => !CFG.MODES[m].hidden).map(m => CFG.MODES[m].maxPlayers)),
+       Object.keys(CFG.MODES).filter(m => mpVisible(m)).map(m => CFG.MODES[m].maxPlayers)),
     'free-for-all still seats everybody: no visible mode is larger [' + CFG.MODES.ffa.maxPlayers + ']');   /* v11.0: was a pinned 20 */
   ok(CFG.activeTeams('ffa').length === 0, 'free-for-all fields no sides at all');
   ok(CFG.MATCH.defaultMode === 'ffa', 'a new room still opens in free-for-all by default');
@@ -1210,7 +1332,7 @@ function phase9(done) {
   /* v11.0: HIDDEN modes are deliberately outside the picker (the v10.9 bot
      switch works by hiding), so the orphan check covers visible modes — the
      ones a picker entry could actually orphan. */
-  ok(Object.keys(CFG.MODES).filter(m => !CFG.MODES[m].hidden)
+  ok(Object.keys(CFG.MODES).filter(m => mpVisible(m))
        .every(m => cats.indexOf(CFG.MODES[m].cat) >= 0),
     'every visible mode belongs to a category the picker actually shows');
   if (BOTS_ON) ok(cats.indexOf('practice') >= 0 && cats.indexOf('coop') >= 0,
@@ -1223,7 +1345,7 @@ function phase9(done) {
       ok(!!CFG.MODES[m].vlabel, 'mode ' + m + ' has a variant label for the picker');
     });
   });
-  ok(Object.keys(CFG.MODES).filter(m => !CFG.MODES[m].hidden)
+  ok(Object.keys(CFG.MODES).filter(m => mpVisible(m))
        .every(m => cats.indexOf(CFG.MODES[m].cat) >= 0),
     'every visible mode belongs to a category, so none can be orphaned out of the picker');
   /* v11.0: was a pinned 7 — a content count, the exact "magic total" the v9.2

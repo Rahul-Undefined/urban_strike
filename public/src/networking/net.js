@@ -671,6 +671,9 @@ var Net = (function () {
     socket.on('droneWarn', function (d) { UI.droneWarn && UI.droneWarn(d.d); });
     /* v9.10: a team-mate's map marker. Relayed by the server to that side only,
        so this can be trusted to be from an ally. */
+    /* v14.0 BOT MODE: wave changes are worth the centre of the screen. */
+    socket.on('wave', function (d) { if (d) UI.waveBanner(d); });
+
     socket.on('mark', function (d) {
       if (!d) return;
       /* v13.0 (item 7): a removal is the same channel with a different verb —

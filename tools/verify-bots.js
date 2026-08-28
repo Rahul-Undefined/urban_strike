@@ -156,13 +156,16 @@ ok(guardIdx > -1 && countIdx > -1 && guardIdx < countIdx,
 /* v9.11: the tick guard now admits BACKFILLED rooms as well, so the literal
    text moved again. Asserted behaviourally below instead — a room with no bots
    and no backfill must be a no-op, and a backfilled one must not be. */
-ok(/CFG\.botsAllowed\(room\.settings\.mode\) &&\s*!\(room\.settings\.backfill/.test(srv),
-  'the bot tick admits bot modes AND backfilled rooms, and nothing else');
+ok(/CFG\.botsAllowed\(room\.settings\.mode\) &&\s*!\(room\.settings\.backfill/.test(srv) &&
+   /botmode\)\) return;/.test(srv),
+  'the bot tick admits legacy bot modes, backfilled rooms AND botmode rooms — and nothing else (v14.0)');
 Object.keys(CFG.MODES).forEach(m => {
   const practice = !!CFG.MODES[m].practice;
   ok(practice === (CFG.MODES[m].cat === 'practice'),
     'mode ' + m + ': the practice flag and the practice category agree');
-  ok(!!CFG.MODES[m].vsBots === (CFG.MODES[m].cat === 'coop'),
+  /* v14.0: the three bm_ modes are their OWN family — vsBots true (they
+       field machines) with cat 'botmode', asserted in their own block below. */
+    if (!(CFG.MODES[m] && CFG.MODES[m].botmode)) ok(!!CFG.MODES[m].vsBots === (CFG.MODES[m].cat === 'coop'),
     'mode ' + m + ': the vsBots flag and the coop category agree');
   ok(CFG.botsAllowed(m) === !!(CFG.MODES[m].practice || CFG.MODES[m].vsBots),
     'mode ' + m + ': botsAllowed matches the flags exactly');
@@ -529,9 +532,25 @@ ok(CFG.MODES.bots.teams === false, 'Training is free-for-all shaped: every bot i
   console.log('\n--- v13.0: bot exposure is CONSISTENT with the switch, in either state ---');
   ok(r.enabled === false,
     'the v13.0 SHIPPED DEFAULT is bots-off (the one line a future flip edits)');
-  ok(r.botModes.length === 7, 'all 7 bot modes exist in the table regardless of the switch [' + r.botModes.length + ']');
-  ok(r.botModesVisible.length === (r.enabled ? 7 : 0),
-    'visibility tracks the switch exactly [' + r.botModesVisible.length + ' visible, enabled=' + r.enabled + ']');
+  /* v14.0: the table now holds TWO bot families. LEGACY (vsBots/practice,
+     no botmode flag): seven modes, switch-governed, urban-locked. BOT MODE
+     (botmode flag): three modes, ALWAYS visible-to-code but fenced from the
+     multiplayer picker by their 'botmode' cat being absent from
+     ALL_MODE_CATS — they must NOT be `hidden`, because the v13 guard refuses
+     hidden bot-fielding modes at create, and bot-mode rooms are product. */
+  var legacy = r.botModes.filter(function (m2) { return !(CFG.MODES[m2] && CFG.MODES[m2].botmode); });
+  var bmModes = r.botModes.filter(function (m2) { return CFG.MODES[m2] && CFG.MODES[m2].botmode; });
+  ok(legacy.length === 7, 'all 7 LEGACY bot modes exist in the table regardless of the switch [' + legacy.length + ']');
+  ok(bmModes.length === 3, 'the three BOT MODE modes exist beside them [' + bmModes.join(', ') + ']');
+  var legacyVisible = r.botModesVisible.filter(function (m2) { return !(CFG.MODES[m2] && CFG.MODES[m2].botmode); });
+  ok(legacyVisible.length === (r.enabled ? 7 : 0),
+    'legacy visibility tracks the switch exactly [' + legacyVisible.length + ' visible, enabled=' + r.enabled + ']');
+  ok(bmModes.every(function (m2) { return !CFG.MODES[m2].hidden; }),
+    'bm_ modes are NOT hidden — hidden bot modes are refused at create, and these are product');
+  ok(bmModes.every(function (m2) { return CFG.MODES[m2].mapLock === 'blacksite' && CFG.MODES[m2].cat === 'botmode'; }),
+    'bm_ modes lock to Blacksite and live in the fenced botmode category');
+  ok(CFG.ALL_MODE_CATS.indexOf('botmode') === -1,
+    'the botmode category is ABSENT from ALL_MODE_CATS — the multiplayer picker cannot list it, armed or not');
   ok(r.anyBotsAllowed.length === (r.enabled ? 7 : 0),
     'botsAllowed() tracks the switch exactly [' + r.anyBotsAllowed.length + ']');
   ok((r.anyBackfill.length > 0) === r.enabled,
@@ -540,15 +559,22 @@ ok(CFG.MODES.bots.teams === false, 'Training is free-for-all shaped: every bot i
     'the two bot CATEGORIES appear in the picker iff the switch is on [' + r.cats.join(', ') + ']');
   ok(r.allCats.indexOf('practice') !== -1 && r.allCats.indexOf('coop') !== -1,
     'both survive in ALL_MODE_CATS, so re-arming restores them with no other edit');
-  ok(r.botModeLocks.every(x => x === 'urban') && r.botModeLocks.length === 7,
-    'the v12 urban mapLock survives dormancy on all 7 (' + r.botModeLocks.join(', ') + ')');
+  var legacyLocks = legacy.map(function (m2) { return CFG.MODES[m2].mapLock; });
+  ok(legacyLocks.every(function (x) { return x === 'urban'; }) && legacyLocks.length === 7,
+    'the v12 urban mapLock survives dormancy on all 7 LEGACY modes (' + legacyLocks.join(', ') + ')');
   ok(r.humanModeLocks.length === 0,
     'no human mode carries a map lock' + (r.humanModeLocks.length ? ' (' + r.humanModeLocks.join(', ') + ')' : ''));
   /* v10.9 room cap. Lives here rather than in its own file because a mode that
      can seat more than the cap is the same class of defect: a table entry that
      disagrees with a global rule. */
-  ok(r.overMax.length === 0,
-    'no mode seats more than the 15-player cap' + (r.overMax.length ? ' (' + r.overMax.join(', ') + ')' : ''));
+  /* v14.0: BATTLE seats 20 machines plus humans by DESIGN — Blacksite's own
+     maxPlayers (24) is the authority there; the 15 cap remains the law for
+     every non-botmode mode. */
+    var overNonBm = (r.overMax || []).filter(function (id) {
+      return !(CFG.MODES[id] && CFG.MODES[id].botmode);
+    });
+    ok(overNonBm.length === 0,
+      'no NON-botmode mode seats more than the 15-player cap' + (overNonBm.length ? ' (' + overNonBm.join(', ') + ')' : ''));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

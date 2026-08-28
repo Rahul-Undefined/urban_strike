@@ -74,7 +74,11 @@ const shows = m => !(CFG.MODES[m] && CFG.MODES[m].teams) ||
   !!(CFG.MODES[m] && CFG.MODES[m].fullMapContacts);
 const expectShown = ['ffa', 'ls', 'bots', 'lsq2', 'lsq4'];
 const expectHidden = ['t2', 't3', 't4', 't5', 't6', 't8', 't10',
-  'sq2', 'sq4', 'co1', 'co2', 'co3', 'co4', 'co6', 'co10'];
+  'sq2', 'sq4', 'co1', 'co2', 'co3', 'co4', 'co6', 'co10',
+  /* v14.0: Bot Mode follows the strike-team precedent, not outbreak —
+     machines take cover, flank and reposition, so FINDING them is part of
+     the game. A full map that marks them would delete the hunt. */
+  'bm_solo', 'bm_team', 'bm_battle'];
 /* v10.13: the outbreak modes. Enemies SHOWN on the full map, and that is a
    design decision rather than a default. In a PvP mode a full map that reveals
    the other side removes the whole game; here the other side is a wave of

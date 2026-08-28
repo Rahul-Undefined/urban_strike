@@ -6,6 +6,17 @@ var Weapons = (function () {
   var firstPerson = true;         // v13.0: false in TPP — game.js drives this
   var models = {};                // weaponName -> THREE.Group
   var current = 'ak47';
+  /* v14.0 BOT MODE: the starting loadout follows the ROOM. A bot-mode match
+     deals the pool's carbine and sidearm; everything else is untouched. One
+     function, read wherever 'what do I spawn with' used to be hardcoded —
+     including the sentinel in resetLoadout, which used to ask specifically
+     for ak47 and would have re-dealt multiplayer guns into a Blacksite match
+     every spawn. */
+  function baseWeapons() {
+    var m = (typeof Net !== 'undefined' && Net.getMatch && Net.getMatch()) || {};
+    if (CFG.MODES[m.mode] && CFG.MODES[m.mode].botmode) return ['bm_carbine', 'bm_side'];
+    return BASE_WEAPONS;
+  }
   var ammo = {};                  // name -> {mag, reserve}
   var throwsLeft = { frag: 2, smoke: 1, flash: 1 };
   var droneCount = 0;                                    // v9.4, set by the server grant
@@ -101,7 +112,8 @@ var Weapons = (function () {
 
   function matchReset() {
     owned = {};
-    BASE_WEAPONS.forEach(function (n) { owned[n] = true; });
+    baseWeapons().forEach(function (n) { owned[n] = true; });
+    current = baseWeapons()[0];   /* v14.0: never boot a Blacksite spawn holding an id it does not own */
     atts = { sight: null, muzzle: null, mag: null };
     mineCount = CFG.GEAR.mine.start;
     /* v9.4: drones are per-MATCH. The server decides the real number (zero in
@@ -115,7 +127,7 @@ var Weapons = (function () {
   }
   // Per-spawn refill: keep exclusives + attachments earned this match.
   function resetLoadout() {
-    if (!owned.ak47) matchReset();
+    if (!owned[baseWeapons()[0]]) matchReset();   /* v14.0: sentinel by product, not by 'ak47' */
     for (var n in owned) {
       var w = CFG.WEAPONS[n];
       ammo[n] = { mag: eff(n).mag, reserve: w.reserve };

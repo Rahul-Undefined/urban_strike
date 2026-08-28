@@ -55,15 +55,31 @@ function buildColliders(mapId) {
     };
     ctx.self = ctx; ctx.window = ctx; ctx.globalThis = ctx;
     vm.createContext(ctx);
+    /* ===== v14.0 - THE HARNESS LOADS THE WHOLE WORLD, NOT A 2023 MEMORY =====
+       This list was frozen when rural and metro were the only away maps.
+       Every map added since — killhouse, sunsetrow, the three smalls, the two
+       mediums, now blacksite — was MISSING, so buildMap's lookup found no
+       builder inside the vm and silently fell back to URBAN. Nothing noticed
+       for versions because legacy bot modes were urban-locked; it surfaced
+       the day verify-spawn-geometry judged "riverside" spawns against what
+       were actually urban's colliders. The list is now complete and ordered
+       by dependency: all config parts (index.js LAST — it reduces the parts),
+       then merge/world/districts/deco, then every map builder, then access. */
     [
       'public/src/config/weapons.config.js', 'public/src/config/gameplay.config.js',
       'public/src/config/loot.config.js', 'public/src/config/world.config.js',
       'public/src/config/maps-rural.config.js', 'public/src/config/maps-metro.config.js',
+      'public/src/config/maps-killhouse.config.js', 'public/src/config/maps-sunsetrow.config.js',
+      'public/src/config/maps-small.config.js', 'public/src/config/maps-medium.config.js',
+      'public/src/config/botmode.config.js',
       'public/src/config/index.js', 'public/src/environment/merge.js',
       'public/src/environment/world.js', 'public/src/environment/districts-south.js',
       'public/src/environment/districts-north.js', 'public/src/environment/districts-outer.js',
       'public/src/environment/deco.js', 'public/src/environment/rural.js',
-      'public/src/environment/metro.js', 'public/src/environment/access.js'
+      'public/src/environment/metro.js', 'public/src/environment/killhouse.js',
+      'public/src/environment/sunsetrow.js', 'public/src/environment/smallmaps.js',
+      'public/src/environment/medium.js', 'public/src/environment/blacksite.js',
+      'public/src/environment/access.js'
     ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }));
     const built = vm.runInContext(
       `(function(){ var s = new THREE.Scene(); World.reset(); World.buildMap(s, ${JSON.stringify(mapId)});
@@ -437,12 +453,17 @@ module.exports = function initBotsModule(ctx) {
   const { io, now, mapData, spawnPlayer, pushLobby, endMatch, modeInfo } = ctx;
 
   function skillOf(room) {
+    /* v14.0 BOT MODE seam: a bot-mode room carries its profile on itself
+       (server/lib/botmode.js writes it; BATTLE rewrites it per wave). The
+       engine reads the same knob names either way and never knows which
+       product it is serving. */
+    if (room && room._bmSkill) return room._bmSkill;
     return SKILLS[(room.settings && room.settings.botSkill)] || SKILLS.regular;
   }
 
   /* ---- lifecycle ---- */
 
-  function addBots(room) {
+  function addBots(room, opts) {
     /* v8.38.1 BOT SETTINGS LEAKED ACROSS MODES.
 
        `botCount` is a room setting and it PERSISTS when the mode changes. A
@@ -460,6 +481,20 @@ module.exports = function initBotsModule(ctx) {
        human mode; it is bounded by maxPlayers and ignores `botCount` entirely,
        which is what keeps the v8.38.1 leak fixed — a stale count from a
        Training session still injects nothing into a 5v5. */
+    /* v14.0 BOT MODE seam: the driver spawns with explicit options (count,
+       side, loadout table, id base for wave top-ups) and bypasses the legacy
+       gates — the legacy path, in turn, REFUSES botmode rooms so beginMatch's
+       unconditional addBots(room) can never double-spawn what the driver
+       owns. Two products, one engine, one door each. */
+    const bmMode = !!(CFG.MODES[room.settings.mode] && CFG.MODES[room.settings.mode].botmode);
+    if (!opts && bmMode) return;
+    if (opts && opts.bm) {
+      const S2 = skillOf(room);
+      const cols2 = buildColliders(room.settings.map || 'urban');
+      spawnBatch(room, opts.count | 0, opts.side || 'b', S2, cols2,
+                 opts.loadouts || LOADOUTS, opts.baseIdx | 0);
+      return;
+    }
     const backfill = !CFG.botsAllowed(room.settings.mode) &&
                      CFG.backfillAllowed(room.settings.mode) &&
                      !!room.settings.backfill;
@@ -486,13 +521,22 @@ module.exports = function initBotsModule(ctx) {
     if (!want) return;
     const S = skillOf(room);
     const cols = buildColliders(room.settings.map || 'urban');
+    spawnBatch(room, want, botSide, S, cols, null, 0);
+  }
+
+  /* One creation path for both products. `table` null = legacy weighted
+     LOADOUTS with the recruit oneWeapon rule; a provided table (bot mode's
+     pool) is drawn from by the same weights field. `baseIdx` keeps wave
+     top-up ids unique — bot:CODE:0..4 in wave one, :5..9 in wave two. */
+  function spawnBatch(room, want, botSide, S, cols, table, baseIdx) {
+    if (!want) return;
     const teams = modeInfo(room).teams;
     const ids = CFG.activeTeams(room.settings.mode);
     const names = CALLSIGNS.slice().sort(() => Math.random() - 0.5);
     /* Bots join the side with fewest members so a human is never alone against
        a stacked team purely by join order. */
     for (let i = 0; i < want; i++) {
-      const id = 'bot:' + room.code + ':' + i;
+      const id = 'bot:' + room.code + ':' + (baseIdx + i);
       let team = null;
       if (botSide) {
         /* Every bot on the machine side. Balancing by headcount here would put
@@ -507,9 +551,11 @@ module.exports = function initBotsModule(ctx) {
       }
       /* v9.4: a recruit carries the one rifle v8.38 hardcoded, so a recruit
          lobby looks like the game before the armoury existed. */
-      const kit = S.oneWeapon
-        ? (LOADOUTS.find(l => l.w === S.oneWeapon) || LOADOUTS[0])
-        : pickLoadout();
+      const kit = table
+        ? pickWeighted(table)
+        : (S.oneWeapon
+          ? (LOADOUTS.find(l => l.w === S.oneWeapon) || LOADOUTS[0])
+          : pickLoadout());
       const p = {
         id, name: names[i % names.length] + '-' + (i + 1), bot: true, connected: true,
         color: team ? CFG.TEAMS[team].color : CFG.COLORS[(i + 1) % CFG.COLORS.length],
@@ -534,6 +580,17 @@ module.exports = function initBotsModule(ctx) {
       };
       room.players.set(id, p);
     }
+  }
+
+  function pickWeighted(table) {
+    let total = 0;
+    for (let i = 0; i < table.length; i++) total += (table[i].weight || 1);
+    let r = Math.random() * total;
+    for (let i = 0; i < table.length; i++) {
+      r -= (table[i].weight || 1);
+      if (r <= 0) return table[i];
+    }
+    return table[table.length - 1];
   }
 
   /* Bots exist only for the duration of a match. Leaving them in the lobby
@@ -747,7 +804,8 @@ module.exports = function initBotsModule(ctx) {
     /* v9.11: backfilled rooms tick too. The guard still refuses a mode that
        has no bots in it at all, which is the rule it was written for. */
     if (!CFG.botsAllowed(room.settings.mode) &&
-        !(room.settings.backfill && CFG.backfillAllowed(room.settings.mode))) return;
+        !(room.settings.backfill && CFG.backfillAllowed(room.settings.mode)) &&
+        !(CFG.MODES[room.settings.mode] && CFG.MODES[room.settings.mode].botmode)) return;   /* v14.0: bot-mode rooms tick regardless of the legacy switch */
 
     const S = skillOf(room);
     const t = now();

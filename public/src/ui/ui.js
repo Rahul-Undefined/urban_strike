@@ -13,6 +13,9 @@ var UI = (function () {
          simply absent; anything still guarded on them resolves null. */
       'profile-name', 'btn-play', 'btn-howto', 'btn-howto-close', 'howto-overlay',
       'deploy-panel', 'btn-deploy-close', 'btn-create-quick', 'join-code', 'btn-join', 'deploy-hint',
+      'botmode-panel', 'btn-botmode', 'btn-botmode-close', 'btn-botmode-launch',
+      'bm-mode-seg', 'bm-diff-seg', 'bm-diff-row', 'bm-hint',
+      'wave-banner', 'wave-title', 'wave-sub',
       'reclaim-overlay', 'reclaim-body', 'btn-reclaim-yes', 'btn-reclaim-fresh',
       'lobby-cat', 'lobby-mode', 'lobby-var-field', 'lobby-map', 'lobby-time', 'lobby-intel',
       'lobby-summary', 'cfg-role', 'intel-map-name', 'intel-map-meta',
@@ -52,7 +55,7 @@ var UI = (function () {
   }
   function mapItems() {
     return Object.keys(CFG.MAPS)
-      .filter(function (k) { return CFG.MAPS[k].ready !== false; })
+      .filter(function (k) { return CFG.MAPS[k].ready !== false && !CFG.MAPS[k].botOnly; })   /* v14.0: Blacksite is Bot Mode's alone */
       .map(function (k) { return { v: k, t: CFG.MAPS[k].label }; });
   }
   /* v8.37 TWO-STEP MODE PICKER.
@@ -486,7 +489,7 @@ var UI = (function () {
       if (lockedMap) {
         els['lobby-map'].value = lockedMap;
         els['lobby-map'].disabled = true;
-        els['lobby-map'].title = 'Bot modes are played on Urban only';
+        els['lobby-map'].title = 'This mode is locked to ' + ((CFG.MAPS[lockedMap] || {}).label || lockedMap);
       } else if (isHost && !counting) {
         els['lobby-map'].disabled = false;   // un-stick after leaving a locked mode
         els['lobby-map'].title = '';
@@ -675,6 +678,18 @@ var UI = (function () {
       roster.slice().sort(function (a, b) { return b.kills - a.kills || a.deaths - b.deaths; }).forEach(row);
     }
   }
+  /* v14.0: BATTLE wave feedback — a banner, not a toast, because a new wave
+     is a state change worth two seconds of the centre of the screen. */
+  var waveT = null;
+  function waveBanner(d) {
+    if (!els['wave-banner']) return;
+    els['wave-title'].textContent = 'WAVE ' + d.stage;
+    els['wave-sub'].textContent = d.count + ' HOSTILES \u00b7 ' + (d.diff || '');
+    els['wave-banner'].classList.remove('hidden');
+    clearTimeout(waveT);
+    waveT = setTimeout(function () { els['wave-banner'].classList.add('hidden'); }, 2600);
+  }
+
   function showScoreboard(on) { els['scoreboard'].classList.toggle('hidden', !on); }
 
   // ---------- overlays ----------
@@ -983,6 +998,50 @@ var UI = (function () {
     };
     if (els['btn-howto-close']) els['btn-howto-close'].onclick = function () {
       if (els['howto-overlay']) els['howto-overlay'].classList.add('hidden');
+    };
+
+    /* ===== v14.0 BOT MODE front door ===== */
+    var bmSel = { mode: 'bm_solo', diff: 'medium' };
+    function segWire(el, onPick) {
+      if (!el) return;
+      el.addEventListener('click', function (e) {
+        var b = e.target && e.target.closest ? e.target.closest('button') : null;
+        if (!b || !b.dataset.v) return;
+        [].forEach.call(el.querySelectorAll('button'), function (x) { x.classList.remove('on'); });
+        b.classList.add('on');
+        onPick(b.dataset.v);
+      });
+    }
+    segWire(els['bm-mode-seg'], function (v) {
+      bmSel.mode = v;
+      /* BATTLE owns its own ladder — a difficulty row there would be a
+         control that lies, so it hides rather than disables. */
+      if (els['bm-diff-row']) els['bm-diff-row'].style.display = (v === 'bm_battle') ? 'none' : '';
+      if (els['bm-hint']) els['bm-hint'].textContent =
+        v === 'bm_solo' ? 'You vs 8 machines at your chosen difficulty. Loot the Blacksite pool; watch the roof.' :
+        v === 'bm_team' ? 'Open the lobby, share the five-letter code, up to four operators vs 10 machines.' :
+        'Waves of 5 \u2192 10 \u2192 15 \u2192 20 across 15 minutes \u2014 each wave smarter than the last.';
+    });
+    segWire(els['bm-diff-seg'], function (v) { bmSel.diff = v; });
+    function showBotPanel(on) {
+      if (els['botmode-panel']) els['botmode-panel'].classList.toggle('hidden', !on);
+      if (on && els['deploy-panel']) els['deploy-panel'].classList.add('hidden');
+    }
+    if (els['btn-botmode']) els['btn-botmode'].onclick = function () { showBotPanel(true); };
+    if (els['btn-botmode-close']) els['btn-botmode-close'].onclick = function () { showBotPanel(false); };
+    if (els['btn-botmode-launch']) els['btn-botmode-launch'].onclick = function () {
+      var name = callsign();
+      if (!name) return needCallsign();
+      els['btn-botmode-launch'].disabled = true;
+      Net.createRoom(name, { mode: bmSel.mode, map: 'blacksite', killTarget: 0, minutes: 15 }, function (res) {
+        els['btn-botmode-launch'].disabled = false;
+        if (res && res.ok) {
+          /* difficulty rides updateSettings — same channel a lobby control
+             would use, so the server clamp is the single authority. */
+          if (bmSel.mode !== 'bm_battle') Net.updateSettings({ bmDiff: bmSel.diff });
+          showBotPanel(false); showScreen('screen-lobby');
+        } else toast((res && res.error) || 'Could not open the bot lobby', true);
+      });
     };
 
     if (els['btn-create-quick']) els['btn-create-quick'].onclick = function () {
@@ -1318,7 +1377,7 @@ var UI = (function () {
       var el = document.getElementById('spectate-name');
       if (el) el.style.display = 'none';
     },
-    toast: toast,
+    toast: toast, waveBanner: waveBanner,
     nukeReady: nukeReady, nukeLost: nukeLost, nukeFired: nukeFired,
     nukeIncoming: nukeIncoming, nukeToggleAim: nukeToggleAim,
     nukeArmedNow: nukeArmedNow, setVisorHud: setVisorHud,

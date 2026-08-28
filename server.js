@@ -207,6 +207,7 @@ const rooms = new Map();
 const Rooms = require('./server/lib/rooms.js')({ io, rooms, now });
 const { makeCode, cleanName, cleanTeamName, num, clampOpt, modeInfo, makeRoom, zeroTeamKills,
   addPlayer, refreshTeamsAndColors, lobbyPayload, pushLobby } = Rooms;
+let BotMode = null;   /* v14.0: initialized right after Bots — it drives the same engine */
 const Bots = require('./server/lib/bots.js')({
   io, now, mapData,
   spawnPlayer: (room, p) => spawnPlayer(room, p),
@@ -249,6 +250,7 @@ const Bots = require('./server/lib/bots.js')({
   botTakePickup: (room, bot) => Loot.tryCollect(room, bot),
   botLaunchDrone: (room, bot) => Drones.launch(room, bot)
 });
+BotMode = require('./server/lib/botmode.js')({ CFG, io, now, Bots });
 const Loot = require('./server/lib/loot.js')({ io, now, mapData });
 const { initPickups, pickupList, tryCollect, respawnPickups,
   scheduleAirdrop, clearAirdrop, dropCrate } = Loot;
@@ -583,6 +585,7 @@ function startMatch(room) {
      receive a roster without them and never render the ones they are fighting. */
   Drones.reset(room);          // v9.4: no drone survives a match boundary
   Bots.addBots(room);
+  BotMode.onMatchStart(room);   /* v14.0: no-op unless the mode is botmode; the legacy call above refuses botmode rooms, so exactly one product spawns */
   /* v9.5: PUSH THE ROSTER THE INSTANT THE BOTS EXIST.
      Rahul: "bot takes 3-4 sec to join the game and show on the live scorecard."
      That was exact, and it was arithmetic rather than a race — the lobby
@@ -812,6 +815,7 @@ function destroyRoomIfEmpty(room) {
   clearAirdrop(room);
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
   if (room.cdTimer) { clearInterval(room.cdTimer); room.cdTimer = null; }
+  if (room.bmTimer) { clearTimeout(room.bmTimer); room.bmTimer = null; }   /* v14.0: the wave director's clock */
   rooms.delete(room.code);
   return true;
 }
@@ -821,6 +825,7 @@ function stopSnapshots(room) {
 }
 
 function endMatch(room, winnerId, reason) {
+  BotMode.onMatchEnd(room);   /* v14.0: kills the wave timer before anything else */
   if (room.state !== 'playing') return;
   room.state = 'ended';
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
@@ -980,7 +985,8 @@ io.on('connection', (socket) => {
     /* v12.0 (item 10): host toggle for approximate enemy blobs on the M map.
        A boolean, not an option list — clampOpt has nothing to clamp. */
     if (s && s.enemyIntel !== undefined) room.settings.enemyIntel = !!s.enemyIntel;
-    if (s && s.map && CFG.MAPS[s.map] && CFG.MAPS[s.map].ready !== false) room.settings.map = s.map;
+    if (s && s.map && CFG.MAPS[s.map] && CFG.MAPS[s.map].ready !== false
+        && !(CFG.MAPS[s.map].botOnly && !(CFG.MODES[room.settings.mode] || {}).botmode)) room.settings.map = s.map;   /* v14.0: botOnly maps only for botmode modes */
     /* v8.33: only the host may rename a team, and only in the lobby — both
        already guaranteed by the guard at the top of this handler. */
     /* v9.11: backfill is a host setting like any other, and it is only
@@ -989,6 +995,8 @@ io.on('connection', (socket) => {
     if (s && typeof s.backfill === 'boolean') room.settings.backfill = !!s.backfill;
     if (s && typeof s.botCount === 'number')
       room.settings.botCount = Math.max(0, Math.min(19, s.botCount | 0));
+    if (s && s.bmDiff && ['easy', 'medium', 'hard'].indexOf(s.bmDiff) >= 0)
+      room.settings.bmDiff = s.bmDiff;   /* v14.0: bot-mode difficulty; hardplus is the wave director's alone */
     if (s && s.botSkill && Bots.SKILL_IDS.indexOf(s.botSkill) >= 0)
       room.settings.botSkill = s.botSkill;
     if (s && s.teamNames) {

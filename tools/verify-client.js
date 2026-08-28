@@ -183,9 +183,31 @@ const catIds = ctx.CFG.MODE_CATS.map(c => c.id);
 const selectable = Object.keys(ctx.CFG.MODES).filter(m => !ctx.CFG.MODES[m].hidden);
 ok(selectable.length > 0, 'at least one mode is selectable [' + selectable.length + ']');
 selectable.forEach(m => {
-  ok(catIds.indexOf(ctx.CFG.MODES[m].cat) >= 0,
+  /* v14.0: botmode modes have their OWN front door (the BOT MODE panel) —
+       the picker-category rule guards against UNREACHABLE modes, and these
+       are reachable by design elsewhere. Their reachability is asserted
+       right below instead of being exempted silently. */
+    if (!(ctx.CFG.MODES[m] && ctx.CFG.MODES[m].botmode)) ok(catIds.indexOf(ctx.CFG.MODES[m].cat) >= 0,
     'mode ' + m + ' resolves to a category the picker shows');
 });
+  /* the counterpart: the separate door actually exists and creates these
+     exact modes */
+  (function () {
+    var uiSrc, htmlSrc;
+    try {
+      uiSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'public/src/ui/ui.js'), 'utf8');
+      htmlSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'public/index.html'), 'utf8');
+    } catch (e) { uiSrc = ''; htmlSrc = ''; }
+    ok(htmlSrc.indexOf('id="btn-botmode"') !== -1 && htmlSrc.indexOf('id="botmode-panel"') !== -1,
+      'the BOT MODE door exists on the welcome screen');
+    ok(/data-v="bm_solo"[\s\S]*data-v="bm_team"[\s\S]*data-v="bm_battle"/.test(htmlSrc),
+      'the panel offers exactly the three bot modes');
+    ok(uiSrc.indexOf("mode: bmSel.mode, map: 'blacksite'") !== -1,
+      'the panel launch creates the selected bm mode on Blacksite');
+    ok(uiSrc.indexOf('!CFG.MAPS[k].botOnly') !== -1,
+      'the multiplayer map picker excludes botOnly maps');
+  })();
+
 Object.keys(ctx.CFG.MODES).filter(m => ctx.CFG.MODES[m].hidden).forEach(m => {
   ok(ctx.CFG.modesInCat(ctx.CFG.MODES[m].cat).indexOf(m) === -1,
     'hidden mode ' + m + ' is absent from its category listing');
