@@ -37,17 +37,23 @@ const now = () => Date.now();
 
 // per-map data resolution (urban keeps the legacy top-level keys)
 function mapData(room) {
-  var m = room.settings && room.settings.map;
-  if (m === 'rural' && CFG.MAPS_RURAL) return CFG.MAPS_RURAL;
-  if (m === 'metro' && CFG.MAPS_METRO) return CFG.MAPS_METRO;
-  if (m === 'killhouse' && CFG.MAPS_KILLHOUSE) return CFG.MAPS_KILLHOUSE;   // v10.10
-  if (m === 'sunsetrow' && CFG.MAPS_SUNSETROW) return CFG.MAPS_SUNSETROW;   // v10.12
-  if (m === 'freightyard' && CFG.MAPS_FREIGHTYARD) return CFG.MAPS_FREIGHTYARD; // v10.14
-  if (m === 'bazaar' && CFG.MAPS_BAZAAR) return CFG.MAPS_BAZAAR;               // v10.14
-  if (m === 'substation' && CFG.MAPS_SUBSTATION) return CFG.MAPS_SUBSTATION;   // v10.14
-  if (m === 'riverside' && CFG.MAPS_RIVERSIDE) return CFG.MAPS_RIVERSIDE;      // v10.21
-  if (m === 'airfield' && CFG.MAPS_AIRFIELD) return CFG.MAPS_AIRFIELD;         // v10.21
-  if (m === 'sunsetrow' && CFG.MAPS_SUNSETROW) return CFG.MAPS_SUNSETROW;   // v10.12
+  /* ===== v14.0 — THE IF-CHAIN IS DEAD; LONG LIVE THE LOOKUP =====
+     This was one hand-appended line per map since v10.10 (sunsetrow twice,
+     which tells you how it was maintained), and v14 shipped Blacksite without
+     its line — so a Bot Mode room was served URBAN's spawn and loot tables:
+     the human spawned 42 m off the pad over the void, the machines seated at
+     x 94, and the floor grew urban's rooftop loot at y 11 with no rooftops
+     under it. Found by the first human session, on video.
+
+     The generic lookup is the same fix the spawn-geometry gate got in this
+     release for the same disease: the map's OWN table by naming convention,
+     urban's bare globals as the one legitimate fallback (urban predates the
+     MAPS_<ID> convention). A future map that exports MAPS_<ID> is served
+     correctly the moment it is registered; one that does not is caught by
+     verify-spawn-geometry's resolver assertions, not by a player. */
+  var m = (room.settings && room.settings.map) || 'urban';
+  var t = CFG['MAPS_' + String(m).toUpperCase()];
+  if (t && t.SPAWNS) return t;
   return { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points };
 }
 

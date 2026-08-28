@@ -1,6 +1,6 @@
 # Urban Strike — Project Handoff (v14.0)
 
-**Upload this file plus `urban-strike-v14.0.zip` into a new chat.** Read this
+**Upload this file plus `urban-strike-v14.0.1.zip` into a new chat.** Read this
 file first, then unzip and inventory before writing anything.
 
 ---
@@ -19,14 +19,17 @@ of nothing.
 
 ## §1 OPEN ITEMS (owed, in priority order)
 
-1. **PLAY-VERIFICATION IS OWED.** No browser or GPU exists in this
-   environment. Blacksite has never been rendered. The BOT MODE panel has
-   never been clicked. TPP (v13.0) and the procedural audio (v13.0) have
-   still never been seen or heard. The wave banner has never been watched.
-   Everything below the wire — geometry gates, live socket phases, 253/0 —
-   is real; everything above it (visuals, feel, readability, balance) is
-   unverified. First human session should walk: rail button → panel → each
-   mode → a full BATTLE.
+1. **PLAY-VERIFICATION: one session happened; most of the debt stands.**
+   Rahul's first Bot Mode Solo session (recorded) caught the v14.0.1
+   resolver bug — worth more than the whole green board. Still never
+   witnessed by a human: the wave banner, a full BATTLE, TEAM with 2+
+   operators, TPP and the audio (v13.0), difficulty feel, and one open
+   observation: at 0:05 in the recording the HUD read P9 Side while the
+   viewmodel stayed a rifle. The headless gate proves one-visible-per-equip
+   for every bm alias, and that session's world was corrupted by the
+   resolver bug (a looted urban AK was in the owned set), so this is
+   UNCONFIRMED rather than diagnosed — watch weapon-switch visuals
+   specifically in the next session before calling it real or dead.
 2. **Difficulty balance is arithmetic, not playtested.** The EASY/MEDIUM/HARD
    ladders are anchored on the proven recruit/regular/veteran numbers and
    re-tuned by judgment. Expect a tuning pass after real play (v9.7 precedent:
@@ -94,7 +97,9 @@ products. Every deliberate crossing point:
   directions, hardplus refusal, 1+8 on opposite sides, loot wall live,
   BATTLE wave one).
 - verify-botmode 36/0 · verify-bots 270/0 · verify-models 257/0 ·
-  verify-client 66/0 · verify-endscreen 47/0 · verify-spawn-geometry 55/0.
+  verify-client 66/0 · verify-endscreen 47/0 · verify-spawn-geometry 79/0
+  (v14.0.1: + the server-resolver assertions — the generic mapData lookup,
+  every ready map exporting its own tables, every point inside its bound).
 - Board (final tree): 44 gates green — incl. armoury 230/0, attach 111/0,
   barrel 58/0, fullmap 57/0, bandwidth 25/0 after the v14 content was made
   to satisfy them — except the FOUR documented §1b reds.

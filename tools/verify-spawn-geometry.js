@@ -57,5 +57,37 @@ Object.keys(CFG.MAPS).filter(m => CFG.MAPS[m].ready !== false).forEach(mapId => 
   ok(noGround.length === 0, mapId + ': every spawn has ground in reach — nobody is born falling' + (noGround.length ? ' AIRBORNE: ' + noGround.join(' ') : ''));
   ok(inWall.length === 0, mapId + ': no spawn intersects geometry — the v7.6/v7.8 class is a red build now' + (inWall.length ? ' INSIDE: ' + inWall.join(' ') : ''));
 });
+
+console.log('--- the SERVER RESOLVER serves each map its OWN tables (v14.0) ---');
+/* The live server shipped a hand-appended if-chain that never learned
+   Blacksite, so a Bot Mode room got URBAN's spawns and loot — the human
+   spawned over the void 42 m off the pad, found by the first human session
+   on video. These assertions make the CLASS impossible to reship:
+   the resolver must be the generic naming-convention lookup, every ready
+   map must export its table, and every table must fit its own bound. */
+{
+  const srv = require('fs').readFileSync(require('path').join(__dirname, '..', 'server.js'), 'utf8');
+  const body = srv.slice(srv.indexOf('function mapData'), srv.indexOf('}', srv.indexOf('return { LOOT_POINTS')));
+  ok(body.indexOf("CFG['MAPS_' + String(m).toUpperCase()]") !== -1,
+    'server mapData resolves by naming convention, not by a hand-grown list');
+  ok(!/m === '(?!urban)/.test(body),
+    'no per-map if-chain remains in the resolver — the class is dead, not trimmed');
+  for (const k in CFG.MAPS) {
+    if (CFG.MAPS[k].ready === false) continue;
+    const bound = CFG.MAPS[k].bound;
+    const t = k === 'urban'
+      ? { SPAWNS: CFG.SPAWNS, LOOT_POINTS: CFG.LOOT_POINTS }
+      : CFG['MAPS_' + k.toUpperCase()];
+    ok(!!(t && t.SPAWNS && t.SPAWNS.length && t.LOOT_POINTS && t.LOOT_POINTS.length),
+      k + ': exports its own SPAWNS and LOOT_POINTS for the resolver to find');
+    if (!t || !t.SPAWNS) continue;
+    const sOut = t.SPAWNS.filter(q => Math.abs(q[0]) > bound + 2 || Math.abs(q[2]) > bound + 2).length;
+    const lOut = (t.LOOT_POINTS || []).filter(q => Math.abs(q[0]) > bound + 2 || Math.abs(q[2]) > bound + 2).length;
+    ok(sOut === 0 && lOut === 0,
+      k + ': every spawn and loot point fits inside its own bound of ' + bound +
+      (sOut + lOut ? ' [' + sOut + ' spawns, ' + lOut + ' loot outside]' : ''));
+  }
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

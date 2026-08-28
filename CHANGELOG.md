@@ -1,3 +1,59 @@
+# v14.0.1 — THE FIRST HUMAN SESSION (2026-08-28)
+
+## What happened
+Rahul played Bot Mode Solo and recorded 17 seconds: spawned over the void 42 m
+south of the pad, the arena small in the distance, loot floating at rooftop
+heights with no rooftops, an AK-47 in hand on a map whose floor should only
+grow the pool. Every panel, fence, gate and suite phase was green when it
+shipped.
+
+## Root cause
+`mapData()` in server.js was a hand-appended if-chain — one line per map since
+v10.10, sunsetrow listed twice — and v14 never added Blacksite, so the final
+fallback served URBAN's SPAWNS and LOOT_POINTS to the room. The human spawned
+at urban coordinates (z −84 on a bound-52 map), the machines seated at x 94,
+and the floor grew urban's loot — which is where the AK-47 came from: looted
+off the ghost floor. The same disease was found and fixed in the
+spawn-geometry TOOL this very release (frozen map list grading against
+urban); the live server had its own copy and nothing asserted against it.
+
+## Fix
+The chain is dead: mapData resolves `CFG['MAPS_' + map.toUpperCase()]` by
+naming convention, urban's bare globals as the one legitimate fallback. A
+future map is served correctly the moment its config exists.
+verify-spawn-geometry grew the never-again half (79/0): the resolver must BE
+the generic lookup (no per-map branches), every ready map must export its
+table, and every spawn and loot point must fit inside its own bound — the
+exact three facts whose absence shipped this.
+
+## Verified
+Live re-probe: human at (−36, 0.95, −30) in the south pocket, eight machines
+ringed inside the bound, loot at y 0.55/3.55 from Blacksite's own table with
+pool weapons only. Full suite green post-fix.
+
+## Lessons
+**A green board tests the tables; only a session tests the plumbing.** Config
+tables, gates over config tables, and live phases that read the LOBBY all
+passed, because they all read the same correct config. The one consumer that
+resolved config by its own private list — the server's mapData — had no gate,
+and no test asserted that a bot-mode room's SPAWN POSITIONS land on the map
+the room claims. Phase 17 checked who seats and what rolls; it never asked
+WHERE. The new resolver assertions close the structural half; the positional
+half (spawn events within bound) is cheap to add to phase 17 and should be.
+
+**When a class bug is found in a tool, grep for the class, not the instance.**
+The frozen-map-list disease was diagnosed, named, and fixed in
+verify-spawn-geometry this same release — and its twin sat forty lines into
+server.js. The fix commit for a pattern should end with a search for the
+pattern.
+
+**Read the recording before the code.** Fifteen frames located the bug class
+(server-authored positions) before a single grep — the spawn event payload
+then named it in one probe. The user's video was worth more than every
+hypothesis formed before opening it.
+
+---
+
 # v14.0 — BOT MODE (2026-08-28)
 
 ## What shipped
