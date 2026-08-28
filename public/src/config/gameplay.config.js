@@ -209,6 +209,15 @@
        available duration" is the instruction, and a list of one also lets the
        lobby render the value as a fixed chip rather than a one-option select. */
     timeOptions: [15],
+    /* ===== v13.0 - THE INTEL BLUR CONTRACT LIVES HERE (brief item 2) =====
+       One source of truth read by all three consumers: server/lib/intel.js
+       derives its error band from it, ui/minimap.js draws the circle from
+       it, tools/verify-intel.js asserts against it. radiusM is what the
+       PLAYER is promised — "the enemy is somewhere inside this circle" — so
+       the server's max error is radiusM minus a margin, making the promise
+       mathematically true rather than usually true. minErr keeps the blob
+       from ever being a pinpoint in a costume. */
+    INTEL: { radiusM: 50, minErr: 10 },
     startCountdown: 5,    // seconds between the host pressing START and the match beginning
     respawnDelay: 3,
     defaultMode: 'ffa',

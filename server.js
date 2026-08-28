@@ -523,6 +523,7 @@ function spawnPlayer(room, p) {
   const prot = CFG.spawnProtectFor(room.settings.map || 'urban');
   p.protUntil = now() + prot * 1000;
   p.pos = [s[0], 0.95, s[1]]; p.ry = s[2]; p.history = [];
+  p.justSpawned = true;   /* v13.1 audit: the next st may legitimately jump — see the st gate */
   /* v10.22: the spawn message now carries the refilled gear.
 
      Rahul: "mines and all are coming when spawned but not everytime, after a
@@ -801,6 +802,20 @@ function startSnapshots(room) {
   }, 1000 / CFG.NET.snapRate);
 }
 
+/* v13.1 audit: THE one place an empty room is dismantled. Every timer the
+   room can own dies here — snapshot loop, airdrop pair, match clock, lobby
+   countdown — because a timer that outlives its room is a callback holding a
+   corpse. Returns true if the room was destroyed. */
+function destroyRoomIfEmpty(room) {
+  if (!room || room.players.size !== 0) return false;
+  stopSnapshots(room);
+  clearAirdrop(room);
+  if (room.timer) { clearTimeout(room.timer); room.timer = null; }
+  if (room.cdTimer) { clearInterval(room.cdTimer); room.cdTimer = null; }
+  rooms.delete(room.code);
+  return true;
+}
+
 function stopSnapshots(room) {
   if (room.snapTimer) { clearInterval(room.snapTimer); room.snapTimer = null; }
 }
@@ -985,7 +1000,8 @@ io.on('connection', (socket) => {
       });
       room.settings.teamNames = tn;
     }
-    if (s && CFG.MODES[s.mode]) {
+    if (s && CFG.MODES[s.mode]
+        && !(CFG.MODES[s.mode].hidden && (CFG.MODES[s.mode].vsBots || CFG.MODES[s.mode].practice))) {   /* v13.0: hidden BOT modes are unreachable (see rooms.js) */
       let humansNow = 0;
       for (const q of room.players.values()) if (!q.bot) humansNow++;
       if (humansNow > CFG.MODES[s.mode].maxPlayers) {
@@ -1058,6 +1074,21 @@ io.on('connection', (socket) => {
     const p = room.players.get(socket.id);
     if (!p || !p.alive || !p.team) return;            // FFA and the dead do not mark
     if (!modeInfo(room).teams) return;
+    /* ===== v13.0 (item 7) - REMOVE IS A FIRST-CLASS VERB =====
+       One marker per player already made PLACING again a replace; this makes
+       taking it back explicit. Same relay, same throttle, no coordinates to
+       validate — a removal cannot be out of bounds. The relay carries only
+       {id, remove} so a modified client cannot delete anyone else's pin: the
+       id is the socket's own, stamped here, never read from the payload. */
+    if (d.remove) {
+      if (now() - (p.lastMark || 0) < 250) return;
+      p.lastMark = now();
+      for (const q of room.players.values()) {
+        if (q.bot || !q.connected || q.team !== p.team) continue;
+        io.to(q.id).emit('mark', { id: socket.id, remove: 1 });
+      }
+      return;
+    }
     const x = +d.x, z = +d.z;
     if (!isFinite(x) || !isFinite(z)) return;
     /* v10.13: was `CFG.MAPS[map] ? 110 : 110` — a ternary with the same value
@@ -1070,7 +1101,10 @@ io.on('connection', (socket) => {
        held mouse button becomes a broadcast loop. */
     if (now() - (p.lastMark || 0) < 700) return;
     p.lastMark = now();
-    const payload = { id: socket.id, name: p.name, x: Math.round(x * 10) / 10,
+    /* v13.0 (item 7): the placer's colour rides along so every pin is
+       attributable at a glance, not just by reading the name label. */
+    const payload = { id: socket.id, name: p.name, color: p.color || null,
+      x: Math.round(x * 10) / 10,
       z: Math.round(z * 10) / 10, at: now(), team: p.team };
     for (const q of room.players.values()) {
       if (q.bot || !q.connected || q.team !== p.team) continue;
@@ -1290,7 +1324,33 @@ io.on('connection', (socket) => {
     const room = getRoom(socket); if (!room) return;
     const p = room.players.get(socket.id); if (!p || !p.alive) return;
     if (!s || !Array.isArray(s.p) || s.p.length !== 3) return;
-    p.pos = [num(s.p[0]), num(s.p[1]), num(s.p[2])];
+    /* ===== v13.1 AUDIT (brief 17) - POSITION GETS A PLAUSIBILITY GATE =====
+       This handler accepted any finite triple: a modified client could
+       teleport at will, and every downstream consumer — hit lag-comp,
+       victim-position checks, intel, markers — would treat the lie as truth.
+       Full server-side movement is a rewrite this codebase does not need;
+       what closes the OBVIOUS exploit is a budget: no update may move a
+       player further than a generous multiple of top speed since the last
+       accepted update, and never outside the map's own bounds. Rejected
+       updates keep the previous position — the client that lied simply
+       rubber-bands, which is the correct experience for a teleporter.
+       Legitimate teleports (spawns) are server-initiated and flagged by
+       spawnPlayer; the first st after one passes freely and clears the flag.
+       The budget is deliberately loose (3x sprint + slack): its job is to
+       stop cross-map blinks, not to litigate lag. */
+    const nx = num(s.p[0]), ny = num(s.p[1]), nz = num(s.p[2]);
+    const B2 = ((CFG.MAPS[room.settings.map || 'urban'] || {}).bound || 100) + 15;
+    if (Math.abs(nx) > B2 || Math.abs(nz) > B2 || ny < -12 || ny > 140) return;
+    const tSt = now();
+    if (p.justSpawned) { p.justSpawned = false; }
+    else if (p.lastStAt) {
+      const dtS = Math.max(0.02, (tSt - p.lastStAt) / 1000);
+      const budget = 21 * dtS + 2.5;      // 3x top sprint, plus lag slack
+      const ddx = nx - p.pos[0], ddz = nz - p.pos[2];
+      if (ddx * ddx + ddz * ddz > budget * budget) return;
+    }
+    p.lastStAt = tSt;
+    p.pos = [nx, ny, nz];
     p.ry = num(s.ry); p.rx = num(s.rx);
     p.crouch = Math.max(0, Math.min(2, (s.cr | 0))); p.mv = s.mv | 0; p.wp = s.wp | 0; p.ln = num(s.ln); // cr: 0 stand, 1 crouch, 2 prone
     p.rl = s.rl ? 1 : 0;                       // reloading — cosmetic only, never trusted for anything
@@ -1517,6 +1577,13 @@ io.on('connection', (socket) => {
         if (!q || q.connected) return;
         r2.players.delete(socket.id);
         io.to(r2.code).emit('playerLeft', { id: socket.id, name: q.name });
+        /* ===== v13.1 AUDIT (brief 3/16) - THE PURGE PATH LEAKED ROOMS =====
+           When EVERY player of a live match disconnected, each purge removed
+           its player but nobody removed the room: snapshots kept
+           broadcasting to an empty io room until the match clock fired, and
+           the ended room then sat in the map forever. Rooms only empty here
+           or in the disconnect handler; both now run the same teardown. */
+        if (destroyRoomIfEmpty(r2)) return;
         if (r2.hostId === socket.id && r2.players.size) {
           r2.hostId = r2.players.keys().next().value;
         }
@@ -1526,13 +1593,7 @@ io.on('connection', (socket) => {
       return;
     }
     room.players.delete(socket.id);
-    if (room.players.size === 0) {
-      stopSnapshots(room);
-      clearAirdrop(room);
-      if (room.timer) clearTimeout(room.timer);
-      rooms.delete(room.code);
-      return;
-    }
+    if (destroyRoomIfEmpty(room)) return;   /* v13.1: one teardown, all paths (see purge timer) */
     if (room.hostId === socket.id) {
       room.hostId = room.players.keys().next().value;
       io.to(room.code).emit('toast', { msg: (room.players.get(room.hostId).name) + ' is now the host' });

@@ -326,8 +326,11 @@ var Minimap = (function () {
   function addMark(m) {
     if (!m) return;
     marks[m.id] = { x: m.x, z: m.z, at: performance.now(), name: m.name || 'Squad',
-                    kind: m.kind || 'spot', dist: m.dist || 0 };
+                    kind: m.kind || 'spot', dist: m.dist || 0,
+                    color: m.color || null };   // v13.0: placer's colour, for at-a-glance attribution
   }
+  /* v13.0 (item 7): removal, by id the server vouched for. */
+  function removeMark(id) { if (id && marks[id]) delete marks[id]; }
   function liveMarks() {
     var out = [], t = performance.now();
     for (var k in marks) {
@@ -377,10 +380,14 @@ var Minimap = (function () {
     var z = (clientY - r.top) / S - WORLD;
     if (Math.abs(x) > WORLD || Math.abs(z) > WORLD) return;
     Net.mark(x, z);
-    /* Shown immediately rather than waiting for the round trip. The server
-       relays to the whole team including the sender, so this is replaced by the
-       authoritative copy a moment later. */
-    addMark({ id: 'self', x: x, z: z, name: 'You' });
+    /* Shown immediately rather than waiting for the round trip.
+       ===== v13.0 (item 7) - THE 'self' KEY WAS A LIE =====
+       The old line keyed this instant pin under 'self' and claimed the server
+       echo would replace it. The echo arrives under the real socket id — a
+       DIFFERENT key — so nothing ever replaced anything and the placer saw two
+       pins for 45 seconds. Keying under the real id makes the comment true. */
+    addMark({ id: (Net.getMyId && Net.getMyId()) || 'self', x: x, z: z, name: 'You',
+              color: (Net.getMe && Net.getMe() || {}).color });
   }
 
   function toggleFull() {
@@ -392,6 +399,19 @@ var Minimap = (function () {
         if (e.button !== 0) return;
         e.preventDefault();
         markAt(e.clientX, e.clientY);
+      });
+      /* ===== v13.0 (item 7) - RIGHT-CLICK TAKES YOUR MARKER BACK =====
+         Left places (and re-placing moves — one pin per player), right
+         removes. No pixel-hunting your own pin to cancel it: anywhere on the
+         open map works, because you only ever own one. contextmenu is
+         suppressed so the browser menu never fights the gesture. */
+      fullCv.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+        var modeCfg = CFG.MODES[(Net.getMatch() || {}).mode];
+        if (!modeCfg || !modeCfg.teams) return;
+        Net.unmark && Net.unmark();
+        removeMark((Net.getMyId && Net.getMyId()) || 'self');
+        removeMark('self');   // sweep any pre-fix instant pin too
       });
       /* Touch too: the map is the one screen a phone player can realistically
          aim at, and a marker is the one thing they can contribute without
@@ -546,7 +566,10 @@ var Minimap = (function () {
     if (matchNow.enemyIntel) {
       var feed = Net.getIntel();
       if (feed && feed.list && feed.list.length && (nowMs - feed.at) < 4000) {
-        var BLOB_R = 12 * S;                    // 12 world-metres at map scale
+        /* v13.0: the circle IS the promise — CFG.MATCH.INTEL.radiusM, the
+           same number the server's error ceiling is derived from, so the
+           enemy is inside the drawn ring by construction. */
+        var BLOB_R = ((CFG.MATCH.INTEL && CFG.MATCH.INTEL.radiusM) || 50) * S;
         for (var bi = 0; bi < feed.list.length; bi++) {
           var b = feed.list[bi];
           if (b.i === Net.getMyId()) continue;
@@ -554,7 +577,7 @@ var Minimap = (function () {
           if (!hostile) continue;
           var bmx = sx(b.x), bmz = sz(b.z);
           g.beginPath(); g.arc(bmx, bmz, BLOB_R, 0, 6.2832);
-          g.fillStyle = 'rgba(226,64,64,0.13)'; g.fill();
+          g.fillStyle = 'rgba(226,64,64,0.07)'; g.fill();   // v13.0: 50 m rings overlap; lighter fill keeps the board readable
           g.setLineDash([5, 4]);
           g.lineWidth = 1.5; g.strokeStyle = 'rgba(226,64,64,0.55)'; g.stroke();
           g.setLineDash([]);
@@ -620,13 +643,14 @@ var Minimap = (function () {
       var pulse = 1 + Math.sin(performance.now() / 220) * 0.12;
       g.save();
       g.globalAlpha = Math.max(0.35, 1 - age);
-      g.strokeStyle = '#ffd166'; g.lineWidth = 2.5;
+      var pc = m.color || '#ffd166';               // v13.0: pin wears its placer's colour
+      g.strokeStyle = pc; g.lineWidth = 2.5;
       g.beginPath(); g.arc(mx, mz, 9 * pulse, 0, Math.PI * 2); g.stroke();
       g.beginPath(); g.moveTo(mx - 14, mz); g.lineTo(mx - 5, mz);
       g.moveTo(mx + 5, mz); g.lineTo(mx + 14, mz);
       g.moveTo(mx, mz - 14); g.lineTo(mx, mz - 5);
       g.moveTo(mx, mz + 5); g.lineTo(mx, mz + 14); g.stroke();
-      g.fillStyle = '#ffd166';
+      g.fillStyle = pc;
       g.font = '600 11px Rajdhani, sans-serif'; g.textAlign = 'center';
       g.fillText(m.name, mx, mz - 18);
       g.restore();
@@ -653,7 +677,7 @@ var Minimap = (function () {
   }
 
   return { init: init, update: update, invalidate: invalidate,
-           addMark: addMark, clearMarks: clearMarks, liveMarks: liveMarks,
+           addMark: addMark, removeMark: removeMark, clearMarks: clearMarks, liveMarks: liveMarks,
            toggleFull: toggleFull, drawFull: drawFull, isFullOpen: isFullOpen,
            setNukeAim: setNukeAim, nukeAiming: nukeAiming };
 })();

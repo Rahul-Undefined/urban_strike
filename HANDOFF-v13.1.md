@@ -1,107 +1,147 @@
-# Urban Strike — Handoff (v12.0 shipped)
+# Urban Strike — Handoff (v13.1 shipped — the audit release)
 
-Read CHANGELOG.md v12.0 first: eleven asks, all shipped; the black screen was
-dead code wearing a null, one v10 rule was reversed in writing, and the suite
-caught two of the author's own bugs. This file is the working memory; the
-changelog is the reasoning.
+v13.1 is a fix/hardening release from a 22-section audit: read CHANGELOG
+v13.1 first. Headline: the server now rejects teleport st (and the test
+suite had to stop moving like a cheater to stay green), empty rooms can no
+longer leak, four generated spawns were inside walls, and the client now
+owns exactly one socket per page.
+
+Read CHANGELOG.md v13.0 first: seven asks; the intel "reversal" was a missing
+line, item 3's messaging never existed, and one of my own hardenings was
+falsified by the suite in the run it shipped. This file is the working
+memory; the changelog is the reasoning.
 
 **Build:** `npm install && node server.js` → http://localhost:3000
 **Gates:** `for f in tools/verify-*.js; do node $f; done` then `node verify-models.js && node verify-avatar.js`
-**Integration:** start the server, then `node test.js` — **275/0, exit 0**, bot phases ARMED (first time since v10.8). Slow containers: run it detached and poll the log; the suite is ~3-4 min wall.
+**Integration:** start the server, then `node test.js` — **235/0, exit 0** (movement now LEGAL via the factory glide wrapper), bot phases SKIP by design (US_BOTS=1 re-arms them). Slow containers: run detached and poll the log; the suite is ~4 min wall.
 
-## 0. THE THING THAT MATTERS MOST — STILL TRUE, AND NOW THERE ARE BOTS
+## 0. THE THING THAT MATTERS MOST — NOTHING NEW HAS BEEN SEEN ON A SCREEN
 
-**Nothing in v12.0 has been seen on a screen.** v11 shipped a menu nobody had
-rendered; v12 ships on top of it a masthead logo, a recoloured/regrown
-avatar, grouped scoreboards, intel blobs, and — the big one — SEVEN LIVE BOT
-MODES whose behaviour has been verified by 259 unit assertions, 275
-integration assertions and headless soaks (displacement, kills, loots,
-frags, a weapon swap), but never watched. **Play a bot match first.** Urban,
-Overrun, veteran, ten machines, fifteen minutes, F3 open.
+v13.0 ships THIRD PERSON, a procedural SCORE, coloured/removable MARKERS and
+50 m intel rings on the strength of 45 gates and 235 integration assertions —
+and zero rendered frames. **Play in TPP first**: it is the largest new
+surface and the only one whose failures (camera clipping, own-body pose
+glitches, shoulder-offset feel) are invisible to every gate this project can
+write. P toggles it.
 
-### v12.0's own lesson
+### v13.0's own lesson
 
-**A VALUE READ MID-BUILD FROM STATE THE BUILD MUTATES IS NULL BY
-CONSTRUCTION.** lighting() picked per-map render overrides via
-`World.builtMap || 'urban'`; reset() nulls builtMap before every build and
-the assignment lands after — so the read was 'urban' every time, on every
-path, and Metro's NIGHT override was dead code for versions. Nothing went
-red because no gate ever asked "did the map get ITS OWN sky". The fix is a
-parameter; the gate is verify-lighting; the class is the same one the v7.8
-PRNG reseed fixed. When a builder needs a fact about the build, HAND IT IN.
+**A MISSING CHANGE-LISTENER PRESENTS AS AN INVERTED SETTING.** The intel
+toggle read correctly in pushSettings, synced correctly from the server, and
+did nothing — because nothing called pushSettings when it changed. The server
+held the PREVIOUS choice, one interaction behind, which from the host's chair
+is "No shows intel, Yes doesn't". Before hunting an inverted boolean, check
+the control pushes at all. Every new lobby control needs its listener line
+(ui.js ~1093) — the cache, the sync and the payload are NOT enough.
 
-### And its second lesson, paid for twice in one session
+### And the one paid for by the suite, same run
 
-**PLACEMENT IS SEMANTICS.** The map-lock coercion sat one line above the
-payload assignment it existed to police, so the payload won. The author's
-own new integration phase caught it. Guards run LAST — see the comment at
-the coercion in server.js updateSettings, which now says exactly this.
+**HIDDEN IS NOT WITHDRAWN.** t10 is hidden on purpose — an unlisted capacity
+mode the server must keep seating. My "refuse every hidden mode" hardening
+hung phase 10 at the rename wait ([0 vs 0] teams was the tell: the room had
+fallen to ffa). The guard is narrowed to hidden-AND-bot-fielding and the
+comment records the falsification. When a hardening breaks a test, first ask
+which of you is wrong about the design.
+
+### v13.1's own lessons (audit)
+
+**A GATE THAT BREAKS THE TESTS MAY BE REVEALING THE TESTS.** The st
+plausibility gate turned eleven phases red because they teleported — the
+exact move the gate rejects. The fix was a movement legaliser at the suite's
+socket-factory choke point (where backfill:false already injects), with
+SYNCHRONOUS convergence so exact-damage phases keep their scripted geometry.
+Never emit st jumps from a test again; the wrapper walks for you.
+
+**verify-spawn-geometry EXISTS NOW** — any new or regenerated spawn set must
+pass it. Its first run caught four generated spawns inside walls
+(riverside/airfield 9 and 11, since moved). Generated data gets generated
+validation.
 
 ## 1. OPEN — nothing verified by play, in risk order
 
-1. **BOT MODES — TEST FIRST.** Overrun (Bot Match) and all six Strike Team
-   sizes, Urban only. Watch for: bots entering buildings and taking stairs
-   and rooftops; a bot pulling its sidearm when you rush it; a hurt bot
-   breaking for a medkit; a bot dashing behind cover when you tag it at
-   range (2.4 s beat, then it re-engages); frags at 11-34 m; a looted drone
-   eventually flying (economy-gated — may take a long match). Known
-   accepted gap: BOT GUNFIRE HAS NO SOUND (v10.7 trade, unchanged) — you
-   take hits with a damage arc but no gunshot.
-2. **BACKFILL IS ON BY DEFAULT AGAIN** (v9.11 design, dormant since v10.9,
-   live with the switch). A lone player's FFA fills with machines unless the
-   host declines it in the lobby. Decide whether that default matches the
-   current product's taste; flipping it is one setting default in rooms.js.
-3. **THE AVATAR, ON EVERY MAP.** Warm coyote/khaki against every biome —
-   confirm operators read at range on Urban dusk, Metro night, Rural green,
-   Killhouse grey. Confirm the +5% never clips a doorframe (verify-doorfit
-   bounds it at 0.96 m vs the 1.14 m narrowest door, but eyes beat gates).
-   Belt and knee pads should read as gear, not greebles; pads vanish past
-   30 m by design.
-4. **URBAN LIGHTING, SEQUENCE-BUILT.** Play Metro then Urban in one tab:
-   Metro must be NIGHT (it was daylight for versions), Urban must come back
-   dusk-lit. If a match ever starts world-black with the HUD alive, the
-   light sentinel should toast "Lighting recovered" within ~0.5 s and the
-   console census names what died — REPORT THAT CENSUS; it is the whole
-   point.
-5. **ENEMY INTEL.** Host ON → M map shows drifting dashed circles for
-   hostiles, never labels, never pinpoint (3-15 m off). Confirm it FEELS
-   like a neighbourhood, not a tracker; confirm OFF shows nothing new.
-6. **SCOREBOARDS + COMPASS + LOGO.** Leading side first everywhere, LEAD
-   tags, squads say SQUAD; clock under compass at every aspect ratio; the
-   masthead reads premium at 1080p and 4K and does not collide with the
-   profile chip at narrow widths.
-7. **15 MINUTES.** The lobby duration control shows one option; a match
-   ends by clock at 15:00.
-8. Everything still open from v11's list that survives the redesign:
-   reconnect's three doors, the adaptive interpolator under bad wifi,
-   Killhouse angled walls, the operator hero degrade paths, F3 p90.
+1. **RIVERSIDE / AIRFIELD B-SIDE SPAWN AREAS.** Four spawns moved 1-1.4 m
+   out of walls (audit find). The gate proves the points are clear; only
+   eyes prove the AREAS still read as intended spawn cover.
+1. **TPP, EVERYWHERE.** Toggle P. Walk, sprint, crouch, prone, lean, reload,
+   swap weapons, climb stairs, hug walls (the boom should pull in, never
+   clip), fight in doorways, ADS (over-shoulder), scope (must SNAP to first
+   person), die (body should vanish with the step, camera back to FPP flow on
+   respawn — check!). Watch the own-body stride against strafing: the
+   derivation mirrors remotes, but nobody has SEEN it.
+2. **MARKERS, WITH HANDS.** Team mode, M, left-click place, left-click move,
+   right-click remove; a team-mate's screen shows your pin in YOUR colour
+   with your callsign; an opponent's never does. Known accepted gaps: the
+   instant local pin renders in the default gold until the server echo lands
+   (~RTT) because Net.getMe does not exist to read own colour; the DIAL
+   (small minimap) pins still render gold, only the full map wears placer
+   colours. Both one-line-ish if they grate.
+3. **AUDIO LEVELS ARE A TASTE CALL MADE BLIND.** The menu cue and both beds
+   were mixed against documented ceilings (0.09 bed, 0.11 cue, 0.12 hard
+   line), never against ears. Confirm gunshots/footsteps/comms sit clearly
+   above the bed; confirm the cue reads "tactical" not "casino". First sound
+   arrives on first click — that is autoplay policy, not a bug.
+4. **50 M INTEL RINGS, ON THE EYE.** Host YES → M shows quarter-map-scale
+   dashed rings that FEEL like "somewhere over there"; overlapping rings
+   stay readable (fill was lightened for exactly this). Host NO → nothing.
+   The lag bug is fixed but only a hand on the toggle proves the feel.
+5. **BOT ABSENCE.** Picker shows exactly ffa/team/squads/last; no bot rows in
+   the lobby; a raw createRoom asking mode:'bots' lands in the default mode
+   (phase 15 proves the server; eyes should confirm the UI).
+6. Everything still open from v12's list that survives: the field
+   black-screen trigger (sentinel armed, census reporting), reconnect's
+   three doors under bad wifi, Killhouse angled walls, F3 p90.
 
 ## 1b. NOT DONE / FOUND-NOT-FIXED / HONEST GAPS
 
-- **The field black-screen's browser trigger is UNREPRODUCED.** v12 ships
-  detection (registry==census sentinel), evidence (the census in the error
-  report) and repair (relight, once per match) — not a root-cause kill. The
-  next occurrence is designed to name itself.
-- **Bot drone launches were never observed live** — stock is loot-only and
-  short soaks never rolled a drone crate. The path is unit-covered
-  (verify-drone) and the economy is integration-covered (phase 14).
-- **Flake confidence on the suite is n=2** (two consecutive 275/0 after the
-  phase-11 recruit fix; the container's wall-clock ceiling made longer
-  campaigns impractical). The removed flake mechanism is understood
-  (cover-sprint vs snapshot-aimed shots), so risk is low, not zero.
-- **Weapon switching triggers rarely in bot-vs-bot soaks** — by design, bots
-  hold ideal range, so the swap fires mainly when a HUMAN pushes them.
-  Expect to see it in play, not in soaks.
-- cyl() cast:false, the ~900 s infra-timeout suspicion, rural bridge
-  stairs, per-map builder loading: unchanged from v11.
-- **Kill stray servers by /proc argv (`node server.js` exact), never
-  `pkill -f`** — the pattern matches your own wrapper shell and kills it;
-  and check EADDRINUSE in the log before trusting any run (§2 of the
-  changelog: a zombie absorbed a whole test pass).
+- **TPP muzzle flash and tracers still originate at the camera**, not the
+  own-rig's gun. Subtle at the boom distance; attaching FX to the rig gun is
+  the follow-up if it reads wrong in play.
+- **Dead players cannot mark** (server rule predates v13, kept deliberately);
+  PUBG-style spectator pings would need an explicit product call.
+- **Phase 16 flake confidence is n=2** (mid-build and final runs, both
+  green); its waits are generous but the three-socket team-deal read is new
+  machinery.
+- **Long-run MEMORY SOAK not executed** (audit brief 3/16): the room-leak
+  fix removes the known growth vector, but a 15-minute multi-room soak with
+  RSS sampling is still owed before calling memory flat.
+- **Client empty-catch review is sampled, not exhaustive** (21 sites;
+  dominated by documented localStorage/WebAudio permission guards).
+- **The double-socket connect() fix is code-verified only** — drop a real
+  connection in a browser and confirm no duplicate toasts on rejoin.
+- **The v12 suite count 275 is now 235 BY DESIGN** (bot phases skip). An
+  armed run (US_BOTS=1 for server AND suite) was NOT executed this release —
+  the engine is covered by verify-bots' 260 assertions with the switch
+  re-armed for its own process, but the integration phases 11/12/14 have not
+  run against a v13 server. Run one armed pass before any release that
+  re-arms bots.
+- **verify-client counts 62 (was 64)**: two conditional assertions keyed to
+  bot-visible UI dropped out with the switch, same as the v10.9→v12
+  direction. The gate self-adjusts; the drift is expected, not decay.
+- cyl() cast:false, rural bridge stairs, per-map builder loading: unchanged.
+- **Kill stray servers by /proc argv scan (`node server.js` exact), never
+  `pkill -f`; check the new server log head for EADDRINUSE before trusting
+  any run** — a zombie absorbed a full v12 pass once already.
 
 ---
 
-## 2. FIXED IN v12.0 — see CHANGELOG for full reasoning
+## 2. FIXED IN v13.0 — see CHANGELOG for full reasoning
+
+One-line index: bots switched off (third flip; env-read form restored;
+verify-bots reshaped to assert switch-consistency in EITHER state with one
+pinned default line); hidden BOT modes refused at create/updateSettings
+(narrowed after t10 falsified the generic version); intel change-listener
+added (the whole "reversal"); intel rescaled to a 50 m promise derived from
+CFG.MATCH.INTEL by all three consumers, true by construction (ceiling =
+radius − 5), floor raised to 10 m, OFF-room integration proof added; item 3
+verified-absent (no such messaging exists); THIRD PERSON added — pure-math
+collision-clamped boom (tppcam.js, gate-tested), own body driven on the
+remote pose contract, P toggle persisted, scoped ADS stays FPP, viewmodel
+flag inside the every-frame visibility line; procedural score (menu cue +
+menu/game beds, 0.12 ceiling, autoplay-policy-honouring pendingMusic);
+markers grown up (placer colour, right-click remove with server-stamped id,
+self-duplicate 'self'-key bug fixed, manual rows) with phase 16 proving
+sync/attribution/foe-isolation/move/remove end to end. Below this line the
+v12.0 index is retained for history.
 
 One-line index: per-map lighting override was dead (builtMap null at read;
 now a parameter, gated by verify-lighting); light-loss sentinel with census
@@ -154,29 +194,32 @@ is what appears blocked. Force `transports: ['websocket']`.
 
 ## 3. Verification
 
-The full board, v12.0 — 36 gates green, three documented pre-existing reds:
+The full board, v13.0 — 45 gates, three documented pre-existing reds:
 
     for f in tools/verify-*.js; do node "$f"; done
     node verify-models.js        # 226/0
-    node verify-avatar.js        # 35/0 (v12: +detail-shed ratchet)
+    node verify-avatar.js        # 35/0
     node server.js &             # then:
-    node test.js                 # 275 passed, 0 failed, exit 0
+    node test.js                 # 235 passed, 0 failed, exit 0 (bot phases SKIP)
 
 Expected reds, unchanged and documented in their files: verify-climb 1/2,
 verify-arch 4/2, verify-access 55/1.
 
-New in v12.0: verify-lighting 34/0 (per-map sky/fog/lights across sequence
-builds, relight idempotence + repair, reset clears stale sky), verify-intel
-9/0 (the 3-15 m blur contract, pure), verify-doorfit 4/0 (movement radius
-pinned; rendered span bounded against the narrowest door). Inverted at the
-product, not weakened: verify-bots' v10.9 "shipped default exposes no bots"
-block now asserts the v12 default exposes exactly the seven, urban-locked
-(259/0). test.js: bot phases 11/12/14 ARMED (skips gone with the switch);
-phase 14 rewritten for the drone reversal; phase 15 added (duration clamp,
-mode-owned map lock, end-to-end intel band against authoritative positions
-in the same packet). Phase 11 shoots a recruit ON PURPOSE — the damage path
-is skill-independent and v12 veterans evade; the comment in the phase says
-so.
+New in v13.0: verify-tpp 19/0 (the boom math AS THE GAME'S OWN MODULE —
+forward convention against hand-computed angles, wall clamp, margin window,
+floor, adapter tolerance — plus the wiring seams as source asserts),
+verify-audio 13/0 (state calls at all three sites, the 0.12 ceiling, the
+pendingMusic gesture parking, the ramp-out). Rewritten at the product:
+verify-intel 11/0 (50 m contract, inside-the-drawn-circle promise, CFG
+unity, honest 0.11 rounding tolerance with the measured 9.94 worst case in
+the comment); verify-bots 260/0 (switch-consistency in either state, one
+pinned default line). test.js: phase 15 covers both switch states in one
+body (hidden-mode refusal when off, the urban-lock dance when armed), the
+8..60 band, and a from-scratch intel-OFF room asserting zero emissions;
+phase 16 is new (markers end to end, sides read from the dealt roster).
+
+Armed runs: US_BOTS=1 in the environment of BOTH server and suite re-arms
+phases 11/12/14. Not executed this release — see §1b.
 
 On slow containers the suite exceeds per-command wall limits: run
 `(setsid node test.js > /tmp/run.log 2>&1 &)` and poll the log.
@@ -354,6 +397,58 @@ tools/prof-bots.js  prof-rays.js  prof-snap.js  diag-jitter.js  audit-sightlines
   "written once on the create screen" rule is superseded: there is no create
   screen. Do not add a second writer; the two-sources-of-truth fault is
   currently unrepresentable and should stay that way.
+
+### Added by v13.1 — paid for by the audit
+
+- **The st gate's numbers are a contract**: budget = 21 m/s x dt + 2.5 m,
+  dt floored at 0.02 s; bounds = map bound + 15, y in [-12, 140]; spawns
+  get one free jump via p.justSpawned. The suite's glide wrapper steps
+  2.8 m/message BECAUSE the floor budget is 2.92 — change one, change both.
+- **Tests move legally or not at all.** The factory wrapper legalises every
+  st; synchronous burst convergence is what keeps exact-damage phases
+  deterministic. Do not add raw teleports; do not add per-phase movers.
+- **destroyRoomIfEmpty() is the only legal room teardown** — both emptying
+  paths call it; any new timer a room owns gets cleared THERE.
+- **connect() reuses the page's one socket.** bind() runs once per page
+  life; building a second io() beside an armed auto-reconnect is the
+  double-handler bug the audit closed.
+- **New spawn sets pass verify-spawn-geometry before shipping.**
+- **probe-net-degraded.js is the degradation harness** — jitter proxy,
+  authority attacks, reconnect storm. It asserts the v10.17 contract
+  (reversals repaired within one keyframe), not perfection the design never
+  promised.
+
+### Added by v13.0 — paid for this release
+
+- **Every new lobby config control needs FOUR things**: the element cache,
+  the updateLobby sync, the pushSettings read, AND the change-listener line
+  (ui.js ~1093). Missing the fourth presents as an inverted setting.
+- **verify-bots asserts consistency with the switch, not a state.** Exactly
+  one line pins the shipped default; a flip edits that line and
+  world.config.js line ~78, nothing else. Do not rewrite the block again.
+- **`hidden` on a mode means "not offered", not "not seatable" — EXCEPT for
+  bot modes**, where the v13 guard makes it both. t10 must stay creatable;
+  the guard predicate is hidden && (vsBots || practice). Widening it back to
+  all-hidden re-breaks phase 10 exactly as documented at the guard.
+- **CFG.MATCH.INTEL is the only place intel numbers live.** Server band,
+  drawn circle and gate all derive from it; the gate asserts unity. Editing
+  intel.js constants directly re-splits the promise from the error.
+- **The TPP boom is pure math in tppcam.js** — change camera feel THERE, and
+  verify-tpp pins the convention (forward vector, shoulder side, clamp,
+  margin window, floor). game.js only adapts World.rayHit and applies the
+  result. The viewmodel's firstPerson flag must stay INSIDE the every-frame
+  rig.visible line.
+- **The own-body rig is fed the remote pose contract** (net.js updateRemotes
+  is the reference implementation — -yaw+PI, stride from displacement
+  rotated into body frame). If remote animation changes shape, the ownbody
+  step in game.js changes with it, or first person and third disagree.
+- **Music states are 'menu' | 'game' | null through AudioSys.music() only.**
+  MUSIC_VOL ceiling is 0.12 and verify-audio pins it; new cues route through
+  musicG so mStop()'s ramp-out kills them poplessly. Never start an
+  oscillator outside musicNodes/musicTimers bookkeeping.
+- **Marker payload ids are stamped server-side, never read from the client**
+  — that single line is why a modified client cannot delete or forge
+  another player's pin. Keep it that way when extending the payload.
 
 ### Added by v12.0 — paid for this release
 

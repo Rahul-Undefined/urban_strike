@@ -17,6 +17,10 @@ var Game = (function () {
   var baseSens = 0.0023;
   var timerAccum = 0;
   var landDip = 0;
+  var tpp = false;                                  // v13.0: third-person view
+  var _boomO = null, _boomD = null;                 // v13.1: boom ray scratch (allocated at init)
+  var ownAv = null;                                 // v13.0: local body rig (TPP)
+  var ownLast = { x: 0, z: 0 };                     // v13.0: stride derivation
   /* v11.0 black-world guards — see the camguard/drawwatch steps in loop(). */
   var _camSafe = { pos: new THREE.Vector3(0, 3, 0), rx: 0, ry: 0 };
   var _blackFrames = 0, _rebuiltThisMatch = false;
@@ -159,6 +163,11 @@ var Game = (function () {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.08, 320);
     camera.rotation.order = 'YXZ';
+    _boomO = new THREE.Vector3(); _boomD = new THREE.Vector3();
+    /* v13.0 (item 5): perspective survives reloads; the viewmodel obeys it
+       from the first frame rather than flashing first-person for one tick. */
+    try { tpp = localStorage.getItem('us_tpp') === '1'; } catch (err) { tpp = false; }
+    Weapons.setFirstPerson(!tpp);
     scene.add(camera); // required so the viewmodel (a child of the camera) renders
 
     window.addEventListener('resize', function () {
@@ -174,6 +183,9 @@ var Game = (function () {
        collapsed panel rather than an error. */
     try { if (window.Showcase) { window.Showcase.bindParallax(); window.Showcase.start(); } } catch (e) { }
     AudioSys.init();
+    /* v13.0 (item 6): arm the welcome cue. The browser will not let it sound
+       until the first input; AudioSys parks it and resume() releases it. */
+    AudioSys.music('menu');
     Net.init(scene);
     FX.init(scene, camera);
     FX.initDOM();
@@ -265,6 +277,21 @@ var Game = (function () {
          with the other always-available keys so it works while paused — that
          is when you actually want to study a layout. */
       if (e.code === 'KeyM') { e.preventDefault(); Minimap.toggleFull(); return; }
+      /* ===== v13.0 (item 5) - P TOGGLES THE PERSPECTIVE =====
+         Sits with M in the always-available keys: switching view while paused
+         or dead is harmless and sometimes exactly what you want. P was free —
+         the v10.13 key audit lists I, J, K, L, O, P as the only unclaimed
+         letters, and verify-models' duplicate-keydown gate is what checks
+         that claim rather than my memory of it. */
+      if (e.code === 'KeyP') {
+        e.preventDefault();
+        tpp = !tpp;
+        try { localStorage.setItem('us_tpp', tpp ? '1' : '0'); } catch (err) {}
+        Weapons.setFirstPerson(!tpp);
+        if (ownAv) ownAv.group.visible = tpp;
+        UI.toast(tpp ? 'THIRD PERSON \u00b7 P to switch back' : 'FIRST PERSON');
+        return;
+      }
       /* v10.10: N calls the killhouse nuke. Sits beside M because it opens the
          same map, and returns early only when a nuke is actually armed — so on
          every other map, and for every player who has not earned one, N falls
@@ -495,6 +522,7 @@ var Game = (function () {
       Minimap.init();
       if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
       AudioSys.ambient();
+      AudioSys.music('game');   // v13.0 (item 6): the score under the city
       built = true;
     } catch (err) {
       /* v9.5 RETRY ONCE. A half-built world is the other way to end up
@@ -515,6 +543,7 @@ var Game = (function () {
         Minimap.init();
         if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
         AudioSys.ambient();
+      AudioSys.music('game');   // v13.0 (item 6): the score under the city
         built = true;
         UI.toast('Recovered after a map build error');
       } catch (err2) {
@@ -726,6 +755,7 @@ var Game = (function () {
   }
 
   function onBackToLobby() {
+    AudioSys.music('menu');   // v13.0 (item 6): bed only — the cue is once per load
     UI.hideEnd();
     UI.showMenu();
     UI.showScreen('screen-lobby');
@@ -811,6 +841,66 @@ var Game = (function () {
         camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 11);
         camera.updateProjectionMatrix();
         UI.setScope(!!wu.scoped);
+
+        /* ===== v13.0 (item 5) - THIRD PERSON IS A CAMERA OFFSET, NOT A MODE =====
+           Everything above ran unchanged: the eye position, the rotations, the
+           ADS fov. TPP only MOVES the camera back along a collision-clamped
+           boom (tppcam.js — pure math, gate-tested), keeping the exact same
+           rotation, so the crosshair raycast in shoot() stays camera-centred
+           and aiming works over the shoulder the way every TPP shooter does.
+           Nothing here is networked: the server keeps receiving the same
+           PlayerCtl state either way, which is what keeps multiplayer sync
+           untouched by construction. Scoped ADS stays first-person — a sniper
+           overlay from behind your own head is nonsense — so the boom simply
+           does not apply while scoped. */
+        if (tpp && !wu.scoped) {
+          var boom = TPPCam.computeBoom(
+            { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+            PlayerCtl.yaw, PlayerCtl.pitch,
+            function (o, d, m) {
+              /* v13.1 audit (brief 4): scratch vectors, not two allocations
+                 per frame — the boom runs inside the render loop. */
+              _boomO.set(o.x, o.y, o.z); _boomD.set(d.x, d.y, d.z);
+              return World.rayHit(_boomO, _boomD, m);
+            });
+          camera.position.set(boom.x, boom.y, boom.z);
+        }
+      });
+
+      /* ===== v13.0 (item 5) - THE OWN BODY, DRIVEN LIKE A REMOTE =====
+         In TPP the player must see themself. Rather than invent a second
+         animation path, the local body is a standard Avatars rig fed the SAME
+         pose contract net.js feeds a remote — position from PlayerCtl, yaw
+         with the same -ry + PI convention v8.36 reconciled, stride derived
+         from frame-to-frame displacement rotated into the body frame. One
+         pose pipeline, two callers; a walk-cycle fix lands on both.
+         The rig is NOT a collider and is not in Net's remotes map, so bullets,
+         the camera ray and hit detection never meet it. */
+      step('ownbody', function () {
+        if (!tpp || !PlayerCtl.alive) { if (ownAv) ownAv.group.visible = false; return; }
+        if (!ownAv) {
+          ownAv = Avatars.buildAvatar();
+          if (ownAv.tagHolder) ownAv.tagHolder.visible = false;   // no name tag over your own head
+          scene.add(ownAv.group);
+        }
+        ownAv.group.visible = true;
+        var g2 = ownAv.group;
+        g2.position.set(PlayerCtl.pos.x, PlayerCtl.pos.y, PlayerCtl.pos.z);
+        g2.rotation.y = -PlayerCtl.yaw + Math.PI;
+        if (isFinite(PlayerCtl.pos.y)) ownAv.baseY = PlayerCtl.pos.y;
+        var dxw = PlayerCtl.pos.x - ownLast.x, dzw = PlayerCtl.pos.z - ownLast.z;
+        var movedNow = Math.sqrt(dxw * dxw + dzw * dzw);
+        var cs = Math.cos(PlayerCtl.yaw), sn = Math.sin(PlayerCtl.yaw);
+        var lz = dxw * sn + dzw * cs, lx = dxw * cs - dzw * sn;
+        var mag = Math.sqrt(lx * lx + lz * lz) || 1;
+        ownLast.x = PlayerCtl.pos.x; ownLast.z = PlayerCtl.pos.z;
+        Avatars.poseAvatar(ownAv, {
+          moved: movedNow, mx: lx / mag, mz: lz / mag,
+          run: PlayerCtl.moveState === 2, crouch: PlayerCtl.crouch, prone: PlayerCtl.prone,
+          dead: false, deadT: 0, rx: PlayerCtl.pitch, ry: PlayerCtl.yaw, lean: PlayerCtl.lean,
+          reloading: Weapons.isReloading(),
+          dist: 4, dt: dt
+        });
       });
 
       /* Remote avatars are their own step. This is the one that broke in team

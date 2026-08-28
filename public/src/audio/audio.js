@@ -28,6 +28,10 @@ var AudioSys = (function () {
     if (!ctx) init();
     if (ctx && ctx.state === 'suspended') ctx.resume();
     if (ctx && !started) { started = true; ambient(); }
+    /* v13.0 (item 6): the browser forbids sound before a gesture, so the
+       welcome cue is armed by music('menu') and FIRES here, on the first
+       input — the earliest instant the platform allows. */
+    if (ctx && pendingMusic) { var pm = pendingMusic; pendingMusic = null; music(pm); }
   }
   function setVolume(v) { volume = v; if (master) master.gain.value = v; }
 
@@ -343,7 +347,159 @@ var AudioSys = (function () {
     } catch (e) {}
   }
 
+
+  /* ==========================================================================
+     v13.0 (brief item 6) - MUSIC, AS DISTINCT FROM THE CITY
+     The ambient() bed above is DIEGETIC — traffic, sirens, clanks: the map's
+     own noise. What the brief asks for is score: a cinematic military cue
+     when the welcome screen begins, and a slow tonal bed under gameplay.
+
+     Constraints that shaped this:
+     - NO AUDIO ASSETS ship in this repo, so everything is synthesized on the
+       shared context — oscillators, filtered noise, gain envelopes.
+     - THE SCORE MUST NEVER FIGHT THE GAME. Gunshots, footsteps and comms are
+       the information channel; music is atmosphere. Both beds are capped by
+       MUSIC_VOL and the cue peaks at CUE_VOL — never above 0.12, against
+       weapon transients that run 0.3+. If you cannot hear the music over a
+       firefight, it is working.
+     - GESTURE-GATED: music() before the first input parks its request in
+       pendingMusic; resume() plays it the moment the platform allows.
+     ====================================================================== */
+  var MUSIC_VOL = 0.09;   // gameplay/menu bed ceiling — never above 0.12
+  var CUE_VOL = 0.11;     // welcome-cue peak — never above 0.12
+  var musicState = null, musicG = null, musicNodes = [], musicTimers = [];
+  var pendingMusic = null, menuCuePlayed = false;
+
+  function mStop() {
+    if (musicG) {
+      try {
+        musicG.gain.cancelScheduledValues(ctx.currentTime);
+        musicG.gain.setValueAtTime(musicG.gain.value, ctx.currentTime);
+        musicG.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+      } catch (e) {}
+    }
+    var oldNodes = musicNodes, oldG = musicG;
+    musicTimers.forEach(function (t) { clearInterval(t); });
+    musicTimers = []; musicNodes = []; musicG = null;
+    setTimeout(function () {
+      oldNodes.forEach(function (n) { try { n.stop(); } catch (e) {} try { n.disconnect(); } catch (e) {} });
+      if (oldG) { try { oldG.disconnect(); } catch (e) {} }
+    }, 900);
+  }
+
+  function mOsc(type, freq, dest) {
+    var o = ctx.createOscillator(); o.type = type; o.frequency.value = freq;
+    o.connect(dest); o.start(); musicNodes.push(o); return o;
+  }
+
+  /* The welcome cue: a sub swell, a low fifth blooming through a closed
+     filter, a two-tap military snare from filtered noise, and a horn-like
+     call — about seven seconds, once per page load. */
+  function menuCue(dest) {
+    var t0 = ctx.currentTime;
+    var sub = ctx.createOscillator(); sub.type = 'sine';
+    sub.frequency.setValueAtTime(38, t0);
+    var sg = ctx.createGain(); sg.gain.setValueAtTime(0, t0);
+    sg.gain.linearRampToValueAtTime(CUE_VOL * 0.9, t0 + 1.8);
+    sg.gain.linearRampToValueAtTime(0, t0 + 6.0);
+    sub.connect(sg); sg.connect(dest); sub.start(t0); sub.stop(t0 + 6.2); musicNodes.push(sub);
+
+    var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(160, t0);
+    lp.frequency.linearRampToValueAtTime(520, t0 + 3.2); lp.connect(dest);
+    [73.4, 73.9, 110].forEach(function (f) {          // D2 pair (detuned) + A2: an open fifth
+      var o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+      var g = ctx.createGain(); g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(CUE_VOL * 0.42, t0 + 2.5);
+      g.gain.linearRampToValueAtTime(0, t0 + 7.0);
+      o.connect(g); g.connect(lp); o.start(t0); o.stop(t0 + 7.1); musicNodes.push(o);
+    });
+
+    [0.9, 1.05].forEach(function (dtT) {              // the two-tap snare
+      var n = ctx.createBufferSource(); n.buffer = noiseBuf;
+      var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1900; bp.Q.value = 0.9;
+      var g = ctx.createGain(); g.gain.setValueAtTime(0, t0 + dtT);
+      g.gain.linearRampToValueAtTime(CUE_VOL * 0.5, t0 + dtT + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + dtT + 0.22);
+      n.connect(bp); bp.connect(g); g.connect(dest);
+      n.start(t0 + dtT); n.stop(t0 + dtT + 0.3); musicNodes.push(n);
+    });
+
+    var hlp = ctx.createBiquadFilter(); hlp.type = 'lowpass'; hlp.frequency.value = 900; hlp.connect(dest);
+    [146.8, 147.6].forEach(function (f) {             // the horn call, D3 detuned pair
+      var o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+      var g = ctx.createGain(); g.gain.setValueAtTime(0, t0 + 1.2);
+      g.gain.linearRampToValueAtTime(CUE_VOL * 0.55, t0 + 1.6);
+      g.gain.linearRampToValueAtTime(0, t0 + 4.2);
+      o.connect(g); g.connect(hlp); o.start(t0 + 1.2); o.stop(t0 + 4.3); musicNodes.push(o);
+    });
+  }
+
+  /* The gameplay bed: a dark drone on A1/E2, a C3 colour tone breathing on a
+     22 s cycle, a heartbeat pulse every ~9 s, and the thinnest ribbon of high
+     air. Sparse on purpose — it has to sit UNDER footsteps. */
+  function gameBed(dest) {
+    var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240; lp.connect(dest);
+    var lfo = mOsc('sine', 0.05, ctx.createGain());   // placeholder connect; rewired below
+    try { lfo.disconnect(); } catch (e) {}
+    var lg = ctx.createGain(); lg.gain.value = 90; lfo.connect(lg); lg.connect(lp.frequency);
+
+    var dg = ctx.createGain(); dg.gain.value = 0.55; dg.connect(lp);
+    mOsc('triangle', 55, dg);                          // A1
+    mOsc('sine', 82.4, dg);                            // E2
+
+    var cg = ctx.createGain(); cg.gain.value = 0; cg.connect(lp);
+    mOsc('sine', 130.8, cg);                           // C3 — the minor colour
+    var clfo = mOsc('sine', 1 / 22, ctx.createGain());
+    try { clfo.disconnect(); } catch (e) {}
+    var clg = ctx.createGain(); clg.gain.value = 0.22; clfo.connect(clg); clg.connect(cg.gain);
+
+    var air = ctx.createBufferSource(); air.buffer = noiseBuf; air.loop = true;
+    var abp = ctx.createBiquadFilter(); abp.type = 'bandpass'; abp.frequency.value = 2600; abp.Q.value = 6;
+    var ag = ctx.createGain(); ag.gain.value = 0.09;
+    air.connect(abp); abp.connect(ag); ag.connect(dest); air.start(); musicNodes.push(air);
+
+    musicTimers.push(setInterval(function () {         // the heartbeat
+      if (!ctx || musicState !== 'game') return;
+      var t0 = ctx.currentTime;
+      var o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(58, t0);
+      o.frequency.exponentialRampToValueAtTime(40, t0 + 1.1);
+      var g = ctx.createGain(); g.gain.setValueAtTime(0.5, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 1.2);
+      o.connect(g); g.connect(dest); o.start(t0); o.stop(t0 + 1.3);
+    }, 8800));
+  }
+
+  /* Menu bed after the cue: the same fifth, barely there, breathing. */
+  function menuBed(dest) {
+    var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300; lp.connect(dest);
+    var blfo = mOsc('sine', 0.06, ctx.createGain());
+    try { blfo.disconnect(); } catch (e) {}
+    var blg = ctx.createGain(); blg.gain.value = 120; blfo.connect(blg); blg.connect(lp.frequency);
+    var bg = ctx.createGain(); bg.gain.value = 0.4; bg.connect(lp);
+    mOsc('sawtooth', 73.4, bg); mOsc('sawtooth', 110, bg);
+  }
+
+  /* music('menu' | 'game' | null) — idempotent, fade-out on change. */
+  function music(state) {
+    if (!ctx) { pendingMusic = state; return; }
+    if (state === musicState) return;
+    mStop();
+    musicState = state;
+    if (!state) return;
+    musicG = ctx.createGain();
+    musicG.gain.setValueAtTime(0, ctx.currentTime);
+    musicG.gain.linearRampToValueAtTime(MUSIC_VOL, ctx.currentTime + 1.2);
+    musicG.connect(master);
+    if (state === 'menu') {
+      if (!menuCuePlayed) { menuCuePlayed = true; menuCue(musicG); }
+      menuBed(musicG);
+    } else if (state === 'game') {
+      gameBed(musicG);
+    }
+  }
+
   return {
+    music: music,
     init: init, resume: resume, setVolume: setVolume, updateListener: updateListener, ambient: ambient,
     shot: shot, reload: reload, magIn: magIn, bolt: bolt, step: step,
     dryFire: dryFire, shellIn: shellIn, pickupSnd: pickupSnd,

@@ -35,6 +35,7 @@ const FILES = [];
 
 // Module objects each file legitimately reaches across IIFE boundaries.
 const MODULES = new Set(['CFG', 'THREE', 'World', 'Avatars', 'Net', 'UI', 'FX', 'AudioSys',
+  'TPPCam',   // v13.0: the third-person boom module (src/core/tppcam.js)
   'PlayerCtl', 'Weapons', 'WeaponModels', 'Pickups', 'Minimap', 'DevHUD',
   'Game', 'Input', 'Districts', 'Access', 'Deco', 'Merge', 'MetroMap', 'RuralMap', 'io',
   'StaticMerge',

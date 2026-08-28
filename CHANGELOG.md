@@ -1,3 +1,628 @@
+# v13.1 - THE AUDIT WHERE THE TESTS TURNED OUT TO MOVE LIKE CHEATERS
+
+A full-codebase audit against a 22-section brief, under one stated physical
+limit: this environment has no browser, GPU or speakers, so "verified in live
+gameplay" is an EMPTY COLUMN below, honestly labelled — everything else is
+probed, gated or classified. Two real server defects found and fixed, one
+client socket-lifecycle defect, four players born inside walls on generated
+maps, and one finding about the test suite itself that reframes what green
+meant before today.
+
+## 1. POSITION GETS A PLAUSIBILITY GATE (brief 17)
+
+The st handler accepted any finite triple: a modified client could teleport
+at will and every downstream consumer — hit lag-comp, intel, markers —
+treated the lie as truth. Damage was already strong (weapon whitelists,
+fireRateOk cadence, victim-position lag-comp, server-computed damage with
+client numbers only for clamped explosives); position was the open door.
+
+Now: map-bounds check plus a displacement budget per accepted update (3x
+sprint + slack, floored against burst-delivered packets), with spawns —
+server-initiated legitimate teleports — flagged by spawnPlayer so their first
+st passes free and re-aligns everything. Rejected updates keep the previous
+position: the teleporter rubber-bands, which is the correct experience for a
+teleporter. PROBED LIVE: a 90 m blink held to 0.8 m of drift, out-of-bounds
+rejected outright, 30 claimed sniper hits in one second rationed to exactly
+one confirmed shot.
+
+## 2. THE PURGE PATH LEAKED ROOMS (brief 3/16)
+
+When EVERY player of a live match disconnected, each purge timer removed its
+player — and nobody removed the room. Snapshots kept broadcasting to an
+empty io room at 15 Hz until the match clock fired, and the ended husk then
+sat in the rooms map forever. Rooms only empty via the disconnect handler or
+a purge; both now run one destroyRoomIfEmpty() that kills every timer a room
+can own — snapshot loop, airdrop pair, match clock, lobby countdown — before
+deleting it. The full server timer inventory was walked for this: every
+other timer already had a documented owner and clearer.
+
+## 3. THE SUITE MOVED LIKE A CHEATER, AND THE GATE PROVED IT (brief 19)
+
+Eleven phases went red the moment the position gate landed — because phases
+"walked" by assigning a position variable that a 50 ms interval re-emitted:
+a teleport, byte-for-byte the move the gate exists to reject. The tests were
+green before today partly because the server trusted what it should not.
+
+Weakening the gate was forbidden twice over (the brief's own rule, and
+sense). Rewriting twelve call sites was churn. Instead the suite's existing
+choke point — the socket factory that already injects backfill:false so "a
+new phase cannot forget it" — grew a movement legaliser: every st is stepped
+toward its target at 2.8 m per message, inside the gate's worst-case burst
+budget, and a teleported variable converges as one SYNCHRONOUS ordered burst
+so the player IS at the target before the phase's next line runs. The
+asynchronous version of that walk shipped first and taught the second
+lesson: exact-damage phases fired mid-glide, distance falloff shifted their
+arithmetic by single digits, and the reds looked exactly like combat bugs.
+Convergence is not a nicety; it is what makes scripted geometry scripted.
+
+235/0 after, with movement the product would accept from a real client.
+
+## 4. FOUR PLAYERS WERE BORN INSIDE WALLS (brief 5/6)
+
+New gate: tools/verify-spawn-geometry.js — every spawn on every ready map
+must sit inside the bound, have ground within step-reach, and NOT intersect
+the collider list, judged by the same buildColliders/groundAt/bodyBlocked
+the server's own movement reasons with, stair allowance included. First run:
+riverside 9/11 and airfield 9/11 — all four from the v9.7 GENERATED spawn
+sets, all four on an upper-floor wall line with a 0.2 m interior wall
+through the chest, all four confirmed against the collider boxes and moved
+to adjacent clear floor (1-1.4 m). The v7.6/v7.8 class — found by people
+twice — is a red build now. 50/0.
+
+The gate's own first cut graded airfield's bound against URBAN's spawn list
+(a hard-coded three-map fallback) and reported 20 phantom violations; the
+fix is the same generic per-map resolution server.js mapData performs. A
+gate is code and earns the same scepticism.
+
+## 5. ONE SOCKET PER PAGE, EVER (brief 1/16)
+
+net.js connect() built a brand-new io() whenever the current socket was
+merely DISCONNECTED — while the old socket's auto-reconnect (which v9.11
+depends on) stayed armed. One JOIN click after a drop and the page owned two
+live sockets, the old one's handlers firing into stale UI: duplicate toasts,
+duplicate snap decoding, listeners doubling on every subsequent drop.
+connect() now reconnects the existing socket; bind() runs once per page
+life. Static finding, code-verified; needs eyes on a real drop for the feel
+half.
+
+## 6. DEGRADED NETWORKS, MEASURED AGAINST THE DESIGN'S OWN CONTRACT (brief 2/20)
+
+New tool: tools/probe-net-degraded.js — a real TCP proxy adding 140-260 ms
+jittered delay with stall bursts, plus hard connection kills. Findings:
+
+- Message reordering and duplication are IMPOSSIBLE BY TRANSPORT (socket.io
+  over TCP/WebSocket is ordered and reliable); degradation arrives as delay
+  bursts and disconnects, so that is what gets injected.
+- Position reversals DO appear under congestion — and a control run on a
+  direct link shows zero, because they are the v10.17 design working:
+  snapshot deltas are volatile, drops desync the client cache, and the 2 s
+  keyframe repairs the world. Measured: 4 reversals, 0 unrepaired within one
+  keyframe. The probe asserts the design's contract (degrade, then
+  self-heal), not a stricter one it never promised.
+- A four-cycle reconnect storm through the jittered link: reclaimSeat
+  succeeded every cycle, the roster never held a duplicate or a ghost, and
+  the seat travelled to each new socket id. 10/0.
+
+## 7. SMALLER FIXES AND CLEAN FINDINGS
+
+- TPP boom allocated two Vector3 per frame inside the render loop; now
+  init-time scratch (brief 4).
+- Error handling (brief 18): zero empty catches server-side;
+  uncaughtException/unhandledRejection LOG rather than swallow. Client has
+  21 try/catch-empty sites, sampled and dominated by the documented
+  localStorage/WebAudio permission-guard pattern; an exhaustive per-site
+  review remains open.
+- Audited clean, no action: hit validation chain (weapon/victim/cadence/
+  lag-comp/server damage), loot and countdown timer ownership, reclaimSeat
+  identity mechanics (same object re-keyed, team locked).
+- Interest-based relevance filtering (brief 1) was EVALUATED AND DECLINED:
+  <=15 players on <=200 m maps with v9.8-compressed volatile deltas; culling
+  adds a desync bug class for negligible bandwidth, against the brief's own
+  "do not rewrite stable systems".
+
+## 8. THE TAXONOMY, AS THE BRIEF DEMANDS
+
+VERIFIED BY AUTOMATED TEST: everything above with a number next to it —
+suite 235/0 with legal movement; probe 10/0; spawn-geometry 50/0 after the
+four relocations; teleport/OOB/fire-rate/storm probes.
+VERIFIED IN LIVE GAMEPLAY: nothing. No browser exists here. The column is
+empty and saying otherwise would be the exact lie the brief forbids.
+DIAGNOSED BUT UNVERIFIED (by eyes): the double-socket fix's UX half; the
+four relocated spawn AREAS; everything v13.0 shipped unseen (TPP feel,
+audio mix, marker feel, 50 m ring feel).
+KNOWN LIMITATION / PENDING: long-run memory soak not yet executed; armed
+(US_BOTS=1) integration pass still owed; client empty-catch review not
+exhaustive; sections 5/7/14/15/21 capped at static analysis by physics.
+
+## LESSONS
+
+- When a new gate turns tests red, first ask whether the tests were doing
+  the thing the gate exists to stop. Eleven were. Green-before was partly
+  the server's credulity.
+- Fix suites at their choke point. The factory that injected backfill:false
+  "so a new phase cannot forget it" now legalises movement the same way —
+  one edit, twelve sites covered, second time this pattern has paid.
+- Convergence must be synchronous when tests script exact geometry: an
+  async walk turned falloff arithmetic into fake combat bugs.
+- Generated data needs generated validation. The v9.7 spawn generator wrote
+  four players into walls and no gate looked until today.
+- Probe the design's own contract. Volatile deltas that desync and self-heal
+  within a keyframe are the feature working; asserting "never reverses"
+  fails the design for keeping its actual promise.
+- Reuse the socket, never rebuild beside an armed auto-reconnect.
+- A new gate is code: mine reported 20 phantom violations from its own
+  fallback before it found the four real ones.
+
+
+# v13.0 - THE THIRD FLIP, AND THE REVERSAL THAT WAS A MISSING LINE
+
+Seven asks: bots out (again), enemy intel "reversed" and rescaled to a 50 m
+promise, stale 15-minute messaging removed, third person added beside first,
+a score under the city, and the team markers grown up. Two of the seven were
+not what they looked like: the intel "inversion" had no inverted boolean
+anywhere in it, and the messaging item 3 asked to remove does not exist. One
+of my own hardenings was falsified by the test suite in the same run it
+shipped, which is the suite doing its job on its author.
+
+## 1. BOTS OFF, THIRD FLIP — THE SWITCH EARNS ITS KEEP, THE GATE STOPS FLIPPING
+
+v10.9 switched bots off and wrote "TO BRING BOTS BACK: return true. Nothing
+else." v12.0 flipped it on with one line. v13.0 flips it off with one line —
+restored to the env-read form (US_BOTS=1 arms it; shipped default off), so
+tools/verify-bots.js can still exercise the retained engine while the product
+ships without it. Three flips in four releases is the strongest argument that
+DELETION was always the wrong reading of "remove completely, for now": the
+v10.9 costing (281 refs in bots.js, 49 in server.js, 31 in ui.js, 65 test
+assertions) has now paid for itself twice.
+
+What "completely" gets, mechanically: both bot categories and all seven modes
+leave the picker, the bot-count/difficulty/backfill lobby rows vanish (they
+ask botsAllowed()/backfillAllowed(), which answer false), backfill returns to
+impossible, addBots() returns before spawning, the bot tick returns on its
+first line, and test.js phases 11/12/14 print their SKIP notes again.
+
+THE GATE STOPPED FLIPPING WITH THE PRODUCT. v10.9's verify-bots block
+asserted bots-off; v12.0 rewrote it to assert bots-on; rewriting it a third
+time was the tell it asserted the wrong thing. It now asserts CONSISTENCY
+WITH THE SWITCH in either state — visibility, botsAllowed, backfill, picker
+categories all track r.enabled exactly; the seven modes and their urban
+mapLock survive dormancy; ALL_MODE_CATS retains both categories so re-arming
+restores them — plus exactly ONE pinned line (`r.enabled === false`) naming
+this release's shipped default. The fourth flip edits one config line and one
+gate line, and nothing else.
+
+## 2. HIDDEN IS NOT WITHDRAWN — MY OWN HARDENING, FALSIFIED SAME-RUN
+
+The picker filters on `hidden`, but the server seated any CFG.MODES key — a
+raw socket could still create Overrun with the switch off and get a silent
+half-empty team match. So v13 refuses hidden modes at createRoom and
+updateSettings. The first cut refused EVERY hidden mode and called that
+"generic, holds for whatever gets hidden next."
+
+The same test run falsified the sentence: the suite hung at the rename wait,
+teams read [0 vs 0], and the trail led to t10 — hidden ON PURPOSE since its
+introduction, an unlisted CAPACITY mode kept out of the picker while staying
+server-creatable, which is the exact thing phase 10 tests. `hidden` means two
+different things in this codebase, and my rule conflated them. The refusal is
+now narrowed to what the brief is actually about — hidden AND bot-fielding
+(vsBots || practice) — and the comment at the guard records the
+falsification, because "generic" claims that died in testing should stay
+died in writing.
+
+## 3. THE INTEL "REVERSAL" HAD NO INVERTED BOOLEAN IN IT
+
+Reported: "selecting No shows intel, selecting Yes doesn't." The wiring has
+no inversion anywhere on the path — what it had was a MISSING CHANGE
+LISTENER. Every other lobby select pushes settings on change; v12 added the
+intel select to the element cache, the sync and the payload, and forgot the
+one line that pushes it. So toggling intel pushed NOTHING until some OTHER
+control pushed for it, and the server always held the PREVIOUS choice: set
+YES, nothing happens; set NO later, the stale YES is what plays. From the
+host's chair that is indistinguishable from an inverted setting, which is
+exactly how it was reported.
+
+One line fixes it. The class is worth naming: a control that reads correctly
+in pushSettings still does nothing if nothing calls pushSettings. The lobby
+options are relabelled NO / YES · ~50 M AREA so the words match the brief's.
+
+## 4. FIFTY METRES, TRUE BY CONSTRUCTION
+
+The brief widens the blur from v12's 3-15 m to "somewhere within a 50-meter
+area." Stated consequence, accepted: on a ~200 m map that is a quarter-map
+blob — intel now says "that half-ish", which reads as deliberate
+anti-wallhack design.
+
+The contract lives ONCE, in CFG.MATCH.INTEL { radiusM: 50, minErr: 10 }, and
+all three consumers derive from it: server/lib/intel.js sets MAX_ERR =
+radiusM - 5 and CELL = radiusM * 0.6, minimap.js draws the circle at radiusM,
+and tools/verify-intel.js asserts the band against the same object. Because
+the ceiling is radius minus margin, "the enemy is inside the drawn circle" is
+true BY CONSTRUCTION, not on average — and the gate now asserts exactly that
+sentence (worst case measured: inside with 4 m to spare), plus a CFG-unity
+check so the drawn promise and the served error can never drift apart. The
+floor rose with the promise: a 50 m circle centred 3 m off the target is a
+wallhack with a wide hat, so minErr is 10.
+
+verify-intel's old floor tolerance also tightened into honesty: outputs round
+to 0.1 m per axis, which can shave sqrt(2)*0.05 off a diagonal clamp — the
+measured worst was 9.94 m against a 10 m floor, so the tolerance is 0.11 and
+the comment says why.
+
+Integration: phase 15's band widened to 8..60 (rounding slack below,
+movement-between-roll-and-packet slack above), and a NEW room is created with
+intel OFF and played for three seconds asserting ZERO snapshots carry the
+field — the brief's "must not appear at all", measured rather than assumed.
+
+## 5. ITEM 3 WAS ALREADY TRUE — VERIFIED ABSENT, NOT INVENTED
+
+"Remove messaging about the previous 15+ minute issue": grep across
+index.html, ui.js, style.css, game.js and net.js finds no such messaging —
+no banner, no toast, no note. The only duration UI is the single-option
+DURATION select, which is configuration, not messaging. Recorded here as
+verified-absent; inventing work to satisfy an item is how codebases grow
+mystery code.
+
+## 6. THIRD PERSON IS A CAMERA OFFSET, NOT A MODE
+
+Everything the first-person frame computed still runs: eye position,
+rotations, ADS fov, spread, recoil. TPP only MOVES the camera back along a
+collision-clamped boom, keeping the same rotation — so the crosshair raycast
+stays camera-centred and aiming works over the shoulder the way every TPP
+shooter does. Nothing is networked: the server receives the same PlayerCtl
+state either way, which is what keeps multiplayer sync untouched BY
+CONSTRUCTION rather than by testing.
+
+- THE BOOM IS PURE MATH IN ITS OWN MODULE (tppcam.js): forward vector
+  derived once from the camera's own convention (rotation.y = -yaw, YXZ),
+  shoulder offset rotating with the player, one ray from the EYE toward the
+  desired point, hit pulls the camera to hit-minus-margin, never below the
+  floor. tools/verify-tpp.js exercises THE SAME MODULE the game imports —
+  pinned against hand-computed angles (the v8.36 backwards-avatar sign class
+  cannot hide), wall clamp, margin window, floor, and the adapter that
+  tolerates rayHit result shape drift. 19/0.
+- THE OWN BODY IS DRIVEN LIKE A REMOTE: a standard Avatars rig fed the SAME
+  pose contract net.js feeds a remote — position from PlayerCtl, the v8.36
+  -yaw+PI convention, stride derived from frame displacement rotated into
+  the body frame. One pose pipeline, two callers; a walk-cycle fix lands on
+  both. The rig is not a collider and lives outside Net's remotes map, so
+  bullets, the camera ray and hit detection never meet it.
+- P TOGGLES IT (the v10.13 key audit lists P among the last free letters;
+  verify-models' duplicate-claim gate is what checks that, not memory),
+  persists in localStorage, and sits with the always-available keys.
+  Scoped ADS stays first-person — a sniper overlay from behind your own
+  head is nonsense — and the viewmodel's firstPerson flag lives INSIDE the
+  every-frame rig.visible line, because a one-time hide would be overwritten
+  on the next update. The gate asserts that placement as source text.
+
+## 7. A SCORE UNDER THE CITY, BUILT FROM OSCILLATORS
+
+The repo ships no audio assets, so item 6 is procedural WebAudio like every
+sound before it. Three pieces, one state machine:
+
+- MENU CUE, once per page load: a low fifth swelling under a slow brass-ish
+  partial stack with two distant "thump" hits — eight seconds of establishing
+  shot, peaking at 0.11.
+- MENU BED: sparse low pad, barely above the room tone.
+- GAME BED: a sub drone with a slow filter LFO and a rare far-off two-note
+  motif on a long random interval — atmosphere, not melody. MUSIC_VOL is
+  0.09 and the comment names 0.12 as the ceiling: gunshots, footsteps and
+  comms sit far above it by design, which is the brief's "must not
+  overpower" as a NUMBER rather than a hope.
+- AUTOPLAY POLICY, honoured not fought: browsers refuse sound before a user
+  gesture, so music() before the context exists parks the request in
+  pendingMusic and resume() — already wired to first input — plays it the
+  moment the platform allows. The welcome cue starts on first click, not on
+  page paint, because that is the physics of the platform.
+
+game.js drives the states: 'menu' at init and on back-to-lobby, 'game' on
+both match-start paths. mStop() ramps the old bed out over 0.8 s and
+disconnects its nodes — no pops, no orphaned oscillators. verify-audio pins
+the seams: the state calls exist at all three sites, the ceiling constant,
+the gesture parking, the ramp-out. 13/0.
+
+## 8. THE MARKERS GREW UP, AND THE 'self' KEY WAS A LIE
+
+v9.10 built the bones: click the open map in a team mode, the server relays
+to your side only (it is the only thing that knows sides — a client deciding
+who to send to is a client that can be modified to send to everyone), one
+pin per player, 45 s TTL. v13 adds what the brief lists:
+
+- ATTRIBUTION AT A GLANCE: the relay now carries the placer's COLOUR next to
+  the name it always carried; pins and labels render in it.
+- REMOVE IS A FIRST-CLASS VERB: right-click anywhere on the open map takes
+  YOUR marker back (you only ever own one — no pixel-hunting your own pin).
+  The relay carries {id, remove:1} where the id is the socket's own, stamped
+  server-side, never read from the payload — a modified client cannot delete
+  anyone else's pin. Re-clicking left still moves yours: replace was always
+  the semantics of one-per-player.
+- THE SELF-DUPLICATE BUG: the instant local pin was keyed under 'self' with
+  a comment claiming the server echo would replace it. The echo arrives
+  under the real socket id — a DIFFERENT key — so nothing ever replaced
+  anything and the placer saw two pins for 45 seconds. Keyed under the real
+  id now; the comment finally tells the truth.
+- FIELD MANUAL rows for the gestures, and a lighter fill on the 50 m intel
+  rings sharing that canvas, so overlap stays readable.
+
+Phase 16 (new) proves it end to end with three sockets in a team mode,
+reading the DEALT sides from the lobby roster rather than hard-coding who is
+whose team-mate: the team-mate gets exactly one pin at the clicked
+coordinates with name and colour; the placer's echo produces one pin, not
+two; the OPPONENT receives nothing across place, move and remove; re-placing
+travels under the SAME id; removal reaches the team-mate for that id.
+
+## 9. THE NUMBERS
+
+Suite: 235 passed, 0 failed with the switch off — down from v12's 275
+because phases 11/12/14 skip with printed notes, exactly as designed, while
+phase 15 grew the refusal/OFF-room branches and phase 16 is new. Gate board:
+45 gates, the three documented pre-existing reds (climb 1/2, arch 4/2,
+access 55/1) and nothing else. New gates: verify-tpp 19/0, verify-audio
+13/0; verify-intel rewritten to the 50 m contract, 11/0; verify-bots
+reshaped to switch-consistency, 260/0.
+
+## LESSONS
+
+- A switch that survives three product flips was cheaper than any deletion.
+  The gate should assert CONSISTENCY WITH THE SWITCH, not the current
+  product's taste — a gate you rewrite on every flip is measuring the wrong
+  invariant.
+- "Hidden" is not "withdrawn". My generic refusal of hidden modes was
+  falsified by t10 — an unlisted capacity mode — in the same run it shipped.
+  When a hardening breaks a test, first ask which of you is wrong about the
+  design; the answer was me, and the narrowed guard says so in writing.
+- A missing change-listener presents as an INVERTED SETTING from the user's
+  chair: the server holds the previous choice, always one interaction
+  behind. Before hunting an inverted boolean, check that the control pushes
+  at all.
+- Promises should be true by construction: the intel ceiling is DERIVED from
+  the drawn radius (radius minus margin), so "the enemy is inside the
+  circle" cannot drift false. One CFG object, three consumers, one gate
+  asserting unity.
+- An instant-feedback entry keyed differently from its authoritative echo is
+  a duplicate, and the comment claiming otherwise made it worse. Key local
+  optimism under the id the echo will arrive with.
+- The absence of a thing is a verifiable finding. Item 3's messaging does
+  not exist; grep-proven, recorded, no work invented.
+- A camera perspective is an OFFSET, not a mode: keep every first-person
+  computation, move only the lens, and multiplayer sync stays correct by
+  construction. Put the boom in pure math so the gate runs the same code the
+  game does.
+
+
+# v13.0 - THE THIRD FLIP, A MISSING LINE WEARING AN INVERSION, AND A CAMERA THAT IS JUST AN OFFSET
+
+The brief: take bots back out (the same "for now" that put them away in
+v10.9), fix an enemy-intel toggle reported as REVERSED, widen the intel blur
+to a 50-metre promise, delete some 15-minute messaging, add third person
+without breaking first, give the game a score, and turn the v9.10 map marks
+into a real ping system. Seven items. One of them did not exist, one was not
+what it was reported to be, and one of my own "generic" hardenings was
+falsified by the test suite in the same run that introduced it.
+
+## 1. BOTS OFF AGAIN — THE SWITCH EARNS ITS KEEP A SECOND TIME
+
+Third flip of BOTS_ENABLED (v10.9 off, v12.0 on, v13.0 off), and the v10.9
+costing is now validated in both directions: one line re-armed seven modes in
+v12, one line disarms them here. The switch is restored to its env-read form
+— shipped default OFF, while tools/verify-bots.js still arms the retained
+engine for its own run. What OFF means, mechanically: both bot categories and
+all seven modes leave the picker, the bot-count/difficulty/backfill lobby
+rows vanish, backfill returns to impossible, addBots() returns before
+spawning, the bot tick returns on its first line, and test.js phases 11/12/14
+print their SKIP notes again. Zero user-facing traces, zero hot-path cost,
+and the fourth flip is still one line.
+
+THE GATE STOPPED FLIPPING WITH THE PRODUCT. verify-bots' state block has now
+been rewritten twice to chase the shipped default, which is the tell it was
+asserting the wrong thing. It now asserts CONSISTENCY WITH THE SWITCH in
+either state — the seven modes exist, visibility/botsAllowed/backfill/picker
+categories track r.enabled exactly, ALL_MODE_CATS retains both categories so
+re-arming restores them, the v12 urban mapLock survives dormancy — plus
+exactly ONE pinned line asserting this release's shipped default. The fourth
+flip edits that line and nothing else. 260/0.
+
+## 2. HIDDEN IS NOT WITHDRAWN — MY OWN GENERALIZATION, FALSIFIED SAME-RUN
+
+Items 1/4 say "no bot matchmaking", and the picker filtering on `hidden` was
+never the same thing as the SERVER refusing: a raw socket could still create
+Overrun with the switch off and get a silent half-empty team match. So the
+server now refuses at both doors — createRoom and updateSettings.
+
+The first cut refused EVERY hidden mode and called that "generic: the rule
+holds for whatever gets hidden next." The integration suite hung eleven
+phases later: t10 is hidden ON PURPOSE while staying server-creatable — an
+unlisted capacity mode whose whole test is "12 players fit in a room the
+picker does not offer." `hidden` means two different things in this codebase,
+and my rule conflated them. The refusal is narrowed to hidden AND
+bot-fielding (vsBots || practice), and the comment at the guard records the
+falsification, because a rule that survived contact with a counterexample is
+worth more than the tidy version that did not.
+
+## 3. THE INTEL "REVERSAL" WAS A MISSING LINE, NOT AN INVERTED ONE
+
+Reported: "selecting No shows intel, selecting Yes doesn't." No boolean on
+the path is inverted — what was missing was lobby-intel's change LISTENER.
+Every other config select pushes on change; v12 added the intel select to the
+cache, the sync, and the payload, and forgot the one line that makes a change
+DO anything. So the toggle pushed nothing until some OTHER control pushed for
+it, and the server always held the PREVIOUS choice: set YES, nothing happens;
+set NO later, the stale YES is what plays. From the host's chair that is
+indistinguishable from inversion, which is exactly how it was reported.
+
+One line fixes it. The class is worth naming: A CONTROL THAT READS CORRECTLY
+IN pushSettings STILL DOES NOTHING IF NOTHING CALLS pushSettings — and it
+presents as the setting being backwards, one interaction late. The options
+are relabelled NO / YES · ~50 M AREA to match the brief's own vocabulary.
+
+## 4. FIFTY METRES, TRUE BY CONSTRUCTION
+
+The brief widens the promise from v12's 3-15 m blur to "somewhere within a
+50-meter area." The contract now lives in ONE place — CFG.MATCH.INTEL
+{ radiusM: 50, minErr: 10 } — read by all three consumers: server/lib/intel.js
+derives its band from it (MAX_ERR = radiusM - 5, CELL = radiusM * 0.6), the
+M map draws its circle from it, and tools/verify-intel.js asserts against it.
+The circle the player sees is 50 m; the server's worst error is 45 m; the
+enemy is inside the drawn ring BY CONSTRUCTION, with margin — not usually,
+not on average. The floor rises to 10 m because a 50 m circle centred 3 m off
+the target is a wallhack with a wide hat.
+
+Stated plainly, as it was to the client: a 50 m radius on a ~200 m map is a
+quarter-map-wide blob. That is the request, shipped exactly; if intel now
+feels like "east half-ish", that is the number doing what it says.
+
+verify-intel gained the promise assertion itself (worst error inside the
+drawn radius with >= 4 m margin) and a CFG-unity check, 11/0. Integration
+phase 15 measures the same band end-to-end (8..60 with movement slack) and
+adds the unconditional half: a NEW room whose host never enabled intel plays
+three seconds of snapshots and must emit ZERO intel fields — "off shows
+nothing" is now a measured sentence, not a default assumed.
+
+## 5. THE 15-MINUTE MESSAGING DID NOT EXIST
+
+Item 3 asks to remove "messaging, indicators, or UI references about the
+previous 15+ minute issue." Grep-proven across index.html, ui.js, style.css,
+game.js and net.js: no such string ships. The only duration UI is the single
+15 MIN option in the lobby select, which item 3 explicitly keeps. Recorded as
+VERIFIED ABSENT rather than inventing something to delete — the honest close
+for an item whose premise did not survive inspection.
+
+## 6. MARKERS GREW UP: ATTRIBUTION, REPLACE, REMOVE — AND A LIE IN A COMMENT
+
+v9.10 already had the skeleton (click the open map, server relays to the team
+only, one pin per player, 45 s TTL, compass bearing). v13 makes it the system
+the brief describes:
+
+- REMOVE IS A FIRST-CLASS VERB. Right-click anywhere on the open map takes
+  your marker back — no pixel-hunting your own pin, because you only ever own
+  one. The relay carries only {id, remove:1}, and the id is the SOCKET'S OWN,
+  stamped server-side, never read from the payload: a modified client cannot
+  delete anyone else's pin.
+- ATTRIBUTION AT A GLANCE. The payload now carries the placer's colour; pins
+  and their name labels render in it on the full map.
+- THE 'self' KEY WAS A LIE. The instant local pin was keyed under 'self'
+  while the server echo arrived under the real socket id — a DIFFERENT key —
+  so the comment claiming "replaced by the authoritative copy a moment later"
+  was false and the placer saw two pins for 45 seconds. The instant pin is
+  now keyed under the real id, which makes the old comment true.
+
+Integration phase 16 covers the contract with three sockets in a team mode,
+reading the DEALT sides from the lobby rather than hard-coding who is whose
+team-mate: the team-mate sees exactly one attributed pin at the clicked
+coordinates; the placer's echo lands on the same key (one pin, not two); the
+OPPONENT receives nothing across place, move and remove; re-placing travels
+under the SAME id (a move, not a second pin); removal reaches the team-mate
+for that id. A marker that leaks across sides is a wallhack with a flag on
+it, and now there is a phase whose job is to say so.
+
+## 7. THIRD PERSON IS A CAMERA OFFSET, NOT A MODE
+
+The whole feature is: the camera moves back along a collision-clamped boom;
+everything else already existed.
+
+- THE BOOM IS PURE MATH IN ITS OWN MODULE (src/core/tppcam.js): forward
+  vector derived once to match the camera convention (rotation.y = -yaw,
+  rotation.x = pitch, YXZ), shoulder offset as a cross product, one ray from
+  the EYE toward the desired camera point, hits pulled in by a margin and
+  floored at MIN. tools/verify-tpp.js exercises THE SAME MODULE against
+  hand-computed angles — behind-the-shoulder at yaw 0, the swing at +90°, the
+  rise when looking down, both raycast dialects (.dist and .distance), the
+  clamp and the floor. 19/0. A sign regression cannot hide behind "looked
+  fine on the map I tried."
+- THE OWN BODY IS A STANDARD RIG FED THE REMOTE CONTRACT. Rather than invent
+  a second animation path, game.js drives a normal Avatars rig with exactly
+  what net.js feeds a remote — same -yaw + PI convention v8.36 reconciled,
+  same derived stride. One pose pipeline, two callers; a walk-cycle fix lands
+  on both. The rig is not a collider and is not in the remotes map, so
+  bullets, the camera ray and hit detection never meet it.
+- AIM IS UNCHANGED. The rotation never moves — only the position — so the
+  crosshair raycast stays camera-centred and shots converge over the shoulder
+  the way every TPP shooter works. Scoped ADS stays first person, because a
+  sniper overlay from behind your own head is nonsense.
+- NOTHING IS NETWORKED. The server receives the identical PlayerCtl state in
+  either view; multiplayer sync is untouched BY CONSTRUCTION, not by testing.
+- P TOGGLES IT, and P was chosen by reading the v10.13 key audit (I, J, K, L,
+  O, P were the free letters) and then LETTING verify-models' duplicate-
+  keydown gate rule on it, because that audit is a comment and the gate is a
+  check. Persisted in localStorage; the field manual says so.
+
+Honest limits, stated: the muzzle flash and tracer still originate from the
+(hidden) first-person rig position rather than the avatar's gun in TPP, and
+nobody has WATCHED the third-person body animate — it is contract-driven and
+gate-covered, not play-verified.
+
+## 8. A SCORE, AS DISTINCT FROM THE CITY
+
+The existing ambient() bed is DIEGETIC — traffic, sirens, clanks: the map's
+own noise. Item 6 asks for score. Two pieces, both synthesized on the shared
+context because this repo ships no audio assets:
+
+- THE WELCOME CUE: a sub swell, a low open fifth blooming through a closing
+  filter, a two-tap snare from filtered noise, and a detuned horn call —
+  about seven seconds, once per page load. Browsers forbid sound before a
+  gesture, so music('menu') at init PARKS the request and resume() releases
+  it on the first input — the earliest instant the platform allows, stated
+  plainly rather than pretended away.
+- THE GAMEPLAY BED: A1/E2 drone under a slow filter, a C3 colour tone
+  breathing on a 22-second cycle, a heartbeat pulse every ~9 seconds, the
+  thinnest ribbon of high air. Sparse on purpose: it has to sit UNDER
+  footsteps.
+
+THE CEILING IS THE FEATURE. MUSIC_VOL 0.09 and CUE_VOL 0.11, both documented
+at the constant as "never above 0.12", against weapon transients that run
+0.3+. If you cannot hear the music over a firefight, it is working.
+tools/verify-audio.js holds the source to all of it: the numeric ceiling, the
+gesture-gating pattern, the score following the game through BOTH buildWorld
+attempts (the retry path deserves the same score), the once-per-load cue, the
+idempotent state machine, timers cleared on stop, the 0.8 s fade. 13/0.
+
+## 9. THE BUDGET ROSE BY THE SPEND, ITEMIZED
+
+First-load went 380 KB gzipped against a 375 budget — the features above are
+the overage. Following the v11/v12 discipline: the budget moves BY the spend
+with the itemization at the constant (TPP ~3.5 KB gz, the score ~2.5, marker
+verbs ~1), to 382. The next feature argues for its own bytes; this line does
+not pre-pay for it. ~13,700 fresh loads per 5 GB.
+
+## 10. HOUSEKEEPING THE GATES CAUGHT
+
+- verify-scope flagged TPPCam as an identifier game.js reads without
+  declaring — correct, it is a new cross-module global. Registered in the
+  gate's module manifest beside AudioSys and friends: a declaration, not a
+  weakening.
+- npm install run in a backgrounded shell was reaped by the wrapper AGAIN,
+  and five verify-bots "failures" were an empty node_modules wearing a red.
+  The §6 rule (install synchronously, verify the count) exists because this
+  keeps happening.
+
+## THE NUMBERS
+
+Suite: 235 passed, 0 failed with the switch off — down from v12's 275
+because phases 11/12/14 SKIP by design when bots are off, while phase 15 grew
+the refusal/OFF-room assertions and phase 16 is new. Board: every gate green
+except the three documented pre-existing reds (climb 1/2, arch 4/2, access
+55/1). New gates: verify-tpp 19/0, verify-audio 13/0. Grown: verify-intel
+11/0, verify-bots 260/0.
+
+## LESSONS
+
+- A missing change-listener presents as an INVERTED setting, one interaction
+  late. When a toggle is reported backwards, check who pushes before checking
+  who reads.
+- "Hidden" carried two meanings — withdrawn (bot modes) and unlisted-but-
+  valid (t10) — and a refusal written against the word instead of the meaning
+  broke a legitimate mode. The suite falsified the tidy version the same run
+  it shipped. Narrow rules that name their reason survive; generic ones get
+  falsified by the first counterexample.
+- Make promises true BY CONSTRUCTION, not by tuning: the intel ceiling is
+  DERIVED from the drawn radius (radiusM - 5), so no future retune can make
+  the circle lie.
+- Instant local feedback must share the AUTHORITATIVE key, or the echo
+  cannot replace it — the 'self' pin was two pins and a false comment.
+- A third-person camera is a position offset with the rotation left alone.
+  The moment you also change rotation, you own a second aiming model.
+- Budgets rise BY the itemized spend or they stop being budgets.
+
+
 # v12.0 - ELEVEN ASKS, AND THE BLACK SCREEN WAS DEAD CODE WEARING A NULL
 
 The brief: fix the Urban black/corrupted start, make the logo a masthead,

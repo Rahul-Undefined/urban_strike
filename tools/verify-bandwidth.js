@@ -120,7 +120,15 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
    grants ~10 KB of headroom, the same allowance the v10.14 rise left.
    Bandwidth impact: ~14,700 -> ~13,980 fresh loads per 5 GB. The real fix
    remains the one v10.14 names: per-map builder loading, its own build. */
-const GZ_BUDGET_KB = 375;
+/* ===== v13.0 — 375 -> 382 KB. THE RISE IS FEATURES, STATED PLAINLY =====
+   What the 7 KB gzipped bought, itemized: the TPP boom module and the
+   own-body drive (item 5, ~3.5 KB gz across tppcam.js + game.js), the score —
+   welcome cue, menu bed, game bed (item 6, ~2.5 KB gz), and the marker
+   remove/attribution verbs (item 7, ~1 KB gz). Raised BY the spend, exactly
+   the v11 discipline above: the next feature argues for its own bytes, this
+   line does not pre-pay for it.
+   Bandwidth impact, stated plainly: ~13,970 -> ~13,700 fresh loads per 5 GB. */
+const GZ_BUDGET_KB = 382;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

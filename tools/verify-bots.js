@@ -516,27 +516,32 @@ ok(CFG.MODES.bots.teams === false, 'Training is free-for-all shaped: every bot i
   const env = Object.assign({}, process.env); delete env.US_BOTS;
   const r = JSON.parse(execFileSync(process.execPath, ['-e', probe], { env, encoding: 'utf8' }));
 
-  /* ===== v12.0 - THE SWITCH IS FLIPPED, AND THE GATE FLIPS WITH IT =====
-     v10.9's half of this gate asserted the shipped default exposed NO bots —
-     that WAS the product. The v12 brief (items 5/6/7) reverses the product:
-     bot modes ship ON, and gain a new invariant of their own — every one of
-     them is LOCKED TO URBAN via mapLock. These assertions are the v10.9 set
-     INVERTED plus the new lock, not deleted: a gate must assert the product
-     that ships, and "the switch nobody checks gets flipped back by an
-     unrelated edit" cuts in both directions. */
-  console.log('\n--- v12.0: the shipped default exposes bots, urban-locked ---');
-  ok(r.enabled === true, 'BOTS_ENABLED is true in the shipped default');
-  ok(r.botModes.length === 7, 'all 7 bot modes exist in the table [' + r.botModes.length + ']');
-  ok(r.botModesVisible.length === 7,
-    'and every one of them is selectable [' + r.botModesVisible.join(', ') + ']');
-  ok(r.anyBotsAllowed.length === 7,
-    'botsAllowed() is true for exactly the 7 bot modes [' + r.anyBotsAllowed.join(', ') + ']');
-  ok(r.anyBackfill.length > 0,
-    'backfill is available again in the human modes [' + r.anyBackfill.length + ' modes]');
-  ok(r.cats.indexOf('practice') !== -1 && r.cats.indexOf('coop') !== -1,
-    'the Bot Match and Strike Team CATEGORIES are in the picker [' + r.cats.join(', ') + ']');
+  /* ===== v13.0 - THE GATE STOPS FLIPPING WITH THE SWITCH =====
+     v10.9 asserted bots-off; v12.0 inverted every line to assert bots-on;
+     v13.0 flips the product again — and rewriting this block a third time is
+     the tell that it was asserting the WRONG thing. The invariants that never
+     flip are CONSISTENCY WITH THE SWITCH: whatever BOTS_ENABLED says, the
+     seven modes exist, their visibility tracks it, botsAllowed()/backfill
+     track it, the picker categories track it, ALL_MODE_CATS retains both so
+     re-arming restores them, and the v12 urban mapLock survives dormancy.
+     Exactly ONE line below pins the shipped default for THIS release — the
+     only edit the fourth flip will need here. */
+  console.log('\n--- v13.0: bot exposure is CONSISTENT with the switch, in either state ---');
+  ok(r.enabled === false,
+    'the v13.0 SHIPPED DEFAULT is bots-off (the one line a future flip edits)');
+  ok(r.botModes.length === 7, 'all 7 bot modes exist in the table regardless of the switch [' + r.botModes.length + ']');
+  ok(r.botModesVisible.length === (r.enabled ? 7 : 0),
+    'visibility tracks the switch exactly [' + r.botModesVisible.length + ' visible, enabled=' + r.enabled + ']');
+  ok(r.anyBotsAllowed.length === (r.enabled ? 7 : 0),
+    'botsAllowed() tracks the switch exactly [' + r.anyBotsAllowed.length + ']');
+  ok((r.anyBackfill.length > 0) === r.enabled,
+    'backfill availability tracks the switch [' + r.anyBackfill.length + ' modes]');
+  ok((r.cats.indexOf('practice') !== -1) === r.enabled && (r.cats.indexOf('coop') !== -1) === r.enabled,
+    'the two bot CATEGORIES appear in the picker iff the switch is on [' + r.cats.join(', ') + ']');
+  ok(r.allCats.indexOf('practice') !== -1 && r.allCats.indexOf('coop') !== -1,
+    'both survive in ALL_MODE_CATS, so re-arming restores them with no other edit');
   ok(r.botModeLocks.every(x => x === 'urban') && r.botModeLocks.length === 7,
-    'every bot mode carries mapLock \'urban\' (brief item 7) [' + r.botModeLocks.join(', ') + ']');
+    'the v12 urban mapLock survives dormancy on all 7 (' + r.botModeLocks.join(', ') + ')');
   ok(r.humanModeLocks.length === 0,
     'no human mode carries a map lock' + (r.humanModeLocks.length ? ' (' + r.humanModeLocks.join(', ') + ')' : ''));
   /* v10.9 room cap. Lives here rather than in its own file because a mode that

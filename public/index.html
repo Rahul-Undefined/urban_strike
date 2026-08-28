@@ -152,6 +152,8 @@
           <div class="mrow"><b>GEAR</b><span>hold G frag &middot; B smoke &middot; F flash &middot; H molotov &middot; V mine</span></div>
           <div class="mrow"><b>GUNS</b><span>1-9 select &middot; 9 exclusive loot</span></div>
           <div class="mrow"><b>INTEL</b><span>TAB scoreboard &middot; M full map &middot; compass up top &middot; ESC release cursor</span></div>
+          <div class="mrow"><b>VIEW</b><span>P toggles first / third person &middot; scoped aim is always first person</span></div>
+          <div class="mrow"><b>MARKERS</b><span>team modes: open map, LEFT-CLICK to place your pin (re-click moves it) &middot; RIGHT-CLICK removes it &middot; team-mates see it with your name</span></div>
           <div class="mrow mnote"><b>TIP</b><span>In Last Stand you get ONE life. Press M often &mdash; camping shows up on the map.</span></div>
         </div>
       </div>
@@ -196,7 +198,7 @@
             <!-- v12.0 (item 10): host toggle for approximate enemy blobs on the M map.
                  A select, not a checkbox: it inherits the host-lock styling and the
                  change-listener plumbing every other config control already has. -->
-            <label class="field"><span>ENEMY INTEL &middot; M-MAP</span><select id="lobby-intel"><option value="0">OFF</option><option value="1">ON &middot; APPROX AREAS</option></select></label>
+            <label class="field"><span>ENEMY INTEL &middot; M-MAP</span><select id="lobby-intel"><option value="0">NO</option><option value="1">YES &middot; ~50 M AREA</option></select></label>
             <div class="cfg-chip">SCORING &mdash; <b>UNLIMITED KILLS</b> &#183; the clock decides</div>
             <div id="mode-brief" class="mode-brief"></div>
             <div class="field-row" id="team-name-row">
@@ -410,6 +412,7 @@
   <script src="src/ui/showcase.js"></script>
   <script src="src/ui/ui.js"></script>
   <script src="src/ui/devhud.js"></script>
+  <script src="src/core/tppcam.js"></script>  <!-- v13.0: TPP boom math, loaded before the game that calls it -->
   <script src="src/core/game.js"></script>
 </body>
 </html>

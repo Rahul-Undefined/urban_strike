@@ -58,7 +58,13 @@
       [-56, -24, 1.5708, "a"], [-56, -8, 1.5708, "a"], [-56, 8, 1.5708, "a"],
       [-56, 24, 1.5708, "a"], [-52, -32, 1.5708, "a"], [-52, 32, 1.5708, "a"],
       [56, 24, -1.5708, "b"], [56, 8, -1.5708, "b"], [56, -8, -1.5708, "b"],
-      [56, -24, -1.5708, "b"], [52, 32, -1.5708, "b"], [52, -32, -1.5708, "b"],
+      /* v13.1 audit: spawns 9 and 11 of this generated set (v9.7,
+         tools/gen-points.js) sat on an upper-floor wall line — a player born
+         with a 0.2 m interior wall through the chest. Found by the new
+         verify-spawn-geometry gate, moved to the adjacent clear floor. The
+         mirrored 'a'-side points share the sign-flipped coordinates but sit
+         one bay over and test clean. */
+      [57, -24, -1.5708, "b"], [52, 32, -1.5708, "b"], [53, -32, -1.5708, "b"],
       [-18, -40, 0, "n"], [18, -40, 0, "n"], [-18, 40, 3.1416, "n"], [18, 40, 3.1416, "n"]
     ],
     /* v10.21: computed from the built geometry, not typed. [-34,26] and its
@@ -90,7 +96,9 @@
       [-60, -28, 1.5708, "a"], [-60, -10, 1.5708, "a"], [-60, 10, 1.5708, "a"],
       [-60, 28, 1.5708, "a"], [-56, -40, 1.5708, "a"], [-56, 40, 1.5708, "a"],
       [60, 28, -1.5708, "b"], [60, 10, -1.5708, "b"], [60, -10, -1.5708, "b"],
-      [60, -28, -1.5708, "b"], [56, 40, -1.5708, "b"], [56, -40, -1.5708, "b"],
+      /* v13.1 audit: same class as riverside above — generated points 9 and
+         11 on a wall line; moved to the clear floor beside them. */
+      [61, -28, -1.5708, "b"], [56, 40, -1.5708, "b"], [56.7, -39.3, -1.5708, "b"],
       [-20, -44, 0, "n"], [20, -44, 0, "n"], [-20, 44, 3.1416, "n"], [20, 44, 3.1416, "n"]
     ],
     /* v10.21: computed. [0,0] was on the wrecked airframe and [0,+/-44] on the

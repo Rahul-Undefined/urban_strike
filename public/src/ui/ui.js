@@ -1091,6 +1091,17 @@ var UI = (function () {
     if (els['lobby-mode']) els['lobby-mode'].addEventListener('change', pushSettings);
     if (els['lobby-map']) els['lobby-map'].addEventListener('change', pushSettings);
     if (els['lobby-time']) els['lobby-time'].addEventListener('change', pushSettings);
+    /* ===== v13.0 - THE INTEL "REVERSAL" WAS THIS MISSING LINE =====
+       Every config select above pushes on change; v12 added the intel select
+       to the cache, the sync and the payload — and forgot this listener. So
+       the toggle pushed NOTHING until some OTHER control pushed for it, and
+       the server always held the PREVIOUS choice: set YES, nothing happens;
+       set NO later, the stale YES is what plays. From the host's chair that
+       is indistinguishable from an inverted setting, which is exactly how it
+       was reported. One line; the lag class is worth remembering — a control
+       that reads correctly in pushSettings still does nothing if nothing
+       calls pushSettings. */
+    if (els['lobby-intel']) els['lobby-intel'].addEventListener('change', pushSettings);
     if (els['btn-shuffle']) els['btn-shuffle'].addEventListener('click', function () {
       Net.shuffleTeams();
     });

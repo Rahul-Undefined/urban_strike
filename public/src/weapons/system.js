@@ -3,6 +3,7 @@
 var Weapons = (function () {
   var camera = null, scene = null;
   var rig = null;                 // viewmodel root, parented to the camera
+  var firstPerson = true;         // v13.0: false in TPP — game.js drives this
   var models = {};                // weaponName -> THREE.Group
   var current = 'ak47';
   var ammo = {};                  // name -> {mag, reserve}
@@ -994,7 +995,10 @@ var Weapons = (function () {
     meleeAnim *= Math.pow(0.003, dt);
     pumpAnim *= Math.pow(0.004, dt);
     slideAnim *= Math.pow(0.001, dt);
-    rig.visible = PlayerCtl.alive && !scoped;
+    /* v13.0 (item 5): the viewmodel is a FIRST-person prop. This line runs
+       every frame, so the perspective flag lives IN it — a one-time hide
+       would be overwritten on the next update. */
+    rig.visible = PlayerCtl.alive && !scoped && firstPerson;
 
     // part animations on the active model
     var mdl = models[current];
@@ -1027,10 +1031,22 @@ var Weapons = (function () {
       camera.rotation.y += (Math.sin(swT * 1.7 + 1.3) + Math.sin(swT * 2.9) * 0.5) * swA;
     }
     lastScoped = scoped;
-    return { aiming: aiming, scoped: scoped, adsFov: (scoped && zoomFov) ? zoomFov : E.adsFov, speedMult: w.speed, crossGap: crossGap };
-  }
+    /* v13.0 (item 5): perspective switch. The own-body rig and the camera boom
+     live in game.js; the only thing WEAPONS owns is whether its first-person
+     prop draws. */
+  function setFirstPerson(v) { firstPerson = !!v; }
 
   return {
+    setFirstPerson: setFirstPerson, aiming: aiming, scoped: scoped, adsFov: (scoped && zoomFov) ? zoomFov : E.adsFov, speedMult: w.speed, crossGap: crossGap };
+  }
+
+  /* v13.0 (item 5): perspective switch. The own-body rig and the camera boom
+     live in game.js; the only thing WEAPONS owns is whether its first-person
+     prop draws. */
+  function setFirstPerson(v) { firstPerson = !!v; }
+
+  return {
+    setFirstPerson: setFirstPerson,
     setMines: setMines,
     init: init,
     update: update,

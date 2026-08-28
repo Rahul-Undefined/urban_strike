@@ -68,14 +68,28 @@
      there — a bare read is a ReferenceError swallowed by a try/catch, which is
      the same "check the field you are reading actually exists" mistake listed
      in HANDOFF section 6. tools/verify-scope.js caught it. */
-  /* ===== v12.0 - BOTS ARE BACK ON (brief items 5/6) =====
-     The v10.9 note above ends "will think of it later and add back later" —
-     this is later. The switch works exactly as designed: one line. The env
-     read is gone because the modes are product again, not a gated experiment;
-     tools/verify-bots.js's self-enable is now redundant and harmless.
-     v12.0 also LOCKS every bot mode to Urban (brief item 7) — see mapLock on
-     the mode entries and its enforcement in rooms.js/server.js/ui.js. */
-  var BOTS_ENABLED = true;
+  /* ===== v13.0 - BOTS ARE OFF AGAIN (brief items 1 and 4) =====
+     "Remove bot mode completely from the game for now" — the same sentence,
+     with the same "for now", that v10.9 answered. This is the THIRD flip of
+     this switch (v10.9 off, v12.0 on, v13.0 off), which is precisely why it
+     stays a switch: the v10.9 costing above (281 refs in bots.js, 49 in
+     server.js, 31 in ui.js, 65 test assertions) has now been validated
+     twice — v12 re-armed everything with one line, and v13 disarms it with
+     one line. Restored to the env-read form so the shipped default is OFF
+     while tools/verify-bots.js can still arm the retained engine for its own
+     run (US_BOTS=1), exactly as v10.9 designed. What "completely" means and
+     gets, mechanically: the two bot categories and all seven modes vanish
+     from the picker (hidden), the bot-count/difficulty/backfill rows vanish
+     from the lobby (they ask botsAllowed()/backfillAllowed()), backfill
+     returns to impossible, addBots() returns before spawning, the bot tick
+     returns on its first line, and test.js phases 11/12/14 print their SKIP
+     notes again. Zero user-facing traces, zero hot-path cost; the engine
+     stays so the fourth flip is also one line. */
+  var BOTS_ENABLED = (function () {
+    var g = (typeof globalThis !== 'undefined') ? globalThis : null;
+    var env = g && g.process && g.process.env;
+    return !!(env && env.US_BOTS === '1');
+  })();
 
   var MODES = {
     /* v10.9 ROOM CAP 20 -> 15. Rahul asked for this to reduce load. The

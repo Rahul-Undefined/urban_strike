@@ -40,7 +40,21 @@ function modeInfo(room) { return CFG.MODES[room.settings.mode] || CFG.MODES.ffa;
 
 function makeRoom(hostSocket, name, settings) {
   const code = makeCode();
-  const mode = (settings && CFG.MODES[settings.mode]) ? settings.mode : CFG.MATCH.defaultMode;
+  /* ===== v13.0 - HIDDEN BOT MODES ARE UNREACHABLE, NOT MERELY UNLISTED =====
+     The picker filters on `hidden`, but the server accepted any CFG.MODES
+     key — so a raw socket could still create Overrun with the bot switch off
+     (no bots would spawn; you would get a silent half-empty team match).
+     Brief items 1/4 say "no bot matchmaking": a bot mode the product does
+     not offer is a mode the server does not seat.
+
+     The first cut refused EVERY hidden mode and called that "generic". The
+     same test run falsified it: t10 is hidden ON PURPOSE while staying
+     server-creatable — an unlisted capacity mode, not a withdrawn one. So
+     `hidden` means two things here, and the refusal below names the one the
+     brief is about: hidden AND bot-fielding. */
+  const _m = settings && CFG.MODES[settings.mode];
+  const mode = (_m && !(_m.hidden && (_m.vsBots || _m.practice)))
+    ? settings.mode : CFG.MATCH.defaultMode;
   const room = {
     code,
     hostId: hostSocket.id,

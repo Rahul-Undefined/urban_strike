@@ -17,9 +17,22 @@
    assert the anti-pinpoint contract deterministically. server.js owns the
    cadence and the setting gate; this file owns the fuzz. */
 (function () {
-  var CELL = 14;          // quantization grid, metres
-  var MIN_ERR = 3;        // reported point is never closer than this to truth
-  var MAX_ERR = 15;       // ...and never further: honest blur, not misdirection
+  /* ===== v13.0 - THE BAND IS DERIVED FROM CFG.MATCH.INTEL (brief item 2) =====
+     v12 shipped 3-15 m; the v13 brief widens the promise to "somewhere within
+     a 50-meter area". radiusM is the PLAYER-FACING circle; the server's
+     ceiling is radiusM - 5 so the true position is inside the drawn circle by
+     construction, with margin, not on average. The floor rises with the
+     promise (10 m) — a 50 m circle centred 3 m off the target is a wallhack
+     with a wide hat. Cell scales with the radius (60%) so the quantization
+     stays the dominant blur and the wander stays inside the cell's reach.
+     Everything below is still pure and injectable; only the numbers moved. */
+  var _CFG = null;
+  try { _CFG = require('../public/src/config/index.js'); } catch (e) { _CFG = null; }
+  var _I = (_CFG && _CFG.MATCH && _CFG.MATCH.INTEL) || { radiusM: 50, minErr: 10 };
+  var RADIUS_M = _I.radiusM;              // what the map draws; the promise
+  var CELL = Math.round(RADIUS_M * 0.6);  // 30 m at the shipped radius
+  var MIN_ERR = _I.minErr;                // never a pinpoint in a costume
+  var MAX_ERR = RADIUS_M - 5;             // the promise is true BY CONSTRUCTION
   var ROLL_MS = 5000;     // wander offset lifetime
   var INTERVAL_MS = 2000; // broadcast cadence (server.js reads this)
 
@@ -60,7 +73,7 @@
   }
 
   var api = { approxOne: approxOne, intelList: intelList,
-              CELL: CELL, MIN_ERR: MIN_ERR, MAX_ERR: MAX_ERR,
+              CELL: CELL, MIN_ERR: MIN_ERR, MAX_ERR: MAX_ERR, RADIUS_M: RADIUS_M,
               ROLL_MS: ROLL_MS, INTERVAL_MS: INTERVAL_MS };
   if (typeof module !== 'undefined') module.exports = api;
   if (typeof window !== 'undefined') window.Intel = api;

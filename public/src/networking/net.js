@@ -51,6 +51,15 @@ var Net = (function () {
 
   function connect() {
     if (socket && socket.connected) return;
+    /* ===== v13.1 AUDIT (brief 1/16) - ONE SOCKET PER PAGE, EVER =====
+       This used to build a brand-new io() whenever the current socket was
+       merely DISCONNECTED — while the old socket's own auto-reconnect stayed
+       armed (v9.11 depends on it). One click of JOIN after a drop and the
+       page owned TWO live sockets, the old one's handlers still firing into
+       stale UI: duplicate toasts, duplicate snap decoding, doubled listeners
+       on every subsequent drop. Reconnecting the EXISTING socket keeps the
+       one bind() this page ever performed. */
+    if (socket) { socket.connect(); return; }
     socket = io();
     bind(socket);
   }
@@ -663,8 +672,11 @@ var Net = (function () {
     /* v9.10: a team-mate's map marker. Relayed by the server to that side only,
        so this can be trusted to be from an ally. */
     socket.on('mark', function (d) {
-      Minimap.addMark(d);
       if (!d) return;
+      /* v13.0 (item 7): a removal is the same channel with a different verb —
+         the server already vouched for the id, so deletion is unconditional. */
+      if (d.remove) { Minimap.removeMark && Minimap.removeMark(d.id); return; }
+      Minimap.addMark(d);
       var mine = d.id === myIdV || d.id === 'spot:' + myIdV;
       if (d.kind === 'enemy') {
         UI.toast((mine ? 'Enemy spotted' : (d.name || 'Squad') + ' spotted an enemy') +
@@ -992,6 +1004,9 @@ var Net = (function () {
     sendProj: sendProj, sendThrow: sendThrow, requestRespawn: requestRespawn,
     placeMine: function (d, cb) { if (socket) socket.emit('placeMine', d, cb); },
     mark: function (x, z) { if (socket) socket.emit('mark', { x: x, z: z }); },
+    /* v13.0 (item 7): take my marker back; id is stamped server-side. */
+    unmark: function () { if (socket) socket.emit('mark', { remove: 1 }); },
+    getMyId: function () { return myIdV; },
     /* v10.13: the client says where it is LOOKING; the server decides whether
        an enemy is there and whether it can be seen. Nothing about who the
        enemy is comes from this side. */

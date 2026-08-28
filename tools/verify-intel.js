@@ -30,8 +30,17 @@ console.log('--- 1. error band, everywhere on the map ---');
     const d = dist(a.x, a.z, x, z);
     if (d < min) min = d; if (d > max) max = d;
   }
-  ok(min >= Intel.MIN_ERR - 0.06, 'no report closer than MIN_ERR (worst: ' + min.toFixed(2) + ' m over ' + n + ' points)');
-  ok(max <= Intel.MAX_ERR + 0.06, 'no report further than MAX_ERR (worst: ' + max.toFixed(2) + ' m)');
+  /* tolerance 0.11: outputs are rounded to 0.1 m per axis, which can shave
+     up to sqrt(2)*0.05 off a diagonal clamp — measured, the worst case was
+     9.94 m against a 10 m floor. */
+  ok(min >= Intel.MIN_ERR - 0.11, 'no report closer than MIN_ERR (worst: ' + min.toFixed(2) + ' m over ' + n + ' points)');
+  ok(max <= Intel.MAX_ERR + 0.11, 'no report further than MAX_ERR (worst: ' + max.toFixed(2) + ' m)');
+  /* v13.0 - THE PROMISE ITSELF: the drawn circle is RADIUS_M; the true
+     position must sit INSIDE it with visible margin, by construction. */
+  ok(max <= Intel.RADIUS_M - 4,
+    'the true position is always inside the drawn ' + Intel.RADIUS_M + ' m circle with margin (worst: ' + max.toFixed(2) + ' m)');
+  ok(Intel.RADIUS_M === (require('../public/src/config/index.js').MATCH.INTEL || {}).radiusM,
+    'server band and client circle derive from the SAME CFG.MATCH.INTEL contract');
 }
 
 console.log('--- 2. coarseness: the blob names a cell, not a heading ---');

@@ -47,11 +47,62 @@ function io(url) {
      alone; verify-bots covers the feature itself, balance and seat-yielding
      included. */
   const origEmit = sock.emit.bind(sock);
+  /* ===== v13.1 AUDIT - THE SUITE STOPS MOVING LIKE A CHEATER =====
+     Phases used to "walk" by assigning a position variable and letting a
+     50 ms interval re-emit it — a teleport, byte-for-byte the move the
+     server's new st plausibility gate exists to reject (brief 17). Eleven
+     phases went red the moment the gate landed, which is the gate WORKING.
+     Rather than weaken it (forbidden) or rewrite twelve call sites, the same
+     choke point that injects backfill:false legalises movement: every st is
+     stepped toward its target at <= 2.6 m per emission — inside the gate's
+     worst-case burst budget (21 m/s x 0.02 s floor + 2.5 m slack = 2.92 m) —
+     and a one-shot teleport grows a 55 ms continuation walk to its target,
+     cancelled by any newer st. The FIRST st a socket sends passes through
+     untouched: the server grants a free jump per spawn (justSpawned), and
+     that same free pass re-aligns wrapper and server after every respawn,
+     because whatever the wrapper emits first is what the server adopts.
+     Y is snapped, not glided — the gate budgets XZ only, and stairs in a
+     test would be theatre. Phases keep teleporting their VARIABLES; the
+     WIRE now always walks. */
+  sock._gp = null;
+  const legalizeSt = (st) => {
+    if (!st || !Array.isArray(st.p) || st.p.length !== 3) return st;
+    const tgt = st.p;
+    if (!sock._gp) { sock._gp = [tgt[0], tgt[1], tgt[2]]; return st; }
+    /* 2.8 sits under the gate's burst-floor budget (21 x 0.02 + 2.5 = 2.92);
+       the 20 ms continuation makes a teleported variable CONVERGE in ~0.2 s
+       for a cross-map hop — inside every phase's existing 300 ms rhythm — so
+       hit claims made against the target position are plausible again by the
+       time they fire. */
+    const MAXSTEP = 2.8;
+    const dx = tgt[0] - sock._gp[0], dz = tgt[2] - sock._gp[2];
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d <= MAXSTEP) { sock._gp = [tgt[0], tgt[1], tgt[2]]; return st; }
+    /* SYNCHRONOUS convergence: the whole walk is emitted as one ordered burst
+       of legal steps in this same tick — the server processes them in order,
+       each within the gate's floor budget, and the player IS at the target
+       before the phase's next line runs. The async 20 ms chain that preceded
+       this still left a window where exact-damage phases fired against a
+       position mid-glide; distance falloff then broke their arithmetic by a
+       few points, which is worse than a clean miss because it looks like a
+       combat bug. Capped at 90 steps (252 m) — beyond any map diagonal. */
+    let guard = 0;
+    while (guard++ < 90) {
+      const cx = tgt[0] - sock._gp[0], cz = tgt[2] - sock._gp[2];
+      const cd = Math.sqrt(cx * cx + cz * cz);
+      if (cd <= MAXSTEP) { sock._gp = [tgt[0], tgt[1], tgt[2]]; break; }
+      const ck = MAXSTEP / cd;
+      sock._gp = [sock._gp[0] + cx * ck, tgt[1], sock._gp[2] + cz * ck];
+      origEmit('st', Object.assign({}, st, { p: [sock._gp[0], sock._gp[1], sock._gp[2]] }));
+    }
+    return Object.assign({}, st, { p: [tgt[0], tgt[1], tgt[2]] });
+  };
   sock.emit = function (ev, a, b) {
     if (ev === 'createRoom' && a && a.settings && a.settings.backfill === undefined) {
       a.settings.backfill = false;
     }
-    return origEmit.apply(null, arguments);
+    if (ev === 'st') a = legalizeSt(a);
+    return origEmit.call(null, ev, a, b);
   };
 
   sock.on('snap', (d) => {
@@ -104,10 +155,90 @@ function ok(cond, label) {
    client sends; (b) a bot mode drags the room to Urban and holds it there
    while the lock applies, releasing the moment the mode changes — the lock
    belongs to the MODE, not the room; (c) the host intel toggle makes the
-   snapshot carry approximate blobs whose error sits inside the 3..15 m band
+   snapshot carry approximate blobs whose error sits inside the 8..60 m band
+   (v13.0: the CFG.MATCH.INTEL contract — 50 m drawn circle, server ceiling
+   45 m, plus movement slack between roll and packet)
    against the AUTHORITATIVE positions in the same packet, and toggling off
    makes them vanish. The band check is the anti-pinpoint contract measured
    end-to-end, not just in the pure gate. */
+/* ===== Phase 16 (v13.0, brief item 7): TEAM MAP MARKERS, END TO END =====
+   Three sockets in a team mode. The two on one side must see each other's
+   pins with name and colour attribution; the one on the other side must see
+   NOTHING — the relay is the privacy boundary, and a marker that leaks is a
+   wallhack with a flag on it. Replace and remove ride the same channel. */
+function phase16() {
+  console.log('\n--- Phase 16 (v13.0): team map markers ---');
+  const A = io(URL), B = io(URL), C = io(URL);
+  let code = null, up = 0, lastLobby = null;
+  const got = { B: [], C: [] };
+  A.on('lobby', d => lastLobby = d);
+  B.on('mark', d => got.B.push(d));
+  C.on('mark', d => got.C.push(d));
+  let aEcho = [];
+  A.on('mark', d => aEcho.push(d));
+  [A, B, C].forEach(s2 => s2.on('connect', () => { if (++up === 3) go(); }));
+
+  function go() {
+    A.emit('createRoom', { name: 'MkA', settings: { mode: 't2', map: 'urban', killTarget: 0 } }, (r) => {
+      ok(r && r.ok, 'a team room is up for the marker test');
+      code = r.code;
+      B.emit('joinRoom', { name: 'MkB', code }, () => {
+        C.emit('joinRoom', { name: 'MkC', code }, () => setTimeout(start, 300));
+      });
+    });
+  }
+  function start() {
+    [A, B, C].forEach(s2 => s2.emit('setReady', { v: true }));
+    setTimeout(() => A.emit('startMatch'), 350);
+    A.once('matchStart', () => setTimeout(run, 600));
+  }
+  function run() {
+    /* Read the sides the server actually dealt — join order decides them, and
+       hard-coding "B is my team-mate" is how a rebalance breaks a test. */
+    const roster = (lastLobby && lastLobby.players) || [];
+    const myTeam = (roster.find(p => p.name === 'MkA') || {}).team;
+    const mateName = (roster.find(p => p.name !== 'MkA' && p.team === myTeam) || {}).name;
+    const foeName = (roster.find(p => p.team !== myTeam) || {}).name;
+    ok(!!mateName && !!foeName, 'the server dealt a team-mate and an opponent [' + mateName + '/' + foeName + ']');
+    const mate = mateName === 'MkB' ? 'B' : 'C';
+    const foe = mate === 'B' ? 'C' : 'B';
+
+    A.emit('mark', { x: 10, z: -20 });
+    setTimeout(() => {
+      const m = got[mate].filter(d => !d.remove);
+      ok(m.length === 1, 'the team-mate received exactly one marker [' + m.length + ']');
+      ok(m[0] && Math.abs(m[0].x - 10) < 0.11 && Math.abs(m[0].z + 20) < 0.11,
+        'the marker sits where it was clicked [' + (m[0] && m[0].x) + ',' + (m[0] && m[0].z) + ']');
+      ok(m[0] && m[0].name === 'MkA', 'the pin is attributed to its placer by name [' + (m[0] && m[0].name) + ']');
+      ok(m[0] && !!m[0].color, 'the pin carries the placer\'s colour for at-a-glance attribution');
+      ok(aEcho.filter(d => !d.remove).length === 1, 'the placer receives the authoritative echo (one pin, not two)');
+      ok(got[foe].length === 0, 'the OPPONENT received nothing — markers never cross sides [' + got[foe].length + ']');
+
+      /* replace: same id, new spot — the client keys by id, so this MOVES */
+      setTimeout(() => {
+        A.emit('mark', { x: 30, z: 5 });
+        setTimeout(() => {
+          const m2 = got[mate].filter(d => !d.remove);
+          ok(m2.length === 2 && m2[1].id === m2[0].id,
+            'placing again travels under the SAME id — a move, not a second pin [' + m2.length + ']');
+          ok(Math.abs(m2[1].x - 30) < 0.11, 'the replacement carries the new position [' + m2[1].x + ']');
+
+          /* remove: explicit verb, relayed to the team, silent to the foe */
+          A.emit('mark', { remove: 1 });
+          setTimeout(() => {
+            const rem = got[mate].filter(d => d.remove);
+            ok(rem.length === 1 && rem[0].id === m2[0].id,
+              'the removal reached the team-mate for the same id [' + rem.length + ']');
+            ok(got[foe].length === 0, 'the opponent saw none of it — place, move or remove');
+            [A, B, C].forEach(s2 => s2.disconnect());
+            setTimeout(finish, 400);
+          }, 700);
+        }, 900);
+      }, 800);
+    }, 700);
+  }
+}
+
 function phase15() {
   console.log('--- Phase 15 (v12.0): duration / urban lock / enemy intel ---');
   const A = io(URL), B = io(URL);
@@ -118,8 +249,15 @@ function phase15() {
   [A, B].forEach(s2 => s2.on('connect', () => { if (++up === 2) go(); }));
 
   function go() {
+    /* v13.0: the create asks for a HIDDEN bot mode, 60 minutes and metro.
+       With the switch off (shipped default) the server must refuse ALL
+       THREE: mode falls to the default (hidden = unreachable, items 1/4),
+       minutes clamp to 15, and the map stands because no lock applies.
+       With the switch armed (US_BOTS=1) the co2 request is honoured and the
+       v12 urban-lock dance below runs instead — the same phase covers both
+       states, keyed on the same switch the server reads. */
     A.emit('createRoom', { name: 'Cfg', settings: { mode: 'co2', map: 'metro', minutes: 60, botCount: 2, killTarget: 0 } }, (res) => {
-      ok(res && res.ok, 'a Strike Team room is created while ASKING for metro and 60 minutes');
+      ok(res && res.ok, 'the room is created (whatever the mode request resolved to)');
       code = res.code;
       /* B joins — the intel assertions below need TWO authoritative players
          in the same packet. The first cut forgot this and then blamed the
@@ -129,6 +267,18 @@ function phase15() {
         const L = lobbies[lobbies.length - 1];
         ok(!!L, 'a lobby payload arrived');
         ok(L.settings.minutes === 15, 'sixty requested minutes clamped to the one legal duration [' + L.settings.minutes + ']');
+        if (!BOTS_ON) {
+          ok(L.settings.mode === CFG.MATCH.defaultMode,
+            'a HIDDEN bot mode at create falls to the default — no bot matchmaking exists [' + L.settings.mode + ']');
+          A.emit('updateSettings', { mode: 'bots' });
+          setTimeout(() => {
+            const L2 = lobbies[lobbies.length - 1];
+            ok(L2.settings.mode === CFG.MATCH.defaultMode,
+              'a HIDDEN bot mode via updateSettings is refused too [' + L2.settings.mode + ']');
+            released();
+          }, 300);
+          return;
+        }
         ok(L.settings.map === 'urban', 'the bot mode dragged the room to Urban at create [' + L.settings.map + ']');
         A.emit('updateSettings', { map: 'metro' });
         setTimeout(stillLocked, 300);
@@ -145,9 +295,11 @@ function phase15() {
     }, 250);
   }
   function released() {
-    const L = lobbies[lobbies.length - 1];
-    ok(L.settings.mode === 't2' && L.settings.map === 'metro',
-      'leaving the bot mode releases the lock — it belongs to the MODE [' + L.settings.mode + '/' + L.settings.map + ']');
+    if (BOTS_ON) {
+      const L = lobbies[lobbies.length - 1];
+      ok(L.settings.mode === 't2' && L.settings.map === 'metro',
+        'leaving the bot mode releases the lock — it belongs to the MODE [' + L.settings.mode + '/' + L.settings.map + ']');
+    }
     /* now the intel toggle, in a plain ffa on urban */
     A.emit('updateSettings', { mode: 'ffa', map: 'urban', enemyIntel: true });
     B.emit('setReady', { v: true });
@@ -171,14 +323,38 @@ function phase15() {
         const d = Math.hypot(e.x - p.p[0], e.z - p.p[2]);
         /* band with slack: the blob was rolled up to 2 s before this packet
            and a walking player covers ground in that window */
-        if (d < 2.0) tooClose++; else if (d > 24) tooFar++; else inBand++;
+        /* v13.0 band: minErr 10 with rounding+movement slack below, and the
+           50 m PROMISE above — server ceiling 45 plus up to ~2 s of sprint
+           between the blob roll and this packet. */
+        if (d < 8.0) tooClose++; else if (d > 60) tooFar++; else inBand++;
       });
-      ok(tooClose === 0, 'no blob pinpoints a player (nothing under 2 m of the authoritative position)');
+      ok(tooClose === 0, 'no blob pinpoints a player (nothing under 8 m of the authoritative position)');
       ok(tooFar === 0, 'no blob lies (nothing beyond band + movement slack)');
       ok(inBand >= 2, 'both players are represented inside the honest-blur band [' + inBand + ']');
     }
     A.emit('updateSettings', { enemyIntel: false });
     setTimeout(() => { snaps = []; setTimeout(checkIntelOff, 2600); }, 400);
+  }
+  function checkIntelOffRoom() {
+    /* v13.0: the unconditional half of item 2 — a room whose host never
+       enabled intel must NEVER emit it. New sockets, new room, default OFF,
+       full start, three seconds of snapshots, zero `it` allowed. */
+    const C1 = io(URL), C2 = io(URL);
+    let offSnaps = 0, offWithIt = 0, ready = 0;
+    C1.on('snap', sn => { offSnaps++; if (sn.it !== undefined) offWithIt++; });
+    [C1, C2].forEach(s2 => s2.on('connect', () => { if (++ready === 2) {
+      C1.emit('createRoom', { name: 'Off', settings: { mode: 'ffa', map: 'urban', killTarget: 0 } }, (r2) => {
+        C2.emit('joinRoom', { name: 'OffB', code: r2.code }, () => {});
+        C1.emit('setReady', { v: true }); C2.emit('setReady', { v: true });
+        setTimeout(() => C1.emit('startMatch'), 300);
+        C1.once('matchStart', () => setTimeout(() => {
+          ok(offSnaps > 20, 'the OFF room played and snapshotted [' + offSnaps + ' snaps]');
+          ok(offWithIt === 0, 'a room with intel OFF emits NO intel field, ever [' + offWithIt + ' of ' + offSnaps + ']');
+          C1.disconnect(); C2.disconnect();
+          setTimeout(phase16, 400);
+        }, 3000));
+      });
+    }}));
   }
   function checkIntelOff() {
     /* the toggle is refused mid-match? updateSettings requires lobby on most
@@ -194,7 +370,7 @@ function phase15() {
       ? 'mid-match toggle-off refused (lobby-only settings) — intel still flows under the setting that started the match'
       : 'toggle off stops the feed — later snapshots carry no intel list');
     A.disconnect(); B.disconnect();
-    setTimeout(finish, 400);
+    setTimeout(checkIntelOffRoom, 400);
   }
 }
 
