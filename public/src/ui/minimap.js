@@ -74,16 +74,11 @@ var Minimap = (function () {
     var g = off.getContext('2d');
     g.fillStyle = 'rgba(18,22,28,0.92)';
     g.fillRect(0, 0, px, px);
-    // roads hinted as slightly lighter strips
-    g.fillStyle = 'rgba(52,58,66,0.9)';
-    if (World.builtMap === 'rural') {
-      g.fillStyle = 'rgba(122,96,64,0.55)';
-      g.fillRect((WORLD - 3.5) * SCALE, 0, 7 * SCALE, px);
-      g.fillRect(0, (WORLD - 3.5) * SCALE, px, 7 * SCALE);
-      g.fillStyle = 'rgba(52,118,150,0.7)';
-      g.fillRect(0, (WORLD + 36) * SCALE, px, 12 * SCALE);
-      g.fillRect((WORLD + 50) * SCALE, 0, 10 * SCALE, (WORLD + 48) * SCALE);
-    } else {
+    /* roads hinted as slightly lighter strips — URBAN'S avenue cross only.
+       v1.0d: this was drawn on every map, which put a 14 m cross of road
+       through the middle of the Killhouse and the arenas that have no roads. */
+    if (World.builtMap === 'urban' || !World.builtMap) {
+      g.fillStyle = 'rgba(52,58,66,0.9)';
       g.fillRect((WORLD - 7) * SCALE, 0, 14 * SCALE, px);
       g.fillRect(0, (WORLD - 7) * SCALE, px, 14 * SCALE);
     }
@@ -544,7 +539,25 @@ var Minimap = (function () {
        the reason recorded in world.config.js. */
     var teamMode = !!(modeCfg && modeCfg.teams);
     var showAllies  = true;                       // your own side, always
-    var showEnemies = !teamMode || !!(modeCfg && modeCfg.fullMapContacts);
+    /* ===== v15.0 - EXACT ENEMY PINS ARE OPT-IN PER MODE (fix 3) =====
+       Rahul: "When in free for all mode, whether team location mode is on or
+       off, it shows location of all members in the big map."
+
+       The v9.5 rule read `!teamMode || fullMapContacts`, so every no-sides
+       mode drew every player as a live, named, exact pin — and with
+       MINIMAP.alwaysShowPlayers on since v8.25, permanently. The host's
+       ENEMY INTEL toggle (v12.0) then had nothing left to gate in FFA: the
+       50 m blobs were drawn UNDER pins that already told you exactly where
+       everyone was. That is the report — the toggle looked broken because the
+       map was giving away more than the toggle ever would.
+
+       Exact enemy contacts on the full map are now an explicit per-mode flag
+       (`fullMapContacts`), carried by Last Stand — whose anti-camping design
+       depends on it (world.config.js) — and by nothing else. Free For All
+       gets what the toggle promises: OFF, the map shows only you and the
+       ground; ON, the ~50 m Intel rings below. Allies are untouched: a squad
+       can always see itself. */
+    var showEnemies = !!(modeCfg && modeCfg.fullMapContacts);
 
     var myTeam = Net.getMyTeam();
     var nowMs = performance.now();

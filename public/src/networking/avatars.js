@@ -102,6 +102,20 @@ var Avatars = (function () {
       rgBox(g, 0, 0.02, -0.55, 0.13, 0.13, 0.1, RGM.dark);
       return g;
     }
+    /* v1.0b: the flamethrower reads as a tank and a fat tube. */
+    if (w.flame) {
+      rgBox(g, 0, 0.0, -0.25, 0.12, 0.12, 0.7, RGM.dark);
+      rgBox(g, 0, -0.14, 0.05, 0.16, 0.16, 0.4, RGM.steel);
+      return g;
+    }
+    /* v15.0: gear slots (drone, EMP) are hand-held devices, not rifles. Until
+       now a carried drone wore a generic rifle silhouette in third person;
+       a small case in the hands is both cheaper and honest. */
+    if (w.gear) {
+      rgBox(g, 0, -0.02, -0.10, 0.16, 0.06, 0.22, RGM.dark);
+      rgBox(g, 0, 0.02, -0.10, 0.08, 0.02, 0.08, w.type === 'emp' ? RGM.steel : RGM.green);
+      return g;
+    }
     var LEN = { sniper: 0.9, awm: 0.98, mk14: 0.82, m249: 0.78, shotgun: 0.68, scarh: 0.66, ak47: 0.64, m4a1: 0.64, uzi: 0.4, p90: 0.44, aa12: 0.62 };
     var len = LEN[name] || 0.62;
     var bodyM = (name === 'ak47' || name === 'mk14') ? RGM.wood

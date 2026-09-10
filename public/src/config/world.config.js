@@ -37,59 +37,15 @@
 
      `lives` turns a mode into an elimination match. Absent or 0 means the
      normal kill/clock rules apply. */
-  /* ===== v10.9 - BOT MODES ARE OFF =====
+  /* ===== v1.0d - BOT MODE IS GONE. Rahul, twice: "remove the bot mode
+     completely from the game." Every bots-versus-players product — the v8.38
+     Overrun/Strike Team modes behind the v10.9 kill switch, the v14.0 Bot Mode
+     (bm_solo/bm_team/bm_battle on Blacksite) and seat backfill — is removed
+     from MODES, MAPS, the picker, the server and the tests. server/lib/bots.js
+     survives ONLY as the headless collider harness the geometry gates and the
+     intel/hazard line-of-sight checks read; it fields nothing. Do not bring
+     it back. */
 
-     Rahul: "Remove the bot mode as it is lagging... removing the bot means
-     removing every trace of it, from the welcome screen, mode selection
-     screen, everywhere" and "will think of it later and add back later".
-
-     That last clause is why this is a SWITCH and not a deletion. Deleting the
-     bot modes would mean unpicking 281 references in server/lib/bots.js, 49 in
-     server.js, 31 in ui.js and 65 assertions in test.js, then putting all of
-     it back later from memory. This project has a documented failure mode for
-     exactly that shape of change (HANDOFF section 4.3, "a shared helper edited
-     for one caller", and 4.6, "fixing one defect by creating another").
-
-     Every bot control in the UI already asks botsAllowed() or
-     backfillAllowed() whether to render, and the mode picker already filters
-     on `hidden`. So one flag closes all of it: the Overrun and Strike Team
-     categories vanish from mode selection, the bot-count and difficulty
-     sliders vanish from the lobby, the backfill row vanishes from every human
-     mode, and bots.js returns before spawning anything.
-
-     TO BRING BOTS BACK: return true from the function below. Nothing else.
-
-     The gates still exercise the bot engine — tools/verify-bots.js re-enables
-     it for its own run (see the head of that file), because the engine is
-     retained and must not be allowed to rot while it is switched off.
-
-     Read through `globalThis` rather than naming `process` directly. This file
-     is loaded by the BROWSER as well as by node, and `process` does not exist
-     there — a bare read is a ReferenceError swallowed by a try/catch, which is
-     the same "check the field you are reading actually exists" mistake listed
-     in HANDOFF section 6. tools/verify-scope.js caught it. */
-  /* ===== v13.0 - BOTS ARE OFF AGAIN (brief items 1 and 4) =====
-     "Remove bot mode completely from the game for now" — the same sentence,
-     with the same "for now", that v10.9 answered. This is the THIRD flip of
-     this switch (v10.9 off, v12.0 on, v13.0 off), which is precisely why it
-     stays a switch: the v10.9 costing above (281 refs in bots.js, 49 in
-     server.js, 31 in ui.js, 65 test assertions) has now been validated
-     twice — v12 re-armed everything with one line, and v13 disarms it with
-     one line. Restored to the env-read form so the shipped default is OFF
-     while tools/verify-bots.js can still arm the retained engine for its own
-     run (US_BOTS=1), exactly as v10.9 designed. What "completely" means and
-     gets, mechanically: the two bot categories and all seven modes vanish
-     from the picker (hidden), the bot-count/difficulty/backfill rows vanish
-     from the lobby (they ask botsAllowed()/backfillAllowed()), backfill
-     returns to impossible, addBots() returns before spawning, the bot tick
-     returns on its first line, and test.js phases 11/12/14 print their SKIP
-     notes again. Zero user-facing traces, zero hot-path cost; the engine
-     stays so the fourth flip is also one line. */
-  var BOTS_ENABLED = (function () {
-    var g = (typeof globalThis !== 'undefined') ? globalThis : null;
-    var env = g && g.process && g.process.env;
-    return !!(env && env.US_BOTS === '1');
-  })();
 
   var MODES = {
     /* v10.9 ROOM CAP 20 -> 15. Rahul asked for this to reduce load. The
@@ -126,7 +82,10 @@
        these carry minutes 0 and killTarget 0 and still always terminate — the
        end condition is elimination, which cannot stall while anyone is alive. */
     ls:   { label: 'Last Stand \u00b7 Solo', vlabel: 'Solo \u00b7 every operator for themselves',
-            cat: 'last', teams: false, teamCount: 0, maxPlayers: 15, lives: 1 },
+            cat: 'last', teams: false, teamCount: 0, maxPlayers: 15, lives: 1,
+            /* v15.0 (fix 3): exact contacts on the M map are opt-in per mode now,
+               so Solo carries the flag its own anti-camping design relies on. */
+            fullMapContacts: true },
     /* v9.4 `fullMapContacts` — the escape hatch the v9.2 gate said to use.
        Hiding contacts on the full map is right for Team Battle and Squads,
        where the map is a free intel screen in a match that never pauses. Last
@@ -136,110 +95,13 @@
        case wired into minimap.js. Solo is already free-for-all shaped. */
     lsq2: { label: 'Last Stand \u00b7 Squads 7 \u00d7 2', vlabel: '7 squads of 2',
             cat: 'last', teams: true, squads: true, teamCount: 7, squadSize: 2, maxPlayers: 14, lives: 1, fullMapContacts: true },
-    /* v8.38 TRAINING. One human, up to nineteen bots, on any difficulty. It is
-       free-for-all shaped so every bot is hostile — a practice room where half
-       the room is on your side teaches you nothing. Startable solo, which is
-       the whole point: no waiting for a lobby to fill. */
-    /* v8.39: renamed from "Training". Rahul played it and it stopped being
-       practice — calling it Training undersold it and told players to skip it.
-       The internal id stays `practice` on purpose: it is what every guard, gate
-       and settings check reads, and renaming a live identifier to improve a
-       label is how you break three things to fix a word. */
-    bots: { label: 'Bot Match \u00b7 Overrun', vlabel: 'You against the machines \u2014 they fight like players',
-            cat: 'practice', teams: false, teamCount: 0, maxPlayers: 15, practice: true, hidden: !BOTS_ENABLED,
-            mapLock: 'urban' },   // v12.0 (item 7): bot modes exist on Urban only
     lsq4: { label: 'Last Stand \u00b7 Squads 5 \u00d7 3',  vlabel: '5 squads of 3',
-            cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 3, maxPlayers: 15, lives: 1, fullMapContacts: true },
-
-    /* v9.2 STRIKE TEAM — humans on one side, bots on the other.
-
-       Overrun (`bots`) is free-for-all shaped: every bot is hostile to
-       everybody, and only one human belongs in the room. That is a practice
-       range. These are the opposite shape — every human on side A, every bot on
-       side B — and the ordinary team rules (friendly fire off, team kill
-       target, shared score) apply unchanged, because these ARE ordinary team
-       modes that happen to fill one side with bots.
-
-       `vsBots` is what turns bot spawning on, NOT the `practice` flag. Keeping
-       them separate matters: `practice` means "free-for-all range, one human",
-       and several guards read it for exactly that. Overloading it to also mean
-       "this mode has bots" would have made Strike Team inherit Overrun's FFA
-       shape, so bots would shoot each other and friendly fire would be on.
-
-       maxPlayers is the HUMAN squad size; the room cap counts humans only, so
-       bots arriving at match start cannot lock a team-mate out of a free slot. */
-    co1:  { label: 'Strike Team \u00b7 Solo',    vlabel: '1 operator vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 1,  vsBots: true, hidden: !BOTS_ENABLED,
-            mapLock: 'urban' },
-    co2:  { label: 'Strike Team \u00b7 Duo',     vlabel: '2 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 2,  vsBots: true, hidden: !BOTS_ENABLED,
-            mapLock: 'urban' },
-    co3:  { label: 'Strike Team \u00b7 Trio',    vlabel: '3 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 3,  vsBots: true, hidden: !BOTS_ENABLED,
-            mapLock: 'urban' },
-    co4:  { label: 'Strike Team \u00b7 Squad',   vlabel: '4 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 4,  vsBots: true, hidden: !BOTS_ENABLED,
-            mapLock: 'urban' },
-    co6:  { label: 'Strike Team \u00b7 Section', vlabel: '6 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 6,  vsBots: true, hidden: !BOTS_ENABLED,
-            mapLock: 'urban' },
-    co10: { label: 'Strike Team \u00b7 Platoon', vlabel: '10 operators vs the machines',
-            cat: 'coop', teams: true, teamCount: 2, maxPlayers: 10, vsBots: true, hidden: !BOTS_ENABLED,
-            mapLock: 'urban' },
-    /* ===== v14.0 BOT MODE — three modes, one wall (brief items 1/5/12) =====
-       Registered here because rooms, teams, snapshots and scoreboards are the
-       shared utilities the brief permits — but the entries are FENCED:
-       cat 'botmode' is deliberately NOT in ALL_MODE_CATS, so the multiplayer
-       picker cannot list them even with every switch armed; `botmode: true`
-       is what the dedicated UI, the bot driver and the server guards key on;
-       `vsBots: true` keeps the LEGACY dormant engine's own accounting honest
-       (verify-bots separates legacy seven from these three); mapLock rides
-       the v12 coercion machinery unchanged. All are humans-vs-machines team
-       games: humans are side 'a', bots side 'b', so the grouped scoreboards
-       and team damage rules work without one new line. */
-    bm_solo:   { label: 'Bot Mode \u00b7 Solo',   vlabel: 'Solo vs Bots',   cat: 'botmode', teams: true, teamCount: 2, maxPlayers: 21, botmode: true, vsBots: true, mapLock: 'blacksite' },
-    bm_team:   { label: 'Bot Mode \u00b7 Team',   vlabel: 'Team vs Bots',   cat: 'botmode', teams: true, teamCount: 2, maxPlayers: 24, botmode: true, vsBots: true, mapLock: 'blacksite' },
-    bm_battle: { label: 'Bot Mode \u00b7 Battle', vlabel: 'Battle Waves',   cat: 'botmode', teams: true, teamCount: 2, maxPlayers: 24, botmode: true, vsBots: true, mapLock: 'blacksite' },
+            cat: 'last', teams: true, squads: true, teamCount: 5,  squadSize: 3, maxPlayers: 15, lives: 1, fullMapContacts: true }
   };
 
-  /* THE single source of truth for "does this mode put bots in the room".
-     The server guard and tools/verify-bots.js both read this, so the gate can
-     never drift from the rule it checks — the previous gate asserted the
-     literal source text `.practice) return`, which meant adding a second bot
-     mode turned it red for being correct. */
-  function botsAllowed(modeId) {
-    if (!BOTS_ENABLED) return false;          // v10.9 kill switch, see top
-    var m = MODES[modeId];
-    return !!(m && (m.practice || m.vsBots));
-  }
-
-  /* ===== v9.11 — BOT BACKFILL =====
-
-     `botsAllowed` answers "does this MODE put bots in the room" and it stays
-     exactly as it was: Overrun and Strike Team, nothing else. That guard is
-     load-bearing — it is what stops a stale `botCount` from a Training session
-     leaking six bots into a 5v5, which is a real defect this project shipped in
-     v8.38 and fixed in v8.38.1.
-
-     Backfill is a SEPARATE question with a separate answer: "may the host ask
-     for empty slots to be filled." It is opt-in per room, it applies to the
-     human-vs-human modes only, and it is bounded by maxPlayers rather than by
-     the bot slider. Two questions, two predicates — because collapsing them
-     into one is precisely how the v8.38 leak happened.
-
-     WHY IT MATTERS MORE THAN IT SOUNDS. Team Battle 10v10, Squads 5x4 and Last
-     Stand 20-player need ten to twenty humans to exist at all. Without backfill
-     most of the mode list is unplayable unless you can assemble a crowd, which
-     is a content graveyard rather than a feature set. */
-  /* v10.15: spawn protection is per MAP, not global. Read through this
-     everywhere rather than touching CFG.MATCH.spawnProtect directly, so a
-     sixth small map inherits the shorter timer by carrying `smallMap` and
-     nothing else. */
-  /* v10.21: `arena` is the RULE SET — nuke killstreak, short spawn protection,
-     recon visor in the crate pool. `smallMap` is a SIZE classifier and always
-     implies it. They were the same flag until medium maps arrived and needed
-     the rules without the size, which is the point at which a flag named after
-     one of its two meanings stops being usable. */
+  /* ===== v11.0 - ARENA MAPS (small + medium) — the one predicate every
+     per-map tuning reads: spawn protection, the nuke, the mine ration, the
+     redeploy ladder, the big-map-only loot. */
   function isArena(mapId) {
     var m = MAPS[mapId];
     return !!(m && (m.arena || m.smallMap));
@@ -253,26 +115,6 @@
     return isArena(mapId) ? small : base;
   }
 
-  function backfillAllowed(modeId) {
-    if (!BOTS_ENABLED) return false;          // v10.9 kill switch, see top
-    var m = MODES[modeId];
-    if (!m) return false;
-    if (m.practice || m.vsBots) return false;      // these already field bots
-    return true;
-  }
-  /* Which side humans take when the mode fills the other with bots. Null for
-     every other mode, so a caller cannot accidentally pin a normal match to one
-     team. */
-  function humanSideOf(modeId) {
-    var m = MODES[modeId];
-    return (m && m.vsBots) ? 'a' : null;
-  }
-  function botSideOf(modeId) {
-    var m = MODES[modeId];
-    return (m && m.vsBots) ? 'b' : null;
-  }
-
-  /* The two-step picker. Order here is the order shown. */
   var MODE_CATS = [
     { id: 'ffa',    label: 'Free For All',
       blurb: 'Fifteen operators. No sides. Highest count when the clock dies.' },
@@ -281,11 +123,7 @@
     { id: 'squads', label: 'Squads',
       blurb: 'Many small squads, one sector. Your squad\u2019s kills are your score.' },
     { id: 'last',   label: 'Last Stand',
-      blurb: 'One life. No respawn. No clock. Last one breathing wins.' },
-    { id: 'practice', label: 'Overrun',
-      blurb: 'You against the sector. Choose how many come for you, and how mean they are.' },
-    { id: 'coop',   label: 'Strike Team',
-      blurb: 'You and your squad against the machines. Pick your size and how mean they are.' }
+      blurb: 'One life. No respawn. No clock. Last one breathing wins.' }
   ];
   /* v10.9: `hidden` takes a mode out of the PICKER without taking it out of
      the table. Deleting a mode id breaks every gate that reads MODES, the
@@ -331,8 +169,13 @@
   };
 
   var MAPS = {
-    urban: { label: 'Urban', ready: true },
-    rural: { label: 'Rural', ready: true, bound: 150 },
+    /* v15.0 (fix 4): 100 -> 120. The outer ring (districts-outer.js _buildPart6)
+       adds four districts and four control towers around the old perimeter. */
+    urban: { label: 'Urban', ready: true, bound: 120 },
+    /* v15.0 (fix 14): RURAL REMOVED. Rahul: "it is of no use now, remove it
+       completely." Builder, config table, script tags, harness lists and gate
+       budgets all deleted in the same commit — the entry is not hidden, it is
+       gone, so a stale room setting naming it falls to urban at makeRoom. */
     metro: { label: 'Metro City', ready: true, render: NIGHT },
     /* v10.10 KILLHOUSE. Indoor 58 x 34 m warehouse, humans only.
        `bound` 32 puts the out-of-bounds ring just outside the 29 m wall, so a
@@ -344,22 +187,28 @@
        out-of-bounds ring just outside the 34 m end walls. maxPlayers 10 rather
        than 8: the old landscape map was 58 x 34 and this one has nearly twice
        the floor, so it carries two more without becoming a blender. */
-    killhouse: { label: 'Killhouse', ready: true, bound: 38, maxPlayers: 10, indoor: true, smallMap: true },
+    /* v15.0 (fixes 11/12): 52 x 88 m, bound 48 (ring just outside the 44 m end
+       walls), 15 players — the deck in the middle is what makes fifteen a fight
+       rather than a blender. */
+    killhouse: { label: 'Killhouse', ready: true, bound: 48, maxPlayers: 15, indoor: true, smallMap: true },
     /* v10.12 SUNSET ROW. Two houses across a street, 64 x 40 m. Same rule set
        as killhouse — 8 players, nuke killstreak, visor in the crate pool, no
        sniper or RPG on the floor — but a different SHAPE: rooms and a street
        rather than three parallel lanes. `smallMap: true` is what carries the
        shared rules, so a third small map inherits them by setting one flag
        instead of by someone remembering four separate places. */
-    sunsetrow: { label: 'Sunset Row', ready: true, bound: 34, maxPlayers: 8, smallMap: true },
+    sunsetrow: { label: 'Sunset Row', ready: true, bound: 46, maxPlayers: 15, smallMap: true },   /* v15.0 (fix 12): 64 x 84 m */
     /* v10.14: three more small maps, replacing Outbreak. Each is a SHAPE the
        roster did not have — see maps-small.config.js for why these three.
        All carry `smallMap`, which is what grants the nuke killstreak, the
        8-player cap and the crate-only visor without anyone remembering four
        separate places. */
-    freightyard: { label: 'Freightyard', ready: true, bound: 21, maxPlayers: 8, smallMap: true },
-    bazaar:      { label: 'Bazaar',      ready: true, bound: 29, maxPlayers: 8, smallMap: true },
-    substation:  { label: 'Substation',  ready: true, bound: 25, maxPlayers: 8, smallMap: true },
+    /* v15.0 (fix 12): every small map grew for a 15-player room — an outer
+       ring of the same vocabulary around each untouched core. Bounds sit just
+       outside the new fences (HX + 4). */
+    freightyard: { label: 'Freightyard', ready: true, bound: 38, maxPlayers: 15, smallMap: true },
+    bazaar:      { label: 'Bazaar',      ready: true, bound: 46, maxPlayers: 15, smallMap: true },
+    substation:  { label: 'Substation',  ready: true, bound: 40, maxPlayers: 15, smallMap: true },
     /* v10.21 MEDIUM TIER. `arena: true` without `smallMap` — they carry the
        arena RULES (nuke killstreak, 1 s spawn protection, crate visor) at a
        size where a sniper is a real weapon rather than a liability. Twelve
@@ -372,7 +221,6 @@
        mapLock to it, so the pairing is exclusive in BOTH directions. Arena
        rules at theatre-ish size; maxPlayers 24 seats 4 humans plus the
        BATTLE ceiling of 20 machines. */
-    blacksite:   { label: 'Blacksite',   ready: true, bound: 52, maxPlayers: 24, arena: true, botOnly: true },
   };
 
   /* v8.25: alwaysShowPlayers. Rahul asked for player locations on the map and
@@ -384,12 +232,20 @@
      false to go back to detection-gated enemies. */
   var MINIMAP = { alwaysShowPlayers: true, proximity: 18 };   // meters at which an enemy pings the minimap without firing
   // V4.1 stylized dusk -- all scene lighting/atmosphere lives here, not in source.
+  /* ===== v15.0 (fix 13) - A CLEARER AFTERNOON =====
+     Rahul: the urban colours were "outdated". The old dusk was one grey-blue
+     (sky = fog = 0x2b3348) that flattened every facade into the same value.
+     This is a bright late afternoon: a saturated sky, a lighter haze that
+     lets the 240 m map read to its far wall (density 0.0040 -> 0.0030), a
+     warm high sun and cool blue fill so shadows have colour instead of mud.
+     Light COUNT is untouched — colours and intensities only, the same rule
+     the per-map NIGHT override follows. Metro keeps its night. */
   var RENDER = {
     mergeStatic: true,   // collapse static geometry into per-material meshes
-    sky: 0x2b3348, fogColor: 0x2b3348, fogDensity: 0.0040,
-    hemiSky: 0xb8c8e2, hemiGround: 0x33291c, hemiIntensity: 0.82,
-    ambColor: 0x3c4658, ambIntensity: 0.34,
-    sunColor: 0xffa860, sunIntensity: 1.28, sunPos: [70, 82, 34],
+    sky: 0x4d6ea6, fogColor: 0x7d95bd, fogDensity: 0.0030,
+    hemiSky: 0xd6e6ff, hemiGround: 0x5a4632, hemiIntensity: 0.95,
+    ambColor: 0x4c5a74, ambIntensity: 0.30,
+    sunColor: 0xffd39a, sunIntensity: 1.45, sunPos: [70, 82, 34],
     lampGlow: 0xffb25a, lampPool: 0.26   // streetlight halo color + ground-pool strength
     // lampPool raised 0.16 -> 0.26 in v7.5: it now carries the street lighting
     // that two point lights used to provide, at zero shading cost.
@@ -397,8 +253,6 @@
 
   return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams,
     spawnProtectFor: spawnProtectFor, isArena: isArena,
-    MODE_CATS: VISIBLE_CATS, ALL_MODE_CATS: MODE_CATS, BOTS_ENABLED: BOTS_ENABLED, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
-    botsAllowed: botsAllowed, backfillAllowed: backfillAllowed,
-    humanSideOf: humanSideOf, botSideOf: botSideOf,
+    MODE_CATS: VISIBLE_CATS, ALL_MODE_CATS: MODE_CATS, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
     MINIMAP: MINIMAP, RENDER: RENDER, MAPS: MAPS };
 });

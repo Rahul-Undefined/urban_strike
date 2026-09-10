@@ -43,11 +43,11 @@ vm.createContext(ctx);
      CFG.MAPS_RURAL undefined and produced 510 colliders where the browser
      produces 525 -- 15 objects short, on the gate whose entire job is to
      reproduce the browser build. Keep this list identical to index.html. */
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+  "public/src/config/maps-metro.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
-  "public/src/environment/deco.js", "public/src/environment/rural.js", "public/src/environment/metro.js",
+  "public/src/environment/deco.js", "public/src/environment/metro.js",
   "public/src/environment/access.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(f, "utf8"), ctx, { filename: f }));
 
@@ -224,22 +224,16 @@ run("urban", [
   { name: "cargo office -> 3.90", x: -79.1, y: 0, z: -1.5, dx: 0, dz: -1, top: 3.90 },
   { name: "mall (2f) -> roof 6.0", x: 50.4, y: 0, z: -45.0, dx: 1, dz: 0, top: 6.0, ticks: 400 },
   { name: "airport terminal (2f) -> roof 6.0", x: -91.6, y: 0, z: -93.0, dx: 1, dz: 0, top: 6.0, ticks: 400 },
-  { name: "quay -> ship deck 3.40", x: -64.4, y: 0.6, z: 62.0, dx: 1, dz: 0, top: 3.40, ticks: 400 },
-  /* v10: the ship's superstructure is 8 m wide and its three-storey stair does
-     not fit as a straight run - see buildingAt in districts-outer.js. It is a
-     three-leg switchback now, so the route turns at each landing, which is what
-     a player actually does. Reaching 12.4 m still means what it always meant:
-     the bridge roof is accessible. The waypoints are the LANDING CENTRES, read
-     off the generator rather than typed by eye - lane A is z0-1.1 = 56.9, lane
-     B is z0-2.65 = 55.35, and the turns are at x -52.0 and -56.0. */
-  { name: "ship bridge (3f) -> roof 12.4 (switchback)", x: -58.4, y: 3.4, z: 57.0, top: 12.4,
-    ticks: 1200,
-    route: [[-51.35, 56.9],     // up leg A, onto the clear pad of landing 1
-            [-51.35, 55.35],    // across the pad into lane B (no treads above)
-            [-57.3, 55.35],     // up leg B, onto the clear pad of landing 2
-            [-57.3, 56.9],      // across into lane A, clear of leg C's first tread
-            [-52.0, 56.9],      // up leg C to roof level
-            [-52.0, 60.0]] },   // and step onto the roof itself   // and step onto the roof itself   // and step onto the roof itself    // leg C: +x in lane A, up to 12.4
+  /* v1.0d: the Ship Harbour is gone (it was built through the stadium — see
+     districts-outer.js). The TRAINING GROUND clubhouse stands where the ship's
+     superstructure did, two floors on the ground, external switchback read off
+     the generator: leg A +x in lane z0-1.1 = 54.9 to 3.0, landing, leg B -x in
+     lane z0-2.65 = 53.35 to 6.0, then onto the roof. */
+  { name: "clubhouse (2f) -> roof 6.0 (switchback)", x: -58.4, y: 0, z: 54.9, top: 6.0, ticks: 900,
+    route: [[-51.9, 54.9],      // up leg A onto the landing pad
+            [-51.9, 53.35],     // across the pad into lane B
+            [-56.9, 53.35],     // up leg B to roof level
+            [-56.9, 57.0]] },   // and step onto the roof itself
 
   /* OLD TOWN TERRACE — rebuilt v7.8. The three houses this replaced had
      staircases that were NEVER gate-tested; they happened to work. Every
@@ -276,24 +270,6 @@ run("urban", [
   { name: "yard office ground -> floor 2 (3.30)", x: 77.2, y: 0, z: -1.9, dx: 0, dz: -1, top: 3.30, ticks: 400 }
 ]);
 
-run("rural", [
-  /* v9.0: the five entries here used to name landmarks on the OLD rural map —
-     terraces and towers that Hollow Ridge does not have. They were passing on
-     geometry that no longer existed and then failing when it was replaced,
-     which is a stale test rather than a broken map. Replaced with the routes
-     that actually matter now: both ridge faces tier by tier, and every
-     structure a player can get on top of. */
-  { name: "rural ridge A: ground -> t1 6.0",  x: -70, y: 0,  z: -20.8, dx: 0,  dz: -1, top: 6.00 },
-  { name: "rural ridge A: t1 -> t2 13.0",     x: -46.2, y: 6,  z: -70,  dx: -1, dz: 0,  top: 13.00 },
-  { name: "rural ridge A: t2 -> t3 21.0",     x: -60.2, y: 13, z: -100, dx: -1, dz: 0,  top: 21.00 },
-  { name: "rural ridge A: t3 -> summit 29.4", x: -120, y: 21, z: -66.4, dx: 0, dz: -1, top: 29.40 },
-  { name: "rural ridge B: ground -> t1 6.0",  x: -100, y: 0,  z: -20.8, dx: 0,  dz: -1, top: 6.00 },
-  { name: "rural watchtower -> deck 5.10",    x: -18.4, y: 0,  z: -30,  dx: -1, dz: 0,  top: 5.10 },
-  { name: "rural silo -> top 11.00",          x: 114.9, y: 0,  z: 88,   dx: -1, dz: 0,  top: 11.00 },
-  { name: "rural windmill -> deck 12.00",     x: 118, y: 0, z: 71.2, dx: 0, dz: -1, top: 12.00 },
-  { name: "rural barn -> loft 3.00",          x: 80.9,  y: 0,  z: 88,   dx: -1, dz: 0,  top: 3.00 },
-  { name: "rural stilt -> platform 3.30",     x: 116.5, y: 0,  z: -70,  dx: -1, dz: 0,  top: 3.30 }
-]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

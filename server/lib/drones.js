@@ -115,6 +115,25 @@ module.exports = function initDroneModule(ctx) {
       boom(room, d, false);
       const shooter = room.players.get(byId);
       if (shooter) io.to(byId).emit('droneKilled', { id: droneId });
+      /* v1.0b: THE BOUNTY. Rahul: "if the opponent destroys the drone, the
+         opponent gets a point and now gets a drone as well in the bag." Only a
+         HOSTILE shooter earns it — shooting your own side's drive down is a
+         mistake, not a play. The point is credited through server.js so the
+         team score, the roster push and the kill target see it. */
+      if (shooter && shooter.id !== d.owner) {
+        const teams = modeInfo(room).teams;
+        const ally = !!(teams && shooter.team && d.team && shooter.team === d.team);
+        if (!ally) {
+          const B = CFG.GEAR.droneBounty || { kill: 1, grantDrone: 1 };
+          if (B.grantDrone) {
+            shooter.drones = Math.min(S.maxCarry, (shooter.drones | 0) + 1);
+            io.to(byId).emit('grant', { t: 'gear', g: 'drone', n: shooter.drones });
+          }
+          const owner = room.players.get(d.owner);
+          io.to(room.code).emit('toast', { msg: shooter.name + ' shot down ' + (owner ? owner.name + "'s" : 'a') + ' drone' });
+          if (ctx.onDroneBounty) ctx.onDroneBounty(room, shooter, B.kill | 0);
+        }
+      }
       return { destroyed: true };
     }
     return { destroyed: false, hp: d.hp };

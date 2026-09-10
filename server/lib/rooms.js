@@ -53,8 +53,7 @@ function makeRoom(hostSocket, name, settings) {
      `hidden` means two things here, and the refusal below names the one the
      brief is about: hidden AND bot-fielding. */
   const _m = settings && CFG.MODES[settings.mode];
-  const mode = (_m && !(_m.hidden && (_m.vsBots || _m.practice)))
-    ? settings.mode : CFG.MATCH.defaultMode;
+  const mode = _m ? settings.mode : CFG.MATCH.defaultMode;   /* v1.0d: no bot modes exist to refuse */
   const room = {
     code,
     hostId: hostSocket.id,
@@ -65,23 +64,20 @@ function makeRoom(hostSocket, name, settings) {
       /* v14.0: a botOnly map is refused to any mode that is not botmode —
          the exclusivity is enforced in BOTH directions (bm modes are dragged
          TO blacksite by mapLock below; everything else is kept OFF it here). */
-      map: (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false
-            && !(CFG.MAPS[settings.map].botOnly && !(CFG.MODES[settings && settings.mode] || {}).botmode))
+      map: (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false)
         ? settings.map : 'urban',
       killTarget: clampOpt(settings && settings.killTarget, CFG.MATCH.killOptions, CFG.MATCH.defaultKills),
       minutes: clampOpt(settings && settings.minutes, CFG.MATCH.timeOptions, CFG.MATCH.defaultMinutes),
       enemyIntel: !!(settings && settings.enemyIntel),   // v12.0: M-map blobs, host toggle, default OFF
       airdropSec: settings && settings.airdropSec ? Math.max(5, Math.min(600, settings.airdropSec | 0)) : 0,
       mode,
-      botCount: Math.max(0, Math.min(19, (settings && settings.botCount | 0) || 0)),
-      botSkill: (settings && settings.botSkill) || 'regular',
+
       /* v9.11: backfill defaults ON. Most of this game's mode list needs ten to
          twenty humans to exist, and the common case — a host and a friend or
          two — could not open Team Battle or Last Stand at all. Defaulting off
          would leave that content exactly as unreachable as before for everyone
          who does not find the toggle. A host with a full lobby can turn it off,
          and it does nothing in a room that is already full. */
-      backfill: (settings && typeof settings.backfill === 'boolean') ? !!settings.backfill : true,
       // v8.33: default to the config names until the host renames them
       // v8.34: seed a name for every side this mode could field
       teamNames: (function () {
@@ -98,7 +94,6 @@ function makeRoom(hostSocket, name, settings) {
     snapTimer: null
   };
   /* v12.0 (item 7): enforce the mode's map lock server-side at create. */
-  { const mm = CFG.MODES[room.settings.mode]; if (mm && mm.mapLock) room.settings.map = mm.mapLock; }
 
   rooms.set(code, room);
   addPlayer(room, hostSocket, name);
@@ -118,6 +113,7 @@ function addPlayer(room, socket, name) {
     token: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
     connected: true,
     kills: 0, deaths: 0, assists: 0, damage: 0, streak: 0, bestStreak: 0, ping: 0, ready: false,
+    mineKills: 0, mineIssued: 0,   /* v15.0: fix 9 KPI, fix 8 small-map ration budget */
     hp: CFG.PLAYER.hp, armorLvl: 0, armorDur: 0, helmLvl: 0, helmDur: 0, alive: false,
     protUntil: 0, att: { sight: null, muzzle: null, mag: null }, exW: {}, rd: {},
     pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0, mv: 0, wp: 0, ln: 0,
@@ -170,21 +166,6 @@ function refreshTeamsAndColors(room, preserve) {
      the CURRENT mode — otherwise switching from squads back to 5v5 would strand
      players on team 'g' with no way to score. */
   const ids = CFG.activeTeams(room.settings.mode);
-  /* v9.2 STRIKE TEAM. When the mode fills one side with bots, humans do NOT
-     round-robin — every human belongs on the human side and every bot on the
-     other. Without this the alternating balancer would put operator 2 on the
-     bot team and hand them friendly fire against their own squad, which is the
-     mode failing at its first premise. A manual host placement is ignored here
-     for the same reason: there is no second side for a human to be placed on. */
-  const humanSide = CFG.humanSideOf(room.settings.mode);
-  if (humanSide) {
-    list.forEach(p => {
-      p.team = p.bot ? CFG.botSideOf(room.settings.mode) : humanSide;
-      p.teamLocked = false;
-      p.color = CFG.TEAMS[p.team].color;
-    });
-    return;
-  }
   let autoIdx = 0;
   list.forEach((p, i) => {
     if (teams) {
@@ -230,6 +211,8 @@ function lobbyPayload(room) {
 
       kills: p.kills, deaths: p.deaths, assists: p.assists,
       damage: Math.round(p.damage), streak: p.streak, bestStreak: p.bestStreak || 0,
+      mineKills: p.mineKills | 0,   /* v15.0 (fix 9): end-scorecard KPI */
+      shield: p.shieldHp | 0,       /* v15.0 (fix 5): so a mid-match joiner draws the slabs already up */
       ping: p.ping, ready: !!p.ready
     }))
   };

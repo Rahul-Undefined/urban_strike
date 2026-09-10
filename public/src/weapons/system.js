@@ -14,12 +14,14 @@ var Weapons = (function () {
      every spawn. */
   function baseWeapons() {
     var m = (typeof Net !== 'undefined' && Net.getMatch && Net.getMatch()) || {};
-    if (CFG.MODES[m.mode] && CFG.MODES[m.mode].botmode) return ['bm_carbine', 'bm_side'];
     return BASE_WEAPONS;
   }
   var ammo = {};                  // name -> {mag, reserve}
   var throwsLeft = { frag: 2, smoke: 1, flash: 1 };
   var droneCount = 0;                                    // v9.4, set by the server grant
+  var empCount = 0;                                      // v15.0 (fix 1), set by the server grant
+  var c4Count = 0;                                       // v1.0b, set by the server grant
+  var hasRemote = false;                                 // v15.0 (fix 10), a flag the server owns
   var nextFireAt = 0, reloadUntil = 0, boltUntil = 0, switchUntil = 0;
   var reloadingShell = false;
   var triggerDown = false, semiQueued = false;
@@ -121,6 +123,11 @@ var Weapons = (function () {
        value keeps the HUD honest for the first second. */
     droneCount = 0;                 // v9.5: crate loot only, nobody spawns with one
     owned.drone = false;
+    empCount = 0; owned.emp = false;   // v15.0: per match, like the drone
+    c4Count = 0; owned.c4 = false;     // v1.0b
+    hasRemote = false;
+    if (UI.setRemoteHud) UI.setRemoteHud(false);
+    if (UI.setShield) UI.setShield(0, 0);
     fires = [];
     cooking = null;
     UI.setAttachments(atts);
@@ -201,6 +208,34 @@ var Weapons = (function () {
         Net.setVisor(true);
         UI.toast('Recon Visor \u00b7 enemies visible through walls');
       }
+      else if (d.g === 'emp') {
+        /* v15.0 (fix 1): the slot appears with the first charge, exactly as the
+           drone's does, so scrolling reaches it and a left click uses it. */
+        empCount = d.n;
+        owned.emp = empCount > 0;
+        if (owned.emp) ammo.emp = ammo.emp || { mag: 0, reserve: 0 };
+        UI.toast('EMP Charge \u00b7 ' + d.n + ' carried \u00b7 select it and click to fry enemy mines');
+      }
+      else if (d.g === 'c4') {
+        /* v1.0b: the C4 slot, exactly the EMP's shape. Select it, face a wall
+           within reach, click. */
+        c4Count = d.n;
+        owned.c4 = c4Count > 0;
+        if (owned.c4) ammo.c4 = ammo.c4 || { mag: 0, reserve: 0 };
+        UI.toast('C4 Charge \u00b7 ' + d.n + ' carried \u00b7 select it, face a wall, click to plant');
+      }
+      else if (d.g === 'shield') {
+        /* v15.0 (fix 5): no slot — it is worn, not held. The HUD bar is the
+           whole interface; the server owns the number. */
+        if (UI.setShield) UI.setShield(d.n, CFG.GEAR.shield.hp);
+        UI.toast('Ballistic Shield \u00b7 ' + d.n + ' hp \u00b7 a sniper round breaks it');
+      }
+      else if (d.g === 'remote') {
+        /* v15.0 (fix 10): a flag with a HUD pip. Hold Z to call it in. */
+        hasRemote = true;
+        if (UI.setRemoteHud) UI.setRemoteHud(true);
+        UI.toast('STRIKE REMOTE \u00b7 hold Z to call the helicopter');
+      }
       else if (d.g === 'molotov') {
         throwsLeft.molotov = Math.min(CFG.THROWS.molotov.maxCarry, throwsLeft.molotov + d.n);
         UI.toast('Molotov +' + d.n);
@@ -260,6 +295,95 @@ var Weapons = (function () {
       } else UI.toast((res && res.err) || 'Cannot launch drone');
       refreshHud();
     });
+  }
+
+  /* ===== v15.0 - EMP (fix 1) =====
+     One implementation, one caller shape: a left click while the EMP slot is
+     selected. The server decides whether anything was cleared; a charge that
+     found no hostile mines is refused and kept, and the toast says why. */
+  function useEmp() {
+    if (!PlayerCtl.alive) return;
+    if (empCount <= 0) { UI.toast('No EMP charge \u2014 find one on the floor or in a drop'); return; }
+    Net.useEmp(function (res) {
+      if (res && res.ok) {
+        empCount = res.left;
+        UI.toast('EMP \u00b7 ' + res.cleared + ' enemy mine' + (res.cleared === 1 ? '' : 's') + ' destroyed \u00b7 ' + res.left + ' left');
+        if (empCount <= 0) {
+          owned.emp = false;
+          if (current === 'emp') cycle(1);
+        }
+      } else UI.toast((res && res.err) || 'Cannot use EMP');
+      refreshHud();
+    });
+  }
+  /* ===== v1.0b - C4 (plant on the wall in front of you) =====
+     A short ray from the eye; the first static surface within GEAR.c4.stick is
+     where it sticks. The server re-checks reach, the map and the count. */
+  function plantBomb() {
+    if (!PlayerCtl.alive) return;
+    if (c4Count <= 0) { UI.toast('No C4 \u2014 it comes from airdrops'); return; }
+    var reach = (CFG.GEAR.c4 && CFG.GEAR.c4.stick) || 3.2;
+    var o = camera.position.clone();
+    var d = camera.getWorldDirection(new THREE.Vector3());
+    var hit = World.rayHit(o, d, reach);
+    if (!hit) { UI.toast('Face a wall within ' + reach + ' m to plant the C4'); return; }
+    var pt = hit.point.clone().addScaledVector(d, -0.08);   // a hair off the surface
+    Net.plantBomb([pt.x, pt.y, pt.z], function (res) {
+      if (res && res.ok) {
+        c4Count = res.left;
+        UI.toast('C4 PLANTED \u00b7 ' + res.fuse + ' s \u00b7 clear the building');
+        if (c4Count <= 0) { owned.c4 = false; if (current === 'c4') cycle(1); }
+      } else UI.toast((res && res.err) || 'Cannot plant here', true);
+      refreshHud();
+    });
+  }
+
+  /* ===== v1.0b - DROP (K: the gun, L: the sight) =====
+     Rahul: "a button that throws away guns or scope". The loadout is
+     client-side, so the hands empty here; the server puts a matching pickup
+     on the floor when one exists (see 'dropItem' in server.js), so what you
+     throw away is what somebody else can pick up. The knife and gear slots
+     (drone, EMP, C4) are not droppable — they are not guns. */
+  function dropCurrent() {
+    if (!PlayerCtl.alive) return false;
+    var w = CFG.WEAPONS[current];
+    if (!w || current === 'knife' || w.gear) { UI.toast('Nothing to throw away'); return false; }
+    var dropped = current;
+    Net.dropItem({ w: dropped }, function (res) {
+      UI.toast((res && res.ok && res.floor) ? (w.label + ' dropped') : (w.label + ' thrown away'));
+    });
+    owned[dropped] = false;
+    /* a slot-1 base gun that is thrown away is gone until the next life */
+    cycle(1);
+    if (current === dropped) setWeapon('knife', true);
+    refreshHud();
+    return true;
+  }
+  function dropSight() {
+    if (!PlayerCtl.alive) return false;
+    var sid = atts.sight;
+    if (!sid) { UI.toast('No sight fitted'); return false; }
+    atts.sight = null;
+    Net.dropItem({ a: sid }, function (res) {
+      UI.toast((res && res.ok && res.floor) ? 'Sight dropped' : 'Sight removed');
+    });
+    UI.setAttachments(atts);
+    setWeapon(current, true);      // re-dress the viewmodel without the optic, reset the zoom
+    refreshHud();
+    return true;
+  }
+
+  /* v15.0 (fix 10): the remote is a held flag; game.js holds Z and calls this.
+     The server re-checks everything; this only spares a round trip. */
+  function callStrike() {
+    if (!PlayerCtl.alive || !hasRemote) return false;
+    Net.callStrike(function (res) {
+      if (res && res.ok) {
+        hasRemote = false;
+        if (UI.setRemoteHud) UI.setRemoteHud(false);
+      } else UI.toast((res && res.err) || 'Cannot call the strike', true);
+    });
+    return true;
   }
 
   function startReload() {
@@ -456,11 +580,15 @@ var Weapons = (function () {
     var o = camera.position.clone();
     var mz = muzzleWorld(tmpV2).clone();
     var perVictim = {};
+    /* v1.0b: a flame weapon has a HARD reach — the stream ends at w.range,
+       there is no 400 m ray behind it — and draws fire, not a tracer. */
+    var reach = w.flame ? w.range : 400;
     for (var i = 0; i < pellets; i++) {
       var d = rayDir(spread, new THREE.Vector3());
-      var hit = castRay(o, d, 400);
-      var end = hit ? hit.point : o.clone().addScaledVector(d, 120);
-      FX.tracer(mz, end, w.trc);
+      var hit = castRay(o, d, reach);
+      var end = hit ? hit.point : o.clone().addScaledVector(d, w.flame ? w.range : 120);
+      if (w.flame) { FX.tracer(mz, end, w.trc); FX.tracer(mz, end, 0xffd060); FX.groundFire(end, 0.7, 0.35); }
+      else FX.tracer(mz, end, w.trc);
       if (hit && hit.type === 'drone') {
         FX.impact(hit.point); AudioSys.impact(hit.point);
         Net.droneHit(hit.id, CFG.WEAPONS[current].dmg);
@@ -518,6 +646,18 @@ var Weapons = (function () {
     if (w.type === 'drone') {
       nextFireAt = t + 700;
       launchDrone();
+      return;
+    }
+    /* v15.0 (fix 1): same intercept for the EMP slot. */
+    if (w.type === 'emp') {
+      nextFireAt = t + 700;
+      useEmp();
+      return;
+    }
+    /* v1.0b: and for the C4 slot. */
+    if (w.type === 'c4') {
+      nextFireAt = t + 700;
+      plantBomb();
       return;
     }
     if (isReloading()) {
@@ -695,10 +835,10 @@ var Weapons = (function () {
     var pos = p.pos;
     if (p.type === 'frag' || p.kind === 'rocket') {
       var spec = p.kind === 'rocket' ? { dmg: CFG.WEAPONS.rocket.dmg, radius: CFG.WEAPONS.rocket.radius } : CFG.THROWS.frag;
-      FX.explosion(pos, spec.radius);
+      FX.explosion(pos, spec.fxRadius || spec.radius);   // v1.0b: a 50 m frag draws a 9 m fireball
       AudioSys.explosion(pos.distanceTo(camera.position) < 3 ? null : pos, true);
       if (p.mine) explosionDamage(pos, spec.radius, spec.dmg, p.kind === 'rocket' ? 'rocket' : 'frag');
-      selfExplosionFeedback(pos, spec.radius);
+      selfExplosionFeedback(pos, spec.fxRadius || spec.radius);
     } else if (p.type === 'smoke') {
       FX.smokeCloud(pos, CFG.THROWS.smoke.dur);
       AudioSys.impact(pos);
@@ -725,18 +865,27 @@ var Weapons = (function () {
          the 0.25 multiplier, so cover is the counter-play rather than distance.
          Falloff is retained for the ROCKET, which is a direct-fire weapon with
          its own aiming skill and does not need the same treatment. */
-      var flat = CFG.THROWS[weaponName] && CFG.THROWS[weaponName].flatDamage;
-      var dmg = flat ? maxDmg : maxDmg * (1 - d / radius);
+      var spec2 = CFG.THROWS[weaponName];
+      var flat = spec2 && spec2.flatDamage;
+      var dmg;
+      /* v1.0b: THE TWO-BAND FRAG. Rahul: "up to 20 m instant kill, 20-50 m
+         50% health down." Inside killRadius the full number (the server reads
+         a full-damage claim as pointBlank — a guaranteed kill through vest,
+         helmet and shield); out to `radius`, outerDmg. Cover still cuts either
+         to a quarter. Bots resolve theirs by the same rule in bots.js. */
+      if (spec2 && spec2.killRadius) dmg = d <= spec2.killRadius ? maxDmg : (spec2.outerDmg || maxDmg * (1 - d / radius));
+      else dmg = flat ? maxDmg : maxDmg * (1 - d / radius);
       if (World.losBlocked(center.clone().add(new THREE.Vector3(0, 0.25, 0)), r.renderPos)) dmg *= 0.25;
       if (dmg > 1) Net.sendHit({ victim: id, w: weaponName, dmg: dmg, part: 'body', vp: [r.renderPos.x, r.renderPos.y, r.renderPos.z] });
     });
     // self-damage
+    var selfR = (CFG.THROWS[weaponName] && CFG.THROWS[weaponName].selfRadius) || radius;   // v1.0b: the OLD 7 m for your own frag
     var sd = PlayerCtl.pos.distanceTo(center);
-    if (PlayerCtl.alive && sd < radius) {
+    if (PlayerCtl.alive && sd < selfR) {
       /* Self-damage keeps the falloff even when the weapon is flat. Standing at
          the edge of your own frag should hurt, not delete you — a flat 100 here
          would make every close throw a suicide and nobody would ever use it. */
-      var dmg2 = maxDmg * (1 - sd / radius);
+      var dmg2 = maxDmg * (1 - sd / selfR);
       if (World.losBlocked(center.clone().add(new THREE.Vector3(0, 0.25, 0)), PlayerCtl.pos)) dmg2 *= 0.25;
       if (dmg2 > 1) Net.sendHit({ victim: Net.myId(), w: weaponName, dmg: dmg2, part: 'body', vp: [PlayerCtl.pos.x, PlayerCtl.pos.y, PlayerCtl.pos.z] });
     }
@@ -1089,6 +1238,21 @@ var Weapons = (function () {
        it down; see server/lib/drones.js. */
     launchDrone: launchDrone,
     droneCount: function () { return droneCount; },
+    /* v15.0 */
+    useEmp: useEmp,
+    empCount: function () { return empCount; },
+    setEmps: function (n) {          // rejoin mirror
+      empCount = Math.max(0, n | 0); owned.emp = empCount > 0;
+      if (owned.emp) ammo.emp = ammo.emp || { mag: 0, reserve: 0 };
+    },
+    /* v1.0b */
+    plantBomb: plantBomb,
+    c4Count: function () { return c4Count; },
+    setC4: function (n) { c4Count = Math.max(0, n | 0); owned.c4 = c4Count > 0; if (owned.c4) ammo.c4 = ammo.c4 || { mag: 0, reserve: 0 }; },
+    dropCurrent: dropCurrent, dropSight: dropSight,
+    hasRemote: function () { return hasRemote; },
+    setRemote: function (v) { hasRemote = !!v; if (UI.setRemoteHud) UI.setRemoteHud(hasRemote); },
+    callStrike: callStrike,
     getDetectMs: function () { return eff(current).detectMs; },
     selectByKey: selectByKey,
     cycle: cycle,

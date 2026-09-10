@@ -40,12 +40,11 @@ const ctx = { console, Math, Date, JSON, Object, Array, Float32Array, Uint32Arra
 ctx.self = ctx; ctx.window = ctx; ctx.globalThis = ctx;
 vm.createContext(ctx);
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js",
+ "public/src/config/world.config.js","public/src/config/maps-metro.config.js",
   "public/src/config/districts.config.js",
  "public/src/config/index.js","public/src/environment/merge.js","public/src/environment/world.js",
  "public/src/environment/districts-south.js","public/src/environment/districts-north.js",
- "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js",
- "public/src/environment/metro.js","public/src/environment/access.js"]
+ "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/metro.js","public/src/environment/access.js"]
   .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 /* v9.1 — WAS urban-only ("Metro and Rural are paused"). Metro has never had a
@@ -73,11 +72,10 @@ function ok(c, label) {
    grid cannot model — which is why the budgets are not zero.
    urban: measured 2026-08-02 against v8.3, unchanged.
    rural/metro: recorded at first measurement, v9.1. */
-const ISOLATED_PCT = { urban: 11.0, rural: 11.0, metro: 11.0 };
-const BIG_POCKETS  = { urban: 30,   rural: 30,   metro: 30 };
+const ISOLATED_PCT = { urban: 11.0, metro: 11.0 };
+const BIG_POCKETS  = { urban: 30,   metro: 30 };
 
 function spawnsFor(map) {
-  if (map === "rural") return (CFG.MAPS_RURAL || {}).SPAWNS || [];
   if (map === "metro") return (CFG.MAPS_METRO || {}).SPAWNS || [];
   return CFG.SPAWNS || [];
 }
@@ -210,8 +208,6 @@ function analyse(map) {
    which is the failure this project keeps paying for. To include it properly
    the height filter has to become per-map terrain-aware; that is its own piece
    of work, not a line change here. */
-console.log("\n--- [rural] flow: NOT MEASURED — ground-plane rasteriser cannot" +
-            " model terraces. See the note in this file. ---");
 ["urban", "metro"].forEach(analyse);
 
 console.log(`\n${pass} passed, ${fail} failed`);
