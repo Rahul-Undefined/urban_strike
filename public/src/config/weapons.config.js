@@ -217,6 +217,36 @@
     drone:   { key: 9, ex: 1, gear: 1, label: 'Strike Drone', type: 'drone', dmg: 0, rpm: 60,
                mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 0, head: 1, legs: 1,
                speed: 0.94, recoil: 0, drift: 0, adsFov: 62, trc: 0xffb020 },
+    /* ===== v15.0 - THE EMP CHARGE (fix 1) =====
+       Rahul: "Add an EMP which destroys all the enemy/opponents' mines in the
+       game, not the player's mine, available in loot; when looted it needs to
+       be clicked with the mouse using left click, same as the drone."
+       Same shape as the drone slot, for the same reason: scroll cycling, the
+       key-9 exclusives cycle, the HUD label, the viewmodel registry and the
+       `wp` field all come free. `gear: 1` keeps it out of the damage classes —
+       it fires nothing; what it does lives in server/lib/mines.js emp(). */
+    emp:     { key: 9, ex: 1, gear: 1, label: 'EMP Charge', type: 'emp', dmg: 0, rpm: 60,
+               mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 0, head: 1, legs: 1,
+               speed: 0.96, recoil: 0, drift: 0, adsFov: 62, trc: 0x51d0e8 },
+    /* ===== v1.0b - THE FLAMETHROWER (Rahul: "a gun available in loot in the
+       buildings which shoots fire; when it hits an opponent they are burnt and
+       20 m of radius is under fire, instant kill for 10 seconds") =====
+       A full-auto hitscan gun with a HARD 22 m reach (`flame: 1` makes
+       fireHitscan cast to `range`, not 400 m). The damage number here is what
+       the kill feed and bots use; a human hit is resolved in server.js 'hit':
+       the victim burns (guaranteed kill) and server/lib/fire.js opens a zone.
+       Big maps only, interior points only — LOOT_ITEMS.wpn_flamer. */
+    flamer:  { key: 9, ex: 1, label: 'Flamethrower', type: 'auto', flame: 1, dmg: 40, rpm: 420,
+               mag: 60, reserve: 120, reload: 3.2, spread: 2.2, ads: 1.6, range: 22, head: 1, legs: 1,
+               speed: 0.90, recoil: 0.10, drift: 0.05, adsFov: 62, trc: 0xff7a1a },
+    /* ===== v1.0b - C4 STICKY CHARGE (Rahul: "a bomb from the drop; stick it
+       on a building, in 5 seconds it blasts and every player inside dies") ===
+       Gear slot like the EMP: select, aim at a wall within reach, click. What
+       "inside the building" means is decided on the server (server/lib/bomb.js:
+       under a roof within the blast reach). Big maps, crate-only. */
+    c4:      { key: 9, ex: 1, gear: 1, label: 'C4 Charge', type: 'c4', dmg: 0, rpm: 60,
+               mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 0, head: 1, legs: 1,
+               speed: 0.95, recoil: 0, drift: 0, adsFov: 62, trc: 0xffb020 },
     bow:     { key: 9, ex: 1, mark: 1, label: 'Recurve Bow', type: 'bow', dmg: 90, rpm: 40, mag: 1, reserve: 29, reload: 1.4, spread: 0.004, ads: 0.0012, range: 999, head: 1.9, legs: 0.6, speed: 0.97, recoil: 0.02, drift: 0.2, adsFov: 38, bullet: true, bulletSpeed: 88, bulletDrop: 9.0, quiet: 1, trc: 0xd8c89a },
   };
 
@@ -227,7 +257,14 @@
     'scarh', 'mk14', 'p90', 'm249', 'awm', 'aa12',
     // v9.3 armoury expansion — appended, never inserted
     'aug', 'famas', 'akm', 'k98w', 'garand', 'ump9', 'mp5', 'vector', 'bow',
-    'drone'];   // v9.5 — a carried slot, not a firearm
+    'drone',    // v9.5 — a carried slot, not a firearm
+    /* v15.0: appended, never inserted. The bot-mode pool is folded on AFTER
+       this list by config/index.js, so within one build every index is stable;
+       there is no cross-build wire (index.html cache-busts every asset per
+       release, so a client and its server are always the same version). */
+    'emp',      // v15.0 — the EMP charge slot
+    'flamer',   // v1.0b — the flamethrower
+    'c4'];      // v1.0b — the C4 sticky charge slot
 
   var THROWS = {
     /* v8.17: throwables are now lethal at the centre by definition. Rahul:
@@ -248,7 +285,17 @@
     /* v9.4: impact-detonated and FLAT across the radius. See the two notes in
        weapons/system.js for why. `fuse` stays as the cook timer and as the
        fallback for a grenade that never touches anything. */
-    frag:  { label: 'Frag',  dmg: 100, radius: 7.0, fuse: 2.8, count: 2, throwVel: 16, cook: true, impact: true, flatDamage: true },
+    /* ===== v1.0b - THE FRAG IS A WEAPON OF AREA DENIAL NOW =====
+       Rahul: "frag needs to be powerful: destroy enemies within 50 m — up to
+       20 m instant kill, 20-50 m 50% health down."
+       `killRadius` / `outerDmg` are the two bands (weapons/system.js
+       explosionDamage for humans, bots.js resolveNades for machines — same
+       numbers, same rule). A wall between the blast and the player still cuts
+       damage to a quarter: cover is the counter, distance no longer is. Self
+       damage keeps the OLD 7 m falloff (`selfRadius`), or every throw would be
+       a suicide. `fxRadius` sizes the fireball; a 50 m sphere is not a visual. */
+    frag:  { label: 'Frag',  dmg: 100, radius: 50.0, killRadius: 20.0, outerDmg: 50, selfRadius: 7.0, fxRadius: 9.0,
+             fuse: 2.8, count: 2, throwVel: 16, cook: true, impact: true, flatDamage: true },
     smoke: { label: 'Smoke', dur: 12, radius: 5.5, fuse: 1.4, count: 1, throwVel: 14 },
     molotov: { label: 'Molotov', dmg: 95, burnDps: 12, burnSec: 5, radius: 4.6, tickSec: 0.45, fuse: 99, count: 3, maxCarry: 6, throwVel: 13, impact: true },
     flash: { label: 'Flash', radius: 15, blind: 3.2, fuse: 1.4, count: 1, throwVel: 16 }
@@ -256,7 +303,81 @@
 
   // Deployable gear (mines and drones are fully server-authoritative)
   var GEAR = {
-    mine: { label: 'AP Mine', start: 5, maxCarry: 8, dmg: 250, radius: 3.2, trigger: 1.0, armSec: 1.0 },
+    mine: { label: 'AP Mine', start: 5, maxCarry: 8, dmg: 250, radius: 3.2, trigger: 1.0, armSec: 1.0,
+      /* ===== v15.0 - SMALL MAPS RATION THE MINES (fix 8) =====
+         Rahul: "In small maps, maximum mines a player can use is 20 mines —
+         5 mines per life up to 4 times. Not applied to big maps."
+         `lifetimeSmall` is the per-MATCH ceiling on mines GRANTED to one
+         player by respawn refills on a smallMap; each refill hands out
+         min(start, remaining). Loot pickups (AP Mines x2) are not rationed —
+         they are a place you had to walk to. 0/absent = unlimited (big maps). */
+      lifetimeSmall: 20 },
+    /* ===== v15.0 - RECON VISOR SHOWS THE ENEMY, NOT YOUR OWN SQUAD (fix 2) =====
+       Rahul: the visor "shows both enemy and teams location, it should only
+       show [the other] team's locations." The through-wall box was one red
+       material on EVERY remote, so a team-mate three walls away lit up in the
+       hostile colour — indistinguishable from a target. Team-mates are already
+       tracked through walls by their always-visible tags and the minimap; the
+       visor's whole value is the side you cannot otherwise see. `showAllies`
+       is the one-word reversal if the reading was wrong. */
+    visor: { label: 'Recon Visor', showAllies: false },
+    /* v15.0 (fix 1): the EMP. `maxCarry` bounds the slot; a charge is spent
+       only when it clears at least one enemy mine — an EMP fired at an empty
+       minefield is refused and kept, the same courtesy the drone shows a room
+       with no targets. Map-wide by request ("destroys ALL the enemy mines"). */
+    emp: { label: 'EMP Charge', start: 0, maxCarry: 3 },
+    /* ===== v15.0 - THE BALLISTIC SHIELD (fix 5) =====
+       Rahul: "Add a loot as shield; when taken it has its own health, when
+       down the player's life will be reduced. Good protection, good health,
+       but destroyed when hit by a sniper. Only in big maps."
+       hp is soaked BEFORE armour in combat.applyDamage. `sniperBreaks`: one
+       scoped-rifle round shatters it and half that round still lands — a
+       shield is cover against rifles, not against the class the map exists
+       to justify. Per life, like the visor. bigOnly keeps it off every arena
+       (small AND medium) at both loot doors (floor roll + crate pool). */
+    shield: { label: 'Ballistic Shield', hp: 260, sniperBreaks: true, sniperPass: 0.5 },
+    /* ===== v15.0 - THE STRIKE REMOTE (fix 10) =====
+       One hidden remote per big-map match. Hold Z for `holdSec` to call the
+       helicopter; `approachSec` later everything hostile to the caller dies
+       at once, through applyDamage (kill feed, streaks, team score, win
+       condition all come along). The pickup carries no rarity ring and no
+       bob, and spawns only on interior/elevated ('h') loot points, so it is
+       found by looking, not by following a light. */
+    remote: { label: 'Strike Remote', holdSec: 1.2, approachSec: 5 },
+    heli: { label: 'Air Strike' },
+    train: { label: 'Train' },   /* v1.0f: the kill-feed tag for being run over */
+    /* ===== v1.0e - HOLD BREATH (Rahul: "when scoped, if the player clicks
+       Shift it should slow the shakiness of the scope for a few seconds so
+       the player can mark and shoot properly") =====
+       While scoped, Shift holds the breath: scope sway drops to `steady` of
+       normal for up to `holdSec`, then the lungs empty and sway returns until
+       the meter recovers over `recoverSec`; a fresh hold needs `minToStart` of
+       the meter back. A thin bar beside the reticle shows the meter while
+       scoped (index.html #breath-bar). Client-only — sway is client-only. */
+    breath: { holdSec: 4.0, recoverSec: 5.0, steady: 0.12, minToStart: 0.25 },
+    /* ===== v1.0b - THE ROCKET LADDER (big maps) =====
+       Rahul: "when a player gets 5 kills without dying it shows ROCKET LAUNCH
+       ACTIVATED; press N and a rocket falls on a random opponent — like the
+       drone but instant. First at 5, then 7, then 10 kills without dying,
+       otherwise it is easy and not challenging."
+       `ladder` is the streak needed for the 1st, 2nd, 3rd rocket of ONE LIFE;
+       beyond the ladder every `step` more. Death resets to the first rung
+       (server/lib/rocket.js). The small-map NUKE keeps N on arenas; this is the
+       big-map answer on the same key — a map is never both. */
+    rocket: { label: 'Rocket Strike', ladder: [5, 7, 10], step: 5, splash: 6.0, splashDmg: 60 },
+    rocketstrike: { label: 'Rocket Strike' },   // the kill-feed tag (WEAPONS.rocket is the launcher)
+    /* v1.0b: the drone bounty. Shooting a drone down is a KILL on the board and
+       puts a Strike Drone in the shooter's bag (up to drone maxCarry). */
+    droneBounty: { kill: 1, grantDrone: 1 },
+    /* v1.0b: the C4 blast. `reach` is how far "inside the building" extends
+       from the charge; `roofScan` how high above a head a ceiling may be to
+       count as indoors; `open` kills anyone that close, roof or not. */
+    c4: { label: 'C4 Charge', fuseSec: 5, reach: 18, roofScan: 14, open: 4.5, maxCarry: 2, stick: 3.2 },
+    /* v1.0b: the fire zone a flamethrower hit opens. Instant kill for every
+       hostile inside `radius` with line of sight to the fire, for `dur`
+       seconds; the shooter's own side is safe (friendly fire is off everywhere
+       else in this game). One zone per shooter per `cooldown` seconds. */
+    fire: { label: 'Flamethrower', radius: 20, dur: 10, cooldown: 2.0 },
 
     /* ===================== v9.4 — THE STRIKE DRONE =========================
 

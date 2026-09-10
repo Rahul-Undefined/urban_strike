@@ -90,8 +90,13 @@ module.exports = function initNukeModule(ctx) {
        next award needs REQ_STREAK kills BEYOND it. Cleared on death by
        clearArmed, alongside the streak reset combat.js already does. */
     var base = attacker.nukeBase | 0;
-    if ((attacker.streak | 0) - base < REQ_STREAK) return;
-    attacker.nukeBase = attacker.streak | 0;
+    /* v1.0e: OWN kills only. The nuke's victims raise `streak` (they are
+       kills) but not this count, so a five-kill nuke that took four still
+       needs five more by hand — Rahul's report was exactly the one-more-kill
+       re-arm the raw streak allowed. */
+    const own = (attacker.streak | 0) - (attacker.strikeKills | 0);
+    if (own - base < REQ_STREAK) return;
+    attacker.nukeBase = own;
     attacker.nukeArmed = true;
     io.to(attacker.id).emit('nukeReady', {
       radius: RADIUS, duration: DURATION, streak: attacker.streak

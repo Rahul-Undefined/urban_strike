@@ -1,9 +1,43 @@
-# URBAN STRIKE — browser multiplayer FPS (2–10 players · FFA / 3v3 / 5v5)
+# URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
-**v14.0 — BOT MODE.** From the welcome rail: SOLO (you vs 8 machines), TEAM
-(squad up by room code vs 10), or BATTLE (waves 5-10-15-20 over 15 minutes,
-smarter every wave) — on Blacksite, a bot-only arena with its own weapon pool.
-Difficulty scales intelligence, never damage.
+**v1.0 build 5 — THE TRAIN.** An 800 m loop around Urban's ring boulevard
+through SECTOR 7 CENTRAL: a locomotive and three coaches, deterministic
+schedule (3 s at the station, 8 m/s around the map, ~110 s a lap), board at the
+platform or jump on from the road, ride the coaches or the roof, shoot from the
+doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
+every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
+count toward the next strike; Shift while scoped holds your breath.
+
+**v1.0 build 4 — FROM THE SCREENSHOTS.** Bus geometry fixed; the Colony's 86 m
+rear wall and the terrace block opened; the stadium is green again (the old
+Ship Harbour was built through it — gone, a Training Ground stands there) and
+a storey taller; the M map works on every arena; the Bazaar court is a market;
+small/medium maps redeploy on an escalating ladder (5 s → 30 s by the 20th
+death); **Bot Mode removed completely**.
+
+**v1.0 build 3 — HD.** Quality tiers with an AUTO scaler: ULTRA renders at
+native resolution with 4K shadows and climbs/drops with your machine; pin a
+tier from the pause panel (QUALITY) if you prefer.
+
+**v1.0 build 2 — THE ARSENAL.** K drops your gun, L drops your sight (a pickup
+appears for others); big-map ROCKET ladder on N (5, 7, 10 kills without dying);
+shooting down a drone is a kill and gives you one; frags kill within 20 m and
+halve health to 50 m; C4 from crates levels everyone under a roof; a
+Flamethrower found indoors burns its target and opens a 20 m fire zone. See
+CHANGELOG.
+
+**v1.0 — THE FIFTEEN.** Rahul's fifteen-item list, shipped: EMP Charge (fries
+every enemy mine), Ballistic Shield (260 hp, a sniper round breaks it), the
+hidden Strike Remote (hold Z, helicopter, everyone hostile dies), mine-kill KPI,
+5 s respawn, small-map mine ration, FFA map/visor/reconnect-timer fixes; Urban
+grown to 240 x 240 with four ring districts and four control towers plus a new
+colour pass; Killhouse rebuilt around THE DECK; every small map enlarged for 15
+players; Airfield and Riverside given landmarks; Rural removed. See CHANGELOG.
+
+**Bot Mode was removed in v1.0 build 4 at Rahul's request, and is not to be
+reintroduced.** There are no bots in this game: no Overrun, no Strike Team, no
+Blacksite, no seat backfill. `server/lib/bots.js` is a headless geometry harness
+the gates and the server's line-of-sight checks read, nothing more.
 
 A Counter-Strike-inspired shooter you run yourself. No accounts, no downloads for your friends — you share a 5-letter room code, they open a link.
 
@@ -34,7 +68,10 @@ A Counter-Strike-inspired shooter you run yourself. No accounts, no downloads fo
 | Key | Action |
 |---|---|
 | W A S D | Move |
-| SHIFT (hold) | Sprint (forward only) |
+| SHIFT (hold) | Sprint (forward only) · while SCOPED: hold breath — steadies the scope for ~4 s (v1.0) |
+| K / L | Throw away the gun in your hands / the sight on it (v1.0) |
+| N | Big maps: launch the earned ROCKET · arenas: call the earned NUKE (v1.0) |
+| Z (hold 1.2 s) | Call the helicopter when you hold the Strike Remote (v1.0) |
 | SPACE | Jump |
 | C (hold) | Crouch |
 | Q / E (hold) | Lean left / right |

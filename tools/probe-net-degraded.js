@@ -107,11 +107,17 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
        PERMITTED under jitter; what is not permitted is a reversal that the
        next keyframe fails to repair. A control run on a direct link showed
        zero reversals — the artifact is congestion-only, exactly as designed. */
-    let maxFwd = 0, prev = null, revAt = [];
+    /* v1.0: travel is measured RELATIVE to the first snapshot, not as an
+       absolute x. The old `maxFwd = max(x)` silently assumed A spawned near
+       the origin; on the 240 m Urban the far-from-enemies spawn rule now
+       routinely seats A at x -112, and a 32 m walk that ends at -80 read as
+       "0.0 m peak" — a probe defect, not a netcode one. */
+    let maxFwd = 0, prev = null, revAt = [], startX = null;
     seen.forEach(s => {
       const x = s.players[aId].p[0];
+      if (startX === null) startX = x;
       if (prev !== null && x - prev < -0.5) revAt.push({ t: s.t, x });
-      prev = x; maxFwd = Math.max(maxFwd, x);
+      prev = x; maxFwd = Math.max(maxFwd, x - startX);
     });
     let unrepaired = 0;
     revAt.forEach(r => {

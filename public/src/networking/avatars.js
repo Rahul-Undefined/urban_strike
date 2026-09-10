@@ -102,6 +102,20 @@ var Avatars = (function () {
       rgBox(g, 0, 0.02, -0.55, 0.13, 0.13, 0.1, RGM.dark);
       return g;
     }
+    /* v1.0b: the flamethrower reads as a tank and a fat tube. */
+    if (w.flame) {
+      rgBox(g, 0, 0.0, -0.25, 0.12, 0.12, 0.7, RGM.dark);
+      rgBox(g, 0, -0.14, 0.05, 0.16, 0.16, 0.4, RGM.steel);
+      return g;
+    }
+    /* v15.0: gear slots (drone, EMP) are hand-held devices, not rifles. Until
+       now a carried drone wore a generic rifle silhouette in third person;
+       a small case in the hands is both cheaper and honest. */
+    if (w.gear) {
+      rgBox(g, 0, -0.02, -0.10, 0.16, 0.06, 0.22, RGM.dark);
+      rgBox(g, 0, 0.02, -0.10, 0.08, 0.02, 0.08, w.type === 'emp' ? RGM.steel : RGM.green);
+      return g;
+    }
     var LEN = { sniper: 0.9, awm: 0.98, mk14: 0.82, m249: 0.78, shotgun: 0.68, scarh: 0.66, ak47: 0.64, m4a1: 0.64, uzi: 0.4, p90: 0.44, aa12: 0.62 };
     var len = LEN[name] || 0.62;
     var bodyM = (name === 'ak47' || name === 'mk14') ? RGM.wood
@@ -254,7 +268,25 @@ var Avatars = (function () {
          the thing that collides did not change; tools/verify-doorfit.js
          bounds the SHOULDER SPAN so the wider render cannot visually clip
          the narrowest door frame either. */
-  var RIG = { x: 1.60, y: 1.36, z: 1.60 };
+  /* ===== v1.0e - THE OPERATOR IS TALL (Rahul: "as the map is bigger, make
+     the avatar taller so it is easy to spot and kill... make the height
+     seriously tall") =====
+     y 1.36 -> 1.62 (+19%): the rendered operator stands ~2.28 m. x/z 1.60 ->
+     1.68 (+5%) so the silhouette does not turn into a pole; the worst-case
+     shoulder span stays inside the 1.14 m door frame verify-doorfit bounds.
+     What moves and what does not, the same three numbers as v12.0:
+       - VISUALS: this rig.
+       - HIT GEOMETRY: follows — the head box derives from RIG, so a shot at
+         the visible head is a headshot; the body ray half-width is still
+         CFG.PLAYER.radius, and the torso stays inside it (verify-hitbox).
+       - MOVEMENT CAPSULE: CFG.PLAYER UNTOUCHED. Every doorway, corridor,
+         stair headroom and verify-access route behaves exactly as before,
+         because the thing that collides did not change. The taller render
+         would poke its head through the 2.1-2.3 m door lintels the maps were
+         built with, so world.js now LIFTS every doorway lintel it can prove
+         is over an opening to 2.65 m at build time (World._liftLintels) —
+         cosmetic geometry following the cosmetic body. */
+  var RIG = { x: 1.68, y: 1.62, z: 1.68 };
 
   /* Growing Y is only safe with a matching lift. The group origin is pinned by
      the network to the CAPSULE CENTRE, and the legs hang half the stance height

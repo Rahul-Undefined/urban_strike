@@ -60,6 +60,35 @@ var Pickups = (function () {
       box(g, 0.1, 0.08, 0.15, cc, 0.05, 0.03, 0);
     } else if (it.kind === 'weapon') {
       gunMesh(g, it.w);
+    } else if (it.kind === 'gear' && it.g === 'emp') {
+      /* v15.0 (fix 1): a dark charge with a cyan coil — the same silhouette as
+         the viewmodel, so what you saw on the floor is what is in your hands. */
+      box(g, 0.34, 0.12, 0.42, 0x2a3138, 0, 0, 0);
+      var coil = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.04, 14),
+        new THREE.MeshLambertMaterial({ color: 0x0b1a1e, emissive: 0x51d0e8 }));
+      coil.position.set(0, 0.08, 0); g.add(coil);
+      box(g, 0.05, 0.03, 0.05, 0xff3428, 0.12, 0.08, 0.14);
+    } else if (it.kind === 'gear' && it.g === 'c4') {
+      /* v1.0b: a sand-coloured brick with a detonator and one red LED. */
+      box(g, 0.34, 0.12, 0.44, 0xc9b98a, 0, 0, 0);
+      box(g, 0.18, 0.05, 0.18, 0x1d2126, 0, 0.085, 0);
+      box(g, 0.04, 0.03, 0.04, 0xff3428, 0.05, 0.12, 0.05);
+    } else if (it.kind === 'gear' && it.g === 'shield') {
+      /* v15.0 (fix 5): a ballistic shield, standing on its edge — a tall dark
+         slab with a viewport slit and a steel rim. */
+      box(g, 0.62, 0.92, 0.08, 0x2b3a4c, 0, 0.1, 0);
+      box(g, 0.66, 0.06, 0.10, 0x8a949e, 0, 0.58, 0);
+      box(g, 0.66, 0.06, 0.10, 0x8a949e, 0, -0.36, 0);
+      box(g, 0.30, 0.09, 0.02, 0x9fd8ff, 0, 0.30, 0.05);
+      box(g, 0.14, 0.05, 0.02, 0xe2b050, 0, -0.10, 0.05);
+    } else if (it.kind === 'gear' && it.g === 'remote') {
+      /* v15.0 (fix 10): a hand-held remote lying on the floor — small, dark,
+         and drawn WITHOUT the rarity ring (see buildItem), because it is meant
+         to be found, not followed. One red LED is the only tell. */
+      box(g, 0.10, 0.03, 0.22, 0x1d2126, 0, 0, 0, 0.6);
+      box(g, 0.02, 0.012, 0.02, 0xff3428, 0.015, 0.02, -0.06, 0.6);
+      box(g, 0.05, 0.008, 0.05, 0x5a626b, -0.01, 0.02, 0.03, 0.6);
+      cyl(g, 0.006, 0.16, 0x9aa3ad, 0.03, 0.06, -0.12);
     } else if (it.kind === 'gear' && it.g === 'visor') {
       /* v10.10 RECON VISOR — goggles: a dark strap with two cyan lenses. Gear
          had no mesh branch at all until now (drone and mine are start-kit or
@@ -83,11 +112,14 @@ var Pickups = (function () {
       new THREE.CylinderGeometry(0.5, 0.5, 0.02, 18, 1, true),
       new THREE.MeshBasicMaterial({ color: rc, transparent: true, opacity: it.rar === 'l' ? 0.85 : 0.55, side: THREE.DoubleSide }));
     ring.position.y = -0.35;
-    grp.add(ring);
+    /* v15.0 (fix 10): a HIDDEN pickup (`h` from the server — the strike remote)
+       gets no ring and no bob or spin in update(): it lies where it was left. */
+    var hidden = !!e.h;
+    if (!hidden) grp.add(ring);
     grp.position.set(e.p[0], e.p[1], e.p[2]);
     grp.visible = !!e.active;
     scene.add(grp);
-    items[e.id] = { grp: grp, ring: ring, t: e.t, base: e.p[1], active: !!e.active, pop: 0 };
+    items[e.id] = { grp: grp, ring: ring, t: e.t, base: e.p[1], active: !!e.active, pop: 0, hidden: hidden };
   }
 
   function disposeAll() {
@@ -203,6 +235,8 @@ var Pickups = (function () {
     if (!scene) return;
     disposeAll();
     mineReset();
+    bombReset();                                  /* v1.0b: a fuse does not survive a new match */
+    if (FX.fireZonesReset) FX.fireZonesReset();
     (list || []).forEach(buildItem);
   }
   function onAdd(list) { (list || []).forEach(buildItem); }
@@ -281,9 +315,11 @@ var Pickups = (function () {
 
   function update(dt) {
     var t = performance.now();
+    updateBombs(t);   /* v1.0b */
     for (var id in items) {
       var e = items[id];
       if (!e.active) continue;
+      if (e.hidden) continue;   // v15.0: the remote does not advertise itself
       e.grp.rotation.y += dt * 1.4;
       e.grp.position.y = e.base + Math.sin(t * 0.0022 + Number(id)) * 0.07;
       if (e.pop > 0) { e.pop = Math.max(0, e.pop - dt * 3); var s = 1 + e.pop * 0.6; e.grp.scale.set(s, s, s); }
@@ -315,8 +351,42 @@ var Pickups = (function () {
     }
   }
 
+  /* ===== v1.0b - PLANTED C4 =====
+     A brick stuck where the ray met the wall, LED blinking faster as the fuse
+     runs down; removed on bombBoom (the FX module draws the blast). */
+  var bombs = {};
+  var BOMB_MAT = new THREE.MeshLambertMaterial({ color: 0xc9b98a });
+  var LED_ON = new THREE.MeshLambertMaterial({ color: 0x400000, emissive: 0xff3428 });
+  var LED_OFF = new THREE.MeshLambertMaterial({ color: 0x200000 });
+  function bombPlanted(d) {
+    if (!scene || !d || bombs[d.id]) return;
+    var g = new THREE.Group();
+    var brick = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.16), BOMB_MAT); g.add(brick);
+    var led = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.03), LED_ON); led.position.set(0.1, 0.06, 0.09); g.add(led);
+    g.position.set(d.p[0], d.p[1], d.p[2]);
+    scene.add(g);
+    bombs[d.id] = { grp: g, led: led, at: d.at || 0, fuse: d.fuse || 5, born: performance.now() };
+  }
+  function bombBoom(id) {
+    var b = bombs[id];
+    if (!b) return;
+    scene.remove(b.grp);
+    b.grp.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+    delete bombs[id];
+  }
+  function bombReset() { for (var id in bombs) bombBoom(id); }
+  function updateBombs(t) {
+    for (var id in bombs) {
+      var b = bombs[id];
+      var left = Math.max(0, b.fuse * 1000 - (t - b.born));
+      var period = 120 + 500 * (left / (b.fuse * 1000));
+      b.led.material = (Math.floor(t / period) % 2) ? LED_ON : LED_OFF;
+    }
+  }
+
   return {
     build: build, init: init, onAdd: onAdd,
+    bombPlanted: bombPlanted, bombBoom: bombBoom, bombReset: bombReset,   /* v1.0b */
     onCollected: onCollected, onSpawn: onSpawn,
     airdrop: airdrop, getBeacons: getBeacons,
     mineAdd: mineAdd, mineBoom: mineBoom, mineReset: mineReset,
