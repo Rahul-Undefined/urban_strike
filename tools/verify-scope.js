@@ -36,6 +36,8 @@ const FILES = [];
 // Module objects each file legitimately reaches across IIFE boundaries.
 const MODULES = new Set(['CFG', 'THREE', 'World', 'Avatars', 'Net', 'UI', 'FX', 'AudioSys',
   'TPPCam',   // v13.0: the third-person boom module (src/core/tppcam.js)
+  'Quality',  // v1.0c: quality tiers + adaptive scaler (src/core/quality.js)
+  'Train',    // v1.0e: the moving train (src/environment/train.js)
   'PlayerCtl', 'Weapons', 'WeaponModels', 'Pickups', 'Minimap', 'DevHUD',
   'Game', 'Input', 'Districts', 'Access', 'Deco', 'Merge', 'MetroMap', 'RuralMap', 'io',
   'StaticMerge',
@@ -190,7 +192,7 @@ ctx.self = ctx; ctx.window = ctx; ctx.globalThis = ctx;
 vm.createContext(ctx);
 [ 'public/src/config/weapons.config.js', 'public/src/config/gameplay.config.js',
   'public/src/config/loot.config.js', 'public/src/config/world.config.js',
-  'public/src/config/maps-rural.config.js', 'public/src/config/maps-metro.config.js',
+  'public/src/config/maps-metro.config.js',
   'public/src/config/index.js', 'public/src/weapons/viewmodels.js',
   'public/src/networking/avatars.js'
 ].forEach(f => vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f }));

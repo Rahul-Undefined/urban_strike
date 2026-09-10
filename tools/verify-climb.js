@@ -76,12 +76,12 @@ vm.createContext(ctx);
 [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+  "public/src/config/maps-metro.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js",
   "public/src/environment/merge.js", "public/src/environment/world.js",
   "public/src/environment/districts-south.js", "public/src/environment/districts-north.js",
   "public/src/environment/districts-outer.js", "public/src/environment/deco.js",
-  "public/src/environment/rural.js", "public/src/environment/metro.js",
+  "public/src/environment/metro.js",
   "public/src/environment/access.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
@@ -196,9 +196,9 @@ function ok(c, label) { if (c) { pass++; if (VERBOSE) console.log('  PASS  ' + l
    written AFTER the measurement records the defect as normal and the gate can
    never see it again. 20 is the acceptance criterion for Milestone A, not the
    allowance. Drive it down. Never raise it. */
-const BUDGET = { urban: 0, rural: 0, metro: 0 };
+const BUDGET = { urban: 0, metro: 0 };
 
-for (const map of ["urban", "rural", "metro"]) {
+for (const map of ["urban", "metro"]) {
   ctx.__m = map; ctx.__sc = new THREE.Scene();
   vm.runInContext("World.reset && World.isBuilt() && World.reset(); World.buildMap(__sc, __m);", ctx);
   const cols = ctx.World._colliders();

@@ -46,7 +46,24 @@
     var seg = T.seg, box = T.box, cyl = T.cyl, M = T.M, rnd = T.rnd;
     var addCollider = T.addCollider;
 
-    var HX = 20, HZ = 34, WALL_H = 9.0, PART_H = 2.4, TH = 0.30;
+    /* ===== v15.0 (fixes 11 + 12) — THE HOUSE GROWS AND THE MAZE OPENS =====
+       Rahul: "we need to reimagine the killhouse map as it has many walls zig
+       zag which sometimes makes it confusing, remove some middle ones and add
+       something else that attracts the gameplay" — and, for every small map,
+       "make the maps playable for 15 players at least."
+
+       40 x 68 -> 52 x 88 m (x 1.3, z 1.294), every PLAN row scaled with it so
+       his drawing is still the drawing, just bigger. GONE: the four angled
+       partitions (rows 9, 11, 16, 17 — the zig-zag, and the source of both
+       v10.22/v11.0 phantom-wall bugs), the centre block (13) and the centre
+       partition (21). IN THEIR PLACE: THE DECK — a 12 x 9 m platform at 2.6 m
+       on pillars, open underneath, climbed by two crate stairs at opposite
+       corners, railed on the halves away from the stairs; two open-ended
+       container corridors flank it. High ground that can be seen from every
+       lane and shot at from the roofs of both blocks is what the middle of a
+       shoot-house needed: a REASON to cross it, not a puzzle to solve in it.
+       Cap 10 -> 15 (world.config.js), bound 38 -> 48. */
+    var HX = 26, HZ = 44, WALL_H = 9.0, PART_H = 2.4, TH = 0.30;
     var NCAST = { cast: false };
     var NBOTH = { cast: false, collide: false };
     function segx(xa, xb, y0, y1, z0, z1, mat, o) {
@@ -56,36 +73,33 @@
     /* ============ THE PLAN ============
        Read top-to-bottom off the drawing. North is -z. */
     var PLAN = [
-      /*  1 */[-11,  -27, 10, 0,        'w'],   // top-left long partition
-      /*  2 */[  7,  -25,  6, 0,        'w'],   // top-right stub
-      /*  3 */[-15,  -21,  6, 0,        'w'],   // upper-left partition
-      /*  4 */[ -2,  -17,  8, 0,        'b'],   // BIG BLOCK, upper centre
-      /*  5 */[  8,  -19,  7, 0,        'w'],   // upper-right T, cap
-      /*  6 */[  8,  -15,  8, 1.5708,   'w'],   // upper-right T, stem
-      /*  7 */[-14,  -16,  4, 1.5708,   'w'],   // short vertical, left
-      /*  8 */[-10,  -13,  5, 0,        'w'],   // left partition
-      /*  9 */[ -2,  -11,  6, 0.61,     'w'],   // ANGLED, centre-upper
-      /* 10 */[  5,   -9,  7, 1.5708,   'w'],   // right vertical
-      /* 11 */[ -8,   -7,  5,-0.70,     'w'],   // ANGLED, left
-      /* 12 */[-13,   -7,  8, 0,        'w'],   // long left partition
-      /* 13 */[ -2,   -2,  5, 0,        'b'],   // CENTRE BLOCK
-      /* 14 */[  9,   -2,  8, 1.5708,   'w'],   // right room, back wall
-      /* 15 */[ 12,    2,  5, 0,        'w'],   // right room, side
-      /* 16 */[ -9,    4, 10, 0.52,     'w'],   // LONG DIAGONAL, left-centre
-      /* 17 */[  3,    3,  5,-0.52,     'w'],   // ANGLED, right of centre
-      /* 18 */[-16,    7,  5, 1.5708,   'w'],   // left vertical
-      /* 19 */[-11,    8,  5, 0,        'w'],   // left T cap
-      /* 20 */[  9,   10,  5, 1.5708,   'w'],   // right vertical
-      /* 21 */[ -4,   12,  5, 0,        'w'],   // centre partition
-      /* 22 */[  1,   17,  8, 0,        'b'],   // BIG BLOCK, lower centre
-      /* 23 */[-13,   17,  7, 0,        'w'],   // lower-left partition
-      /* 24 */[-18,   20,  4, 1.5708,   'w'],   // far-left stub
-      /* 25 */[-11,   24,  7, 0,        'w'],   // lower-left partition
-      /* 26 */[  6,   26,  6, 0,        'w'],   // lower-right partition
-      /* 27 */[ -1,   29, 14, 0,        'c'],   // LONG CRATE RUN, bottom
-      /* 28 */[ 14,   -8,  6, 1.5708,   'w'],   // far-right vertical
-      /* 29 */[-17,  -12,  5, 0,        'w'],   // far-left upper
-      /* 30 */[ 13,   14,  5, 0,        'w']    // lower-right stub
+      /* v15.0: the v10.20 table scaled x 1.3 / z 1.294; rows 9, 11, 13, 16, 17
+         and 21 removed (see the header). Row numbers kept so "row 12 is too
+         far left" still means the same thing it did on his drawing. */
+      /*  1 */[-14.3, -34.9, 13.0, 0,      'w'],   // top-left long partition
+      /*  2 */[  9.1, -32.4,  7.8, 0,      'w'],   // top-right stub
+      /*  3 */[-19.5, -27.2,  7.8, 0,      'w'],   // upper-left partition
+      /*  4 */[ -2.6, -22.0, 10.4, 0,      'b'],   // BIG BLOCK, upper centre
+      /*  5 */[ 10.4, -24.6,  9.1, 0,      'w'],   // upper-right T, cap
+      /*  6 */[ 10.4, -19.4, 10.4, 1.5708, 'w'],   // upper-right T, stem
+      /*  7 */[-18.2, -20.7,  5.2, 1.5708, 'w'],   // short vertical, left
+      /*  8 */[-13.0, -16.8,  6.5, 0,      'w'],   // left partition
+      /* 10 */[  6.5, -11.6,  9.1, 1.5708, 'w'],   // right vertical
+      /* 12 */[-16.9,  -9.1, 10.4, 0,      'w'],   // long left partition
+      /* 14 */[ 11.7,  -2.6, 10.4, 1.5708, 'w'],   // right room, back wall
+      /* 15 */[ 15.6,   2.6,  6.5, 0,      'w'],   // right room, side
+      /* 18 */[-20.8,   9.1,  6.5, 1.5708, 'w'],   // left vertical
+      /* 19 */[-14.3,  10.4,  6.5, 0,      'w'],   // left T cap
+      /* 20 */[ 11.7,  12.9,  6.5, 1.5708, 'w'],   // right vertical
+      /* 22 */[  1.3,  22.0, 10.4, 0,      'b'],   // BIG BLOCK, lower centre
+      /* 23 */[-16.9,  22.0,  9.1, 0,      'w'],   // lower-left partition
+      /* 24 */[-23.4,  25.9,  5.2, 1.5708, 'w'],   // far-left stub
+      /* 25 */[-14.3,  31.1,  9.1, 0,      'w'],   // lower-left partition
+      /* 26 */[  7.8,  33.6,  7.8, 0,      'w'],   // lower-right partition
+      /* 27 */[ -1.3,  37.5, 18.2, 0,      'c'],   // LONG CRATE RUN, bottom
+      /* 28 */[ 18.2, -10.4,  7.8, 1.5708, 'w'],   // far-right vertical
+      /* 29 */[-22.1, -15.5,  6.5, 0,      'w'],   // far-left upper
+      /* 30 */[ 16.9,  18.1,  6.5, 0,      'w']    // lower-right stub
     ];
 
     /* ============ SHELL ============ */
@@ -229,6 +243,63 @@
       else partition(x, z, len, rot);
     });
 
+    /* ============ THE DECK (v15.0) ============
+       12 x 9 m platform, walking surface at 2.60, on six pillars, open
+       beneath: 2.35 m of headroom under the slab (a standing operator plus the
+       auto-step needs 2.34). Two crate stairs at opposite corners — six
+       0.40 m rises inside the 0.42 m auto-step, the same climb every small map
+       uses for its roofs — so there are exactly two ways up and both are
+       visible from the lanes. Rails on the halves the stairs do not use, so a
+       deck-holder is exposed on the side the climbers arrive from. */
+    var DX = 6, DZ = 4.5, DT = 2.60;
+    seg(-DX, DX, DT - 0.25, DT, -DZ, DZ, M.steelBlue);                       // the slab
+    seg(-DX - 0.2, DX + 0.2, DT - 0.34, DT - 0.25, -DZ - 0.2, DZ + 0.2, M.rust, NBOTH);  // edge lip, paint
+    [[-DX + 0.4, -DZ + 0.4], [DX - 0.4, -DZ + 0.4], [-DX + 0.4, DZ - 0.4], [DX - 0.4, DZ - 0.4],
+     [0, -DZ + 0.4], [0, DZ - 0.4]].forEach(function (c) {
+      box(c[0], (DT - 0.25) / 2, c[1], 0.6, DT - 0.25, 0.6, M.concrete);
+    });
+    /* rails: west and east short edges, plus the long-edge halves away from
+       each stair's arrival. Waist-high, so the deck is cover and not a box. */
+    seg(-DX, -DX + 0.16, DT, DT + 0.95, -DZ, DZ, M.steelBlue);
+    seg(DX - 0.16, DX, DT, DT + 0.95, -DZ, DZ, M.steelBlue);
+    seg(0.5, DX, DT, DT + 0.95, -DZ, -DZ + 0.16, M.steelBlue);               // north edge, east half (stair A arrives west)
+    seg(-DX, -0.5, DT, DT + 0.95, DZ - 0.16, DZ, M.steelBlue);               // south edge, west half (stair B arrives east)
+    /* crate stairs: stair A climbs SOUTH onto the north edge at x -4.6;
+       stair B climbs NORTH onto the south edge at x +4.6. Tops 0.40 .. 2.40,
+       then the 0.20 step onto the slab. */
+    function crateStair(cx, cz0, dir) {
+      for (var k = 0; k < 6; k++) {
+        var top = 0.40 * (k + 1), cz = cz0 + dir * k * 1.0;
+        box(cx, top / 2, cz, 1.4, top, 1.2, k % 2 ? M.cargoWood : M.palletWood);
+      }
+    }
+    crateStair(-4.6, -DZ - 5.6, 1);      // z -10.1 .. -5.1, arriving at the north edge (-4.5)
+    crateStair(4.6, DZ + 5.6, -1);       // z  10.1 ..  5.1, arriving at the south edge (4.5)
+    /* under the deck: two low walls the ground fight can use, offset so
+       neither lines up with a pillar. */
+    box(-2.0, 0.55, -1.6, 4.0, 1.10, 0.4, M.plaster);
+    box(2.0, 0.55, 1.6, 4.0, 1.10, 0.4, M.plaster);
+    box(-2.0, 1.16, -1.6, 4.1, 0.12, 0.42, M.roadPaintY, NBOTH);
+    box(2.0, 1.16, 1.6, 4.1, 0.12, 0.42, M.roadPaintY, NBOTH);
+
+    /* ============ CONTAINER CORRIDORS (v15.0) ============
+       Two open-ended containers flanking the deck along z: a roofed run you can
+       cross the middle in without being seen from the deck. Long sides and a
+       roof, no ends. Their roofs are the answer to a deck-holder, and a crate
+       step at each puts a player up there in two moves. */
+    function corridor(cx) {
+      var L = 8.0, W = 2.44, H = 2.60;
+      seg(cx - W / 2, cx - W / 2 + 0.12, 0, H, -L / 2, L / 2, M.contGreen);
+      seg(cx + W / 2 - 0.12, cx + W / 2, 0, H, -L / 2, L / 2, M.contGreen);
+      seg(cx - W / 2, cx + W / 2, H - 0.12, H, -L / 2, L / 2, M.contGreen);
+      box(cx, 1.9, 0, W + 0.02, 0.5, L * 0.72, M.rust, NBOTH);
+      var sx2 = cx + (cx > 0 ? 1 : -1) * (W / 2 + 0.75);
+      box(sx2, 0.155, L / 2 - 0.7, 1.3, 0.31, 1.3, M.palletBase);
+      box(sx2, 0.62, L / 2 + 0.7, 1.3, 1.24, 1.3, M.cargoWood);
+      box(sx2, 1.86, L / 2 + 0.7, 1.3, 1.24, 1.3, M.palletWood);
+    }
+    corridor(-17); corridor(19);
+
     /* ============ FACILITY DRESSING ============ */
     /* Target silhouettes on stands: the single most recognisable object in a
        shoot-house. Non-colliding so they never become cover. */
@@ -239,8 +310,8 @@
       box(cx, 0.15, cz, 0.60, 0.08, 0.50, M.metal, { cast: false });
       cyl(cx, 0.45, cz, 0.04, 0.70, M.metal, NCAST);
     }
-    [[-16, -25, 0.3], [4, -21, -0.4], [-6, -9, 1.1], [11, -5, 0.2],
-     [-14, 2, -0.6], [6, 8, 1.4], [-3, 21, 0.1], [14, 27, -0.9]]
+    [[-20.8, -32.4, 0.3], [5.2, -27.2, -0.4], [-7.8, -11.6, 1.1], [14.3, -6.5, 0.2],
+     [-18.2, 2.6, -0.6], [7.8, 10.4, 1.4], [-3.9, 27.2, 0.1], [18.2, 34.9, -0.9]]
       .forEach(function (t) { target(t[0], t[1], t[2]); });
 
     /* Ammo crates and a weapons bench at each end — the working furniture of a
@@ -252,7 +323,7 @@
       box(-6, 0.35, bz, 1.2, 0.70, 1.2, M.railGreen);
       box(6, 0.35, bz, 1.2, 0.70, 1.2, M.railGreen);
       for (var d = 0; d < 3; d++) {
-        cyl(s * 15 + d * 0.9, 0.44, bz, 0.30, 0.88, d % 2 ? M.rust : M.hazard);
+        cyl(s * 19.5 + d * 0.9, 0.44, bz, 0.30, 0.88, d % 2 ? M.rust : M.hazard);
       }
     });
 
@@ -264,7 +335,7 @@
               sz * (HZ - 2 - c * 1.3) - 0.5, sz * (HZ - 2 - c * 1.3) + 0.5, M.hazard, NBOTH);
         }
       });
-      [-24, -12, 0, 12, 24].forEach(function (lz) {
+      [-31, -15.5, 0, 15.5, 31].forEach(function (lz) {
         box(sx * (HX - 0.6), 6.4, lz, 0.5, 0.28, 1.0, M.amberGlow, NBOTH);
       });
     });
@@ -281,7 +352,7 @@
        anyway. Materials are all already emitted above, so the merge pass folds
        them into batches that are paid for. */
     [-1, 1].forEach(function (s) {
-      [-29, -20, -11, -2, 7, 16, 25].forEach(function (bz, i) {
+      [-37.5, -26, -14.2, -2.6, 9, 20.7, 32.4].forEach(function (bz, i) {
         /* Alternating barrier and crate pair, set off the wall so there is a
            gap to move behind rather than a sealed edge. */
         if (i % 2 === 0) {
@@ -301,7 +372,7 @@
       });
     });
     /* Two mid-floor islands where the plan leaves the widest open runs. */
-    [[-7, -20], [7, 20]].forEach(function (q) {
+    [[-9.1, -25.9], [9.1, 25.9]].forEach(function (q) {
       box(q[0], 0.55, q[1], 2.6, 1.10, 1.6, M.contGray);
       box(q[0], 1.16, q[1], 2.7, 0.12, 1.7, M.rust, NBOTH);
     });
@@ -334,8 +405,8 @@
       box(cx - 0.42, 0.012, cz - dir * 0.18, 1.05, 0.012, 0.16, M.roadPaintY, o1);
       box(cx + 0.42, 0.012, cz - dir * 0.18, 1.05, 0.012, 0.16, M.roadPaintY, o2);
     }
-    [-12, 0, 12].forEach(function (lx) {
-      for (var cz2 = 8; cz2 <= 24; cz2 += 8) {
+    [-15.6, 0, 15.6].forEach(function (lx) {
+      for (var cz2 = 10.4; cz2 <= 31.1; cz2 += 10.4) {
         chevron(lx, -cz2, -1);
         chevron(lx, cz2, 1);
       }
@@ -351,7 +422,7 @@
         });
       });
     }
-    brackets(-2, -17, 8); brackets(-2, -2, 5); brackets(1, 17, 8);
+    brackets(-2.6, -22.0, 10.4); brackets(1.3, 22.0, 10.4);
 
     /* Muster pads: blue on the north spawn floor, rust on the south, matching
        the wall band you are facing when you leave it. Boxes, not cyl(): cyl()
@@ -364,11 +435,12 @@
     /* Loose scatter, with the KEEP_CLEAR discipline v10.11 learned the hard
        way: tested against the crate's FULL footprint, never its centre. */
     var KEEP_CLEAR = [
-      [-20, 20, -34, -27], [-20, 20, 27, 34],     // both spawn rooms
-      [-4, 4, -4, 4]                              // the centre block approach
+      [-26, 26, -44, -35], [-26, 26, 35, 44],     // both spawn rooms
+      [-8, 8, -11, 11],                           // the deck, its stairs and the ground beneath
+      [-19, -15, -6, 6], [17, 21, -6, 6]          // the corridors and their crate steps
     ];
-    for (var i = 0; i < 18; i++) {
-      var px = (rnd() - 0.5) * 34, pz = (rnd() - 0.5) * 58;
+    for (var i = 0; i < 24; i++) {
+      var px = (rnd() - 0.5) * 46, pz = (rnd() - 0.5) * 78;
       var cw = 0.5 + rnd() * 0.5, cd = 0.4 + rnd() * 0.4, blocked = false;
       for (var k = 0; k < KEEP_CLEAR.length; k++) {
         var r = KEEP_CLEAR[k];

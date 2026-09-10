@@ -10,11 +10,6 @@
        these, everything else rolls NONE of them. Heals/ammo/armor stay
        shared: consumables are the "genuinely safe utilities" the brief
        allows, and a bandage has no pool. ===== */
-    wpn_bm_carbine: { kind: 'weapon', w: 'bm_carbine',  rar: 'c', label: 'VK Carbine' },
-    wpn_bm_smg:  { kind: 'weapon', w: 'bm_smg',      rar: 'c', label: 'Rook SMG' },
-    wpn_bm_scatter: { kind: 'weapon', w: 'bm_scatter',  rar: 'r', label: 'Ward 12' },
-    wpn_bm_marksman: { kind: 'weapon', w: 'bm_marksman', rar: 'l', label: 'Longeye DMR' },
-    wpn_bm_side: { kind: 'weapon', w: 'bm_side',     rar: 'c', label: 'P9 Side' },
     bandage:  { kind: 'heal', heal: 25, rar: 'c', label: 'Bandage' },
     health:   { kind: 'heal', heal: 50, rar: 'c', label: 'Health Pack' },
     energy:   { kind: 'heal', heal: 15, rar: 'c', label: 'Energy Drink' },
@@ -136,7 +131,32 @@
        is also where it matters least — you can hear everything anyway. On
        Urban it is genuinely powerful, and that is the right home for a rare
        crate item. */
-    visor:      { kind: 'gear', g: 'visor', n: 1, rar: 'l', drop: 1, label: 'Recon Visor' }
+    visor:      { kind: 'gear', g: 'visor', n: 1, rar: 'l', drop: 1, label: 'Recon Visor' },
+    /* ===== v15.0 (fix 1) EMP CHARGE — rare FLOOR loot, also in the crate pool.
+       Rahul asked for it "in loot"; a floor spawn is right here where it was
+       wrong for the visor: an EMP only matters against a player who has placed
+       mines, so a scarce-but-findable supply is what keeps minefields an
+       investment rather than a guarantee. */
+    emp:        { kind: 'gear', g: 'emp', n: 1, rar: 'l', label: 'EMP Charge' },
+    /* ^ legendary, not rare: at rare the first live roll put FIFTEEN charges on
+       Urban's floor (Phase 18 printed the count), and each one wipes every enemy
+       mine on the map. At legendary it is ~4 a match beside the shield — a find,
+       and four map-wide wipes is all the counter-play a minefield needs. */
+    /* ===== v15.0 (fix 5) BALLISTIC SHIELD — legendary floor loot and crate
+       exotic, BIG MAPS ONLY (`bigOnly`, applied in server/lib/loot.js at both
+       doors). 260 hp of cover you carry; one sniper round breaks it. */
+    shield:     { kind: 'gear', g: 'shield', n: 1, rar: 'l', bigOnly: 1, label: 'Ballistic Shield' },
+    /* ===== v15.0 (fix 10) STRIKE REMOTE — never rolled, never dropped:
+       `special: 1` keeps it out of every roll; server/lib/loot.js places
+       exactly ONE per big-map match on a random interior point (plantRemote)
+       with `hidden: 1` so the client draws it without a rarity ring. */
+    remote:     { kind: 'gear', g: 'remote', n: 1, rar: 'l', special: 1, bigOnly: 1, label: 'Strike Remote' },
+    /* ===== v1.0b: C4 — crate-only (`drop`), big maps only. */
+    c4:         { kind: 'gear', g: 'c4', n: 1, rar: 'l', drop: 1, bigOnly: 1, label: 'C4 Charge' },
+    /* ===== v1.0b: the flamethrower — legendary FLOOR loot, big maps only, and
+       `cls: 'h'`: it rolls on interior/elevated points only ("in the
+       buildings"). server/lib/loot.js honours `cls` at roll time. */
+    wpn_flamer: { kind: 'weapon', w: 'flamer', rar: 'l', bigOnly: 1, cls: 'h', label: 'Flamethrower' }
   };
   // Spawn-point classes: g ground, h elevated/interior-notable, s signature.
 
@@ -184,7 +204,7 @@
        are added below at measured heights. */
     [32, 11.1, -30, "s"], [0, 7.45, -62, "s"], [60, 10.75, 2, "s"], [-30, 7.25, 26, "s"],
     [-44, 4.6, -28, "h"], [34, 7.6, -27, "h"], [33, 4.2, -33, "h"], [60, 4.85, -8, "h"],
-    [0, 4.05, -62, "h"], [-32.0, 4.00, 60.5, "h"], [-23.0, 4.00, 55.8, "h"], [-14.5, 4.00, 60.5, "h"],
+    [0, 4.05, -62, "h"], [-32.0, 4.00, 60.5, "h"], [-28.6, 4.00, 55.8, "h"], [-14.5, 4.00, 60.5, "h"],
     [-14.5, 7.20, 56.5, "s"], [13.5, 4.00, 55.8, "h"], [21.5, 4.00, 60.5, "h"], [16.0, 7.20, 61.5, "s"],
     [29.0, 1.60, 56.4, "h"], [27.5, 4.60, 60.5, "h"], [28.0, 8.45, 55.5, "s"], [-31, 4.0, 27, "h"],
     [47, -2.0, -18, "h"], [27, 0.72, 25.2, "h"], [-60, 0.55, -5, "h"], [0, 0.55, -1.8, "g"],
@@ -198,7 +218,7 @@
     [-24, 0.55, 15, "g"], [-12, 0.55, -24, "g"], [-58.5, 5.05, -90, "h"], [-50, 0.55, -88, "g"],
     [-27, 7.75, -86, "s"], [-13.5, 7.45, -85, "h"], [-70, 0.55, -80, "g"], [-40, 0.55, -92, "g"],
     [46, 1.60, -84.4, "h"], [42, 1.65, -80.6, "s"], [36, 4.41, -85.4, "s"], [30, 1.60, -77.0, "h"],
-    [36, 1.60, -71.0, "h"], [46, 5.50, -71.0, "h"], [38, 8.80, -71.0, "s"], [76, 5.15, -84.0, "h"],
+    [36, 1.60, -71.0, "h"], [46, 5.50, -71.0, "h"], [38, 8.80, -71.0, "h"], [44, 12.10, -71.0, "s"], [76, 5.15, -84.0, "h"],
     [28.5, 1.55, -94.6, "h"], [36, 4.55, -93.0, "s"], [57, 0.55, -93.0, "h"], [61, 0.55, -70.5, "h"],
     [0, 0.55, -74, "g"], [85.5, 5.75, 12, "h"], [79, 3.15, -4, "h"], [88, 0.55, -10, "g"],
     [85, 0.55, 38, "g"], [-88, 8.05, -10, "s"], [-86, 4.45, -14, "h"], [-90, 0.55, 8, "g"],
@@ -212,7 +232,7 @@
     [-44.0, 1.65, -17.7, "h"], [-44.0, 0.55, -47.2, "g"], [79, 8.35, 4, "s"], [92, 8.35, -4, "s"],
     [82.2, 0.63, 8, "h"], [88.7, 0.63, 0, "h"], [85, 9.45, 20, "s"], [75.4, 0.55, -5.0, "h"],
     [75.4, 3.85, -5.0, "h"], [84, 3.15, 18, "h"], [-3, 0.55, 88, "g"], [2, 0.55, 74, "g"],
-    [69, 6.80, -33, "h"], [-83, 6.80, -86, "h"], [-54, 13.20, 63, "s"], [-12, 4.85, 38, "h"],
+    [69, 6.80, -33, "h"], [-83, 6.80, -86, "h"], [-54, 6.55, 62, "s"], [-12, 4.85, 38, "h"],
     [-32, 9.7, -28, "s"], [-24, 9.7, -24, "h"], [-90.8, 0.8, -90.8, "h"], [-90.8, 0.8, -84.8, "h"],
     [-86.3, 0.8, -87.8, "h"], [-86.3, 0.8, -81.8, "h"], [-81.8, 0.8, -90.8, "h"], [-81.8, 0.8, -84.8, "h"],
     [-77.3, 0.8, -87.8, "h"], [-77.3, 0.8, -81.8, "h"], [-90.8, 3.8, -90.8, "h"], [-90.8, 3.8, -84.8, "h"],
@@ -229,8 +249,8 @@
     [70.2, 3.8, -26.3, "h"], [57.7, 0.8, 61.2, "h"], [66.7, 0.8, 61.2, "h"], [77.2, 0.8, 65.2, "h"],
     [89.2, 0.8, 69.2, "h"], [68.2, 0.8, 86.2, "h"], [53.2, 0.8, 57.2, "h"], [-34, 4, 22.5, "h"],
     [-28, 4, 22.5, "h"], [-25, 4, 28.5, "h"], [53.2, 0.8, 65.2, "h"], [59.2, 0.8, 79.2, "h"],
-    [63.7, 0.8, 89.7, "h"], [-56.8, 4.2, 59.2, "h"], [-56.8, 4.2, 65.2, "h"], [-56.8, 7.2, 65.2, "h"],
-    [-56.8, 10.2, 59.2, "h"], [-31.1, 0.55, 56.2, "h"], [-17.6, 4, 54.2, "h"], [-34.8, 4, 54.2, "h"],
+    [63.7, 0.8, 89.7, "h"], [-56.8, 3.55, 59.2, "h"], [-56.8, 3.55, 65.2, "h"], [-52.0, 0.55, 64.0, "h"],
+    [-52.5, 6.55, 58.5, "h"], [-31.1, 0.55, 56.2, "h"], [-17.6, 4, 54.2, "h"], [-34.8, 4, 54.2, "h"],
     [19.2, 4, 54.2, "h"], [28.8, 4.6, 54.2, "h"], [76.2, 0.71, -88.8, "h"], [76.2, 0.71, -81.2, "h"],
     [43.2, 1.6, -74.2, "h"], [43.2, 1.6, -68.2, "h"], [48.2, 1.6, -74.2, "h"], [48.2, 1.6, -68.2, "h"],
     [27.2, 1.6, -85, "h"], [37.7, 1.6, -85, "h"], [33.2, 5.5, -74.2, "h"], [33.2, 5.5, -68.2, "h"],
@@ -264,8 +284,8 @@
     // control tower — the climb pays on every deck, and the cab is a signature
     [86, 3.99, 62, "h"], [86, 8.19, 62, "h"], [88, 13.40, 64, "s"],
     // Westbrook Stadium — pitch, terraces, tunnels, training ground
-    [-80, 1.15, 56, "g"], [-80, 1.15, 78, "g"], [-76, 1.15, 67, "g"],
-    [-84, 1.15, 67, "g"], [-92, 1.95, 74, "h"],
+    [-80, 0.55, 56, "g"], [-80, 0.55, 78, "g"], [-76, 0.55, 67, "g"],
+    [-84, 0.55, 67, "g"], [-92, 0.55, 74, "g"],
     
     [-95, 0.55, 67, "g"], [-64, 0.55, 67, "g"],
     [-88, 0.55, 91, "g"], [-79, 0.55, 91, "g"], [-70, 0.55, 91, "g"],
@@ -301,13 +321,44 @@
     /* v9.14: replacing four points the Westbrook rebuild swallowed, plus
        fill. Generated from the REBUILT geometry with tools/gen-points.js. */
     [40, 0.55, 68, "g"], [44, 0.55, 74, "g"], [-38, 0.55, -6, "g"], [-42, 0.55, 68, "g"],
-    [42, 0.55, 52, "g"], [-14, 0.55, -36, "g"], [20, 0.55, -70, "g"], [-48, 0.55, -6, "g"]
+    [42, 0.55, 52, "g"], [-14, 0.55, -36, "g"], [20, 0.55, -70, "g"], [-48, 0.55, -6, "g"],
+
+    /* ---- v15.0 (fix 4): THE OUTER RING ------------------------------------
+       Ground points generated by tools/gen-points.js against the built map
+       (never typed); the elevated points are the four towers' decks and cabs,
+       the stacked containers of the North Yards and the barracks watchtower,
+       at MEASURED surface + 0.55 — the tower's decks sit at exactly 4.2 / 8.4
+       / 12.6 and its cab deck at 12.85, the same numbers the South Terminal
+       tower's points were probed to. Every one is proved by verify-map. */
+    [110, 0.55, -112, "g"], [110, 0.55, -104, "g"], [110, 0.55, 110, "g"], [102, 0.55, -112, "g"],
+    [110, 0.55, -96, "g"], [110, 0.55, -86, "g"], [110, 0.55, -78, "g"], [110, 0.55, 102, "g"],
+    [110, 0.55, -42, "g"], [0, 0.55, -112, "g"], [104, 0.55, -100, "g"], [94, 0.55, -112, "g"],
+    [-112, 0.55, -58, "g"], [110, 0.55, -70, "g"], [-112, 0.55, -34, "g"], [-112, 0.55, -44, "g"],
+    [-112, 0.55, 26, "g"], [-112, 0.55, 36, "g"], [-112, 0.55, 44, "g"], [110, 0.55, -58, "g"],
+    [110, 0.55, -50, "g"], [104, 0.55, -92, "g"], [110, 0.55, -34, "g"], [104, 0.55, -82, "g"],
+    [104, 0.55, 106, "g"], [98, 0.55, -106, "g"], [-112, 0.55, 110, "g"], [-8, 0.55, -112, "g"],
+    [-108, 0.55, -112, "g"], [-112, 0.55, -68, "g"], [8, 0.55, -112, "g"], [110, 0.55, 94, "g"],
+    [110, 0.55, 48, "g"], [-112, 0.67, -106, "g"], [110, 0.55, -24, "g"], [98, 0.55, 110, "g"],
+    [86, 0.55, -112, "g"], [110, 0.55, 18, "g"], [104, 0.55, -74, "g"], [40, 0.55, 110, "g"],
+    [104, 0.55, -38, "g"], [-108, 0.55, -52, "g"], [-70, 0.55, -112, "g"], [106, 0.55, -64, "g"],
+    // the four towers — every deck pays, the cab is a signature
+    [2, 4.75, -109.6, "h"], [2, 8.95, -109.6, "h"], [0, 13.40, -112.6, "s"],           // NORTH   (x -4..4,  z -118.6..-106.6)
+    [32, 4.75, 115.6, "h"], [32, 8.95, 115.6, "h"], [30, 13.40, 112.6, "s"],           // SOUTH   (x 26..34, z 106.6..118.6)
+    [113.4, 4.75, 3, "h"], [113.4, 8.95, 3, "h"], [111.4, 13.40, 0, "s"],              // EAST    (x 107.4..115.4, z -6..6)
+    [-113.4, 4.75, 15, "h"], [-113.4, 8.95, 15, "h"], [-111.4, 13.40, 12, "s"],        // WEST    (mirrored, x -115.4..-107.4, z 6..18)
+    // north yards: single container roofs at 2.6 and the stacked seconds at 5.2
+    [-100, 3.15, -116.4, "h"], [-64, 3.15, -116.4, "h"], [26, 3.15, -116.4, "h"], [68, 3.15, -116.4, "h"],
+    [-87.2, 5.75, -116.4, "h"], [-51.2, 5.75, -116.4, "h"], [14.8, 5.75, -116.4, "h"], [56.8, 5.75, -116.4, "h"], [92.8, 5.75, -116.4, "h"],
+    // barracks watchtower deck (top 3.25)
+    [-113.5, 3.80, 79, "h"]
   ];
 
   var AIRDROP = {
     periodSec: 150, fallSec: 4,
     points: [[0, -30], [-20, 8], [24, 40], [-40, -6], [0, -48], [46, 26],
-      [-37, -86], [87.7, -18], [0, 86], [-88, 10]],
+      [-37, -86], [87.7, -18], [0, 86], [-88, 10],
+      /* v15.0 (fix 4): the ring boulevard — open asphalt, nothing overhead. */
+      [-60, -102], [60, 102], [102, -60], [-102, 60]],
     // crate contents: one legendary weapon, L3 vest, med kit, one strong attachment
     /* v9.3: the crate pool gains the three loot weapons that most change how a
        fight plays rather than how it is won — the fastest gun in the game, the
@@ -337,7 +388,8 @@
        actually reachable from a crate. Twice in two versions is a pattern:
        marking an item drop-only and adding it to a pool are two separate edits
        and the gate is the only thing joining them. */
-    exoticPool: ['drone', 'drone', 'helm_3', 'wpn_rocket', 'molotov', 'medkit', 'att_x8', 'visor']
+    exoticPool: ['drone', 'drone', 'helm_3', 'wpn_rocket', 'molotov', 'medkit', 'att_x8', 'visor',
+      'emp', 'shield', 'c4']   /* v15.0/v1.0b: shield and c4 are bigOnly and are filtered out of arena crates in loot.js */
   };
 
   return { LOOT_ITEMS: LOOT_ITEMS, LOOT_WEIGHTS: LOOT_WEIGHTS, LOOT_RESPAWN: LOOT_RESPAWN, LOOT_POINTS: LOOT_POINTS, AIRDROP: AIRDROP };

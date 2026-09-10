@@ -271,6 +271,7 @@ var FX = (function () {
 
   function update(dt) {
     updatePings();          // v9.11: team pings fade on the same clock
+    updateFireZones(dt);    // v1.0b
     for (var i = live.length - 1; i >= 0; i--) {
       var e = live[i];
       e.life += dt;
@@ -279,6 +280,11 @@ var FX = (function () {
         scene.remove(e.mesh);
         if (e.mesh.geometry) e.mesh.geometry.dispose();
         if (e.mesh.material && e.mesh.material.dispose) e.mesh.material.dispose();
+        /* v15.0: a GROUP effect (the helicopter) owns its children's buffers. */
+        if (e.mesh.isGroup) e.mesh.traverse(function (o) {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material && o.material.dispose) o.material.dispose();
+        });
         live.splice(i, 1);
       } else if (e.update) e.update(e, t, dt);
     }
@@ -329,6 +335,158 @@ var FX = (function () {
       }
       shake(0.55);
     }, 320);
+  }
+
+  /* ===== v15.0 - EMP BLAST (fix 1) =====
+     Purely cosmetic: a cyan shockwave ring expanding from the caller and a
+     spark at every mine the server says it fried. The mines themselves are
+     removed by Pickups.mineBoom on the same event. */
+  function empBlast(d) {
+    if (!d) return;
+    var o = new THREE.Vector3(d.x || 0, (d.y || 1) - 0.6, d.z || 0);
+    var ring = new THREE.Mesh(new THREE.RingGeometry(0.6, 1.0, 40),
+      new THREE.MeshBasicMaterial({ color: 0x51d0e8, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.copy(o);
+    add(ring, 1.1, function (e, t) {
+      e.mesh.scale.setScalar(1 + t * 40);
+      e.mesh.material.opacity = 0.85 * (1 - t);
+    });
+    var fl = new THREE.PointLight(0x51d0e8, 2.5, 18, 2);
+    fl.position.copy(o).add(new THREE.Vector3(0, 1.2, 0)); scene.add(fl);
+    add(fl, 0.5, function (e, t) { e.mesh.intensity = 2.5 * (1 - t); });
+    (d.mines || []).forEach(function (m) {
+      var p = new THREE.Vector3(m.x, m.y + 0.1, m.z);
+      for (var i = 0; i < 6; i++) {
+        var sp = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05),
+          new THREE.MeshBasicMaterial({ color: i % 2 ? 0x51d0e8 : 0xffffff }));
+        sp.position.copy(p);
+        var vx = (Math.random() - 0.5) * 3, vy = 1.5 + Math.random() * 2.5, vz = (Math.random() - 0.5) * 3;
+        (function (a, b, c) {
+          add(sp, 0.6, function (e, t, dt) {
+            e.mesh.position.x += a * dt; e.mesh.position.z += c * dt;
+            e.mesh.position.y += (b - t * 8) * dt;
+          });
+        })(vx, vy, vz);
+      }
+    });
+    var dd = camera ? camera.position.distanceTo(o) : 99;
+    shake(Math.max(0, 0.25 - dd * 0.01));
+  }
+
+  /* ===== v15.0 - THE HELICOPTER (fix 10) =====
+     Cosmetic flyover: a gunship crosses the map at rooftop-plus height from
+     the caller's side, arriving overhead as the server's timer fires. The
+     kills are the server's (server.js 'callStrike'); a client that never
+     renders this still dies, and one that does gets no say. */
+  function heliStrike(d) {
+    if (!d) return;
+    var dur = Math.max(2, (d.approach || 5)) + 2.5;
+    var g = new THREE.Group();
+    var body = new THREE.MeshLambertMaterial({ color: 0x2a2f36 });
+    var glass = new THREE.MeshLambertMaterial({ color: 0x0b1a1e, emissive: 0x31505c });
+    var b1 = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 5.2), body); g.add(b1);
+    var nose = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 1.4), glass); nose.position.set(0, 0.1, -3.1); g.add(nose);
+    var tail = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 5.0), body); tail.position.set(0, 0.4, 4.9); g.add(tail);
+    var fin = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.6, 1.0), body); fin.position.set(0, 1.2, 7.0); g.add(fin);
+    var mast = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.6, 0.3), body); mast.position.set(0, 1.1, 0); g.add(mast);
+    var rotor = new THREE.Mesh(new THREE.BoxGeometry(11, 0.06, 0.5),
+      new THREE.MeshBasicMaterial({ color: 0x14181c, transparent: true, opacity: 0.55 }));
+    rotor.position.set(0, 1.45, 0); g.add(rotor);
+    var trotor = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.2, 0.3),
+      new THREE.MeshBasicMaterial({ color: 0x14181c, transparent: true, opacity: 0.6 }));
+    trotor.position.set(0.35, 0.6, 7.2); g.add(trotor);
+    var lamp = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.3),
+      new THREE.MeshBasicMaterial({ color: 0xff3428 })); lamp.position.set(0, -0.9, 0); g.add(lamp);
+    /* Path: enter from a random compass side ~130 m out, pass over the map
+       centre, exit the far side. Height clears every rooftop on every map. */
+    var ang = Math.random() * Math.PI * 2;
+    var sx = Math.cos(ang) * 130, sz = Math.sin(ang) * 130;
+    var ex = -sx, ez = -sz;
+    g.position.set(sx, 46, sz);
+    g.lookAt(ex, 46, ez);
+    add(g, dur, function (e, t) {
+      e.mesh.position.set(sx + (ex - sx) * t, 46 - Math.sin(t * Math.PI) * 6, sz + (ez - sz) * t);
+      rotor.rotation.y += 0.55;
+      trotor.rotation.x += 0.7;
+      lamp.visible = (Math.floor(t * 12) % 2) === 0;
+    });
+  }
+
+  /* ===== v1.0b - FIRE ZONE =====
+     Twenty metres of ground on fire for ten seconds: a ring of flame boards
+     around the edge, a glowing disc, a light, and rising embers. One handle
+     per zone so fireZoneEnd can put it out early or on time. */
+  var fireZones = {};
+  function fireZone(d) {
+    if (!d || fireZones[d.id]) return;
+    var c = new THREE.Vector3(d.p[0], d.p[1], d.p[2]), r = d.r || 20, dur = d.dur || 10;
+    var g = new THREE.Group();
+    var disc = new THREE.Mesh(new THREE.CircleGeometry(r, 48),
+      new THREE.MeshBasicMaterial({ color: 0xff5a10, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }));
+    disc.rotation.x = -Math.PI / 2; disc.position.y = 0.06; g.add(disc);
+    var flames = [];
+    var FM = new THREE.MeshBasicMaterial({ color: 0xff8a20, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+    var FM2 = new THREE.MeshBasicMaterial({ color: 0xffd040, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
+    var n = Math.max(24, Math.round(r * 2.2));
+    for (var i = 0; i < n; i++) {
+      var a = (i / n) * Math.PI * 2, rr = r * (0.55 + Math.random() * 0.45);
+      var h = 1.2 + Math.random() * 1.8;
+      var f = new THREE.Mesh(new THREE.PlaneGeometry(1.4, h), i % 3 ? FM : FM2);
+      f.position.set(Math.cos(a) * rr, h / 2, Math.sin(a) * rr);
+      f.rotation.y = a + Math.PI / 2;
+      f.userData = { a: a, rr: rr, h: h, ph: Math.random() * 6 };
+      g.add(f); flames.push(f);
+    }
+    var light = new THREE.PointLight(0xff7a20, 2.2, r * 1.6, 2);
+    light.position.set(0, 3, 0); g.add(light);
+    g.position.copy(c);
+    scene.add(g);
+    fireZones[d.id] = { grp: g, flames: flames, disc: disc, light: light, born: performance.now(), dur: dur };
+    var dd = camera ? camera.position.distanceTo(c) : 99;
+    shake(Math.max(0, 0.3 - dd * 0.01));
+  }
+  function fireZoneEnd(id) {
+    var z = fireZones[id];
+    if (!z) return;
+    scene.remove(z.grp);
+    z.grp.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.dispose) o.material.dispose(); });
+    delete fireZones[id];
+  }
+  function fireZonesReset() { for (var id in fireZones) fireZoneEnd(id); }
+  function updateFireZones(dt) {
+    var t = performance.now() * 0.001;
+    for (var id in fireZones) {
+      var z = fireZones[id];
+      var age = (performance.now() - z.born) / 1000;
+      var fade = age > z.dur - 1.5 ? Math.max(0, (z.dur - age) / 1.5) : 1;
+      for (var i = 0; i < z.flames.length; i++) {
+        var f = z.flames[i], u = f.userData;
+        var sc = 0.75 + 0.35 * Math.sin(t * 9 + u.ph);
+        f.scale.set(1, sc * fade + 0.01, 1);
+        f.position.y = (u.h * sc * fade) / 2;
+      }
+      z.disc.material.opacity = 0.32 * fade;
+      z.light.intensity = 2.2 * fade * (0.85 + 0.15 * Math.sin(t * 13));
+      if (camera && camera.position.distanceTo(z.grp.position) < 22 && Math.random() < 0.3) {
+        // rising embers
+        var e = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), new THREE.MeshBasicMaterial({ color: 0xffb040 }));
+        var a = Math.random() * Math.PI * 2, rr = Math.random() * 20;
+        e.position.set(z.grp.position.x + Math.cos(a) * rr, z.grp.position.y + 0.3, z.grp.position.z + Math.sin(a) * rr);
+        add(e, 1.2, function (ev, tt, dt2) { ev.mesh.position.y += 2.4 * dt2; ev.mesh.material.opacity = 1 - tt; });
+      }
+    }
+  }
+
+  /* ===== v1.0b - ROCKET STRIKE ===== the fireball and a streak from the sky */
+  function rocketStrike(d) {
+    if (!d) return;
+    var p = new THREE.Vector3(d.x, d.y, d.z);
+    var top = p.clone().add(new THREE.Vector3(6, 60, -4));
+    tracer(top, p, 0xffb020);
+    explosion(p, d.r || 6);
+    var dd = camera ? camera.position.distanceTo(p) : 99;
+    shake(Math.max(0.15, 0.9 - dd * 0.02));
   }
 
   function damageFlash(strength) {
@@ -433,6 +591,8 @@ var FX = (function () {
     shake: shake, applyShake: applyShake,
     damageFlash: damageFlash, damageDirection: damageDirection,
     hitmarker: hitmarker, flashbang: flashbang, updateFlash: updateFlash,
-    nukeStart: nukeStart, nukeEnd: nukeEnd
+    nukeStart: nukeStart, nukeEnd: nukeEnd,
+    empBlast: empBlast, heliStrike: heliStrike,   /* v15.0 */
+    fireZone: fireZone, fireZoneEnd: fireZoneEnd, fireZonesReset: fireZonesReset, rocketStrike: rocketStrike   /* v1.0b */
   };
 })();

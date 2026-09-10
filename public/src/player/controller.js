@@ -6,6 +6,7 @@ var PlayerCtl = (function () {
   var vel = new THREE.Vector3();
   var yaw = 0, pitch = 0;
   var crouch = false, prone = false, grounded = false, alive = false;
+  var platformFn = null, onPlatform = false;   /* v1.0e: the train's moving floor, see update() */
   var landHit = 0; // set on hard landings, consumed by main for a camera dip
   var lastSurf = 0; // footstep surface of the collider underfoot
   var lean = 0;          // -1 left .. 1 right (smoothed)
@@ -250,6 +251,34 @@ var PlayerCtl = (function () {
 
     // Recovery, cheapest first.
     unstick(P.radius, halfY, P.radius);
+
+    /* ===== v1.0e - A MOVING FLOOR (the train) =====
+       The resolver above is static-only, by design (see the lift note in
+       game.js). The train offers a floor through platformFn instead: if the
+       player's feet are at or just above a coach floor, its step or its roof,
+       they are snapped onto it, carried with the car's velocity and held
+       inside the coach walls except at the doors. Nothing here touches the
+       static resolution — the world still wins every argument first, which is
+       what keeps this from being the marginal physics the lifts avoided. */
+    var plat = platformFn ? platformFn(pos, halfY) : null;
+    if (plat) {
+      var feet = pos.y - halfY;
+      if (vel.y <= 0.6 && feet <= plat.y + 0.45 && feet >= plat.y - 0.95) {
+        pos.y = plat.y + halfY + EPS; vel.y = 0; grounded = true; lastSurf = 1;
+        pos.x += plat.vx * dt; pos.z += plat.vz * dt;
+        if (plat.inside && !plat.doorZone && plat.halfW) {
+          var cs = Math.cos(plat.yaw), sn = Math.sin(plat.yaw);
+          var dx = pos.x - plat.cx, dz = pos.z - plat.cz;
+          var lx = dx * cs + dz * sn, lz = -dx * sn + dz * cs;
+          if (Math.abs(lz) > plat.halfW) {
+            lz = Math.sign(lz) * plat.halfW;
+            pos.x = plat.cx + lx * cs - lz * sn; pos.z = plat.cz + lx * sn + lz * cs;
+          }
+        }
+        onPlatform = true;
+      } else onPlatform = false;
+    } else onPlatform = false;
+
     if (pos.y < voidY) { pos.copy(lastSafe); vel.set(0, 0, 0); grounded = false; }
     else if (grounded) lastSafe.copy(pos);
 
@@ -300,6 +329,8 @@ var PlayerCtl = (function () {
     get moveState() { return moveState; },
     get alive() { return alive; }, set alive(v) { alive = v; },
     consumeLand: function () { var l = landHit; landHit = 0; return l; },
+    setPlatform: function (fn) { platformFn = typeof fn === 'function' ? fn : null; },   /* v1.0e */
+    get onPlatform() { return onPlatform; },
     spawnAt: spawnAt,
     update: update,
     eyePosition: eyePosition,

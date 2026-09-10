@@ -15,9 +15,31 @@
 #nuke-banner-s{margin-top:6px;font-size:13px;letter-spacing:.14em;color:#ffe9b8;text-shadow:0 2px 4px #000}
 @keyframes nukePulse{0%,100%{opacity:1}50%{opacity:.55}}
 #nuke-banner.armed{display:block}
+/* v1.0b: the big-map rocket banner — same place, its own element */
+#rocket-banner{position:fixed;left:50%;top:14%;transform:translateX(-50%);display:none;z-index:44;text-align:center;pointer-events:none}
+#rocket-banner-t{font-size:30px;font-weight:800;letter-spacing:.16em;color:#ff9a4a;text-shadow:0 0 18px rgba(255,120,40,.9),0 2px 4px #000;animation:nukePulse .7s ease-in-out infinite}
+#rocket-banner-s{margin-top:6px;font-size:13px;letter-spacing:.14em;color:#ffd9b8;text-shadow:0 2px 4px #000}
+#rocket-banner.armed{display:block}
 #visor-pip{position:fixed;left:50%;top:8%;transform:translateX(-50%);display:none;z-index:43;
   font-size:11px;letter-spacing:.18em;color:#7ef0ff;text-shadow:0 0 10px rgba(60,200,230,.8),0 2px 3px #000}
 #visor-pip.on{display:block}
+/* v15.0 (fix 10): the strike-remote pip sits under the visor pip. */
+#remote-pip{position:fixed;left:50%;top:11%;transform:translateX(-50%);display:none;z-index:43;
+  font-size:11px;letter-spacing:.18em;color:#ffd45e;text-shadow:0 0 10px rgba(255,150,40,.8),0 2px 3px #000}
+#remote-pip.on{display:block}
+#remote-pip b{color:#fff}
+#remote-pip.hold{color:#7ef0ff;animation:nukePulse .5s ease-in-out infinite}
+/* v1.0e: hold-breath meter — a thin vertical bar right of the reticle while scoped */
+#breath-bar{position:fixed;left:calc(50% + 46px);top:calc(50% - 30px);width:5px;height:60px;border:1px solid rgba(255,255,255,.35);
+  background:rgba(0,0,0,.35);z-index:42;pointer-events:none;display:flex;flex-direction:column;justify-content:flex-end}
+#breath-bar.hidden{display:none}
+#breath-fill{width:100%;height:100%;background:rgba(220,235,255,.8);transition:height .08s linear}
+#breath-bar.held #breath-fill{background:#7ef0ff;box-shadow:0 0 8px rgba(126,240,255,.8)}
+#breath-bar::after{content:'SHIFT';position:absolute;left:8px;bottom:-2px;font-size:9px;letter-spacing:.12em;color:rgba(255,255,255,.55)}
+/* v15.0 (fix 5): the shield row. */
+#shield-row{display:none}
+#shield-row.on{display:flex}
+.fill.shield{width:100%;background:linear-gradient(90deg,#3a5a7c,#9fd8ff)}
 #nuke-flash{position:fixed;inset:0;display:none;z-index:42;pointer-events:none;
   background:radial-gradient(circle at 50% 55%,rgba(255,190,90,.30),rgba(180,60,20,.16) 45%,rgba(0,0,0,0) 75%)}
 #nuke-flash.on{display:block;animation:nukeRoll 1.4s ease-in-out infinite}
@@ -125,7 +147,6 @@
 
     <nav class="nav-rail">
       <button class="rail-btn primary" id="btn-play"><i></i><span>PLAY</span><em>DEPLOY TO A MATCH</em></button>
-      <button class="rail-btn accent" id="btn-botmode"><i></i><span>BOT MODE</span><em>SOLO &middot; TEAM &middot; BATTLE vs MACHINES</em></button>
       <button class="rail-btn" id="btn-howto"><i></i><span>FIELD MANUAL</span><em>CONTROLS &amp; INTEL</em></button>
       <div class="rail-foot">NO DOWNLOAD &#183; NO ACCOUNT &#183; ONE FIVE-LETTER CODE</div>
     </nav>
@@ -144,30 +165,6 @@
       <div class="dp-hint" id="deploy-hint">Callsign is set in your operator profile, top right.</div>
     </div>
 
-    <!-- v14.0 BOT MODE entry panel. Deliberately its own sheet rather than a
-         mode inside DEPLOY: the brief wants a separate experience, and the
-         separation starts at the front door. Difficulty and mode are picked
-         HERE; the room then opens into the standard staging screen wearing
-         Bot Mode identity (Blacksite locked, 15:00 locked, difficulty
-         adjustable until launch). -->
-    <div class="deploy-panel hidden" id="botmode-panel">
-      <div class="dp-head"><b>BOT MODE</b><button class="dp-close" id="btn-botmode-close" aria-label="close">&times;</button></div>
-      <div class="bm-row"><b>MODE</b>
-        <div class="bm-seg" id="bm-mode-seg">
-          <button data-v="bm_solo" class="on">SOLO</button><button data-v="bm_team">TEAM</button><button data-v="bm_battle">BATTLE</button>
-        </div>
-      </div>
-      <div class="bm-row" id="bm-diff-row"><b>DIFFICULTY</b>
-        <div class="bm-seg" id="bm-diff-seg">
-          <button data-v="easy">EASY</button><button data-v="medium" class="on">MEDIUM</button><button data-v="hard">HARD</button>
-        </div>
-      </div>
-      <div class="bm-row bm-facts"><b>MAP</b><span>BLACKSITE &middot; bot-mode only</span></div>
-      <div class="bm-row bm-facts"><b>TIME</b><span>15:00 &middot; fixed</span></div>
-      <div class="bm-hint" id="bm-hint">Solo: you vs 8 machines. Team: bring squadmates by room code. Battle: waves of 5 &rarr; 10 &rarr; 15 &rarr; 20, smarter every wave.</div>
-      <button class="btn btn-primary wide" id="btn-botmode-launch"><span>OPEN BOT LOBBY</span><em>ready up &mdash; hostiles seat at launch</em></button>
-    </div>
-
     <!-- Field manual, moved from the old staging column to an on-demand sheet. -->
     <div class="howto-overlay hidden" id="howto-overlay">
       <div class="howto-panel panel">
@@ -178,7 +175,6 @@
           <div class="mrow"><b>GEAR</b><span>hold G frag &middot; B smoke &middot; F flash &middot; H molotov &middot; V mine</span></div>
           <div class="mrow"><b>GUNS</b><span>1-9 select &middot; 9 exclusive loot</span></div>
           <div class="mrow"><b>INTEL</b><span>TAB scoreboard &middot; M full map &middot; compass up top &middot; ESC release cursor</span></div>
-          <div class="mrow"><b>BOT MODE</b><span>from the main menu &middot; Blacksite only &middot; machines get smarter with difficulty, never stronger &middot; BATTLE waves 5&rarr;20</span></div>
           <div class="mrow"><b>VIEW</b><span>P toggles first / third person &middot; scoped aim is always first person</span></div>
           <div class="mrow"><b>MARKERS</b><span>team modes: open map, LEFT-CLICK to place your pin (re-click moves it) &middot; RIGHT-CLICK removes it &middot; team-mates see it with your name</span></div>
           <div class="mrow mnote"><b>TIP</b><span>In Last Stand you get ONE life. Press M often &mdash; camping shows up on the map.</span></div>
@@ -295,7 +291,10 @@
        on short viewports (see the .menu-foot note), and the visor pip must not
        inherit hud-top's opacity fades. -->
   <div id="nuke-banner"><div id="nuke-banner-t">NUKE ACTIVATED</div><div id="nuke-banner-s">PRESS <b>N</b> TO CALL THE STRIKE</div></div>
+  <div id="rocket-banner"><div id="rocket-banner-t">ROCKET LAUNCH ACTIVATED</div><div id="rocket-banner-s">PRESS <b>N</b> TO LAUNCH</div></div>
   <div id="visor-pip">RECON VISOR</div>
+  <div id="breath-bar" class="hidden"><div id="breath-fill"></div></div>
+  <div id="remote-pip">STRIKE REMOTE &middot; HOLD <b>Z</b> TO CALL THE HELICOPTER</div>
   <div id="nuke-flash"></div>
   <!-- v11.0 compass strip — bearings for callouts, PUBG-style. Ticks are
        built once by UI.initCompass; per-frame cost is one transform. -->
@@ -329,6 +328,8 @@
   <div id="hud-bottom-left">
     <div class="stat-bar"><div class="stat-label">HP</div><div class="bar"><div id="hp-fill" class="fill hp"></div></div><div class="stat-num" id="hp-num">100</div></div>
     <div class="stat-bar" id="armor-row"><div class="stat-label" id="armor-badge">AR</div><div class="bar"><div id="armor-fill" class="fill armor"></div></div><div class="stat-num" id="armor-num">0</div></div>
+    <!-- v15.0 (fix 5): ballistic shield hp, shown only while one is carried -->
+    <div class="stat-bar" id="shield-row"><div class="stat-label">SH</div><div class="bar"><div id="shield-fill" class="fill shield"></div></div><div class="stat-num" id="shield-num">0</div></div>
   </div>
 
   <div id="hud-bottom-right">
@@ -365,7 +366,7 @@
     <div class="end-stage">
       <div class="end-col" id="end-ins-left"></div>
       <div class="end-center">
-        <table class="end-table"><thead><tr><th>OPERATOR</th><th>K</th><th>D</th><th>A</th><th>DMG</th><th>STREAK</th><th>K/D</th></tr></thead><tbody id="end-body"></tbody></table>
+        <table class="end-table"><thead><tr><th>OPERATOR</th><th>K</th><th>D</th><th>A</th><th>DMG</th><th>STREAK</th><th>MINES</th><th>K/D</th></tr></thead><tbody id="end-body"></tbody></table>
         <button class="btn btn-primary" id="btn-back-lobby" style="display:none">BACK TO LOBBY</button>
         <div class="hint" id="end-hint">Waiting for host…</div>
       </div>
@@ -382,6 +383,17 @@
       </label>
       <label class="field"><span>VOLUME <b id="vol-val">70%</b></span>
         <input type="range" id="vol-range" min="0" max="100" step="5" value="70">
+      </label>
+      <!-- v1.0c: quality preference. AUTO measures and adapts; a tier pins it. -->
+      <label class="field"><span>QUALITY <b id="quality-now">AUTO</b></span>
+        <select id="quality-mode">
+          <option value="auto">AUTO (recommended) — HD, drops if it lags</option>
+          <option value="ultra">ULTRA — native resolution, 4K shadows</option>
+          <option value="high">HIGH</option>
+          <option value="medium">MEDIUM</option>
+          <option value="low">LOW</option>
+          <option value="potato">POTATO — no shadows</option>
+        </select>
       </label>
       <label class="field check"><input type="checkbox" id="quality-shadows" checked><span>Dynamic shadows (turn off on slow PCs)</span></label>
       <button class="btn btn-primary wide" id="btn-resume">RESUME (click)</button>
@@ -405,13 +417,11 @@
   <script src="src/config/gameplay.config.js"></script>
   <script src="src/config/loot.config.js"></script>
   <script src="src/config/world.config.js"></script>
-  <script src="src/config/maps-rural.config.js"></script>
   <script src="src/config/maps-metro.config.js"></script>
   <script src="src/config/maps-killhouse.config.js"></script>
   <script src="src/config/maps-sunsetrow.config.js"></script>
   <script src="src/config/maps-small.config.js"></script>
   <script src="src/config/maps-medium.config.js"></script>
-  <script src="src/config/botmode.config.js"></script>
   <script src="src/config/districts.config.js"></script>
   <script src="src/config/index.js"></script>
   <script src="src/audio/audio.js"></script>
@@ -421,13 +431,11 @@
   <script src="src/environment/districts-north.js"></script>
   <script src="src/environment/districts-outer.js"></script>
   <script src="src/environment/deco.js"></script>
-  <script src="src/environment/rural.js"></script>
   <script src="src/environment/metro.js"></script>
   <script src="src/environment/killhouse.js"></script>
   <script src="src/environment/sunsetrow.js"></script>
   <script src="src/environment/smallmaps.js"></script>
   <script src="src/environment/medium.js"></script>
-  <script src="src/environment/blacksite.js"></script>
   <script src="src/environment/access.js"></script>
   <script src="src/effects/effects.js"></script>
   <script src="src/player/controller.js"></script>
@@ -442,6 +450,8 @@
   <script src="src/ui/ui.js"></script>
   <script src="src/ui/devhud.js"></script>
   <script src="src/core/tppcam.js"></script>  <!-- v13.0: TPP boom math, loaded before the game that calls it -->
+  <script src="src/core/quality.js"></script>  <!-- v1.0c: quality tiers + the adaptive scaler, before the game that feeds it -->
+  <script src="src/environment/train.js"></script>  <!-- v1.0e: the moving train (deterministic schedule + rider floor), before the game that runs it -->
   <script src="src/core/game.js"></script>
 </body>
 </html>

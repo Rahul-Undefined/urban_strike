@@ -58,6 +58,35 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
   // spawn protection (attacking others still allowed; being hit is not)
   if (victim.protUntil > now() && attackerId !== victim.id) return;
 
+  /* ===== v15.0 - THE SHIELD TAKES IT FIRST (fix 5) =====
+     Server-owned hp on the victim, spent before helmet-cut damage reaches
+     the vest. Point-blank explosives ignore it like everything else. A
+     scoped rifle SHATTERS it: the shield is gone in one round and
+     `sniperPass` of that round still lands, so the shield is cover against
+     rifles and SMGs, not against the weapon class that exists to answer
+     cover. Overflow (damage past the shield's remaining hp) continues into
+     the normal armour path below. The room is told on every change so every
+     client can draw the slab and its state. */
+  if (!pointBlank && (victim.shieldHp | 0) > 0) {
+    const SH = CFG.GEAR.shield || {};
+    const wdef = CFG.WEAPONS[weapon];
+    const sniper = !!(SH.sniperBreaks && wdef && wdef.scope === true);
+    let absorbed;
+    if (sniper) { absorbed = dmg * (1 - (SH.sniperPass === undefined ? 0.5 : SH.sniperPass)); victim.shieldHp = 0; }
+    else { absorbed = Math.min(victim.shieldHp, dmg); victim.shieldHp -= absorbed; }
+    dmg -= absorbed;
+    if (attacker && attackerId !== victim.id) attacker.damage += absorbed;   // shield damage still counts as damage dealt
+    io.to(room.code).emit('shield', { id: victim.id, hp: Math.max(0, Math.round(victim.shieldHp)),
+      max: SH.hp, broke: victim.shieldHp <= 0 ? 1 : 0, sniper: sniper ? 1 : 0 });
+    if (dmg <= 0) {
+      victim.lastHitAt = now();
+      io.to(victim.id).emit('damaged', { dmg: 0, hp: Math.round(victim.hp), lv: victim.armorLvl,
+        du: Math.round(victim.armorDur), sh: Math.round(victim.shieldHp), from: attackerId, fromPos: attacker ? attacker.pos : null });
+      if (attacker && attackerId !== victim.id)
+        io.to(attackerId).emit('hitConfirm', { dmg: Math.round(absorbed), headshot: false, kill: false, v: victim.id, shield: 1 });
+      return;
+    }
+  }
   /* Helmet: spends durability to cut the HEADSHOT BONUS only, never the base
      damage. A head hit for 100 from a 40-base weapon (2.5x) with an H2 helmet
      (0.55) loses 0.55 of the 60-point bonus, so 67 lands. Body and leg shots
@@ -121,6 +150,7 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     // said this field existed; it did not.
     dmg: Math.round(dmg),
     hp: Math.round(victim.hp), lv: victim.armorLvl, du: Math.round(victim.armorDur),
+    sh: Math.round(victim.shieldHp || 0),   /* v15.0 (fix 5) */
     from: attackerId, fromPos: attacker ? attacker.pos : null
   });
   if (attacker && attackerId !== victim.id) {
@@ -130,7 +160,12 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
   if (victim.hp <= 0) {
     victim.alive = false;
     victim.deaths++;
-    victim.respawnAt = now() + CFG.MATCH.respawnDelay * 1000;
+    /* v1.0d: arenas climb the redeploy ladder with each death; big maps keep
+       the flat delay. The number is computed HERE and shipped in the death
+       payload below, so the client counts down what the server will accept. */
+    const respawnSec = CFG.respawnDelayFor ? CFG.respawnDelayFor(room.settings.map || 'urban', victim.deaths) : CFG.MATCH.respawnDelay;
+    victim.respawnSec = respawnSec;
+    victim.respawnAt = now() + respawnSec * 1000;
     /* v8.37 LAST STAND: one life, and that was it.
 
        `out` is what makes a mode an elimination match. It is set here, on the
@@ -147,6 +182,16 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
       else {
         attacker.kills++;
         attacker.streak++;
+        /* v1.0e (Rahul): kills a STRIKE scores — the nuke, the rocket — count
+           as kills and toward the streak announcements, but NOT toward the
+           next strike. A five-kill nuke that killed four was re-arming on the
+           very next kill; the reward has to be re-earned by the player's own
+           hand. nuke.js / rocket.js read (streak - strikeKills). */
+        if (weapon === 'nuke' || weapon === 'rocketstrike') attacker.strikeKills = (attacker.strikeKills | 0) + 1;
+        /* v15.0 (fix 9): mine kills are a scoreboard KPI of their own. Counted
+           here, the only place a kill is credited, on the weapon tag the mine
+           module already passes ('mine') — no second bookkeeping path. */
+        if (weapon === 'mine') attacker.mineKills = (attacker.mineKills | 0) + 1;
         killerStreak = attacker.streak;
         if (attacker.streak > (attacker.bestStreak || 0)) attacker.bestStreak = attacker.streak;
         /* v10.10: the nuke rides THIS counter rather than keeping its own.
@@ -198,6 +243,7 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     }
     victim.rd = {};
     victim.streak = 0;
+    victim.strikeKills = 0;   /* v1.0e: the own-kill count restarts with the streak */
     /* v10.10: dying loses an armed nuke, whether or not the target map was
        open. This is the rule that makes the reward cost something — see the
        header of server/lib/nuke.js. One call, one place. */
@@ -216,6 +262,7 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
       victimId: victim.id, victimName: victim.name,
       killerId: attackerId, killerName, killerStreak, assistIds, dist: _dist,
       weapon, headshot: !!headshot, self: attackerId === victim.id,
+      respawnSec: victim.out ? 0 : respawnSec,   /* v1.0d: the arena ladder rung, or the flat delay */
       out: !!victim.out, livesLeft: CFG.livesFor(room.settings.mode)
         ? Math.max(0, CFG.livesFor(room.settings.mode) - victim.deaths) : null
     });

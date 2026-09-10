@@ -27,51 +27,28 @@
      runs north-south, and the fight is a push down the length of the building
      through rooms, which is what the plan describes. */
   var MAPS_KILLHOUSE = {
+    /* v15.0 (fixes 11/12): every point scaled with the building (x 1.3, z 1.294);
+       the centre-block point became the DECK point (0, 3.15, 0); the two flanking
+       container-corridor roofs and the ground under the deck were added. Proved
+       by verify-map against the rebuilt geometry. */
     LOOT_POINTS: [
-      /* North third — the approach from the A end. */
-      [-13, 0.55, -27, "g"], [7, 0.55, -25, "g"], [-15, 0.55, -21, "g"],
-      [-2, 0.55, -17, "s"], [8, 0.55, -19, "g"], [-14, 0.55, -16, "g"],
-      [-10, 0.55, -13, "g"], [5, 0.55, -9, "g"], [-1, 0.55, -11, "g"],
-
-      /* Middle — the contested centre of the house. */
-      [-2, 0.55, -2, "s"], [8, 0.55, 0, "s"], [-10, 0.55, -7, "g"],
-      [-9, 0.55, 4, "g"], [3, 0.55, 3, "g"], [-16, 0.55, 7, "g"],
-      [-10, 0.55, 8, "g"], [9, 0.55, 10, "g"],
-
-      /* South third — the approach from the B end. */
-      [-4, 0.55, 12, "g"], [1, 0.55, 17, "s"], [-13, 0.55, 17, "g"],
-      [-18, 0.55, 20, "g"], [-11, 0.55, 24, "g"], [6, 0.55, 26, "g"],
-      [-1, 0.55, 29, "g"], [12, 0.55, 22, "g"], [14, 0.55, -8, "g"],
-
-      /* Elevated: the solid blocks are the only things worth climbing, and a
-         crate step is provided at each. No stairs anywhere on this map. */
-      [-2, 3.15, -17, "h"], [1, 3.15, 17, "h"],
-      /* v10.20: this was typed at 2.35 assuming the bottom crate run stood as
-         tall as the solid blocks. It does not — crateRun caps at 1.22, so the
-         point floated 1.1 m over it and verify-map said so. Sat on the real
-         lid: 1.22 + 0.55 support clearance. */
-      [-1, 1.77, 29, "h"]
+      [-16.9, 0.55, -34.9, "g"], [9.1, 0.55, -32.4, "g"], [-19.5, 0.55, -27.2, "g"], [-2.6, 0.55, -22.0, "s"], [10.4, 0.55, -24.6, "g"], [-18.2, 0.55, -20.7, "g"], [-13.0, 0.55, -16.8, "g"], [6.5, 0.55, -11.6, "g"], [-1.3, 0.55, -14.2, "g"],
+      [10.4, 0.55, 0.0, "s"], [-13.0, 0.55, -9.1, "g"], [-11.7, 0.55, 5.2, "g"], [3.9, 0.55, 3.9, "g"], [-20.8, 0.55, 9.1, "g"], [-13.0, 0.55, 10.4, "g"], [11.7, 0.55, 12.9, "g"],
+      [-5.2, 0.55, 15.5, "g"], [1.3, 0.55, 22.0, "s"], [-16.9, 0.55, 22.0, "g"], [-23.4, 0.55, 25.9, "g"], [-14.3, 0.55, 31.1, "g"], [7.8, 0.55, 33.6, "g"], [-1.3, 0.55, 37.5, "g"], [15.6, 0.55, 28.5, "g"], [18.2, 0.55, -10.4, "g"],
+      /* elevated: block roofs, crate run, the deck, the corridor roofs, under the deck */
+      [-2.6, 3.15, -22.0, "h"], [1.3, 3.15, 22.0, "h"], [-1.3, 1.77, 37.5, "h"],
+      [0, 3.15, 0, "s"], [-17, 3.15, 0, "h"], [19, 3.15, 0, "h"], [-6.4, 0.55, -7.8, "g"], [6.4, 0.55, 7.8, "g"]
     ],
-
-    /* SPAWNS — [x, z, facing, side]. North end is 'a', south end is 'b'.
-       62 m apart on a map whose longest clear line is far shorter than that,
-       so neither end can see the other at the moment of spawning. The two
-       'n' tiles are for free-for-all, where there are no sides to keep apart. */
+    /* SPAWNS — [x, z, facing, side]. North end 'a', south end 'b'; nine tiles a
+       side for the 15-player cap, four neutrals on the long walls for FFA. */
     SPAWNS: [
-      [-12, -31, 3.1416, "a"], [-6, -31.5, 3.1416, "a"], [0, -31.5, 3.1416, "a"],
-      [6, -31.5, 3.1416, "a"], [12, -31, 3.1416, "a"],
-      [-9, -29, 3.1416, "a"], [9, -29, 3.1416, "a"],
-      [-12, 31, 0, "b"], [-6, 31.5, 0, "b"], [0, 31.5, 0, "b"],
-      [6, 31.5, 0, "b"], [12, 31, 0, "b"],
-      [-9, 29, 0, "b"], [9, 29, 0, "b"],
-      [-17, 0, 1.5708, "n"], [17, 0, -1.5708, "n"]
+      [-15.6, -40.1, 3.1416, "a"], [-7.8, -40.8, 3.1416, "a"], [0.0, -40.8, 3.1416, "a"], [7.8, -40.8, 3.1416, "a"], [15.6, -40.1, 3.1416, "a"], [-11.7, -37.5, 3.1416, "a"], [11.7, -37.5, 3.1416, "a"], [-15.6, 40.1, 0, "b"], [-7.8, 40.8, 0, "b"],
+      [0.0, 40.8, 0, "b"], [7.8, 40.8, 0, "b"], [15.6, 40.1, 0, "b"], [-11.7, 37.5, 0, "b"], [11.7, 37.5, 0, "b"], [-18, -41, 3.1416, "a"], [18, -41, 3.1416, "a"], [-18, 41, 0, "b"], [18, 41, 0, "b"],
+      [-23, 0, 1.5708, "n"], [24, 0, -1.5708, "n"], [-23, -21, 1.5708, "n"], [24, 16, -1.5708, "n"]
     ],
-
-    /* AIRDROP_POINTS — open floor, nothing overhead. Computed against the
-       built geometry rather than typed: v10.14 typed Freightyard's three times
-       and was wrong three times. */
+    /* AIRDROP_POINTS — open floor, nothing overhead, clear of the deck. */
     AIRDROP_POINTS: [
-      [0, -6], [0, 6], [-6, -22], [6, 22], [13, -14], [-16, 13]
+      [0, -14], [0, 14], [-7.8, -28.5], [7.8, 28.5], [16.9, -18.1], [-20.8, 16.8]
     ]
   };
 
