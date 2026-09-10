@@ -118,6 +118,7 @@ function addPlayer(room, socket, name) {
     token: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
     connected: true,
     kills: 0, deaths: 0, assists: 0, damage: 0, streak: 0, bestStreak: 0, ping: 0, ready: false,
+    mineKills: 0, mineIssued: 0,   /* v15.0: fix 9 KPI, fix 8 small-map ration budget */
     hp: CFG.PLAYER.hp, armorLvl: 0, armorDur: 0, helmLvl: 0, helmDur: 0, alive: false,
     protUntil: 0, att: { sight: null, muzzle: null, mag: null }, exW: {}, rd: {},
     pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0, mv: 0, wp: 0, ln: 0,
@@ -230,6 +231,8 @@ function lobbyPayload(room) {
 
       kills: p.kills, deaths: p.deaths, assists: p.assists,
       damage: Math.round(p.damage), streak: p.streak, bestStreak: p.bestStreak || 0,
+      mineKills: p.mineKills | 0,   /* v15.0 (fix 9): end-scorecard KPI */
+      shield: p.shieldHp | 0,       /* v15.0 (fix 5): so a mid-match joiner draws the slabs already up */
       ping: p.ping, ready: !!p.ready
     }))
   };

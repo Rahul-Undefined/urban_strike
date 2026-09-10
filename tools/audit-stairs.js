@@ -48,13 +48,12 @@ vm.createContext(ctx);
 [
   'public/src/config/weapons.config.js', 'public/src/config/gameplay.config.js',
   'public/src/config/loot.config.js', 'public/src/config/world.config.js',
-  'public/src/config/maps-rural.config.js', 'public/src/config/maps-metro.config.js',
+  'public/src/config/maps-metro.config.js',
   'public/src/config/districts.config.js',
   'public/src/config/index.js', 'public/src/environment/merge.js',
   'public/src/environment/world.js', 'public/src/environment/districts-south.js',
   'public/src/environment/districts-north.js', 'public/src/environment/districts-outer.js',
-  'public/src/environment/deco.js', 'public/src/environment/rural.js',
-  'public/src/environment/metro.js', 'public/src/environment/access.js'
+  'public/src/environment/deco.js', 'public/src/environment/metro.js', 'public/src/environment/access.js'
 ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }));
 
 function build(map) {
@@ -129,7 +128,7 @@ function findFlights(cols) {
   return flights;
 }
 
-const maps = process.argv[2] ? [process.argv[2]] : ['urban', 'metro', 'rural'];
+const maps = process.argv[2] ? [process.argv[2]] : ['urban', 'metro'];
 
 for (const map of maps) {
   const { c: cols, s: registered } = build(map);

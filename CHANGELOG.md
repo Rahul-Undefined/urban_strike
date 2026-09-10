@@ -1,3 +1,229 @@
+# v1.0 (build 3) — HIGH DEFINITION, AND LOWER WHEN IT LAGS (2026-09-10)
+
+Rahul: "update the game quality to high definition and if it lags to low
+definition, depending on laptop and user preferences; overall enhance the
+quality to 1080p so it looks realistic." Tagged `v1.0c` in code.
+
+**Five quality tiers** (`src/core/quality.js`): ULTRA draws at the display's
+native pixel ratio (up to 2x — the 1080p ask; a 1.5x-scaled laptop was
+rendering at 1.5 of its pixels before, a 2x one at 1.75) with a **4096 shadow
+map** (0.06 m texels across the 244 m Urban frustum instead of 0.12) and
+8x texture anisotropy (the ground stops smearing at grazing angles). HIGH is
+exactly what the game shipped at (1.75 / 2048) plus the anisotropy; MEDIUM
+1.25; LOW 1.0 with a 1024 map; POTATO 0.75 with shadows off.
+
+**AUTO, the default, and deliberately slow.** v10.5 shipped a runtime scaler
+and v10.6 reverted it: re-setting the pixel ratio reallocates the whole
+drawing buffer, and a scaler oscillating around its threshold did that every
+900 ms — a hitch of its own making. So AUTO starts at HIGH (nobody's first
+frame is worse than before), measures 3 s windows only in a match with the
+pointer locked, steps DOWN under 42 fps at most once per 6 s, steps UP only
+after 12 s of 57+ fps, at most once per 20 s, never within 30 s of a step down
+— and never back to a tier it had to leave in this session. The tier it
+settles on is remembered, so the next launch starts there and gets one fresh
+climb. Every rule is proved in `tools/verify-quality.js` (30 assertions, the
+oscillation case included).
+
+**The preference.** QUALITY select in the pause panel: AUTO or a pinned tier;
+a pinned tier is never touched by the scaler. The "Dynamic shadows" checkbox
+stays as the manual shadow override.
+
+**Not touched, on purpose:** output encoding and tone mapping. Every
+hex-coloured material in world.js was authored against three r128's linear
+output; an sRGB/ACES pipeline would re-grade every wall on the map without a
+browser to look at the result. That is a separate, seen pass.
+
+Gates: verify-quality 30/0 (new), scope/undeclared/menu/endscreen/bindings/
+lighting green, bandwidth 416 -> 420 KB itemized. Board at ship: 47 gates,
+44 green, the same three documented reds. Live: `test.js` 317/0,
+`verify-client` 66/0, `probe-net-degraded` 10/0.
+
+# v1.0 (build 2) — THE ARSENAL (2026-09-09)
+
+Same release name, same `1.0.0` (it has not been deployed, so no browser holds
+a stale copy). Six more of Rahul's items, all tagged `v1.0b` in code.
+
+**Drop keys — every map, every mode.** `K` throws away the gun in your hands,
+`L` the sight on it. The loadout was always client-side (the server validates
+shots by weapon id, not ownership), so the server's job is the FLOOR: when a
+loot item exists for what you dropped, it appears at your feet as a one-off
+pickup anyone may take — through the same `lootAdd` path an airdrop uses. A
+base gun with no loot entry simply leaves your hands. 800 ms rate limit.
+
+**Rocket ladder — big maps, N.** `server/lib/rocket.js`, the mirror image of
+the arena nuke: streak 5 arms the first rocket, then 7, then 10, then every
+5; death resets the rung with the streak. Press N: a uniformly random living
+hostile takes a guaranteed kill where they stand, INSTANTLY, and anyone
+hostile within 6 m takes 60. Refused-and-kept when nobody hostile is alive.
+Both rewards refuse each other's maps, so N means one thing anywhere.
+
+**Drone bounty.** Shooting down a HOSTILE drone is a kill on the board (team
+score and kill target included) and puts a Strike Drone in the shooter's bag.
+Downing your own side's drive earns nothing.
+
+**Frag, two bands.** Within 20 m a clear blast is a guaranteed kill; out to
+50 m it is 50 hp; a wall between the blast and the player cuts either to a
+quarter — cover is the counter now, distance is not. Self-damage keeps the
+old 7 m falloff (a 50 m suicide radius is a grenade nobody throws). Bots use
+the identical rule, with server line of sight. The fireball draws at 9 m.
+
+**C4 sticky charge — crate-only, big maps.** A gear slot like the EMP: select,
+face a wall within 3.2 m, click. Five seconds later every hostile UNDER A ROOF
+within 18 m of the charge dies (and anyone within 4.5 m, roof or not). There
+is no "building" object in this engine, so "inside" is what makes a building a
+building — a ceiling — decided on the server against the real colliders
+(`server/lib/hazards.js`). Rooftops, streets and the house two doors down
+live.
+
+**Flamethrower — legendary floor loot, big maps, interior points only.** A new
+`cls` field on loot items rolls it on 'h' points alone. Hard 22 m reach (the
+stream ends there; no 400 m ray behind it). A hit BURNS: the victim is a
+guaranteed kill and a 20 m fire zone opens where they stood for 10 s, killing
+any hostile with line of sight to the fire; the shooter's side is safe; one
+zone per shooter per 2 s. Rendered as a ring of flame boards, a glowing disc,
+embers and a light; put out on the server's clock.
+
+## Gates
+
+`verify-armoury` 245/0 (c4 and flamer documented exceptions), `verify-models`
+266/0, `verify-attach` 125/0, bandwidth budget 408 -> 416 KB itemized.
+`test.js` **317/0** live: Phase 19 proves the rocket ladder (every rung, arena
+refusal, team targeting, refused-and-kept, death reset), the C4 roof rule
+(under the roof and hugging the charge die; open sky and far away live), the
+fire zone (reach, line of sight, cooldown, expiry), the drone bounty (hostile
+credited, team-mate not) and the live drop flow. `verify-client` 66/0;
+`probe-net-degraded` 10/0 after one probe fix — it measured travel as an
+ABSOLUTE x and assumed a spawn near the origin, which the 240 m Urban's
+far-from-enemies spawn rule no longer guarantees; it now measures travel
+relative to the first snapshot. Offline board unchanged: 43 green, the same
+three documented reds.
+
+# v1.0 — THE FIFTEEN (2026-09-09)
+
+Public release name **v1.0** (Rahul: "name the version 1.0"). Internal lineage
+continues from v14.0.1; every code comment written for this release is tagged
+`v15.0`, and `package.json` reads `1.0.0` — that string is the `?v=` cache-bust
+key, so the first load after this deploy fetches every asset fresh.
+
+Rahul's list, fifteen items, all shipped. Fix numbers below are his.
+
+## Bugs fixed
+
+**7 — timer reads 0:00 after a reconnect.** Every reconnect door (token rejoin,
+name reclaim, socket.io transport recovery) already carried `startedAt`,
+`serverNow` and the settings from the server, and every one of them dropped the
+clock on the floor: only `matchStart` ever wrote `match.startedAt`. After a
+refresh it sat at 0, so `remain = max(0, 0 + 15 min - now) = 0`. One helper,
+`absorbMatchClock()` in net.js, three callers.
+
+**3 — in FFA the big map showed everyone regardless of the Intel toggle.** The
+v9.5 rule drew exact, named pins for every no-sides mode; the host's ENEMY INTEL
+toggle had nothing left to gate. Exact enemy pins on the M map are now an
+explicit per-mode flag (`fullMapContacts`) carried by Last Stand only, whose
+anti-camping design depends on it. FFA: Intel OFF shows you and the ground,
+Intel ON shows the ~50 m rings. Allies always show. `verify-fullmap` extended.
+
+**2 — the Recon Visor lit team-mates in hostile red.** It marks enemies only now;
+team-mates are already tracked through walls by their tags and the minimap. One
+word reverses it: `CFG.GEAR.visor.showAllies`.
+
+**6 — five-second respawn on every map.** `MATCH.respawnDelay: 5`. Server gate,
+client countdown and the suite all read the one number; test.js timings are
+derived from it instead of typed.
+
+**8 — small maps ration the mines.** Five per life from a twenty-per-match
+budget (`GEAR.mine.lifetimeSmall`) on any `smallMap`; big maps refill as before.
+Floor loot mines are not rationed — they cost a walk. A toast tells the player
+when the ration is spent.
+
+**9 — mine kills on the scorecard.** Counted at the one place kills are credited
+(`combat.js`), shipped in the roster, a MINES column on the end table and a
+MINEFIELD insight card. `verify-endscreen` extended.
+
+## New items
+
+**1 — EMP Charge.** A gear slot exactly like the drone: rare floor loot and in
+the crate pool, select it, left click, and every mine on the map that is not
+yours or your side's is destroyed. Refused-and-kept when there is nothing to
+fry. Owners of destroyed mines are told. Viewmodel, third-person model, pickup
+mesh, shockwave FX, audio.
+
+**5 — Ballistic Shield.** Big maps only (filtered at both loot doors). 260 hp
+soaked before helmet and vest; a scoped rifle SHATTERS it and half the round
+lands. Per life. HUD bar for the bearer, a translucent slab on the avatar for
+everyone else, via a `shield` event — the snapshot codec is untouched.
+
+**10 — Strike Remote.** One per big-map match, planted on a random interior
+point with no rarity ring and no bob. HOLD Z for 1.2 s (a tap still interacts —
+a one-shot that deletes every enemy must not fire because somebody reached for a
+bandage). Helicopter inbound for 5 s, then every operator hostile to the caller
+dies through `applyDamage` — kill feed, streaks, team score and the win
+condition all fire as for any kill. The room hears THAT it was found, never who
+holds it.
+
+## Maps
+
+**14 — Rural removed.** Builder, config, script tags, harness lists in thirty
+gate files, budgets, fingerprints, test phase 6 (now Metro). Zero references
+remain in code.
+
+**4 — Urban is 240 x 240.** The old wall at 100 is a ring boulevard; a new wall
+at 120. Four districts on the ring — NORTH YARDS (rail siding, container stacks,
+two freight sheds), SOUTHFIELD PARK (planters, pavilion, fountain, trees), EAST
+MARKET (stall rows under an arcade, a van park), WEST BARRACKS (fenced compound,
+two enterable huts, guard post, watchtower) — and FOUR CONTROL TOWERS, one per
+side: the South Terminal tower ported as `World._towerAt` (decks 4.2/8.4/12.6,
+internal stair plus external fire escape, glazed cab at 16 m), mirrored on the
+west. The port also fixed two things the original is excused for in
+`verify-stairs-quality`: a stair-foot plate under each upper flight's first
+tread (the cutter trims a full deck back to the run edge; a sub-1 m² plate
+survives it), and a 2 m landing so the flight arrives on the landing it was
+built for rather than on the top of its own wall by a 0.95 m coin-flip. 16 ring
+spawns and 53 loot points generated from the built geometry, 4 ring drops.
+Triangle budget 120,000 -> 136,000, itemized in verify-batch.js. Draw calls
+99/115, casters 62/62, lights 7/7.
+
+**13 — Urban colours.** Every ground and wall material lifted 20-35% in value
+and 10-20% in saturation; a clear late-afternoon sky (0x4d6ea6), lighter haze
+so the 240 m map reads to its far wall, a warm high sun and cool fill. Material
+count unchanged. Metro keeps its night.
+
+**11 — Killhouse reimagined.** 40 x 68 -> 52 x 88 m, every PLAN row scaled with
+it. Gone: the four angled partitions (the zig-zag AND the source of both
+phantom-wall bugs), the centre block and centre partition. In their place THE
+DECK: a 12 x 9 m platform at 2.6 m on pillars, open beneath, two crate stairs at
+opposite corners, rails on the halves the stairs don't use; two open-ended
+container corridors flank it. Cap 10 -> 15. `verify-collision`'s angled-chain
+section became a deck section: no rotated partition may return, under the deck
+is walkable end to end, the slab is solid, both stairs carry a walker up.
+
+**12 — small maps for fifteen.** Freightyard 38 -> 68 m (outer container ring,
+four open freight sheds), Bazaar 54 x 40 -> 84 x 64 (east/west souk arcades,
+caravanserai north, produce market south), Substation 46 -> 72 m (switchyard
+ring, four enterable control buildings), Sunset Row 64 x 40 -> 64 x 84 (two end
+bands with cottages, bus shelters, cross walls). Every core untouched; every cap
+15; spawns/loot/drops proved by verify-map.
+
+**15 — Airfield and Riverside get landmarks.** Airfield: a control tower beside
+the terminal, an intact airliner on the apron (walk under the wings, an
+airstair to the fuselage roof), a two-bay fire station, a fuel farm behind a
+bund, radar mast and windsocks. Riverside: the lock tower on the east quay, an
+enterable brick mill with a crate chain to its roof, a moored barge in the canal
+with gangplanks, dockside cranes, willows, sandbag flood walls in runs.
+
+## Gates
+
+44 offline gates green. Three reds are the documented pre-existing ones and did
+not move: `verify-access` (north block A), `verify-arch` (one roof), and
+`verify-climb` (16 Old Town / Colony / Airport / Eastgate flights — all listed
+before this release; none in the new geometry). `verify-cover` went green with
+Rural's removal. Fingerprints and `verify-untouched` re-recorded with the reason
+in each file. Live, against a running server: `test.js` **279/0** (new Phase 18
+exercises the mine ration, an EMP blast clearing a planted enemy mine, a shield
+soaking a rifle round and shattering to a sniper round, and the strike remote
+end to end — planted hidden, found, called, refused on the second press, the
+enemy killed and credited); `verify-client` 66/0; `probe-net-degraded` 10/0.
+
 # v14.0.1 — THE FIRST HUMAN SESSION (2026-08-28)
 
 ## What happened

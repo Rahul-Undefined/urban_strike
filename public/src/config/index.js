@@ -8,7 +8,6 @@
       require('./gameplay.config.js'),
       require('./loot.config.js'),
       require('./world.config.js'),
-      require('./maps-rural.config.js'),
       require('./maps-metro.config.js'),
       require('./maps-killhouse.config.js'),
       require('./maps-sunsetrow.config.js'),

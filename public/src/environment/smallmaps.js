@@ -88,7 +88,12 @@
      can be shot from any compass point at any moment, which is the entire
      appeal and the reason it is the smallest map in the game. */
   World._buildFreightyard = function (T) {
-    var K = kit(T), M = K.M, HX = 19, HZ = 19;
+    /* v15.0 (fix 12): 38 x 38 -> 68 x 68 m. The original yard is untouched
+       inside radius 19; an OUTER RING of the same vocabulary (container rows,
+       open freight sheds, drum clusters, painted lanes) fills r 19..34 in the
+       same four-way rotation, so fifteen players get four bays' worth of
+       cover and roofs instead of one scrum in a box. Cap 8 -> 15. */
+    var K = kit(T), M = K.M, HX = 34, HZ = 34;
     /* quad() emits at 0, 90, 180 and 270 degrees. Rotational symmetry is
        structural here for the same reason killhouse's mirror is: an edit that
        only remembers one quarter cannot drift the map out of balance. */
@@ -102,6 +107,9 @@
     K.seg(-6, 6, -0.005, 0.008, -HZ, HZ, M.concrete, K.NBOTH);
     K.seg(-HX, HX, -0.005, 0.008, -6, 6, M.concrete, K.NBOTH);
     K.fence(HX, HZ, 4.2, M.metal);
+    // the outer ring's lane paint: a square at r 21 and bay lines to the fence
+    K.seg(-21, 21, 0.03, 0.045, -21.2, -20.8, M.roadPaintY, K.NBOTH); K.seg(-21, 21, 0.03, 0.045, 20.8, 21.2, M.roadPaintY, K.NBOTH);
+    K.seg(-21.2, -20.8, 0.03, 0.045, -21, 21, M.roadPaintY, K.NBOTH); K.seg(20.8, 21.2, 0.03, 0.045, -21, 21, M.roadPaintY, K.NBOTH);
 
     var PAINT = [M.contBlue, M.contRed, M.contGreen, M.contGray];
     quad(function (R, a, i) {
@@ -148,8 +156,33 @@
     // gantry rail over the centre, non-colliding: height the eye needs
     K.seg(-14, 14, 5.4, 5.7, -0.3, 0.3, M.steelBlue, K.NBOTH);
     K.seg(-0.3, 0.3, 5.4, 5.7, -14, 14, M.steelBlue, K.NBOTH);
-    K.scatter(14, 32, 32, [[-5, 5, -5, 5], [-19, -12, -19, -12], [12, 19, 12, 19],
-                           [-19, -12, 12, 19], [12, 19, -19, -12]]);
+    /* ---- the outer ring (v15.0) ---- */
+    quad(function (R, a, i) {
+      var p = R(27, -2);  K.container(p[0], p[1], a, PAINT[(i + 1) % 4], true);          // outer row, crate step
+      var p2 = R(27, 5);  K.container(p2[0], p2[1], a, PAINT[(i + 3) % 4], false);
+      K.container(p2[0], p2[1], a, M.contGray, false, 2.60);                               // stacked
+      var q = R(23, -14); K.container(q[0], q[1], a + Math.PI / 2, PAINT[i % 4], false);
+      var r = R(31, 14);  K.drums(r[0], r[1], 4);
+      var s3 = R(24, 24); K.pallets(s3[0], s3[1], 5);
+      // an open freight shed at the middle of each side: roof on four posts, a low office wall
+      var c = R(0, 28), cx = c[0], cz = c[1];
+      var ax = Math.abs(Math.cos(a)) > 0.5;      // the shed's long axis follows the side
+      K.box(cx, 2.4, cz, ax ? 8 : 14, 0.3, ax ? 14 : 8, M.roof, { cast: false });
+      [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (k) {
+        K.box(cx + k[0] * (ax ? 3.6 : 6.6), 1.15, cz + k[1] * (ax ? 6.6 : 3.6), 0.4, 2.3, 0.4, M.steelBlue);
+      });
+      K.box(cx + (ax ? 3.9 : 0), 0.9, cz + (ax ? 0 : 3.9), ax ? 0.3 : 6, 1.8, ax ? 6 : 0.3, M.plaster);
+      var f = R(18, -26); K.box(f[0], 0.55, f[1], 1.6, 1.1, 2.6, M.hazard);             // a forklift-sized block
+      K.box(f[0], 1.5, f[1], 1.0, 0.8, 1.0, M.dark, K.NCAST);
+      var t = R(31, -30);
+      for (var k2 = 0; k2 < 3; k2++) K.cyl(t[0], 0.13 + k2 * 0.24, t[1], 0.52, 0.24, M.tire, k2 ? K.NCAST : undefined);
+      var l = R(33, 0);
+      K.cyl(l[0], 2.6, l[1], 0.14, 5.2, M.metal, K.NCAST);
+      K.box(l[0], 5.0, l[1], 0.5, 0.2, 0.9, M.amberGlow, K.NBOTH);
+    });
+    K.scatter(24, 62, 62, [[-5, 5, -5, 5], [-19, -12, -19, -12], [12, 19, 12, 19],
+                           [-19, -12, 12, 19], [12, 19, -19, -12],
+                           [-34, -28, -34, -28], [28, 34, 28, 34], [-34, -28, 28, 34], [28, 34, -34, -28]]);
   };
 
   /* ================= BAZAAR =================
@@ -157,7 +190,12 @@
      almost every fight starts inside 12 m around a corner — the opposite of a
      sightline map, and the shape neither existing small map has. */
   World._buildBazaar = function (T) {
-    var K = kit(T), M = K.M, HX = 27, HZ = 20;
+    /* v15.0 (fix 12): 54 x 40 -> 84 x 64 m. The winding core is untouched;
+       two SOUK arcades run outside it east and west (stall rows under a
+       continuous roof, blind at every fourth bay), a walled caravanserai
+       courtyard sits north and a produce market south. Fifteen players get
+       four quarters that all still fight inside twelve metres. Cap 8 -> 15. */
+    var K = kit(T), M = K.M, HX = 42, HZ = 32;
     function pair(f) { f(1); f(-1); }
     K.seg(-HX, HX, -0.40, 0, -HZ, HZ, M.dirt, K.NCAST);
     K.seg(-HX, HX, -0.005, 0.008, -7, 7, M.sidewalk, K.NBOTH);
@@ -231,7 +269,40 @@
       K.seg(s2 * 6, s2 * 15, 4.4, 4.5, -13.2, -10.8, M.paleYellow, K.NBOTH);
       K.seg(s2 * 6, s2 * 15, 4.4, 4.5, 10.8, 13.2, M.sage, K.NBOTH);
     });
-    K.scatter(16, 46, 32, [[-5, 5, -5, 5], [-27, -22, -14, 14], [22, 27, -14, 14]]);
+    /* ---- the outer quarters (v15.0) ---- */
+    // core boundary screens with gaps, so the core reads as a place you enter
+    pair(function (s3) {
+      K.segx(s3 * 27, s3 * 27.3, 0, 2.6, -20, -8, M.plaster);
+      K.segx(s3 * 27, s3 * 27.3, 0, 2.6, 8, 20, M.plaster);
+      K.seg(s3 > 0 ? 10 : -20, s3 > 0 ? 20 : -10, 0, 2.6, -20.3, -20, M.plaster);
+      K.seg(s3 > 0 ? 10 : -20, s3 > 0 ? 20 : -10, 0, 2.6, 20, 20.3, M.plaster);
+    });
+    // east and west souks: a roof on posts the length of the map, stalls beneath
+    pair(function (s3) {
+      var cx = s3 * 35;
+      for (var pz = -28; pz <= 28; pz += 8) { K.box(cx - 3.6, 1.9, pz, 0.3, 3.8, 0.3, M.wood); K.box(cx + 3.6, 1.9, pz, 0.3, 3.8, 0.3, M.wood); }
+      K.seg(cx - 4.2, cx + 4.2, 3.8, 4.1, -30, 30, s3 > 0 ? M.terracotta : M.ochre, K.NCAST);
+      var k = 0;
+      for (pz = -26; pz <= 26; pz += 6.5) {
+        stall(cx + (k % 2 ? 1.6 : -1.6), pz, 1.5708, CLOTH[(k + (s3 > 0 ? 1 : 3)) % 5]);
+        if (k % 4 === 2) K.segx(cx - 4, cx + 4, 0, 2.6, pz + 3.1, pz + 3.4, M.plaster);   // a blind bay
+        k++;
+      }
+      K.pallets(s3 * 30, -30, 3); K.drums(s3 * 30, 30, 3);
+    });
+    // north: the caravanserai — a walled court with two arched gaps and a well
+    K.seg(-22, -3, 0, 3.0, -31.5, -31.2, M.plaster); K.seg(3, 22, 0, 3.0, -31.5, -31.2, M.plaster);
+    K.segx(-22, -21.7, 0, 3.0, -31.5, -23, M.plaster); K.segx(21.7, 22, 0, 3.0, -31.5, -23, M.plaster);
+    K.seg(-22, -9, 0, 3.0, -23.3, -23, M.plaster); K.seg(9, 22, 0, 3.0, -23.3, -23, M.plaster);
+    K.seg(-3, 3, 2.3, 3.0, -31.5, -31.2, M.plaster); K.seg(-9, 9, 2.3, 3.0, -23.3, -23, M.plaster);
+    K.cyl(0, 0.5, -27.3, 1.4, 1.0, M.brick);
+    [-14, 14].forEach(function (px) { K.box(px, 0.45, -27.3, 2.4, 0.9, 1.1, M.wood); K.box(px, 0.98, -27.3, 2.2, 0.1, 0.9, M.cargoWood, K.NCAST); });
+    // south: the produce market — pallet rows and cloth runs, open above
+    for (var mx = -18; mx <= 18; mx += 9) { K.pallets(mx, 26, 4); K.pallets(mx + 4.5, 30, 3); }
+    K.seg(-20, 20, 4.2, 4.3, 25.6, 26.4, M.mint, K.NBOTH); K.seg(-20, 20, 4.2, 4.3, 29.6, 30.4, M.paleYellow, K.NBOTH);
+    [-22, 22].forEach(function (px) { K.cyl(px, 2.4, 26, 0.16, 4.8, M.wood, K.NCAST); K.cyl(px, 2.4, 30, 0.16, 4.8, M.wood, K.NCAST); });
+    K.scatter(24, 76, 56, [[-5, 5, -5, 5], [-27, -22, -14, 14], [22, 27, -14, 14],
+                           [-42, -38, -32, 32], [38, 42, -32, 32], [-22, 22, -32, -23]]);
   };
 
   /* ================= SUBSTATION =================
@@ -240,7 +311,11 @@
      corner, and changing your mind costs the long way round. No other map on
      the roster asks that question. */
   World._buildSubstation = function (T) {
-    var K = kit(T), M = K.M, HX = 23, HZ = 23, PIT = 7.5;
+    /* v15.0 (fix 12): 46 x 46 -> 72 x 72 m. The ring round the pit is
+       untouched; outside it a SWITCHYARD ring (four large transformer bays,
+       a control building on each diagonal, cable trenches, pylon lines) turns
+       one rotation into two nested ones. Cap 8 -> 15. */
+    var K = kit(T), M = K.M, HX = 36, HZ = 36, PIT = 7.5;
     function quad(f) {
       for (var i = 0; i < 4; i++) {
         var a = i * Math.PI / 2, c = Math.cos(a), s = Math.sin(a);
@@ -322,8 +397,46 @@
       var b = R(-14, -20.5);
       K.box(b[0], 1.5, b[1], 1.2, 0.9, 0.08, M.hazard, K.NCAST);
     });
-    K.scatter(14, 40, 40,
+    /* ---- the switchyard ring (v15.0) ---- */
+    // the old fence line becomes a low cable trench wall with four gaps
+    quad(function (R) {
+      var w1 = R(-23, -23.2), w2 = R(-6, -23.2), w3 = R(6, -23.2), w4 = R(23, -23.2);
+      K.box((w1[0] + w2[0]) / 2, 0.5, (w1[1] + w2[1]) / 2, Math.abs(w2[0] - w1[0]) || 0.4, 1.0, Math.abs(w2[1] - w1[1]) || 0.4, M.concrete);
+      K.box((w3[0] + w4[0]) / 2, 0.5, (w3[1] + w4[1]) / 2, Math.abs(w4[0] - w3[0]) || 0.4, 1.0, Math.abs(w4[1] - w3[1]) || 0.4, M.concrete);
+    });
+    quad(function (R, a, i) {
+      var p = R(0, -30);   // big transformer bay at the middle of each side
+      K.box(p[0], 1.6, p[1], 5.0, 3.2, 3.2, M.steelBlue, { rotY: a });
+      K.box(p[0], 3.35, p[1], 5.6, 0.3, 3.8, M.dark, { rotY: a, cast: false });
+      [-1.6, 0, 1.6].forEach(function (u) { K.cyl(p[0] + u * Math.cos(a), 4.0, p[1] + u * Math.sin(a), 0.18, 1.0, M.paperWhite, K.NCAST); });
+      var q = R(9, -31);  K.box(q[0], 0.85, q[1], 2.4, 1.7, 2.4, M.metal, { rotY: a });
+      var r = R(-9, -31); K.drums(r[0], r[1], 4);
+      // control building on each diagonal: enterable, door toward the centre
+      var c = R(28, -28), cx = c[0], cz = c[1];
+      var dxs = cx > 0 ? 1 : -1, dzs = cz > 0 ? 1 : -1;
+      /* both axes sorted: segx() sorts x only, and the diagonal sign flips z too */
+      function wall(xa, xb, y0, y1, za, zb, m) {
+        K.seg(Math.min(xa, xb), Math.max(xa, xb), y0, y1, Math.min(za, zb), Math.max(za, zb), m);
+      }
+      wall(cx - 4, cx + 4, 0, 3.0, cz + dzs * 3.2, cz + dzs * 3.5, M.plaster);        // outer long wall
+      wall(cx + dxs * 3.2, cx + dxs * 3.5, 0, 3.0, cz - 3.5, cz + 3.5, M.plaster);    // outer short wall
+      wall(cx - dxs * 3.5, cx - dxs * 3.2, 0, 3.0, cz - dzs * 3.5, cz - dzs * 1.0, M.plaster); // inner short wall, doorway
+      wall(cx - dxs * 3.5, cx - dxs * 3.2, 0, 3.0, cz + dzs * 1.0, cz + dzs * 3.5, M.plaster);
+      wall(cx - dxs * 3.5, cx - dxs * 3.2, 2.2, 3.0, cz - 1.0, cz + 1.0, M.plaster);
+      wall(cx - 4, cx + 4, 0, 3.0, cz - dzs * 3.5, cz - dzs * 3.2, M.plaster);        // inner long wall (solid)
+      K.segx(cx - 4.3, cx + 4.3, 3.0, 3.3, cz - 3.8, cz + 3.8, M.roof, K.NCAST);
+      K.box(cx, 0.5, cz, 2.2, 1.0, 0.8, M.steelBlue);                                     // console
+      // pylon at the corner, non-colliding lattice silhouette
+      var u2 = R(33, 33);
+      K.cyl(u2[0], 4.5, u2[1], 0.2, 9.0, M.metal, K.NCAST);
+      K.box(u2[0], 8.0, u2[1], 3.0, 0.16, 0.16, M.metal, K.NBOTH);
+      K.box(u2[0], 6.0, u2[1], 2.4, 0.16, 0.16, M.metal, K.NBOTH);
+      var t2 = R(-30, 8);  K.container(t2[0], t2[1], a + Math.PI / 2, i % 2 ? M.contBlue : M.contGreen, true);
+      var b2 = R(-20, -32); K.box(b2[0], 1.5, b2[1], 1.2, 0.9, 0.08, M.hazard, { rotY: a, cast: false });
+    });
+    K.scatter(22, 66, 66,
       [[-9, 9, -9, 9], [-23, -18, -6, 6], [18, 23, -6, 6],
-       [-6, 6, -23, -18], [-6, 6, 18, 23]]);
+       [-6, 6, -23, -18], [-6, 6, 18, 23],
+       [-36, -30, -36, -30], [30, 36, 30, 36], [-36, -30, 30, 36], [30, 36, -36, -30]]);
   };
 })();

@@ -364,6 +364,48 @@ var WeaponModels = (function () {
       return g;
     })();
 
+    /* v15.0 (fix 1): the EMP charge. A palm-sized breaching charge held flat
+       like the drone tray — a dark case, a cyan induction coil on top and a
+       status LED — so the slot reads as "a device, not a gun" at a glance. */
+    models.emp = (function () {
+      var g = new THREE.Group();
+      var CYAN = new THREE.MeshLambertMaterial({ color: 0x0b1a1e, emissive: 0x51d0e8 });
+      part(g, 0, -0.05, -0.12, 0.18, 0.06, 0.24, gunmetal);           // case
+      part(g, 0, -0.015, -0.12, 0.16, 0.012, 0.22, dark);             // lid seam
+      cylPart(g, 0, 0.0, -0.12, 0.055, 0.02, CYAN, false);            // induction coil
+      cylPart(g, 0, 0.0, -0.12, 0.028, 0.026, dark, false);           // coil hub
+      part(g, 0.06, 0.0, -0.01, 0.03, 0.012, 0.03, NEONRED);          // arming LED
+      part(g, -0.06, -0.005, -0.01, 0.04, 0.014, 0.05, steel);        // trigger key
+      part(g, 0, -0.10, -0.12, 0.10, 0.04, 0.10, dark);               // battery pack
+      return g;
+    })();
+
+    /* v1.0b: the flamethrower — a fuel tank slung under a fat barrel, a pilot
+       flame at the nozzle, a hose back to the tank. Reads as fire before it is
+       fired. */
+    models.flamer = (function () {
+      var g = new THREE.Group();
+      var PILOT = new THREE.MeshLambertMaterial({ color: 0x3a1600, emissive: 0xff7a1a });
+      part(g, 0, -0.06, -0.40, 0.11, 0.11, 0.62, gunmetal);           // barrel
+      cylPart(g, 0, -0.06, -0.74, 0.07, 0.10, steel, true);           // nozzle bell
+      part(g, 0, -0.06, -0.82, 0.05, 0.05, 0.06, PILOT);              // pilot flame
+      part(g, 0, -0.20, -0.20, 0.16, 0.16, 0.40, dark);               // fuel tank
+      part(g, 0.05, -0.12, -0.08, 0.04, 0.04, 0.30, steel);           // hose
+      part(g, 0, -0.16, 0.05, 0.05, 0.10, 0.16, dark);                // grip
+      part(g, 0, -0.03, -0.20, 0.06, 0.05, 0.14, steel);              // valve block
+      return g;
+    })();
+    /* v1.0b: the C4 charge — a brick with a detonator and a red LED, held flat
+       like the EMP. */
+    models.c4 = (function () {
+      var g = new THREE.Group();
+      part(g, 0, -0.05, -0.12, 0.16, 0.06, 0.24, new THREE.MeshLambertMaterial({ color: 0xc9b98a }));   // the block
+      part(g, 0, -0.01, -0.12, 0.10, 0.02, 0.10, dark);               // detonator
+      part(g, 0.03, 0.0, -0.10, 0.02, 0.02, 0.02, NEONRED);           // LED
+      part(g, 0, -0.10, -0.12, 0.10, 0.04, 0.10, dark);               // pack
+      return g;
+    })();
+
     // Registry invariant: EVERY weapon in CFG.WEAPON_ORDER must have a
     // viewmodel. Any future config addition gets a generic rifle instead of
     // invisible hands — an unknown-but-equipped weapon cannot render as nothing.
@@ -465,7 +507,7 @@ var WeaponModels = (function () {
       /* Both hands are placed from this weapon's measured length: the trigger
          hand just behind the receiver, the support hand two thirds of the way
          out along the barrel — which is where a person actually holds one. */
-      if (n === 'bow' || n === 'drone' || n === 'knife') return;
+      if (n === 'bow' || n === 'drone' || n === 'knife' || n === 'emp' || n === 'c4') return;
       var muz = m.userData.muzzleZ, mid = m.userData.muzzleY;
       hand(m, 0.005, mid - 0.10, Math.min(-0.02, muz * 0.18));            // trigger hand
       hand(m, -0.010, mid - 0.085, Math.max(muz + 0.14, muz * 0.62), 0.22); // support hand

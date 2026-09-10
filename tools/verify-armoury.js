@@ -61,6 +61,9 @@ const EXEMPT = {
      Its damage lives in CFG.GEAR.drone where the server reads it, so testing it
      against a firearm damage class would be testing the wrong number. */
   drone:   'gear slot — launches a drone, fires no round; damage lives in CFG.GEAR.drone',
+  emp:     'gear slot — fries enemy mines, fires no round; what it does lives in server/lib/mines.js emp() (v15.0)',
+  c4:      'gear slot — plants a sticky charge, fires no round; what it does lives in server/lib/hazards.js (v1.0b)',
+  flamer:  'incendiary — a human hit is a BURN (guaranteed kill + fire zone, server.js hit/flamer); the 40 here is only what a bot deals with it (v1.0b)',
   bm_scatter: 'pellet spread — Blacksite pool scattergun, 88 at point blank by design (mirrors the shotgun/aa12 exemption)',
 };
 

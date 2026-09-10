@@ -56,12 +56,12 @@ var World = (function () {
   function makeMaterials() {
     var L = function (opt) { return new THREE.MeshLambertMaterial(opt); };
     M.asphalt = L({ map: canvasTex(256, function (g, s) {
-      noise(g, s, '#23262b', 0.5, 1600);
+      noise(g, s, '#2e3238', 0.5, 1600);
       g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
       for (var i = 0; i < 5; i++) { g.beginPath(); g.moveTo(Math.random() * s, Math.random() * s); g.lineTo(Math.random() * s, Math.random() * s); g.stroke(); }
     }) });
-    M.dirt = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#3a352c', 0.45, 1400); }) });
-    M.concrete = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#5b5f63', 0.35, 1200); }) });
+    M.dirt = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#4a4234', 0.45, 1400); }) });
+    M.concrete = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#7b8087', 0.35, 1200); }) });
     /* v8.5 STAIR MATERIAL. Every generic flight in the game was M.concrete, the
        same blue-grey as the walls they climb, so a staircase read as part of the
        wall rather than as something you could use. This is a warm sandstone that
@@ -74,24 +74,24 @@ var World = (function () {
        wood, metal or rust), so this changes nothing you can hear. */
     M.stair = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#a8895e', 0.32, 1200); }) });
     M.sidewalk = L({ map: canvasTex(256, function (g, s) {
-      noise(g, s, '#6a6e72', 0.3, 900);
+      noise(g, s, '#9a9ea3', 0.3, 900);
       g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 2;
       g.strokeRect(1, 1, s - 2, s - 2);
     }) });
     M.brick = L({ map: canvasTex(256, function (g, s) {
-      g.fillStyle = '#6e4436'; g.fillRect(0, 0, s, s);
-      g.fillStyle = '#5d382c';
+      g.fillStyle = '#8a5240'; g.fillRect(0, 0, s, s);
+      g.fillStyle = '#734334';
       var bh = 16, bw = 40;
       for (var y = 0; y < s; y += bh) {
         var off = (y / bh) % 2 ? bw / 2 : 0;
         for (var x = -bw; x < s; x += bw) {
-          g.fillStyle = Math.random() < 0.5 ? '#77493a' : '#653e30';
+          g.fillStyle = Math.random() < 0.5 ? '#96594a' : '#7e4a3b';
           g.fillRect(x + off + 1, y + 1, bw - 2, bh - 2);
         }
       }
     }) });
     M.plaster = L({ map: canvasTex(256, function (g, s) {
-      noise(g, s, '#8d867a', 0.28, 900);
+      noise(g, s, '#b7ad9e', 0.28, 900);
       g.fillStyle = 'rgba(60,50,40,0.25)';
       for (var i = 0; i < 8; i++) g.fillRect(Math.random() * s, s - Math.random() * 40, 2 + Math.random() * 3, 20 + Math.random() * 20);
     }) });
@@ -122,19 +122,26 @@ var World = (function () {
         g.fillRect(0, s - 26, s, 26);
       }) });
     }
-    M.facadeTeal  = facadeSkin('#2f6f74', 'rgba(20,45,48,0.28)');
-    M.facadeAmber = facadeSkin('#b5773a', 'rgba(70,40,18,0.26)');
-    M.facadeRose  = facadeSkin('#a85462', 'rgba(64,28,34,0.26)');
-    M.facadeIndigo = facadeSkin('#4a5a91', 'rgba(24,30,54,0.26)');
-    M.facadeOlive = facadeSkin('#6d7a3f', 'rgba(38,44,20,0.26)');
+    /* v15.0 (fix 13): THE PALETTE, BRIGHTENED. Rahul: "the urban map colours
+       are outdated; add a colour scheme that makes it good looking and high
+       definition." Every base tone here is lifted 20-35% in value and 10-20%
+       in saturation; the grime streaks and the base-band darkening are kept so
+       the surfaces still weather rather than reading as plastic. The material
+       COUNT is unchanged — a palette pass costs no draw calls. The matching
+       sky/light pass is CFG.RENDER in world.config.js. */
+    M.facadeTeal  = facadeSkin('#2e8b96', 'rgba(20,45,48,0.28)');
+    M.facadeAmber = facadeSkin('#d6913f', 'rgba(70,40,18,0.26)');
+    M.facadeRose  = facadeSkin('#c45c72', 'rgba(64,28,34,0.26)');
+    M.facadeIndigo = facadeSkin('#5169b5', 'rgba(24,30,54,0.26)');
+    M.facadeOlive = facadeSkin('#7f9448', 'rgba(38,44,20,0.26)');
 
     M.metal = L({ map: canvasTex(256, function (g, s) {
-      noise(g, s, '#4c5661', 0.3, 800);
+      noise(g, s, '#5f6c7b', 0.3, 800);
       g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 2;
       for (var x = 0; x <= s; x += 42) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, s); g.stroke(); }
     }) });
-    M.rust = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#7a4a28', 0.5, 1500); }) });
-    M.roof = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#2c2e31', 0.4, 1600); }) });
+    M.rust = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#8f5a2f', 0.5, 1500); }) });
+    M.roof = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#3a3f45', 0.4, 1600); }) });
     M.wood = L({ map: canvasTex(128, function (g, s) {
       g.fillStyle = '#7a5c38'; g.fillRect(0, 0, s, s);
       g.strokeStyle = 'rgba(40,25,10,0.5)';
@@ -841,8 +848,10 @@ var World = (function () {
     sun.position.set(R.sunPos[0], R.sunPos[1], R.sunPos[2]);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -95; sun.shadow.camera.right = 95;
-    sun.shadow.camera.top = 95; sun.shadow.camera.bottom = -95;
+    /* v15.0 (fix 4): 95 -> 122 so the ring districts sit inside the shadow
+       frustum. Texel 0.093 -> 0.119 m; normalBias scaled with it below. */
+    sun.shadow.camera.left = -122; sun.shadow.camera.right = 122;
+    sun.shadow.camera.top = 122; sun.shadow.camera.bottom = -122;
     sun.shadow.camera.far = 260;
     /* v8.32 SHADOW ACNE — the black-and-white blinking on wall faces.
 
@@ -863,7 +872,7 @@ var World = (function () {
        half a texel; the constant bias is eased back because normalBias is now
        doing the work that was being forced out of it. */
     sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.045;
+    sun.shadow.normalBias = 0.058;   /* v15.0: half a texel at the wider frustum */
     scene.add(sun); lights.push(sun);
     scene.add(sun.target);
 
@@ -886,10 +895,11 @@ var World = (function () {
 
   function groundAndRoads() {
     // Ground: four slabs leaving a hole for the sunken tunnel trench (x[45.4,48.6] z[-28,-9])
-    seg(-110, 45.4, -1, 0, -110, 110, M.dirt, { cast: false });
-    seg(48.6, 110, -1, 0, -110, 110, M.dirt, { cast: false });
-    seg(45.4, 48.6, -1, 0, -110, -28, M.dirt, { cast: false });
-    seg(45.4, 48.6, -1, 0, -9, 110, M.dirt, { cast: false });
+    /* v15.0 (fix 4): the ground reaches 130 now that the map is 240 m across. */
+    seg(-130, 45.4, -1, 0, -130, 130, M.dirt, { cast: false });
+    seg(48.6, 130, -1, 0, -130, 130, M.dirt, { cast: false });
+    seg(45.4, 48.6, -1, 0, -130, -28, M.dirt, { cast: false });
+    seg(45.4, 48.6, -1, 0, -9, 130, M.dirt, { cast: false });
     // Roads (visual planes on top of the ground)
     seg(-7, 7, 0.005, 0.02, -68, 68, M.asphalt, { collide: false, cast: false });
     seg(-68, 68, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
@@ -1090,7 +1100,7 @@ var World = (function () {
        its loot "out of bounds". Nothing clamps the player against this — it is
        metadata the validators read — but leaving it hardcoded would have meant
        silently failing every new map that is not exactly Urban's size. */
-    BOUND: 100,
+    BOUND: 120,   /* v15.0 (fix 4): urban is 240 m across; buildMap overwrites per map */
     _colliders: function () { return colliders; }, // test-only introspection
     _stairs: function () { return stairs; },       // test-only introspection
     _recordBoxes: function (on) { boxLog = on ? [] : null; return boxLog; },
@@ -1903,19 +1913,17 @@ World.build = function (sceneRef) {
   seg(62.5, 67.5, 3.9, 4.3, -71.0, -69.9, M.railGreen);           // service gate lintel
   seg(69.6, 71.3, 0, 4.6, -44.8, -44.4, M.brick);     // piers either side of the mall
   seg(69.6, 71.3, 0, 4.6, -21.6, -21.2, M.brick);
-  // V4.2 outer perimeter
-  seg(-100.9, 100.9, 0, 3.2, -100.9, -100, M.concrete);
-  seg(-100.9, 100.9, 0, 3.2, 100, 100.9, M.concrete);
-  seg(-100.9, -100, 0, 3.2, -100, 100, M.concrete);
-  seg(100, 100.9, 0, 3.2, -100, 100, M.concrete);
-  // connector roads through the gates (visual)
-  seg(-7, 7, 0.005, 0.02, -96, -68, M.asphalt, { collide: false, cast: false });
-  seg(-7, 7, 0.005, 0.02, 68, 96, M.asphalt, { collide: false, cast: false });
-  seg(-96, -68, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
-  seg(68, 96, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
+  /* v15.0 (fix 4): the V4.2 perimeter at 100 is GONE — where it stood is the
+     ring boulevard, and the new wall at 120 is built with the outer districts
+     in World._buildPart6 (districts-outer.js). The connector roads now run to
+     the boulevard edge. */
+  seg(-7, 7, 0.005, 0.02, -98, -68, M.asphalt, { collide: false, cast: false });
+  seg(-7, 7, 0.005, 0.02, 68, 98, M.asphalt, { collide: false, cast: false });
+  seg(-98, -68, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
+  seg(68, 98, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
   for (var i = 0; i < 12; i++) {
     var ang = (i / 12) * Math.PI * 2;
-    var rr = 128 + rnd() * 24;
+    var rr = 150 + rnd() * 26;   /* v15.0: the skyline steps back with the wall */
     box(Math.cos(ang) * rr, 7 + rnd() * 10, Math.sin(ang) * rr,
       9 + rnd() * 11, 14 + rnd() * 20, 9 + rnd() * 11, M.dark, { collide: false, cast: false, recv: false });
   }
@@ -1934,6 +1942,14 @@ World.build = function (sceneRef) {
     M: M, rnd: rnd, scene: H.sceneRef()
   });
   if (World._buildPart5) World._buildPart5({
+    seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win, emissive: emissiveMat,
+    container: container, crates: crates, brokenWall: brokenWall, lamp: lamp, barrel: barrel,
+    bus: bus, sedan: sedan, van: van, jeep: jeep, truck: truck,
+    M: M, rnd: rnd, scene: H.sceneRef()
+  });
+  /* v15.0 (fix 4): the outer ring — four districts, four towers, the new wall.
+     Before deco so its lamps register their ground-pool spots. */
+  if (World._buildPart6) World._buildPart6({
     seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win, emissive: emissiveMat,
     container: container, crates: crates, brokenWall: brokenWall, lamp: lamp, barrel: barrel,
     bus: bus, sedan: sedan, van: van, jeep: jeep, truck: truck,
@@ -1981,7 +1997,7 @@ World.buildMap = function (sceneRef, map) {
   /* v10.10: killhouse joins the same contract. A lookup rather than another
      nested ternary — three was already one too many and a fourth map would
      have made the line unreadable. */
-  var builder = ({ rural: World._buildRural, metro: World._buildMetro,
+  var builder = ({ metro: World._buildMetro,   /* v15.0 (fix 14): rural removed */
                    killhouse: World._buildKillhouse,
                    sunsetrow: World._buildSunsetRow,
                    freightyard: World._buildFreightyard,

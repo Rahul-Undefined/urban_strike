@@ -151,6 +151,7 @@ var Game = (function () {
            whose buffers no longer exist. */
         World.reset();
         World.buildMap(scene, currentMapId || 'urban');
+        if (window.Quality) Quality.setSun(World.getSun());   /* v1.0c: the restored context gets the tier's shadow map */
         Minimap.invalidate(); Minimap.init();
         Pickups.build(scene);
         UI.toast('Graphics restored');
@@ -163,6 +164,19 @@ var Game = (function () {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.08, 320);
     camera.rotation.order = 'YXZ';
+    /* ===== v1.0c - QUALITY TIERS =====
+       See src/core/quality.js. AUTO starts at HIGH, which is exactly the 1.75 /
+       2048 this file shipped for two years, so the boot frame is unchanged;
+       the scaler then climbs to ULTRA on a machine with headroom or steps down
+       on one without. The pause panel's QUALITY select overrides it. */
+    if (window.Quality) Quality.init(renderer, scene, {
+      onChange: function (id, T, why) {
+        if (UI.setQualityReadout) UI.setQualityReadout(Quality.describe());
+        if (why === 'lag') UI.toast('Quality \u2193 ' + T.label + ' \u2014 lag detected', true);
+        else if (why === 'headroom') UI.toast('Quality \u2191 ' + T.label);
+        else if (why === 'manual') UI.toast('Quality \u00b7 ' + T.label);
+      }
+    });
     _boomO = new THREE.Vector3(); _boomD = new THREE.Vector3();
     /* v13.0 (item 5): perspective survives reloads; the viewmodel obeys it
        from the first frame rather than flashing first-person for one tick. */
@@ -218,6 +232,14 @@ var Game = (function () {
        moving platform because carrying a capsule on a moving collider is exactly
        the kind of marginal physics that made the tower stairs unreliable. */
     var liftPending = false;
+    /* v15.0 (fix 10): the hold-to-call timer for the strike remote. */
+    var strikeHold = null;
+    function cancelStrikeHold() {
+      if (!strikeHold) return;
+      clearTimeout(strikeHold); strikeHold = null;
+      if (UI.setRemoteHold) UI.setRemoteHold(false);
+    }
+    cancelStrikeHoldRef = cancelStrikeHold;
     function rideLift() {
       if (!PlayerCtl.alive) return;
       var L = CFG.LIFTS || [], p = PlayerCtl.pos, half = CFG.PLAYER.standH / 2;
@@ -298,6 +320,14 @@ var Game = (function () {
          through to whatever else wants it. UI.nukeToggleAim reports whether it
          consumed the key rather than this line guessing. */
       if (e.code === 'KeyN' && UI.nukeToggleAim && UI.nukeToggleAim()) { e.preventDefault(); return; }
+      /* v1.0b: on a big map N is the ROCKET. The two rewards refuse each other's
+         maps on the server, so only one of these lines can ever consume N. */
+      if (e.code === 'KeyN' && UI.rocketLaunch && UI.rocketLaunch()) { e.preventDefault(); return; }
+      /* v1.0b: K throws the gun in your hands away, L the sight on it. Every
+         map, every mode. The server drops a matching pickup on the floor where
+         one exists (see 'dropItem' in server.js). */
+      if (e.code === 'KeyK' && playing) { e.preventDefault(); Weapons.dropCurrent(); return; }
+      if (e.code === 'KeyL' && playing) { e.preventDefault(); Weapons.dropSight(); return; }
       /* v10.13: V spots whatever enemy is in the crosshair for the team.
 
          This was KeyX for exactly one gate run. X is toggleProne, bound
@@ -373,6 +403,23 @@ var Game = (function () {
            handler for why. */
         Net.pickup();
         rideLift();
+        /* ===== v15.0 - HOLD Z FOR THE HELICOPTER (fix 10) =====
+           Rahul asked for Z. Z is also the interact key, and a one-shot that
+           deletes every enemy on the map must not fire because somebody
+           reached for a bandage. So a TAP interacts (above, unchanged) and a
+           HOLD of CFG.GEAR.remote.holdSec calls the strike; keyup before that
+           cancels. Only armed while the remote is actually held, so on every
+           other life Z is exactly what it always was. */
+        if (Weapons.hasRemote && Weapons.hasRemote() && !strikeHold) {
+          var holdMs = Math.max(300, ((CFG.GEAR.remote && CFG.GEAR.remote.holdSec) || 1.2) * 1000);
+          if (UI.setRemoteHold) UI.setRemoteHold(true);
+          strikeHold = setTimeout(function () {
+            strikeHold = null;
+            if (UI.setRemoteHold) UI.setRemoteHold(false);
+            if (!PlayerCtl.alive) return;
+            Weapons.callStrike();
+          }, holdMs);
+        }
         return;
       }
       /* Smoke is B. v8.21 briefly moved it to T, which collided with the old
@@ -389,6 +436,7 @@ var Game = (function () {
     });
     document.addEventListener('keyup', function (e) {
       if (e.code === 'Tab') { UI.showScoreboard(false); return; }
+      if (e.code === 'KeyZ') cancelStrikeHold();   // v15.0 (fix 10): released early = no strike
       if (e.code === 'KeyG') { Weapons.releaseCook(); return; }
       if (e.code === 'KeyY' && pingWheel) { pingWheel = false; UI.setPingWheel(false); sendPing('enemy'); return; }
       var map2 = {
@@ -427,7 +475,9 @@ var Game = (function () {
   function clearInput() {
     for (var k in Input) Input[k] = false;
     Weapons.setTrigger(false);
+    if (typeof cancelStrikeHoldRef === 'function') cancelStrikeHoldRef();   // v15.0
   }
+  var cancelStrikeHoldRef = null;
 
   // ---------- pointer lock / pause ----------
   function requestLock() {
@@ -515,6 +565,7 @@ var Game = (function () {
       currentMapId = mapId;
       UI.setLoadingMap((CFG.MAPS[mapId] || CFG.MAPS.urban).label);
       World.buildMap(scene, mapId);
+      if (window.Quality) Quality.setSun(World.getSun());   /* v1.0c: the tier's shadow map applies to the new sun */
       Minimap.invalidate();
       Weapons.matchReset();
       Pickups.build(scene);
@@ -536,6 +587,7 @@ var Game = (function () {
       try {
         World.reset();
         World.buildMap(scene, currentMapId);
+        if (window.Quality) Quality.setSun(World.getSun());   /* v1.0c */
         Minimap.invalidate();
         Weapons.matchReset();
         Pickups.build(scene);
@@ -814,6 +866,9 @@ var Game = (function () {
        frame still renders. `step()` reports through the same rate-limited
        surface, so the first failure names itself once and does not spam. */
     var playing = Net.getPhase() === 'playing';
+    /* v1.0c: the quality scaler measures only in-match with the pointer locked —
+       menus, the lobby and a hidden tab are not lag. */
+    if (window.Quality) step('quality', function () { Quality.setActive(playing && locked && World.isBuilt()); Quality.tick(dt * 1000, t); });
 
     if (playing && World.isBuilt()) {
       var wu = step('weapons', function () { return Weapons.update(dt); });

@@ -265,14 +265,23 @@ const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
   /* v10.10: late-bound on purpose. Nuke needs applyDamage, which Combat
      returns, so Nuke cannot exist yet at this line. Arrow functions defer the
      lookup to call time, by which point both modules are built. */
-  onKillStreak: (...a) => Nuke.onKill(...a),
-  onDeathClearStreakReward: (...a) => Nuke.clearArmed(...a) });
+  /* v1.0b: the nuke (arenas) and the rocket ladder (big maps) ride the same
+     two seams; each refuses the other's maps, so exactly one is live anywhere. */
+  onKillStreak: (...a) => { Nuke.onKill(...a); Rocket.onKill(...a); },
+  onDeathClearStreakReward: (...a) => { Nuke.clearArmed(...a); Rocket.clearArmed(...a); } });
 const { weaponServerDamage, applyDamage, positionPlausible, fireRateOk } = Combat;
 const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo }); // code -> room
 /* v10.10 NUKE KILLSTREAK — killhouse only. Server-authoritative for the same
    reason as the strike drone: the client is told it HAS one and asked WHERE to
    put it, never whether it has one. See server/lib/nuke.js. */
 const Nuke = require('./server/lib/nuke.js')({ io, now, applyDamage: (...a) => applyDamage(...a) });
+/* v1.0b: big-map rocket ladder (server/lib/rocket.js) and the two timed
+   hazards — flamethrower fire zones and C4 charges (server/lib/hazards.js).
+   Hazards read the SAME collider set the bots see through, so "line of sight
+   to the fire" and "under a roof" are decided against the real map. */
+const Rocket = require('./server/lib/rocket.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo });
+const Hazards = require('./server/lib/hazards.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo,
+  colliders: (mapId) => Bots.buildColliders(mapId) });
 /* v10.14: OUTBREAK REMOVED. It shipped in v10.13 having never been run, and it
    did not work: the zombies stood still holding rifles and could not be killed.
 
@@ -330,7 +339,20 @@ function netstat(room, packet) {
   if (n > netTotals.maxBytes) netTotals.maxBytes = n;
 }
 
-const Drones = require('./server/lib/drones.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo, CFG });
+const Drones = require('./server/lib/drones.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo, CFG,
+  /* v1.0b: the drone bounty — a downed hostile drone is a KILL on the board.
+     Credited here, where the team score, the roster push and the kill target
+     live, through the same checks a kill in combat.js runs. */
+  onDroneBounty: (room, shooter, n) => {
+    if (!n || !shooter) return;
+    shooter.kills += n;
+    const teams = modeInfo(room).teams;
+    if (teams && shooter.team && room.teamKills) room.teamKills[shooter.team] = (room.teamKills[shooter.team] || 0) + n;
+    io.to(shooter.id).emit('toast', { msg: 'Drone destroyed \u00b7 +' + n + ' \u00b7 a Strike Drone is in your bag' });
+    pushLobby(room);
+    const target = room.settings.killTarget;
+    if (target > 0 && (teams ? room.teamKills[shooter.team] >= target : shooter.kills >= target)) endMatch(room, shooter.id, 'kills');
+  } });
 const Intel = require('./server/lib/intel');   // v12.0: approximate enemy blobs (brief item 10)
 
 /* ===== v9.5 — WARM THE BOT COLLIDER CACHE BEFORE ANYBODY NEEDS IT =====
@@ -412,6 +434,13 @@ function buildInsights(room) {
   if (streak && streak.n > 1) out.bestStreak = streak;
   if (carry && carry.n > 0) out.mostDamage = carry;
   if (heads) out.headshots = heads;
+  /* v15.0 (fix 9): the minefield card — who got the most kills with mines. */
+  let miner = null;
+  for (const p of room.players.values()) {
+    const mk = p.mineKills | 0;
+    if (mk > 0 && (!miner || mk > miner.n)) miner = { n: mk, name: p.name };
+  }
+  if (miner) out.mineKills = miner;
   return out;
 }
 
@@ -496,6 +525,10 @@ function spawnPlayer(room, p) {
      Cleared before the vitals emit further down, so the client is told in the
      same message that brings it back to life. */
   p.visor = false;
+  /* v15.0 (fix 5): the shield is PER LIFE like the visor. Cleared here, and the
+     room told, so the slab on this operator's avatar drops with the body. */
+  if ((p.shieldHp | 0) > 0) io.to(room.code).emit('shield', { id: p.id, hp: 0, max: CFG.GEAR.shield.hp });
+  p.shieldHp = 0;
   /* ===== v10.15 - EVERY EXPENDABLE REFILLS ON RESPAWN =====
 
      Rahul: "mines are only 5 in the game per player, once those are utilised
@@ -517,7 +550,11 @@ function spawnPlayer(room, p) {
      `lastMolo` is cleared with them: it is the per-throw cooldown map, and a
      refilled stock with a live cooldown would hand back the count and refuse
      the throw. */
-  p.mines = CFG.GEAR.mine.start;
+  /* v15.0 (fix 8): the refill is rationed on small maps — see Mines.refillFor. */
+  p.mines = Mines.refillFor(room, p);
+  if (p.mines === 0 && CFG.GEAR.mine.start > 0 && !p.bot) {
+    io.to(p.id).emit('toast', { msg: 'Mine ration spent \u2014 ' + CFG.GEAR.mine.lifetimeSmall + ' per match on small maps' });
+  }
   p.lastMolo = {};
   /* Grenades, smoke, flash and molotov are NOT reset here, and that is not an
      omission: their stock lives on the client in Weapons.throwsLeft, and
@@ -564,13 +601,19 @@ function startMatch(room) {
     room.insights = null;   // v8.29: insights are per match, never cumulative
     p.att = { sight: null, muzzle: null, mag: null }; p.exW = {}; p.rd = {};
     p.ready = false; p.mines = CFG.GEAR.mine.start; p.lastMolo = {};
+    p.mineIssued = 0; p.mineKills = 0;   /* v15.0: fix 8 ration budget, fix 9 KPI — both per match */
     /* v9.4: drones are per-MATCH, not per-life. Refilling them on respawn
        would mean an unlimited supply for anybody willing to die. */
     /* v9.5: NOBODY SPAWNS WITH A DRONE. It is crate loot now, so the starting
        stock is zero in every mode — otherwise the drop-only rule would be
        cosmetic and everyone would still open the match with two. */
     p.drones = 0;
+    /* v15.0: EMP charges and the strike remote are per match, like drones.
+       The shield is per life and is cleared in spawnPlayer. */
+    p.emps = 0; p.hasRemote = false; p.shieldHp = 0;
+    p.c4 = 0; p.rocketArmed = false; p.rocketIdx = 0;   /* v1.0b */
   }
+  Hazards.reset(room);
   refreshTeamsAndColors(room, true);   // v10.22: preserve what the lobby showed
   /* ===== v11.0 - THE LOBBY'S TEAMS ARE THE MATCH'S TEAMS. FROZEN. =====
      Rahul: "Players must never be automatically moved to another team after
@@ -669,6 +712,7 @@ function startSnapshots(room) {
     respawnPickups(room);
     Mines.tick(room);
     Nuke.tick(room);                         // v10.10 killhouse killstreak
+    Hazards.tick(room);                      // v1.0b fire zones + C4 fuses
     regenTick(room);
     if (++room.snapN % 60 === 0) pushLobby(room); // live K/D/assists/damage refresh (~4 s)
 
@@ -822,6 +866,7 @@ function destroyRoomIfEmpty(room) {
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
   if (room.cdTimer) { clearInterval(room.cdTimer); room.cdTimer = null; }
   if (room.bmTimer) { clearTimeout(room.bmTimer); room.bmTimer = null; }   /* v14.0: the wave director's clock */
+  if (room.heliTimer) { clearTimeout(room.heliTimer); room.heliTimer = null; }   /* v15.0: an inbound strike dies with its room */
   rooms.delete(room.code);
   return true;
 }
@@ -835,10 +880,12 @@ function endMatch(room, winnerId, reason) {
   if (room.state !== 'playing') return;
   room.state = 'ended';
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
+  if (room.heliTimer) { clearTimeout(room.heliTimer); room.heliTimer = null; }   /* v15.0 */
   stopSnapshots(room);
   clearAirdrop(room);
   Mines.clear(room);
   Nuke.reset(room);           // v10.10: no strike survives the final whistle
+  Rocket.reset(room); Hazards.reset(room);   // v1.0b
   const teams = modeInfo(room).teams;
   Bots.removeBots(room);      // v8.38: bots are per-match; never let them into a lobby
   const insights = buildInsights(room);
@@ -898,7 +945,8 @@ io.on('connection', (socket) => {
       socket.emit('recovered', {
         state: room.state, settings: room.settings,
         startedAt: room.startedAt, serverNow: now(),
-        team: p.team || null, mines: p.mines | 0
+        team: p.team || null, mines: p.mines | 0,
+        emps: p.emps | 0, remote: !!p.hasRemote, shield: p.shieldHp | 0, c4: p.c4 | 0   /* v15.0 / v1.0b */
       });
       pushLobby(room);
     }
@@ -1236,6 +1284,105 @@ io.on('connection', (socket) => {
     if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
     ack(Mines.place(room, p, d && d.p));
   });
+  /* ===== v15.0 - EMP (fix 1) =====
+     The client sends nothing but the request. Whether it has a charge, which
+     mines are hostile and whether anything happened is decided in Mines.emp. */
+  socket.on('useEmp', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
+    ack(Mines.emp(room, p));
+  });
+  /* ===== v15.0 - THE STRIKE REMOTE (fix 10) =====
+     Big maps only, one per match, held by whoever found it. The caller sends
+     only the request; `hasRemote` lives here and is cleared BEFORE the timer is
+     armed, so a double press cannot call two helicopters. approachSec later
+     every operator hostile to the caller dies through applyDamage with
+     pointBlank=true — a guaranteed kill through vest, helmet and shield, and
+     the kill feed, streaks, team score and win condition all fire as for any
+     other kill. A caller who dies while the helicopter is inbound still gets
+     the strike: the remote was already spent, and a strike that evaporates
+     because its owner was shot two seconds after pressing the button would
+     read as a lost item. The room's timer dies in destroyRoomIfEmpty/endMatch. */
+  socket.on('callStrike', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
+    if (!p.hasRemote) return ack({ ok: false, err: 'You do not hold the remote' });
+    if (CFG.isArena(room.settings.map || 'urban')) return ack({ ok: false, err: 'No air support over this map' });
+    if (room.heliTimer) return ack({ ok: false, err: 'A strike is already inbound' });
+    p.hasRemote = false;
+    const R = CFG.GEAR.remote || {};
+    const approach = Math.max(1, +R.approachSec || 5);
+    const byId = p.id, byName = p.name, byTeam = p.team || null;
+    io.to(room.code).emit('heliStrike', { by: byId, byName: byName, team: byTeam, at: now() + approach * 1000, approach: approach });
+    room.heliTimer = setTimeout(() => {
+      room.heliTimer = null;
+      if (room.state !== 'playing') return;
+      const teams = modeInfo(room).teams;
+      let n = 0;
+      for (const q of room.players.values()) {
+        if (!q.alive || q.out) continue;
+        if (q.id === byId) continue;
+        if (teams && byTeam && q.team === byTeam) continue;
+        applyDamage(room, q, 999, byId, 'heli', false, true);
+        n++;
+      }
+      io.to(room.code).emit('heliDone', { by: byId, byName: byName, n: n });
+    }, approach * 1000);
+    ack({ ok: true, approach: approach });
+  });
+  /* ===== v1.0b - THE ROCKET (big maps, N) ===== decided in Rocket.launch */
+  socket.on('launchRocket', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
+    ack(Rocket.launch(room, p));
+  });
+  /* ===== v1.0b - C4 ===== the client sends the wall point its ray found;
+     reach, economy and the map are re-checked in Hazards.plant. */
+  socket.on('plantBomb', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
+    ack(Hazards.plant(room, p, d && Array.isArray(d.p) ? d.p.map(Number) : null));
+  });
+  /* ===== v1.0b - DROP (K drops the gun, L drops the sight) =====
+     Rahul: "a button that throws away guns or scope, all maps and modes."
+     The loadout itself is client-side (it always was — the server validates
+     shots by weapon id, not by ownership), so the server's part is the FLOOR:
+     if a loot item exists for what was dropped it appears at the player's
+     feet as a one-off pickup anybody may take, through the same lootAdd path
+     an airdrop uses. Base weapons and attachments with no loot entry simply
+     leave the hands. Rate-limited so a macro cannot carpet the ground. */
+  socket.on('dropItem', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
+    if (now() - (p.lastDrop || 0) < 800) return ack({ ok: false, err: 'Too fast' });
+    const key = d && (d.w ? 'wpn_' + String(d.w) : d.a ? 'att_' + String(d.a) : null);
+    const it = key && CFG.LOOT_ITEMS[key];
+    if (!it || it.retired) return ack({ ok: true, floor: 0 });          // nothing to leave behind — it just leaves the hands
+    if (it.kind === 'weapon' && CFG.WEAPONS[it.w] && CFG.WEAPONS[it.w].pool === 'botmode'
+        && !(CFG.MODES[room.settings.mode] || {}).botmode) return ack({ ok: true, floor: 0 });
+    p.lastDrop = now();
+    const a = (p.yaw || 0), fx = Math.sin(a), fz = -Math.cos(a);
+    const pk = { id: room.nextLootId++, t: key, pos: [p.pos[0] + fx * 0.9, p.pos[1] + 0.55, p.pos[2] + fz * 0.9],
+      cls: 'g', active: true, respawnAt: 0, noRespawn: true };
+    room.pickups.push(pk);
+    io.to(room.code).emit('lootAdd', { items: [{ id: pk.id, t: pk.t, p: pk.pos, active: true }] });
+    ack({ ok: true, floor: 1 });
+  });
   /* v10.10 NUKE STRIKE — killhouse only.
 
      The client sends only a target. Whether this player is allowed to call one
@@ -1328,6 +1475,7 @@ io.on('connection', (socket) => {
       p.alive = false; p.kills = 0; p.deaths = 0;
       p.assists = 0; p.damage = 0; p.streak = 0; p.ready = false;
       p.mines = 0; p.rd = {}; p.lastMolo = {};
+      p.mineIssued = 0; p.mineKills = 0;   /* v15.0 */
     }
     io.to(room.code).emit('backToLobby');
     pushLobby(room);
@@ -1439,6 +1587,20 @@ io.on('connection', (socket) => {
       shooter.lastMolo = shooter.lastMolo || {};
       if (now() - (shooter.lastMolo[d.victim] || 0) < 350) return; // burn-tick throttle
       shooter.lastMolo[d.victim] = now();
+    } else if (d.w === 'flamer') {
+      /* v1.0b: a flamethrower hit BURNS. Reach is the weapon's own range plus
+         the hit tolerance; inside it the victim is a guaranteed kill and a fire
+         zone opens where they stood (server/lib/hazards.js). Team-mates cannot
+         be hit at all, so no zone opens for them. */
+      const fdx = shooter.pos[0] - victim.pos[0], fdy = shooter.pos[1] - victim.pos[1], fdz = shooter.pos[2] - victim.pos[2];
+      const fdist = Math.sqrt(fdx * fdx + fdy * fdy + fdz * fdz);
+      if (fdist > CFG.WEAPONS.flamer.range + CFG.NET.hitTolerance) return;
+      const teamsF = modeInfo(room).teams;
+      if (teamsF && shooter.team && victim.team === shooter.team) return;
+      const at = victim.pos.slice();
+      applyDamage(room, victim, 999, socket.id, 'flamer', false, true);
+      Hazards.ignite(room, at, shooter);
+      return;
     } else {
       const dx = shooter.pos[0] - victim.pos[0], dy = shooter.pos[1] - victim.pos[1], dz = shooter.pos[2] - victim.pos[2];
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -1491,9 +1653,10 @@ io.on('connection', (socket) => {
     io.to(room.code).emit('toast', { msg: p.name + ' reconnected' });
     ack({ ok: true, code: room.code, id: socket.id, token: p.token,
           team: p.team || null, mines: p.mines | 0,
+          emps: p.emps | 0, remote: !!p.hasRemote, shield: p.shieldHp | 0, c4: p.c4 | 0,   /* v15.0 / v1.0b */
           settings: room.settings, state: room.state,
           startedAt: room.startedAt, serverNow: now(),
-          pickups: room.pickups.filter(k => k.active).map(k => ({ id: k.id, t: k.t, p: k.pos, active: true })) });
+          pickups: pickupList(room).filter(k => k.active) });
     pushLobby(room);
   });
 
@@ -1534,9 +1697,10 @@ io.on('connection', (socket) => {
     io.to(room.code).emit('toast', { msg: p.name + ' reconnected' });
     ack({ ok: true, code: room.code, id: socket.id, token: p.token,
           team: p.team || null, mines: p.mines | 0,
+          emps: p.emps | 0, remote: !!p.hasRemote, shield: p.shieldHp | 0, c4: p.c4 | 0,   /* v15.0 / v1.0b */
           settings: room.settings, state: room.state,
           startedAt: room.startedAt, serverNow: now(),
-          pickups: room.pickups.filter(k => k.active).map(k => ({ id: k.id, t: k.t, p: k.pos, active: true })) });
+          pickups: pickupList(room).filter(k => k.active) });
     pushLobby(room);
   });
 

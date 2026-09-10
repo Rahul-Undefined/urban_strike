@@ -707,7 +707,8 @@ var UI = (function () {
     }
     if (els['death-title']) els['death-title'].textContent = 'K.I.A.';
     var wl = (CFG.WEAPONS[d.weapon] && CFG.WEAPONS[d.weapon].label) ||
-             (CFG.THROWS[d.weapon] && CFG.THROWS[d.weapon].label) || '';
+             (CFG.THROWS[d.weapon] && CFG.THROWS[d.weapon].label) ||
+             (CFG.GEAR[d.weapon] && CFG.GEAR[d.weapon].label) || '';   /* v15.0: mine / drone / nuke / air strike */
     /* v11.0: the range rides the death event (combat.js). Killer, weapon and
        DISTANCE together answer "where did that come from" — 8 m and 80 m are
        different lessons, and until now the screen taught neither. */
@@ -756,7 +757,9 @@ var UI = (function () {
          left out — it is a live network reading and means nothing once the
          match is over. */
       var kd = p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : (p.kills > 0 ? p.kills.toFixed(2) : '0.00');
-      tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (p.assists || 0) + '</td><td>' + (p.damage || 0) + '</td><td>' + (p.bestStreak || p.streak || 0) + '</td><td>' + kd + '</td>';
+      /* v15.0 (fix 9): MINES column — kills scored with AP mines, a KPI the
+         server counts per kill (combat.js) and ships in the roster payload. */
+      tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (p.assists || 0) + '</td><td>' + (p.damage || 0) + '</td><td>' + (p.bestStreak || p.streak || 0) + '</td><td>' + (p.mineKills || 0) + '</td><td>' + kd + '</td>';
       els['end-body'].appendChild(tr);
     }
     if (d.winnerTeam) {
@@ -792,7 +795,7 @@ var UI = (function () {
         var hdr = document.createElement('tr');
         hdr.className = 'team-hdr t' + t;
         if (!d.players.some(function (p) { return p.team === t; })) return;   // v8.34: skip empty squads
-        hdr.innerHTML = '<td>TEAM ' + teamName(t) + '</td><td></td><td></td><td></td><td></td><td></td><td></td>';
+        hdr.innerHTML = '<td>TEAM ' + teamName(t) + '</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>';
         els['end-body'].appendChild(hdr);
         d.players.filter(function (p) { return p.team === t; })
           .sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
@@ -835,6 +838,8 @@ var UI = (function () {
           CFG.GEAR[ins.favouriteWeapon.w] || {}).label || ins.favouriteWeapon.w));
       if (ins.headshots) card('DEADEYE', ins.headshots.name + ' &middot; ' + ins.headshots.n +
         ' headshot' + (ins.headshots.n === 1 ? '' : 's'));
+      if (ins.mineKills) card('MINEFIELD', ins.mineKills.name + ' &middot; ' + ins.mineKills.n +
+        ' mine kill' + (ins.mineKills.n === 1 ? '' : 's'), 'hot');   // v15.0 (fix 9)
       if (ins.mostDamage) card('MOST DAMAGE', ins.mostDamage.name + ' &middot; ' +
         ins.mostDamage.n);
       if (ins.firstBlood) card('FIRST BLOOD', ins.firstBlood.name + ' \u2192 ' + ins.firstBlood.victim);
@@ -912,6 +917,41 @@ var UI = (function () {
   }
   function nukeArmedNow() { return nukeArmed; }
 
+  /* ===== v1.0b - THE ROCKET (big maps) =====
+     Same shape as the nuke: the server says when it is armed, N spends it,
+     death takes it away. The banner is its own element so a map switch can
+     never show the wrong reward. */
+  var rocketArmed = false;
+  function rocketEl() { return document.getElementById('rocket-banner'); }
+  function rocketReady(d) {
+    rocketArmed = true;
+    var e = rocketEl(); if (e) e.classList.add('armed');
+    var nxt = d && d.next ? ' \u00b7 next at ' + d.next + ' kills' : '';
+    toast('ROCKET LAUNCH ACTIVATED \u00b7 press N' + nxt);
+  }
+  function rocketLost(reason) {
+    if (!rocketArmed) return;
+    rocketArmed = false;
+    var e = rocketEl(); if (e) e.classList.remove('armed');
+    if (reason === 'died') toast('Rocket lost \u2014 you were killed before launch', true);
+  }
+  function rocketLaunch() {
+    if (!rocketArmed) return false;
+    rocketArmed = false;                     // spend it here so N cannot double-fire
+    var e = rocketEl(); if (e) e.classList.remove('armed');
+    Net.launchRocket(function (res) {
+      if (res && res.ok) toast('ROCKET AWAY');
+      else {
+        /* refused-and-kept (no targets alive): re-arm the banner */
+        rocketArmed = !!(res && /no targets/i.test(res.err || ''));
+        if (rocketArmed && e) e.classList.add('armed');
+        toast((res && res.err) || 'Cannot launch', true);
+      }
+    });
+    return true;
+  }
+  function rocketArmedNow() { return rocketArmed; }
+
   /* ===== v10.15 - N CALLS THE STRIKE. IT DOES NOT OPEN A MENU. =====
 
      This used to open the full map in a targeting mode and wait for a click.
@@ -937,6 +977,27 @@ var UI = (function () {
                : 'NUKE INBOUND \u00b7 ' + ((d && d.byName) || 'Enemy') + ' \u2014 get clear', !mine);
   }
 
+  /* ===== v15.0 - SHIELD BAR (fix 5) and REMOTE PIP (fix 10) ===== */
+  function setShield(hp, max) {
+    var row = document.getElementById('shield-row');
+    if (!row) return;
+    hp = Math.max(0, hp | 0); max = Math.max(1, max | 0);
+    row.classList.toggle('on', hp > 0);
+    var f = document.getElementById('shield-fill'), n = document.getElementById('shield-num');
+    if (f) f.style.width = Math.round(100 * hp / max) + '%';
+    if (n) n.textContent = String(hp);
+  }
+  function setRemoteHud(on) {
+    var e = document.getElementById('remote-pip');
+    if (e) { e.classList.toggle('on', !!on); e.classList.remove('hold'); e.innerHTML = REMOTE_IDLE; }
+  }
+  var REMOTE_IDLE = 'STRIKE REMOTE &middot; HOLD <b>Z</b> TO CALL THE HELICOPTER';
+  function setRemoteHold(on) {
+    var e = document.getElementById('remote-pip');
+    if (!e) return;
+    e.classList.toggle('hold', !!on);
+    e.innerHTML = on ? 'CALLING THE HELICOPTER\u2026 <b>KEEP HOLDING Z</b>' : REMOTE_IDLE;
+  }
   function setVisorHud(on) {
     var e = document.getElementById('visor-pip');
     if (e) e.classList.toggle('on', !!on);
@@ -959,6 +1020,17 @@ var UI = (function () {
     els['quality-shadows'].addEventListener('change', function () {
       Game.setShadows(this.checked);
     });
+    /* v1.0c: the QUALITY preference — AUTO or a fixed tier (src/core/quality.js). */
+    var qm = document.getElementById('quality-mode');
+    if (qm && window.Quality) {
+      qm.value = Quality.getMode();
+      qm.addEventListener('change', function () { Quality.setMode(this.value); setQualityReadout(Quality.describe()); });
+      setQualityReadout(Quality.describe());
+    }
+  }
+  function setQualityReadout(text) {
+    var e = document.getElementById('quality-now');
+    if (e) e.textContent = text || '';
   }
 
   // ---------- menu wiring ----------
@@ -1381,6 +1453,9 @@ var UI = (function () {
     nukeReady: nukeReady, nukeLost: nukeLost, nukeFired: nukeFired,
     nukeIncoming: nukeIncoming, nukeToggleAim: nukeToggleAim,
     nukeArmedNow: nukeArmedNow, setVisorHud: setVisorHud,
+    rocketReady: rocketReady, rocketLost: rocketLost, rocketLaunch: rocketLaunch, rocketArmedNow: rocketArmedNow,   /* v1.0b */
+    setShield: setShield, setRemoteHud: setRemoteHud, setRemoteHold: setRemoteHold,   /* v15.0 */
+    setQualityReadout: setQualityReadout,   /* v1.0c */
     getSensitivity: function () { return sensitivity; },
     el: function (id) { return els[id]; }
   };

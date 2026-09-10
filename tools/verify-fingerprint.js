@@ -45,11 +45,10 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
 
 /* Keep this list identical to index.html — see the v8.9 note in verify-lifts. */
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js",
+ "public/src/config/world.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js",
  "public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
- "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js",
- "public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/medium.js","public/src/environment/access.js"]
+ "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/medium.js","public/src/environment/access.js"]
  .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 function fingerprint(map) {
@@ -101,6 +100,19 @@ function fingerprint(map) {
 }
 
 /* ---- BASELINE — v9.0 as shipped. Do not edit to make a build pass. ---- */
+/* ---- v15.0 (v1.0 release) — RE-RECORDED, EVERY MAP DELIBERATELY CHANGED ----
+   Not a convenience: this release IS the map release.
+     urban       200 -> 240 m: ring boulevard, four districts, four control
+                 towers, +1161 colliders, +36k tris (verify-batch budget rose
+                 with it, itemized there), palette pass (no draw change).
+     killhouse   40x68 -> 52x88, zig-zag rows gone, the deck + corridors in.
+     sunsetrow   64x40 -> 64x84, two end bands of cottages and shelters.
+     freightyard / bazaar / substation: outer rings for the 15-player cap.
+     riverside   lock tower, mill, barge, cranes, willows, flood walls.
+     airfield    control tower, airliner, fire station, fuel farm, radar mast.
+   Recorded from the first all-green build after the changes; if a number here
+   moves again without a line like this above it, that is the drift this gate
+   exists to catch. */
 const BASELINE = {
   /* v9.15: colliders +30, tris +1032 — two fire escapes reshaped to a realistic
      tread profile at an unchanged footprint (more, smaller steps over the same
@@ -160,7 +172,7 @@ const BASELINE = {
      proof this pass moved pixels and nothing else. No cover appeared, no
      sightline closed, no spawn or loot point was invalidated. A visual change
      that alters colSig is not a visual change. */
-  urban: { colliders: 3332, draws: 98, tris: 92332, casters: 62, lights: 7, bound: 100, colSig: 459507278, meshSig: 1117349927 },
+  urban: { colliders: 4499, draws: 99, tris: 128528, casters: 62, lights: 7, bound: 120, colSig: -708977239, meshSig: -961621963 },
   /* v10.10: rural moved on purpose. The three river-bridge stair pairs climbed
      AWAY from the deck and finished 2.1 m short of it, so all six were
      unclimbable (verify-climb, "reached 0.05m"). Turned around and extended
@@ -170,7 +182,6 @@ const BASELINE = {
      each. Both signatures move because tread positions moved. Recorded here
      rather than left red, because a fingerprint that is expected to fail stops
      being able to report the NEXT change — which is the whole point of it. */
-  rural: { colliders: 1072, draws: 32, tris: 54683, casters: 22, lights: 3, bound: 150, colSig: 491534987, meshSig: -2029443105 },
   /* v10.10: killhouse. Asserted from its first version so any later edit has to
      justify itself the way rural just did.
 
@@ -227,7 +238,7 @@ const BASELINE = {
      map did not otherwise carry (sage, maroon, roadPaint); swapping them for
      palette entries already present brought it back to 39. On this axis a new
      MATERIAL is expensive and geometry is nearly free. */
-  sunsetrow: { colliders: 182, draws: 39, tris: 5112, casters: 17, lights: 3, bound: 34, colSig: 935596110, meshSig: -384905933 },
+  sunsetrow: { colliders: 288, draws: 41, tris: 7084, casters: 19, lights: 3, bound: 46, colSig: -119726642, meshSig: -437825621 },
 /* v11.0 REBASELINE — deliberate, two changes, both documented in killhouse.js:
    1. colSig: the v10.22 angled-wall collider chains were stepped along
       (cos, +sin) where three.js rotY places the drawn wall along (cos, -sin).
@@ -237,16 +248,16 @@ const BASELINE = {
    2. tris/meshSig: orientation paint and trim (sector wall bands, lane
       chevrons, block brackets, muster pads) — all collide:false cast:false, so
       draws (22) and casters (10) hold and cover/dead-ground are untouched. */
-killhouse: { colliders: 666, draws: 22, tris: 7984, casters: 10, lights: 3, bound: 38, colSig: 1337392587, meshSig: -1595018151 },
+killhouse: { colliders: 608, draws: 25, tris: 9772, casters: 13, lights: 3, bound: 48, colSig: 1504444788, meshSig: -2029464796 },
   /* v10.14: the three new small maps, asserted from their first version so any
      later edit has to justify itself. Filled in below from a measured run. */
-freightyard: { colliders: 118, draws: 22, tris: 8184, casters: 13, lights: 3, bound: 21, colSig: 687692594, meshSig: 1215863378 },
-bazaar     : { colliders: 126, draws: 24, tris: 4044, casters: 10, lights: 3, bound: 29, colSig: 501986612, meshSig: -1977644747 },
-substation : { colliders: 137, draws: 21, tris: 6924, casters: 12, lights: 3, bound: 25, colSig: -2141431923, meshSig: 201354676 },
+freightyard: { colliders: 229, draws: 25, tris: 14076, casters: 15, lights: 3, bound: 38, colSig: -1683568504, meshSig: -336526897 },
+bazaar     : { colliders: 323, draws: 24, tris: 10304, casters: 10, lights: 3, bound: 46, colSig: 1891091996, meshSig: 1017463223 },
+substation : { colliders: 254, draws: 24, tris: 10392, casters: 14, lights: 3, bound: 40, colSig: 907980540, meshSig: -768507913 },
   /* v10.21 MEDIUM TIER, asserted from their first version so any later edit has
      to justify itself. Filled in from a measured run. */
-  riverside  : { colliders: 189, draws: 25, tris: 5696, casters: 16, lights: 3, bound: 66, colSig: -1855972853, meshSig: -1297675864 },
-  airfield   : { colliders: 126, draws: 25, tris: 4188, casters: 14, lights: 3, bound: 70, colSig: 1231840380, meshSig: -130204069 }
+  riverside  : { colliders: 383, draws: 34, tris: 10572, casters: 24, lights: 3, bound: 66, colSig: 702061085, meshSig: 40011342 },
+  airfield   : { colliders: 312, draws: 34, tris: 8740, casters: 19, lights: 3, bound: 70, colSig: -1195648704, meshSig: -1116298994 }
 };
 
 let pass = 0, fail = 0;

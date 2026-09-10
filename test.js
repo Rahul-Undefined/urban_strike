@@ -342,7 +342,7 @@ function phase17() {
             const bots = ((bl && bl.players) || []).filter(p2 => p2.name !== 'BmB');
             ok(bots.length === 5, 'five machines are seated at wave one [' + bots.length + ']');
             B.disconnect();
-            setTimeout(finish, 400);
+            setTimeout(phase18, 400);
           }, 2200);
         })();
       });
@@ -485,6 +485,337 @@ function phase15() {
   }
 }
 
+/* Phase 18 (v15.0 / v1.0): the three new items — EMP, ballistic shield, strike
+   remote — plus the small-map mine ration, against the live server.
+
+   DETERMINISTIC WHERE THE GAME IS: the strike remote is PLANTED (one per big
+   map, always), so it is found from the matchStart pickup list, walked to,
+   picked up, and the helicopter is called; the victim must die to 'heli' and
+   the caller must be credited. The mine ration is a pure function and is
+   tested as one. The EMP and the shield are RANDOM floor loot (rare and
+   legendary), so they are hunted from the same list and the phase reports a
+   SKIP if the roll offered neither — the v12 drone precedent: a random pool
+   cannot be asserted deterministically, and a test that fails on dice is
+   worse than one that says so. The refusals ("No EMP charge", "You do not hold
+   the remote") are asserted first because they are the cheap, always-true
+   half of each feature. */
+function phase18() {
+  console.log('\n--- Phase 18 (v15.0): EMP / shield / strike remote / mine ration ---');
+
+  /* --- the ration, as a function --- */
+  {
+    const Mines = require('./server/lib/mines.js')({ io: { to: () => ({ emit() {} }) }, now: Date.now, applyDamage() {}, modeInfo: () => ({ teams: false }) });
+    const small = { settings: { map: 'killhouse' } }, big = { settings: { map: 'urban' } };
+    const p = {}, q = {};
+    const grants = [1, 2, 3, 4, 5].map(() => Mines.refillFor(small, p));
+    ok(grants.join(',') === '5,5,5,5,0', 'small map: five per life, four lives, then none [' + grants.join(',') + ']');
+    ok(p.mineIssued === 20, 'the per-match budget is exactly ' + CFG.GEAR.mine.lifetimeSmall + ' [' + p.mineIssued + ']');
+    const bigGrants = [1, 2, 3, 4, 5, 6].map(() => Mines.refillFor(big, q));
+    ok(bigGrants.every(g => g === CFG.GEAR.mine.start), 'big map: the refill is unconditional, every life [' + bigGrants.join(',') + ']');
+  }
+
+  const A = io(URL), B = io(URL);
+  let msD = null, pickups = [], deaths = [], heli = [], heliDone = [], blasts = [], grantsA = [], shieldEv = [], toastsB = [], damagedA = [];
+  A.on('matchStart', d => { msD = d; pickups = d.pickups || []; });
+  A.on('death', d => deaths.push(d)); B.on('death', d => deaths.push(d));
+  A.on('heliStrike', d => heli.push(d)); A.on('heliDone', d => heliDone.push(d));
+  A.on('empBlast', d => blasts.push(d)); A.on('grant', d => grantsA.push(d));
+  A.on('shield', d => shieldEv.push(d)); A.on('damaged', d => damagedA.push(d));
+  B.on('toast', d => toastsB.push((d && d.msg) || ''));
+  let bPos = null;
+  B.on('spawn', d => { if (d.id === B.id && d.pos) bPos = d.pos.slice(); });
+  let up = 0;
+  [A, B].forEach(s2 => s2.on('connect', () => { if (++up === 2) go(); }));
+
+  const walkTo = (sock, pk) => sock.emit('st', { p: [pk.p[0], pk.p[1] - 0.55 + 0.95, pk.p[2]], ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0 });
+
+  function go() {
+    A.emit('createRoom', { name: 'Ax', settings: { killTarget: 50, minutes: 10, mode: 'ffa', map: 'urban' } }, (res) => {
+      ok(res && res.ok, 'a free-for-all urban room is created for the gear phase');
+      B.emit('joinRoom', { name: 'Bx', code: res.code }, (r2) => {
+        ok(r2 && r2.ok, 'a second operator joins');
+        let started = false;
+        const start = () => { if (started) return; started = true; setTimeout(step1, CFG.MATCH.spawnProtect * 1000 + 700); };
+        A.once('matchStart', start);
+        setTimeout(start, 300 + CFG.MATCH.startCountdown * 1000 + 4000);
+        [A, B].forEach(s2 => s2.emit('setReady', { v: true }));
+        setTimeout(() => A.emit('startMatch'), 400);
+      });
+    });
+  }
+
+  function step1() {
+    /* refusals first */
+    A.emit('useEmp', {}, (r) => {
+      ok(r && !r.ok && /no emp charge/i.test(r.err || ''), 'EMP without a charge is refused by the economy [' + ((r && r.err) || '') + ']');
+      A.emit('callStrike', {}, (r3) => {
+        ok(r3 && !r3.ok && /remote/i.test(r3.err || ''), 'a strike without the remote is refused [' + ((r3 && r3.err) || '') + ']');
+        /* the remote: exactly one, hidden, planted on urban */
+        const remotes = pickups.filter(e => e.t === 'remote');
+        ok(remotes.length === 1, 'exactly one strike remote is planted on a big map [' + remotes.length + ']');
+        ok(remotes.length === 1 && remotes[0].h === 1, 'the remote ships with the hidden flag — no rarity ring on any client');
+        const emps = pickups.filter(e => e.t === 'emp' && e.active);
+        const shields = pickups.filter(e => e.t === 'shield' && e.active);
+        console.log('        floor roll offered: ' + emps.length + ' EMP, ' + shields.length + ' shield');
+        stepEmp(emps, shields, remotes);
+      });
+    });
+  }
+
+  function stepEmp(emps, shields, remotes) {
+    if (!emps.length) { ok(true, 'SKIPPED the EMP blast: the floor roll offered no EMP charge (rare loot; the refusal above is asserted)'); return stepShield(shields, remotes); }
+    walkTo(A, emps[0]);
+    setTimeout(() => {
+      A.emit('pickup');
+      setTimeout(() => {
+        const g = grantsA.find(x => x.t === 'gear' && x.g === 'emp');
+        ok(!!g && g.n >= 1, 'an EMP charge is looted and granted as gear [' + JSON.stringify(g) + ']');
+        /* B plants a mine at his own feet, then A fries it from anywhere */
+        /* placement is validated against B's own position, so plant at his feet */
+        const mp = bPos ? [bPos[0] + 1.0, bPos[1], bPos[2]] : [0, 0, 0];
+        B.emit('placeMine', { p: mp }, (pm) => {
+          ok(pm && pm.ok, 'the victim-to-be plants a mine at his feet [' + ((pm && pm.err) || 'ok') + ']');
+          A.emit('useEmp', {}, (r) => {
+            ok(r && r.ok && r.cleared >= 1, 'the EMP clears the enemy mine map-wide [' + JSON.stringify(r) + ']');
+            setTimeout(() => {
+              ok(blasts.length >= 1 && (blasts[0].mines || []).length >= 1, 'the room receives empBlast with the mines removed');
+              ok(toastsB.some(t => /EMP destroyed/i.test(t)), 'the mine\u2019s owner is told his mine was fried');
+              stepShield(shields, remotes);
+            }, 400);
+          });
+        });
+      }, 500);
+    }, 500);
+  }
+
+  function stepShield(shields, remotes) {
+    if (!shields.length) { ok(true, 'SKIPPED the shield soak: the floor roll offered no shield (legendary loot)'); return stepRemote(remotes); }
+    walkTo(A, shields[0]);
+    setTimeout(() => {
+      A.emit('pickup');
+      setTimeout(() => {
+        const g = grantsA.find(x => x.t === 'gear' && x.g === 'shield');
+        ok(!!g && g.n === CFG.GEAR.shield.hp, 'a shield is worn with its full hp [' + JSON.stringify(g) + ']');
+        const aPos = [shields[0].p[0], shields[0].p[1] - 0.55 + 0.95, shields[0].p[2]];
+        B.emit('st', { p: [aPos[0] + 2, aPos[1], aPos[2]], ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0 });
+        setTimeout(() => {
+          B.emit('hit', { victim: A.id, w: 'ak47', part: 'body', pellets: 1, vp: aPos });
+          setTimeout(() => {
+            const d = damagedA[damagedA.length - 1];
+            ok(d && d.hp === CFG.PLAYER.hp && d.sh < CFG.GEAR.shield.hp && d.dmg === 0, 'a rifle round is soaked by the shield, not the operator [' + JSON.stringify(d) + ']');
+            ok(shieldEv.some(e => e.id === A.id && e.hp < CFG.GEAR.shield.hp), 'the room is told the shield state changed');
+            B.emit('hit', { victim: A.id, w: 'sniper', part: 'body', pellets: 1, vp: aPos });
+            setTimeout(() => {
+              const br = shieldEv.find(e => e.id === A.id && e.broke === 1);
+              ok(!!br && br.sniper === 1, 'a sniper round shatters the shield in one hit [' + JSON.stringify(br) + ']');
+              const d2 = damagedA[damagedA.length - 1];
+              ok(d2 && d2.sh === 0 && d2.hp < CFG.PLAYER.hp, 'and half of that round reaches the operator [' + JSON.stringify(d2) + ']');
+              stepRemote(remotes);
+            }, 400);
+          }, 400);
+        }, 300);
+      }, 500);
+    }, 500);
+  }
+
+  function stepRemote(remotes) {
+    if (remotes.length !== 1) return finishPhase();
+    walkTo(A, remotes[0]);
+    setTimeout(() => {
+      A.emit('pickup');
+      setTimeout(() => {
+        const g = grantsA.find(x => x.t === 'gear' && x.g === 'remote');
+        ok(!!g, 'the strike remote is picked up as a flag, not a count [' + JSON.stringify(g) + ']');
+        ok(toastsB.some(t => /remote has been found/i.test(t)), 'the room learns THAT the remote was found, not who holds it');
+        A.emit('callStrike', {}, (r) => {
+          ok(r && r.ok && r.approach === CFG.GEAR.remote.approachSec, 'the helicopter is called [' + JSON.stringify(r) + ']');
+          A.emit('callStrike', {}, (r2) => {
+            ok(r2 && !r2.ok, 'a second press while inbound is refused — the remote is spent [' + ((r2 && r2.err) || '') + ']');
+          });
+          setTimeout(() => {
+            ok(heli.length === 1 && heli[0].by === A.id, 'heliStrike reached the room with the caller named');
+            const bd = deaths.find(d => d.victimId === B.id);
+            ok(!!bd && bd.weapon === 'heli' && bd.killerId === A.id, 'the strike kills the enemy through applyDamage, credited to the caller [' + JSON.stringify(bd && { w: bd.weapon, k: bd.killerName }) + ']');
+            ok(!deaths.some(d => d.victimId === A.id), 'the caller is not among the dead');
+            ok(heliDone.length === 1 && heliDone[0].n === 1, 'heliDone counts one elimination');
+            finishPhase();
+          }, CFG.GEAR.remote.approachSec * 1000 + 1200);
+        });
+      }, 500);
+    }, 500);
+  }
+
+  function finishPhase() {
+    A.disconnect(); B.disconnect();
+    setTimeout(phase19, 400);
+  }
+}
+
+/* ---------------- Phase 19 (v1.0b): rocket ladder / C4 / fire zones / drone bounty / drop ----------------
+   The four hazards are decided on the server against server state, so they are
+   proved as MODULES with a fake room (every branch, deterministically), and the
+   one verb a client sends by itself — dropping a gun — is proved LIVE. */
+function phase19() {
+  console.log('\n--- Phase 19 (v1.0b): rocket ladder / C4 / fire zone / drone bounty / drop ---');
+  const sent = [];
+  const fakeIo = { to: (id) => ({ emit: (ev, d) => sent.push({ to: id, ev, d }) }) };
+  const hits = [];
+  const fakeDmg = (room, victim, dmg, by, weapon, hs, pb) => { hits.push({ v: victim.id, dmg, by, weapon, pb: !!pb }); if (pb || dmg >= victim.hp) victim.alive = false; };
+  const mkRoom = (map, teams) => ({ code: 'T', settings: { map, mode: teams ? 't2' : 'ffa' }, players: new Map(), state: 'playing' });
+  const mkP = (id, team, pos) => ({ id, name: id, team: team || null, alive: true, pos: pos || [0, 0, 0], hp: 100, streak: 0, kills: 0, drones: 0 });
+
+  /* --- the rocket ladder --- */
+  {
+    const Rocket = require('./server/lib/rocket.js')({ io: fakeIo, now: Date.now, applyDamage: fakeDmg, modeInfo: (r) => ({ teams: r.settings.mode !== 'ffa' }) });
+    ok([0, 1, 2, 3, 4].map(Rocket.needFor).join(',') === '5,7,10,15,20', 'ladder: 5, 7, 10, then +5 [' + [0, 1, 2, 3, 4].map(Rocket.needFor).join(',') + ']');
+    const room = mkRoom('urban', false);
+    const A = mkP('A'), B = mkP('B', null, [10, 0, 0]), C = mkP('C', null, [30, 0, 0]);
+    [A, B, C].forEach(q => room.players.set(q.id, q));
+    A.streak = 4; Rocket.onKill(room, A);
+    ok(!A.rocketArmed, 'four kills arm nothing');
+    A.streak = 5; Rocket.onKill(room, A);
+    ok(A.rocketArmed && sent.some(e => e.ev === 'rocketReady' && e.to === 'A' && e.d.next === 7), 'the fifth kill arms the first rocket and names 7 as the next rung');
+    const small = mkRoom('killhouse', false); small.players.set('S', mkP('S')); const S = small.players.get('S'); S.streak = 9;
+    Rocket.onKill(small, S);
+    ok(!S.rocketArmed, 'no rocket on an arena — the nuke owns N there');
+    const r1 = Rocket.launch(room, A);
+    ok(r1.ok && hits.length === 1 && hits[0].pb && hits[0].weapon === 'rocketstrike' && ['B', 'C'].indexOf(hits[0].v) >= 0,
+      'launch: a random hostile takes a guaranteed kill, tagged rocketstrike [' + JSON.stringify(hits[0]) + ']');
+    ok(CFG.GEAR.rocketstrike && CFG.GEAR.rocketstrike.label === 'Rocket Strike', 'the kill feed names it Rocket Strike, not the launcher');
+    ok(sent.some(e => e.ev === 'rocketStrike' && e.to === 'T'), 'the room sees the strike');
+    ok(!A.rocketArmed && r1.next === 7, 'spent; the next rung is 7 [' + r1.next + ']');
+    A.streak = 6; Rocket.onKill(room, A); ok(!A.rocketArmed, 'six kills after the first rocket arm nothing');
+    A.streak = 7; Rocket.onKill(room, A); ok(A.rocketArmed, 'seven arms the second');
+    const alive = [...room.players.values()].filter(q => q.alive && q.id !== 'A');
+    alive.forEach(q => { q.alive = false; });
+    const r2 = Rocket.launch(room, A);
+    ok(!r2.ok && /no targets/i.test(r2.err) && A.rocketArmed, 'no hostile alive: refused and KEPT [' + r2.err + ']');
+    Rocket.clearArmed(room, A, 'died');
+    ok(!A.rocketArmed && A.rocketIdx === 0 && sent.some(e => e.ev === 'rocketLost'), 'death clears the rocket and the ladder');
+    const D = mkP('D', 'a'), E = mkP('E', 'a', [5, 0, 0]), F2 = mkP('F', 'b', [40, 0, 0]);
+    const troom = mkRoom('metro', true); [D, E, F2].forEach(q => troom.players.set(q.id, q));
+    D.streak = 5; Rocket.onKill(troom, D); hits.length = 0;
+    const r3 = Rocket.launch(troom, D);
+    ok(r3.ok && hits.every(h => h.v === 'F'), 'teams: only the enemy side is a target [' + hits.map(h => h.v).join(',') + ']');
+  }
+
+  /* --- C4 and the fire zone --- */
+  {
+    // a 10 x 10 building: floor slab at 0, roof slab at y 3..3.3 over x 0..10, z 0..10; a wall at x 20
+    const cols = [[0, -1, 0, 10, 0, 10], [0, 3.0, 0, 10, 3.3, 10], [20, 0, -50, 20.4, 4, 50]];
+    const H = require('./server/lib/hazards.js')({ io: fakeIo, now: Date.now, applyDamage: fakeDmg, modeInfo: (r) => ({ teams: r.settings.mode !== 'ffa' }), colliders: () => cols });
+    const room = mkRoom('urban', false);
+    const P = mkP('P', null, [5, 0, 12]);                  // the planter, outside the south wall
+    const IN = mkP('IN', null, [5, 0, 5]);                 // inside, under the roof
+    const OUT = mkP('OUT', null, [5, 0, 16]);              // outside, 6 m from the charge, open sky
+    const DOOR = mkP('DOOR', null, [5, 0, 13]);            // outside but hugging the charge (< open 4.5)
+    const FAR = mkP('FAR', null, [40, 0, 5]);              // far away
+    [P, IN, OUT, DOOR, FAR].forEach(q => room.players.set(q.id, q));
+    P.c4 = 0;
+    ok(!H.plant(room, P, [5, 1, 10.2]).ok, 'C4 without a charge is refused');
+    P.c4 = 1;
+    ok(!H.plant(room, P, [5, 1, 30]).ok, 'C4 beyond reach is refused');
+    ok(!H.plant(mkRoom('killhouse', false), P, [5, 1, 10.2]).ok, 'C4 is refused on an arena');
+    const pl = H.plant(room, P, [5, 1, 10.2]);
+    ok(pl.ok && P.c4 === 0 && room.bombs.length === 1 && sent.some(e => e.ev === 'bombPlanted'), 'planted: the charge is spent and the room told [' + JSON.stringify(pl) + ']');
+    room.bombs[0].at = Date.now() - 1; hits.length = 0;
+    H.tick(room);
+    const killed = hits.map(h => h.v).sort().join(',');
+    ok(killed === 'DOOR,IN', 'detonation kills the operator UNDER THE ROOF and the one hugging the charge; open sky and far away live [' + killed + ']');
+    ok(hits.every(h => h.pb && h.weapon === 'c4'), 'C4 kills are guaranteed and tagged c4');
+    ok(room.bombs.length === 0 && sent.some(e => e.ev === 'bombBoom' && e.d.n === 2), 'the charge is gone and bombBoom counts two');
+    // fire zone: victim at the charge site burns the zone; a wall blocks it
+    const Z = mkP('Z', null, [15, 0, 0]);                  // 5 m from the fire, clear
+    const W = mkP('W', null, [25, 0, 0]);                  // 15 m away, BEHIND the wall at x 20
+    const G = mkP('G', null, [10, 0, 19]);                 // 19 m away, clear
+    const shooter = mkP('SH', null, [0, 0, 0]);
+    [Z, W, G, shooter].forEach(q => room.players.set(q.id, q));
+    [P, OUT, FAR].forEach(q => { q.alive = false; });    // the C4 cast leaves the stage; only Z, W and G stand
+    hits.length = 0;
+    const z1 = H.ignite(room, [10, 0, 0], shooter);
+    ok(!!z1 && sent.some(e => e.ev === 'fireZone' && e.d.r === CFG.GEAR.fire.radius), 'a fire zone opens at the victim with the configured radius');
+    ok(H.ignite(room, [11, 0, 0], shooter) === null, 'a second zone by the same shooter inside the cooldown is refused');
+    H.tick(room);
+    const burned = hits.map(h => h.v).sort().join(',');
+    ok(burned === 'G,Z', 'the zone burns everyone in reach with line of sight; the wall protects [' + burned + ']');
+    ok(hits.every(h => h.pb && h.weapon === 'flamer'), 'burns are guaranteed kills tagged flamer');
+    room.fireZones[0].until = Date.now() - 1; H.tick(room);
+    ok(room.fireZones.length === 0 && sent.some(e => e.ev === 'fireZoneEnd'), 'the zone expires and the room is told');
+  }
+
+  /* --- the drone bounty --- */
+  {
+    const bounties = [];
+    const Dr = require('./server/lib/drones.js')({ io: fakeIo, now: Date.now, applyDamage: fakeDmg, modeInfo: (r) => ({ teams: r.settings.mode !== 'ffa' }), CFG,
+      onDroneBounty: (room, shooter, n) => bounties.push({ id: shooter.id, n }) });
+    const room = mkRoom('urban', true);
+    const O = mkP('O', 'a'), X = mkP('X', 'b', [20, 0, 0]), M2 = mkP('M', 'a', [3, 0, 0]);
+    [O, X, M2].forEach(q => room.players.set(q.id, q));
+    O.drones = 1; room.drones = [];
+    const L = Dr.launch(room, O);
+    ok(L.ok && room.drones.length === 1, 'a drone is in the air');
+    room.drones[0].born -= 60000;                          // past the arming window
+    const before = X.drones | 0;
+    const res = Dr.damage(room, room.drones[0].id, 999, 'X');
+    ok(res && res.destroyed, 'the enemy shoots it down');
+    ok(bounties.length === 1 && bounties[0].id === 'X' && bounties[0].n === 1, 'a hostile shooter is credited the point');
+    ok(X.drones === before + 1 && sent.some(e => e.ev === 'grant' && e.to === 'X' && e.d.g === 'drone'), 'and a Strike Drone lands in his bag');
+    O.drones = 1; bounties.length = 0;
+    Dr.launch(room, O); room.drones[0].born -= 60000;
+    Dr.damage(room, room.drones[0].id, 999, 'M');
+    ok(bounties.length === 0 && (M2.drones | 0) === 0, 'a team-mate who shoots his own side\u2019s drone down earns nothing');
+  }
+
+  /* --- frag bands: config and the human/bot rule agree --- */
+  {
+    const F = CFG.THROWS.frag;
+    ok(F.killRadius === 20 && F.radius === 50 && F.outerDmg === 50, 'frag: 20 m kill band, 50 m outer band, 50 hp outside the kill band');
+    ok(F.selfRadius === 7 && F.fxRadius < F.radius, 'self-damage keeps the 7 m falloff; the fireball is not the blast');
+    const bots = require('fs').readFileSync('./server/lib/bots.js', 'utf8');
+    ok(/F\.killRadius/.test(bots) && /F\.outerDmg/.test(bots) && /segmentBlocked\(cs, n\.x/.test(bots), 'bots resolve their frags by the same two bands, with line of sight');
+  }
+
+  /* --- LIVE: K drops the gun onto the floor --- */
+  const A = io(URL), B = io(URL);
+  let adds = [], up = 0;
+  B.on('lootAdd', d => adds.push(d));
+  [A, B].forEach(s2 => s2.on('connect', () => { if (++up === 2) go(); }));
+  function go() {
+    A.emit('createRoom', { name: 'Ad', settings: { killTarget: 50, minutes: 10, mode: 'ffa', map: 'urban' } }, (res) => {
+      B.emit('joinRoom', { name: 'Bd', code: res.code }, () => {
+        let started = false;
+        const start = () => { if (started) return; started = true; setTimeout(step, CFG.MATCH.spawnProtect * 1000 + 700); };
+        A.once('matchStart', start);
+        setTimeout(start, 300 + CFG.MATCH.startCountdown * 1000 + 4000);
+        [A, B].forEach(s2 => s2.emit('setReady', { v: true }));
+        setTimeout(() => A.emit('startMatch'), 400);
+      });
+    });
+  }
+  function step() {
+    adds = [];
+    A.emit('dropItem', { w: 'awm' }, (r) => {
+      ok(r && r.ok && r.floor === 1, 'dropping a lootable gun puts it on the floor [' + JSON.stringify(r) + ']');
+      A.emit('dropItem', { w: 'akm' }, (r2) => {
+        ok(r2 && !r2.ok && /fast/i.test(r2.err || ''), 'a second drop inside 800 ms is refused [' + ((r2 && r2.err) || '') + ']');
+        setTimeout(() => {
+          const add = adds.find(d => d.items && d.items.some(i => i.t === 'wpn_awm'));
+          ok(!!add, 'the other client receives the dropped AWM as a pickup');
+          /* 900 ms since the first drop, so the limiter has cleared */
+          A.emit('dropItem', { w: 'ak47' }, (r3) => {
+            ok(r3 && r3.ok && r3.floor === 0, 'a base gun with no loot entry leaves the hands and leaves nothing behind [' + JSON.stringify(r3) + ']');
+            A.emit('dropItem', { a: 'x4' }, (r4) => {
+              ok(r4 && (r4.ok ? true : /fast/i.test(r4.err || '')), 'a sight drops the same way (or hits the rate limit) [' + JSON.stringify(r4) + ']');
+              A.disconnect(); B.disconnect();
+              setTimeout(finish, 400);
+            });
+          });
+        }, 900);
+      });
+    });
+  }
+}
+
 function finish() {
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
@@ -493,7 +824,7 @@ function finish() {
    longer. Phase 8 seats twelve real sockets and Phase 9 plays a live squad
    match through a real 10s countdown with 3s respawns between kills. Both are
    wall-clock costs of testing the thing properly rather than mocking it. */
-setTimeout(() => { console.log('TIMEOUT'); finish(); }, 400000);
+setTimeout(() => { console.log('TIMEOUT'); finish(); }, 480000);   /* v1.0b: phases 18-19 added ~50 s of live play */
 
 /* ---- static config gates (no server needed) ---- */
 function configGates() {
@@ -544,7 +875,7 @@ function configGates() {
   ok(typeof CFG.MATCH.startCountdown === 'number' && CFG.MATCH.startCountdown > 0, 'launch countdown is configured');
   ok(!!CFG.MODES.t2 && CFG.MODES.t2.teams === true && CFG.MODES.t2.maxPlayers === 4, '2v2 mode exists (teams, 4 players)');
   ['ffa', 't2', 't3', 't5'].forEach(k => ok(!!CFG.MODES[k], 'mode registered: ' + k));
-  ['urban', 'rural', 'metro'].forEach(k =>
+  ['urban', 'metro'].forEach(k =>
     ok(CFG.MAPS[k] && CFG.MAPS[k].ready !== false, 'map selectable in registry: ' + k));
 
   // index.html must not hardcode map/mode options — that is how Metro was lost.
@@ -1088,7 +1419,7 @@ function phase4(done) {
             }, 2700);
           };
           B.on('spawn', waitSpawn);
-          setTimeout(() => B.emit('respawn'), 3300); // death timer, then request
+          setTimeout(() => B.emit('respawn'), CFG.MATCH.respawnDelay * 1000 + 300); // death timer, then request (v15.0: derived)
         }, 450);
       }, 600);
     }, 400);
@@ -1098,12 +1429,12 @@ function phase4(done) {
 
 /* ---------------- Phase 6: v4.6 — multi-map plumbing ---------------- */
 function phase6(done) {
-  console.log('--- Phase 6: rural map selection + per-map spawns ---');
+  console.log('--- Phase 6: metro map selection + per-map spawns (v15.0: rural removed) ---');
   const A = io(URL), B = io(URL);
   A.on('connect', () => {
-    A.emit('createRoom', { name: 'Am', settings: { map: 'rural' } }, (res) => {
+    A.emit('createRoom', { name: 'Am', settings: { map: 'metro' } }, (res) => {
       B.once('lobby', (lb) => {
-        ok(lb.settings && lb.settings.map === 'rural',
+        ok(lb.settings && lb.settings.map === 'metro',
           'lobby carries the selected map to joiners');
         launch([A, B]);
       });
@@ -1113,13 +1444,13 @@ function phase6(done) {
   let msSeen = false;
   B.on('matchStart', (d) => {
     if (msSeen) return; msSeen = true;
-    ok(d.settings && d.settings.map === 'rural', 'matchStart payload names the map');
+    ok(d.settings && d.settings.map === 'metro', 'matchStart payload names the map');
   });
   B.on('spawn', (d) => {
     if (d.id !== B.id) return;
-    const S = CFG.MAPS_RURAL.SPAWNS;
+    const S = CFG.MAPS_METRO.SPAWNS;
     const near = S.some(s => Math.abs(s[0] - d.pos[0]) < 0.6 && Math.abs(s[1] - d.pos[2]) < 0.6);
-    ok(near, 'spawn position comes from the RURAL spawn set [got ' + d.pos[0] + ',' + d.pos[2] + ']');
+    ok(near, 'spawn position comes from the METRO spawn set [got ' + d.pos[0] + ',' + d.pos[2] + ']');
     [A, B].forEach(s => s.disconnect());
     setTimeout(done, 300);
   });
@@ -1419,7 +1750,7 @@ function phase9(done) {
        corpse, so the squad score would read 1 and the assertion would be
        measuring the harness rather than the game. */
     socks[3].on('death', d => {
-      if (d.victimId === socks[3].id) setTimeout(() => socks[3].emit('respawn'), 3300);
+      if (d.victimId === socks[3].id) setTimeout(() => socks[3].emit('respawn'), CFG.MATCH.respawnDelay * 1000 + 300);   /* v15.0: derived, the delay is 5 s now */
     });
     let ended = null;
     socks[0].on('matchEnd', d => { if (!ended) ended = d; });
@@ -1435,7 +1766,7 @@ function phase9(done) {
         setTimeout(() => {
           socks[0].emit('hit', { victim: socks[3].id, w: 'sniper', part: 'head', pellets: 1, vp: bPos });
           n++;
-          setTimeout(fire, 4200);      // 3s respawn + margin
+          setTimeout(fire, CFG.MATCH.respawnDelay * 1000 + 1200);      // respawn + margin (v15.0: read from config)
         }, 100);
       };
       setTimeout(fire, 11500);

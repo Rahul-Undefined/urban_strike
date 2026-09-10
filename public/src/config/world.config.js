@@ -126,7 +126,10 @@
        these carry minutes 0 and killTarget 0 and still always terminate — the
        end condition is elimination, which cannot stall while anyone is alive. */
     ls:   { label: 'Last Stand \u00b7 Solo', vlabel: 'Solo \u00b7 every operator for themselves',
-            cat: 'last', teams: false, teamCount: 0, maxPlayers: 15, lives: 1 },
+            cat: 'last', teams: false, teamCount: 0, maxPlayers: 15, lives: 1,
+            /* v15.0 (fix 3): exact contacts on the M map are opt-in per mode now,
+               so Solo carries the flag its own anti-camping design relies on. */
+            fullMapContacts: true },
     /* v9.4 `fullMapContacts` — the escape hatch the v9.2 gate said to use.
        Hiding contacts on the full map is right for Team Battle and Squads,
        where the map is a free intel screen in a match that never pauses. Last
@@ -331,8 +334,13 @@
   };
 
   var MAPS = {
-    urban: { label: 'Urban', ready: true },
-    rural: { label: 'Rural', ready: true, bound: 150 },
+    /* v15.0 (fix 4): 100 -> 120. The outer ring (districts-outer.js _buildPart6)
+       adds four districts and four control towers around the old perimeter. */
+    urban: { label: 'Urban', ready: true, bound: 120 },
+    /* v15.0 (fix 14): RURAL REMOVED. Rahul: "it is of no use now, remove it
+       completely." Builder, config table, script tags, harness lists and gate
+       budgets all deleted in the same commit — the entry is not hidden, it is
+       gone, so a stale room setting naming it falls to urban at makeRoom. */
     metro: { label: 'Metro City', ready: true, render: NIGHT },
     /* v10.10 KILLHOUSE. Indoor 58 x 34 m warehouse, humans only.
        `bound` 32 puts the out-of-bounds ring just outside the 29 m wall, so a
@@ -344,22 +352,28 @@
        out-of-bounds ring just outside the 34 m end walls. maxPlayers 10 rather
        than 8: the old landscape map was 58 x 34 and this one has nearly twice
        the floor, so it carries two more without becoming a blender. */
-    killhouse: { label: 'Killhouse', ready: true, bound: 38, maxPlayers: 10, indoor: true, smallMap: true },
+    /* v15.0 (fixes 11/12): 52 x 88 m, bound 48 (ring just outside the 44 m end
+       walls), 15 players — the deck in the middle is what makes fifteen a fight
+       rather than a blender. */
+    killhouse: { label: 'Killhouse', ready: true, bound: 48, maxPlayers: 15, indoor: true, smallMap: true },
     /* v10.12 SUNSET ROW. Two houses across a street, 64 x 40 m. Same rule set
        as killhouse — 8 players, nuke killstreak, visor in the crate pool, no
        sniper or RPG on the floor — but a different SHAPE: rooms and a street
        rather than three parallel lanes. `smallMap: true` is what carries the
        shared rules, so a third small map inherits them by setting one flag
        instead of by someone remembering four separate places. */
-    sunsetrow: { label: 'Sunset Row', ready: true, bound: 34, maxPlayers: 8, smallMap: true },
+    sunsetrow: { label: 'Sunset Row', ready: true, bound: 46, maxPlayers: 15, smallMap: true },   /* v15.0 (fix 12): 64 x 84 m */
     /* v10.14: three more small maps, replacing Outbreak. Each is a SHAPE the
        roster did not have — see maps-small.config.js for why these three.
        All carry `smallMap`, which is what grants the nuke killstreak, the
        8-player cap and the crate-only visor without anyone remembering four
        separate places. */
-    freightyard: { label: 'Freightyard', ready: true, bound: 21, maxPlayers: 8, smallMap: true },
-    bazaar:      { label: 'Bazaar',      ready: true, bound: 29, maxPlayers: 8, smallMap: true },
-    substation:  { label: 'Substation',  ready: true, bound: 25, maxPlayers: 8, smallMap: true },
+    /* v15.0 (fix 12): every small map grew for a 15-player room — an outer
+       ring of the same vocabulary around each untouched core. Bounds sit just
+       outside the new fences (HX + 4). */
+    freightyard: { label: 'Freightyard', ready: true, bound: 38, maxPlayers: 15, smallMap: true },
+    bazaar:      { label: 'Bazaar',      ready: true, bound: 46, maxPlayers: 15, smallMap: true },
+    substation:  { label: 'Substation',  ready: true, bound: 40, maxPlayers: 15, smallMap: true },
     /* v10.21 MEDIUM TIER. `arena: true` without `smallMap` — they carry the
        arena RULES (nuke killstreak, 1 s spawn protection, crate visor) at a
        size where a sniper is a real weapon rather than a liability. Twelve
@@ -384,12 +398,20 @@
      false to go back to detection-gated enemies. */
   var MINIMAP = { alwaysShowPlayers: true, proximity: 18 };   // meters at which an enemy pings the minimap without firing
   // V4.1 stylized dusk -- all scene lighting/atmosphere lives here, not in source.
+  /* ===== v15.0 (fix 13) - A CLEARER AFTERNOON =====
+     Rahul: the urban colours were "outdated". The old dusk was one grey-blue
+     (sky = fog = 0x2b3348) that flattened every facade into the same value.
+     This is a bright late afternoon: a saturated sky, a lighter haze that
+     lets the 240 m map read to its far wall (density 0.0040 -> 0.0030), a
+     warm high sun and cool blue fill so shadows have colour instead of mud.
+     Light COUNT is untouched — colours and intensities only, the same rule
+     the per-map NIGHT override follows. Metro keeps its night. */
   var RENDER = {
     mergeStatic: true,   // collapse static geometry into per-material meshes
-    sky: 0x2b3348, fogColor: 0x2b3348, fogDensity: 0.0040,
-    hemiSky: 0xb8c8e2, hemiGround: 0x33291c, hemiIntensity: 0.82,
-    ambColor: 0x3c4658, ambIntensity: 0.34,
-    sunColor: 0xffa860, sunIntensity: 1.28, sunPos: [70, 82, 34],
+    sky: 0x4d6ea6, fogColor: 0x7d95bd, fogDensity: 0.0030,
+    hemiSky: 0xd6e6ff, hemiGround: 0x5a4632, hemiIntensity: 0.95,
+    ambColor: 0x4c5a74, ambIntensity: 0.30,
+    sunColor: 0xffd39a, sunIntensity: 1.45, sunPos: [70, 82, 34],
     lampGlow: 0xffb25a, lampPool: 0.26   // streetlight halo color + ground-pool strength
     // lampPool raised 0.16 -> 0.26 in v7.5: it now carries the street lighting
     // that two point lights used to provide, at zero shading cost.

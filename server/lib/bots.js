@@ -68,15 +68,14 @@ function buildColliders(mapId) {
     [
       'public/src/config/weapons.config.js', 'public/src/config/gameplay.config.js',
       'public/src/config/loot.config.js', 'public/src/config/world.config.js',
-      'public/src/config/maps-rural.config.js', 'public/src/config/maps-metro.config.js',
+      'public/src/config/maps-metro.config.js',
       'public/src/config/maps-killhouse.config.js', 'public/src/config/maps-sunsetrow.config.js',
       'public/src/config/maps-small.config.js', 'public/src/config/maps-medium.config.js',
       'public/src/config/botmode.config.js',
       'public/src/config/index.js', 'public/src/environment/merge.js',
       'public/src/environment/world.js', 'public/src/environment/districts-south.js',
       'public/src/environment/districts-north.js', 'public/src/environment/districts-outer.js',
-      'public/src/environment/deco.js', 'public/src/environment/rural.js',
-      'public/src/environment/metro.js', 'public/src/environment/killhouse.js',
+      'public/src/environment/deco.js', 'public/src/environment/metro.js', 'public/src/environment/killhouse.js',
       'public/src/environment/sunsetrow.js', 'public/src/environment/smallmaps.js',
       'public/src/environment/medium.js', 'public/src/environment/blacksite.js',
       'public/src/environment/access.js'
@@ -787,11 +786,21 @@ module.exports = function initBotsModule(ctx) {
         const dx = q.pos[0] - n.x, dy = q.pos[1] - n.y, dz = q.pos[2] - n.z;
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (dist > F.radius) continue;
-        /* Flat inside the radius for everyone but the thrower, matching the
-           human path exactly — a bot's grenade and a player's grenade must not
-           be different weapons. */
+        /* v1.0b: the two-band frag, matching weapons/system.js explosionDamage
+           exactly — a bot's grenade and a player's grenade must not be
+           different weapons. Inside killRadius a clear blast is a guaranteed
+           kill; out to `radius` it is outerDmg; a wall between the blast and
+           the player cuts either to a quarter. The thrower keeps the old
+           falloff over selfRadius. */
         const own = q.id === bot.id;
-        const dmg = Math.round(F.flatDamage && !own ? F.dmg : F.dmg * (1 - dist / F.radius));
+        let dmg;
+        if (own) dmg = dist < (F.selfRadius || F.radius) ? F.dmg * (1 - dist / (F.selfRadius || F.radius)) : 0;
+        else dmg = dist <= (F.killRadius || F.radius) ? F.dmg : (F.outerDmg || F.dmg * (1 - dist / F.radius));
+        if (!own && dmg > 0) {
+          const cs = buildColliders(room.settings.map || 'urban');
+          if (cs && segmentBlocked(cs, n.x, n.y + 0.25, n.z, q.pos[0], q.pos[1] + 0.9, q.pos[2])) dmg *= 0.25;
+        }
+        dmg = Math.round(dmg);
         if (dmg > 0) ctx.botExplode(room, bot, q, dmg, 'frag', dmg >= F.dmg - 0.5);
       }
     }

@@ -43,11 +43,11 @@ vm.createContext(ctx);
      CFG.MAPS_RURAL undefined and produced 510 colliders where the browser
      produces 525 -- 15 objects short, on the gate whose entire job is to
      reproduce the browser build. Keep this list identical to index.html. */
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+  "public/src/config/maps-metro.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
-  "public/src/environment/deco.js", "public/src/environment/rural.js", "public/src/environment/metro.js",
+  "public/src/environment/deco.js", "public/src/environment/metro.js",
   "public/src/environment/access.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(f, "utf8"), ctx, { filename: f }));
 
@@ -276,24 +276,6 @@ run("urban", [
   { name: "yard office ground -> floor 2 (3.30)", x: 77.2, y: 0, z: -1.9, dx: 0, dz: -1, top: 3.30, ticks: 400 }
 ]);
 
-run("rural", [
-  /* v9.0: the five entries here used to name landmarks on the OLD rural map —
-     terraces and towers that Hollow Ridge does not have. They were passing on
-     geometry that no longer existed and then failing when it was replaced,
-     which is a stale test rather than a broken map. Replaced with the routes
-     that actually matter now: both ridge faces tier by tier, and every
-     structure a player can get on top of. */
-  { name: "rural ridge A: ground -> t1 6.0",  x: -70, y: 0,  z: -20.8, dx: 0,  dz: -1, top: 6.00 },
-  { name: "rural ridge A: t1 -> t2 13.0",     x: -46.2, y: 6,  z: -70,  dx: -1, dz: 0,  top: 13.00 },
-  { name: "rural ridge A: t2 -> t3 21.0",     x: -60.2, y: 13, z: -100, dx: -1, dz: 0,  top: 21.00 },
-  { name: "rural ridge A: t3 -> summit 29.4", x: -120, y: 21, z: -66.4, dx: 0, dz: -1, top: 29.40 },
-  { name: "rural ridge B: ground -> t1 6.0",  x: -100, y: 0,  z: -20.8, dx: 0,  dz: -1, top: 6.00 },
-  { name: "rural watchtower -> deck 5.10",    x: -18.4, y: 0,  z: -30,  dx: -1, dz: 0,  top: 5.10 },
-  { name: "rural silo -> top 11.00",          x: 114.9, y: 0,  z: 88,   dx: -1, dz: 0,  top: 11.00 },
-  { name: "rural windmill -> deck 12.00",     x: 118, y: 0, z: 71.2, dx: 0, dz: -1, top: 12.00 },
-  { name: "rural barn -> loft 3.00",          x: 80.9,  y: 0,  z: 88,   dx: -1, dz: 0,  top: 3.00 },
-  { name: "rural stilt -> platform 3.30",     x: 116.5, y: 0,  z: -70,  dx: -1, dz: 0,  top: 3.30 }
-]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -150,9 +150,79 @@
       });
     });
 
+    /* ===== v15.0 (fix 15) — RIVERSIDE GETS ITS LANDMARKS =====
+       Rahul: "the airport map, riverside map don't look real and are very
+       boring; add elements which look real and have interesting zones."
+       Four things a canal actually has:
+         THE LOCK TOWER  — the control tower (World._towerAt, the South
+                           Terminal port) on the east quay: the only height on
+                           the map, glazed cab over the whole canal.
+         THE MILL        — a 16 x 12 m enterable brick mill on the west bank,
+                           wide barn door, a crate chain to its roof.
+         THE BARGE       — a moored barge IN the canal between the ford and the
+                           south bridge: walkable deck at water level, the one
+                           piece of cover on the long lane.
+         QUAY FURNITURE  — two dockside cranes, willow trees along the banks,
+                           sandbag flood walls in runs along both quays. */
+    World._towerAt(T, 36, -43, false);                         // x 36..44, z -43..-31, escape east
+    (function mill() {
+      var x0 = -30, x1 = -14, z0 = 28, z1 = 40, H = 5.2, TW = 0.3;
+      K.segx(x0, x1, 0, H, z0, z0 + TW, M.brick);                            // north wall, solid
+      K.segx(x0, x0 + TW, 0, H, z0, z1, M.brick);                            // west wall
+      K.segx(x1 - TW, x1, 0, H, z0, z0 + 4.0, M.brick);                      // east wall, barn door 4..8
+      K.segx(x1 - TW, x1, 0, H, z0 + 8.0, z1, M.brick);
+      K.segx(x1 - TW, x1, 3.4, H, z0 + 4.0, z0 + 8.0, M.brick);
+      K.segx(x0, x0 + 6, 0, H, z1 - TW, z1, M.brick);                        // south wall, door 6..8
+      K.segx(x0 + 8, x1, 0, H, z1 - TW, z1, M.brick);
+      K.segx(x0 + 6, x0 + 8, 2.3, H, z1 - TW, z1, M.brick);
+      K.segx(x0 - 0.4, x1 + 0.4, H, H + 0.35, z0 - 0.4, z1 + 0.4, M.roof, K.NCAST);
+      K.segx(x0 + 2, x0 + 2.3, 1.6, 2.8, z0 + 4, z0 + 6, M.shopGlass, K.NBOTH);   // west window
+      // grain hopper and sacks inside, a mezzanine ledge along the north wall (not reachable — it is cover from the door)
+      K.box(-22, 1.6, 31, 3.2, 3.2, 2.4, M.metal);
+      K.box(-26, 0.45, 37, 2.2, 0.9, 1.6, M.cargoWood); K.box(-17, 0.45, 36, 1.6, 0.9, 1.2, M.cargoWood);
+      K.segx(x0 + TW, x1 - TW, 3.0, 3.25, z0 + TW, z0 + 3.0, M.wood);
+      // crate chain to the roof on the west face
+      K.box(x0 - 0.8, 0.155, 34, 1.3, 0.31, 1.3, M.palletBase);
+      K.box(x0 - 0.1, 0.62, 34, 1.3, 1.24, 1.3, M.cargoWood);
+      K.box(x0 - 0.1, 1.86, 34, 1.3, 1.24, 1.3, M.palletWood);
+      K.box(x0 - 0.1, 3.1, 34, 1.3, 1.24, 1.3, M.cargoWood);
+      K.box(x0 - 0.1, 4.34, 34, 1.3, 1.24, 1.3, M.palletWood);
+      K.box(x0 - 0.1, 5.2, 34.9, 1.3, 0.48, 0.5, M.palletBase);     // the last half-step onto the roof (5.55)
+    })();
+    (function barge() {
+      // deck at 0.20 (above the -0.42 water), hull down to the canal floor, a wheelhouse aft
+      K.box(0, -0.55, 12, 3.6, 1.5, 12, M.metal);
+      K.box(0, 0.32, 12, 3.4, 0.24, 11.6, M.wood);
+      K.box(0, 0.75, 6.8, 3.6, 0.6, 0.3, M.rust); K.box(0, 0.75, 17.2, 3.6, 0.6, 0.3, M.rust);
+      K.box(0, 1.2, 16.0, 2.2, 1.6, 1.6, M.busRoof);
+      K.box(0, 0.7, 10, 1.4, 0.8, 2.0, M.cargoWood);
+      // gangplanks to each quay: shallow ramps the auto-step takes in two moves
+      [-1, 1].forEach(function (s2) {
+        K.box(s2 * 4.6, -0.1, 12, 2.4, 0.3, 1.2, M.wood); K.box(s2 * 6.2, 0.05, 12, 1.4, 0.3, 1.2, M.wood);
+      });
+    })();
+    // dockside cranes: mast, boom, cab — silhouettes, non-colliding above head height
+    [[-15, -24], [15, 24]].forEach(function (c) {
+      K.box(c[0], 4.0, c[1], 1.2, 8.0, 1.2, M.steelBlue);
+      K.box(c[0] + (c[0] < 0 ? 5 : -5), 8.2, c[1], 12, 0.5, 0.6, M.steelBlue, K.NBOTH);
+      K.box(c[0], 6.6, c[1] + 1.4, 1.8, 1.6, 1.6, M.dark, K.NBOTH);
+    });
+    // willows along the quays
+    [[-15.5, -36], [-15.5, 20], [15.5, -20], [15.5, 38], [-15.5, 40], [15.5, -38]].forEach(function (t) {
+      K.cyl(t[0], 1.5, t[1], 0.22, 3.0, M.wood);
+      K.cyl(t[0], 3.9, t[1], 2.0, 1.8, M.foliage, { collide: false });
+      K.cyl(t[0], 5.3, t[1], 1.2, 1.4, M.foliage, { collide: false });
+    });
+    // sandbag flood walls in runs, both quays, gaps for the crossings
+    [-1, 1].forEach(function (s2) {
+      [[-42, -36], [-30, -22], [-20, -8], [4, 20], [36, 42]].forEach(function (r) {
+        K.segx(s2 * (BANK + 5.4), s2 * (BANK + 6.0), 0, 0.85, r[0], r[1], M.dirt);   // x +/-12.4..13, clear of the quay lane's drops and lamps
+      });
+    });
     K.fence(HX, HZ, 4.0, M.metal);
     K.scatter(18, 100, 74, [[-BANK - 2, BANK + 2, -HZ, HZ],
-                            [-HX, -52, -40, 40], [52, HX, -40, 40]]);
+                            [-HX, -52, -40, 40], [52, HX, -40, 40],
+                            [34, 52, -45, -29], [-32, -12, 26, 42]]);
   };
 
   /* ================= AIRFIELD — 128 x 96 =================
@@ -214,8 +284,59 @@
     K.box(0, 1.6, 6.5, 2.6, 2.2, 4.0, M.metal, K.NCAST);
     K.cyl(0, 0.55, -4.5, 0.55, 1.10, M.tire, K.NCAST);
 
+    /* ===== v15.0 (fix 15) — AIRFIELD GETS ITS LANDMARKS =====
+         THE CONTROL TOWER  — World._towerAt beside the south terminal: the
+                              sniper deck a runway map was always missing.
+         THE AIRLINER       — an intact narrow-body parked on the apron: 36 m
+                              of fuselage to fight along, wings to run under,
+                              the airstair a route to the fuselage roof.
+         THE FIRE STATION   — an enterable two-bay station on the east apron.
+         FUEL FARM          — three tanks with a bund wall in the north-west.
+         A RADAR MAST and windsocks for the skyline. */
+    World._towerAt(T, 14, 35, false);                          // x 14..22, z 35..47, escape east
+    (function airliner() {
+      var cx = -10, cz = 16;                                    // fuselage centre, along x
+      K.box(cx, 2.4, cz, 36, 4.0, 4.0, M.paperWhite);           // fuselage
+      K.box(cx + 19.5, 2.4, cz, 3.0, 2.8, 3.0, M.steelBlue, K.NCAST);            // nose cone
+      K.box(cx - 20, 4.6, cz, 4.0, 3.2, 0.6, M.steelBlue, K.NBOTH);               // tail fin
+      K.box(cx - 19, 3.6, cz, 3.0, 0.4, 12, M.paperWhite, K.NBOTH);               // tailplane
+      K.box(cx + 2, 3.3, cz, 6.0, 0.5, 34, M.paperWhite, K.NBOTH);                // wings — walk under
+      [-9, 9].forEach(function (wz) { K.box(cx + 4, 1.5, cz + wz, 4.6, 2.2, 2.2, M.metal); });   // engines, ground cover
+      K.seg(cx - 17, cx + 17, 2.0, 2.9, cz - 2.05, cz - 1.95, M.shopGlass, K.NBOTH);           // window band
+      K.seg(cx - 17, cx + 17, 2.0, 2.9, cz + 1.95, cz + 2.05, M.shopGlass, K.NBOTH);
+      K.box(cx, 1.3, cz, 2.0, 2.6, 5.2, M.metal, K.NBOTH);                       // undercarriage bay
+      // airstair to the roof: five 0.40 rises up to 2.0, then a platform, then the fuselage top at 4.4 via a second stack
+      for (var k = 0; k < 5; k++) K.box(cx + 12, 0.2 * (k + 1), cz + 3.2 + k * 1.0, 1.4, 0.4 * (k + 1), 1.2, k % 2 ? M.cargoWood : M.palletWood);
+      K.box(cx + 12.8, 2.2, cz + 8.6, 3.2, 0.4, 1.6, M.metal);                  // half-landing spanning both lanes
+      for (k = 0; k < 5; k++) K.box(cx + 13.6, 2.4 + 0.2 * (k + 1), cz + 8.6 - (k + 1) * 1.2, 1.2, 0.4 * (k + 1), 1.4, k % 2 ? M.palletWood : M.cargoWood);
+    })();
+    (function fireStation() {
+      var x0 = 41, x1 = 51, z0 = -14, z1 = -6, H = 4.2, TW = 0.3;
+      K.segx(x0, x1, 0, H, z1 - TW, z1, M.plaster);                          // south wall
+      K.segx(x1 - TW, x1, 0, H, z0, z1, M.plaster);                          // east wall
+      K.segx(x0, x0 + TW, 0, H, z0, z0 + 3.0, M.plaster);                    // west wall with a personnel door
+      K.segx(x0, x0 + TW, 0, H, z0 + 5.0, z1, M.plaster);
+      K.segx(x0, x0 + TW, 2.3, H, z0 + 3.0, z0 + 5.0, M.plaster);
+      // north face: two bay doors (open) separated by a pier, lintel above
+      K.segx(x0, x0 + 1.2, 0, H, z0, z0 + TW, M.plaster);
+      K.segx(x0 + 4.4, x0 + 5.6, 0, H, z0, z0 + TW, M.plaster);
+      K.segx(x1 - 1.2, x1, 0, H, z0, z0 + TW, M.plaster);
+      K.segx(x0, x1, 3.4, H, z0, z0 + TW, M.redGlow || M.hazard, K.NCAST);
+      K.segx(x0 - 0.4, x1 + 0.4, H, H + 0.35, z0 - 0.4, z1 + 0.4, M.roof, K.NCAST);
+      K.box(48.5, 1.2, -10, 2.4, 2.4, 6.0, M.hazard);                          // the fire truck in bay 2
+      K.box(48.5, 2.6, -8.6, 2.2, 0.4, 2.6, M.dark, K.NCAST);
+      K.drums(43.5, -8, 3);
+    })();
+    // fuel farm in the north-west: three tanks inside a bund wall
+    [[-50, -44], [-44, -44], [-47, -38.5]].forEach(function (t) { K.cyl(t[0], 1.8, t[1], 2.4, 3.6, M.contGray); K.cyl(t[0], 3.65, t[1], 2.5, 0.1, M.rust, K.NBOTH); });
+    K.segx(-54, -40, 0, 0.9, -47.3, -47, M.concrete); K.segx(-54, -40, 0, 0.9, -35.3, -35, M.concrete);
+    K.segx(-54, -53.7, 0, 0.9, -47.3, -35, M.concrete); K.segx(-40.3, -40, 0, 0.9, -47.3, -41, M.concrete);
+    // radar mast and windsocks
+    K.cyl(-56, 6, 44, 0.25, 12, M.metal, K.NCAST); K.box(-56, 12.4, 44, 3.0, 0.3, 1.2, M.paperWhite, K.NBOTH);
+    [[-30, -44], [30, 44]].forEach(function (w) { K.cyl(w[0], 2.5, w[1], 0.06, 5.0, M.metal, K.NCAST); K.box(w[0] + 0.8, 4.7, w[1], 1.6, 0.36, 0.36, M.hazard, K.NBOTH); });
     K.fence(HX, HZ, 4.5, M.metal);
     K.scatter(20, 108, 80, [[-24, 24, -12, 12],
-                            [-HX, -56, -44, 44], [56, HX, -44, 44]]);
+                            [-HX, -56, -44, 44], [56, HX, -44, 44],
+                            [12, 28, 33, 48], [-30, 10, 12, 26], [39, 53, -16, -4], [-56, -38, -49, -33]]);
   };
 })();
