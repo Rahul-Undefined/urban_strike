@@ -104,7 +104,7 @@ function runMap(mapName, data, wallDefault) {
   vm.createContext(ctx);
   ["config/districts.config.js",
    "environment/world.js", "environment/districts-south.js", "environment/districts-north.js",
-   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/metro.js", "environment/killhouse.js", "environment/sunsetrow.js", "environment/smallmaps.js", "environment/medium.js", "environment/access.js"].forEach(f => {
+   "environment/districts-outer.js", "environment/deco.js", "environment/metro.js", "environment/killhouse.js", "environment/sunsetrow.js", "environment/smallmaps.js", "environment/medium.js", "environment/access.js"].forEach(f => {
     const p = path.join(ROOT, "public/src", f);
     /* v10.12: this was `if (fs.existsSync(p))`, which silently skipped a file
        that was not there. sunsetrow.js was added to the game and NOT to this
@@ -191,8 +191,7 @@ function runMap(mapName, data, wallDefault) {
   });
 }
 
-runMap("urban", { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points }, 100);
-runMap("rural", CFG.MAPS_RURAL, 100);
+runMap("urban", { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points }, CFG.MAPS.urban.bound);   /* v15.0: 120 */
 /* v8.18: this used to remap CFG.MAPS_METRO.AIRDROPS onto AIRDROP_POINTS right
    here, which meant the gate validated metro airdrops through a key the GAME
    never reads. The config was broken for months and this line kept it green.

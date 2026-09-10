@@ -62,12 +62,11 @@ vm.createContext(ctx);
 [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js","public/src/config/maps-metro.config.js",
+  "public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js","public/src/config/maps-metro.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
-  "public/src/environment/deco.js", "public/src/environment/rural.js",
-  "public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/metro.js", "public/src/environment/access.js",
+  "public/src/environment/deco.js", "public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/metro.js", "public/src/environment/access.js",
   "public/src/player/controller.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
@@ -226,7 +225,7 @@ const GROUND = [-40, -0.4, -40, 40, 0, 40, 0];
    Sealing Urban is the first item of the map-flow pass, where perimeter
    geometry can be added and re-validated against verify-arch, verify-cover and
    the triangle budget in one go. Rural and Metro are paused by instruction. */
-const ESCAPE_BUDGET = { urban: 8, rural: 6, metro: 8,
+const ESCAPE_BUDGET = { urban: 8, metro: 8,
   /* v10.10: killhouse is a sealed building — a continuous wall on all four
      sides with no exterior at all. Anything above zero here means the shell has
      a hole in it, which is why this is the only map on the list with a budget
@@ -250,7 +249,7 @@ const ESCAPE_BUDGET = { urban: 8, rural: 6, metro: 8,
      and that is worth chasing on all four maps together rather than
      special-casing two new ones. Logged as open. */
   riverside: 8, airfield: 8 };
-const MAPS = ["urban", "rural", "metro", "killhouse", "sunsetrow", "freightyard", "bazaar", "substation", "riverside", "airfield"];
+const MAPS = ["urban", "metro", "killhouse", "sunsetrow", "freightyard", "bazaar", "substation", "riverside", "airfield"];
 
 for (const map of MAPS) {
   console.log(`\n--- B: ${map} ---`);
@@ -282,7 +281,6 @@ for (const map of MAPS) {
   // B2. Seeded random walk from every spawn. This is the end-to-end check: it
   //     is the shape of what Rahul was doing when he filmed the bug.
   const spawns = map === "urban" ? CFG.SPAWNS
-    : map === "rural" ? CFG.MAPS_RURAL.SPAWNS
       : CFG.MAPS_METRO.SPAWNS;
   let seed = 0x5f3759df;
   const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -420,59 +418,63 @@ for (const map of MAPS) {
 
    The rows are read out of killhouse.js's own PLAN table rather than retyped,
    so a future row edit is covered without touching this gate. */
-console.log("\n--- v11.0: killhouse angled chains lie under their drawn walls ---");
+console.log("\n--- v15.0: killhouse — the zig-zag is gone, the deck stands ---");
+/* The v11.0 section here drove a capsule into every ANGLED PLAN row to prove
+   the rotated walls collided as their drawn shape. v15.0 (fix 11) removed every
+   angled partition — they were the zig-zag Rahul called confusing AND the
+   source of both phantom-wall bugs — so the invariant flips: the PLAN must
+   carry NO rotated partition (a rotated colliding wall may not come back
+   without this gate saying so), and the thing that replaced them, THE DECK,
+   must behave: open underneath, solid on top, and climbable by its crate
+   stairs. If an angled row is ever reintroduced the C2 drive below still runs
+   on it. */
 {
   buildMap("killhouse");
   const src = fs.readFileSync(path.join(ROOT, "public/src/environment/killhouse.js"), "utf8");
   const planBlock = (src.match(/var PLAN = \[([\s\S]*?)\];/) || [, ""])[1];
   const rows = [...planBlock.matchAll(/\[\s*(-?[\d.]+),\s*(-?[\d.]+),\s*(-?[\d.]+),\s*(-?[\d.]+),\s*'w'\]/g)]
     .map(m => m.slice(1, 5).map(Number)).filter(r => Math.abs(r[3]) > 0.01 && Math.abs(r[3] - 1.5708) > 0.01);
-  ok(rows.length >= 4, `killhouse PLAN carries ${rows.length} angled partitions to test`);
+  ok(rows.length === 0, `killhouse PLAN carries no angled partitions [${rows.length}] — the zig-zag stays gone (v15.0)`);
+  ok(/var DX = 6, DZ = 4\.5, DT = 2\.60;/.test(src), "the deck is declared at 12 x 9 m, surface 2.60");
 
   const yawFor = (dx, dz) => Math.atan2(dx, -dz);   // forward = (sin yaw, -cos yaw), see controller.js
-  function drive(sx, sz, dx, dz, frames) {
-    spawn(sx, HALF + 0.02, sz);
+  function drive(sx, sz, dx, dz, frames, y) {
+    spawn(sx, (y === undefined ? HALF + 0.02 : y), sz);
     vm.runInContext("PlayerCtl.yaw = " + yawFor(dx, dz).toFixed(5) + ";", ctx);
     const input = blank(); input.fwd = true;
     for (let f = 0; f < frames; f++) step(input, 1 / 60);
     return P();
   }
-
-  // C1 — the four coordinates from the report, walked across the OLD mirrored
-  // line's normal. A survivor phantom would stop the walk short.
-  const REPORTED = [
-    { p: [4.85, 2.66],   row: [3, 3, -0.52] },
-    { p: [2.50, 4.00],   row: [3, 3, -0.52] },
-    { p: [-3.73, -11.44], row: [-2, -11, 0.61] },
-    { p: [-0.00, -10.38], row: [-2, -11, 0.61] }
-  ];
-  for (const r of REPORTED) {
-    const th = r.row[2];
-    // normal of the OLD (mirrored) chain direction (cos th, +sin th):
-    const nx = -Math.sin(th), nz = Math.cos(th);
-    const s0 = [r.p[0] - nx * 1.1, r.p[1] - nz * 1.1];
-    const end = drive(s0[0], s0[1], nx, nz, 70);
-    const gained = (end.x - s0[0]) * nx + (end.z - s0[1]) * nz;
-    ok(gained > 1.6,
-      `reported phantom at (${r.p[0].toFixed(2)}, ${r.p[1].toFixed(2)}) is open ground ` +
-      `(walked ${gained.toFixed(2)} m across it)`);
+  // D1 — UNDER the deck is open ground: walk the whole 12 m beneath it, east to west.
+  {
+    const end = drive(8.5, 0.6, -1, 0, 240);
+    ok(end.x < -7.5, `under the deck is walkable end to end (reached x ${end.x.toFixed(2)}, want < -7.5)`);
+    ok(end.y < HALF + 0.6, `and the walker stayed on the floor under it (y ${end.y.toFixed(2)})`);
   }
-
-  // C2 — every angled row, approached perpendicular from both sides at its
-  // centre. TH/2 + capsule radius = 0.50; allow skin + one resolve step.
+  // D2 — the slab is solid: a walker dropped onto it stands at 2.60, not on the floor.
+  {
+    const end = drive(0, 0, 1, 0, 30, 2.60 + HALF + 0.05);
+    ok(Math.abs(end.y - (2.60 + HALF)) < 0.08, `a walker on the deck stands on the slab (y ${end.y.toFixed(2)}, want ${(2.60 + HALF).toFixed(2)})`);
+  }
+  // D3 — the crate stairs climb onto the deck: start north of stair A, walk south.
+  {
+    const end = drive(-4.6, -13.0, 0, 1, 420);
+    ok(end.y > 2.60 + HALF - 0.1, `stair A carries a walker onto the deck (y ${end.y.toFixed(2)}, z ${end.z.toFixed(2)})`);
+    const end2 = drive(4.6, 13.0, 0, -1, 420);
+    ok(end2.y > 2.60 + HALF - 0.1, `stair B carries a walker onto the deck (y ${end2.y.toFixed(2)}, z ${end2.z.toFixed(2)})`);
+  }
+  // C2 (retained) — any angled row still present must collide as drawn.
   const TH = 0.30, R2 = 0.35, STOP_MIN = TH / 2 + R2 - 0.08, STOP_MAX = 1.15;
   for (const [cx2, cz2, len2, th] of rows) {
-    const ux = Math.cos(th), uz = -Math.sin(th);       // drawn wall direction
-    const nx = -uz, nz = ux;                           // its normal
+    const ux = Math.cos(th), uz = -Math.sin(th);
+    const nx = -uz, nz = ux;
     for (const side of [-1, 1]) {
       const sx = cx2 + nx * side * 1.6, sz = cz2 + nz * side * 1.6;
       const end = drive(sx, sz, -nx * side, -nz * side, 80);
       const perp = Math.abs((end.x - cx2) * nx + (end.z - cz2) * nz);
       const along = Math.abs((end.x - cx2) * ux + (end.z - cz2) * uz);
-      const held = perp >= STOP_MIN && perp <= STOP_MAX && along <= len2 / 2 + 0.8;
-      ok(held,
-        `angled row (${cx2},${cz2},${len2},${th}) blocks from side ${side > 0 ? "+" : "-"} ` +
-        `at ${perp.toFixed(2)} m off the drawn line (want ${STOP_MIN.toFixed(2)}-${STOP_MAX.toFixed(2)})`);
+      ok(perp >= STOP_MIN && perp <= STOP_MAX && along <= len2 / 2 + 0.8,
+        `angled row (${cx2},${cz2},${len2},${th}) blocks from side ${side > 0 ? "+" : "-"} at ${perp.toFixed(2)} m`);
     }
   }
 }

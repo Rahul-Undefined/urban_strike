@@ -13,10 +13,10 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
      CFG.MAPS_RURAL undefined and produced 510 colliders where the browser
      produces 525 -- 15 objects short, on the gate whose entire job is to
      reproduce the browser build. Keep this list identical to index.html. */
- "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+ "public/src/config/maps-metro.config.js",
  "public/src/config/districts.config.js", "public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
- "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js","public/src/environment/metro.js",
+ "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/metro.js",
  "public/src/environment/access.js"].forEach(f=>vm.runInContext(fs.readFileSync(f,"utf8"),ctx,{filename:f}));
 const byMap={};
 ["urban","metro"].forEach(m=>{vm.runInContext(`World.reset&&World.isBuilt()&&World.reset();World.buildMap(__s,"${m}");`,Object.assign(ctx,{__s:new THREE.Scene()}));byMap[m]=ctx.World._colliders().slice();});

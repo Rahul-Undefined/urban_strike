@@ -56,12 +56,12 @@ var World = (function () {
   function makeMaterials() {
     var L = function (opt) { return new THREE.MeshLambertMaterial(opt); };
     M.asphalt = L({ map: canvasTex(256, function (g, s) {
-      noise(g, s, '#23262b', 0.5, 1600);
+      noise(g, s, '#2e3238', 0.5, 1600);
       g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
       for (var i = 0; i < 5; i++) { g.beginPath(); g.moveTo(Math.random() * s, Math.random() * s); g.lineTo(Math.random() * s, Math.random() * s); g.stroke(); }
     }) });
-    M.dirt = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#3a352c', 0.45, 1400); }) });
-    M.concrete = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#5b5f63', 0.35, 1200); }) });
+    M.dirt = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#4a4234', 0.45, 1400); }) });
+    M.concrete = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#7b8087', 0.35, 1200); }) });
     /* v8.5 STAIR MATERIAL. Every generic flight in the game was M.concrete, the
        same blue-grey as the walls they climb, so a staircase read as part of the
        wall rather than as something you could use. This is a warm sandstone that
@@ -74,24 +74,24 @@ var World = (function () {
        wood, metal or rust), so this changes nothing you can hear. */
     M.stair = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#a8895e', 0.32, 1200); }) });
     M.sidewalk = L({ map: canvasTex(256, function (g, s) {
-      noise(g, s, '#6a6e72', 0.3, 900);
+      noise(g, s, '#9a9ea3', 0.3, 900);
       g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 2;
       g.strokeRect(1, 1, s - 2, s - 2);
     }) });
     M.brick = L({ map: canvasTex(256, function (g, s) {
-      g.fillStyle = '#6e4436'; g.fillRect(0, 0, s, s);
-      g.fillStyle = '#5d382c';
+      g.fillStyle = '#8a5240'; g.fillRect(0, 0, s, s);
+      g.fillStyle = '#734334';
       var bh = 16, bw = 40;
       for (var y = 0; y < s; y += bh) {
         var off = (y / bh) % 2 ? bw / 2 : 0;
         for (var x = -bw; x < s; x += bw) {
-          g.fillStyle = Math.random() < 0.5 ? '#77493a' : '#653e30';
+          g.fillStyle = Math.random() < 0.5 ? '#96594a' : '#7e4a3b';
           g.fillRect(x + off + 1, y + 1, bw - 2, bh - 2);
         }
       }
     }) });
     M.plaster = L({ map: canvasTex(256, function (g, s) {
-      noise(g, s, '#8d867a', 0.28, 900);
+      noise(g, s, '#b7ad9e', 0.28, 900);
       g.fillStyle = 'rgba(60,50,40,0.25)';
       for (var i = 0; i < 8; i++) g.fillRect(Math.random() * s, s - Math.random() * 40, 2 + Math.random() * 3, 20 + Math.random() * 20);
     }) });
@@ -122,19 +122,26 @@ var World = (function () {
         g.fillRect(0, s - 26, s, 26);
       }) });
     }
-    M.facadeTeal  = facadeSkin('#2f6f74', 'rgba(20,45,48,0.28)');
-    M.facadeAmber = facadeSkin('#b5773a', 'rgba(70,40,18,0.26)');
-    M.facadeRose  = facadeSkin('#a85462', 'rgba(64,28,34,0.26)');
-    M.facadeIndigo = facadeSkin('#4a5a91', 'rgba(24,30,54,0.26)');
-    M.facadeOlive = facadeSkin('#6d7a3f', 'rgba(38,44,20,0.26)');
+    /* v15.0 (fix 13): THE PALETTE, BRIGHTENED. Rahul: "the urban map colours
+       are outdated; add a colour scheme that makes it good looking and high
+       definition." Every base tone here is lifted 20-35% in value and 10-20%
+       in saturation; the grime streaks and the base-band darkening are kept so
+       the surfaces still weather rather than reading as plastic. The material
+       COUNT is unchanged — a palette pass costs no draw calls. The matching
+       sky/light pass is CFG.RENDER in world.config.js. */
+    M.facadeTeal  = facadeSkin('#2e8b96', 'rgba(20,45,48,0.28)');
+    M.facadeAmber = facadeSkin('#d6913f', 'rgba(70,40,18,0.26)');
+    M.facadeRose  = facadeSkin('#c45c72', 'rgba(64,28,34,0.26)');
+    M.facadeIndigo = facadeSkin('#5169b5', 'rgba(24,30,54,0.26)');
+    M.facadeOlive = facadeSkin('#7f9448', 'rgba(38,44,20,0.26)');
 
     M.metal = L({ map: canvasTex(256, function (g, s) {
-      noise(g, s, '#4c5661', 0.3, 800);
+      noise(g, s, '#5f6c7b', 0.3, 800);
       g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 2;
       for (var x = 0; x <= s; x += 42) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, s); g.stroke(); }
     }) });
-    M.rust = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#7a4a28', 0.5, 1500); }) });
-    M.roof = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#2c2e31', 0.4, 1600); }) });
+    M.rust = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#8f5a2f', 0.5, 1500); }) });
+    M.roof = L({ map: canvasTex(256, function (g, s) { noise(g, s, '#3a3f45', 0.4, 1600); }) });
     M.wood = L({ map: canvasTex(128, function (g, s) {
       g.fillStyle = '#7a5c38'; g.fillRect(0, 0, s, s);
       g.strokeStyle = 'rgba(40,25,10,0.5)';
@@ -268,9 +275,24 @@ var World = (function () {
        had not gone stale, it had saturated: the districts were all there and
        none of them were legible. A prop is not a landmark; only things you
        navigate BY belong on a map. */
+    var bm0 = World._buildingMap || World.builtMap;
+    var arena0 = !!(bm0 && CFG.isArena && CFG.isArena(bm0));
+    /* v1.0d: on an arena an elevated DECK (the Killhouse platform, a shed
+       roof) is a landmark too — drawn in the strong tone by its footprint. */
+    if (arena0 && y0 >= 1.7 && y0 < 4.6 && (x1 - x0) * (z1 - z0) >= 24 && (x1 - x0) < 80 && (z1 - z0) < 80) {
+      minimapShapes.push([x0, z0, x1, z1]);
+    }
     if (y0 < 1.7 && y1 > 0.95 && (x1 - x0) < 80 && (z1 - z0) < 80) {
       var w = x1 - x0, d = z1 - z0;
-      if (w * d >= 3.5 && Math.max(w, d) >= 1.8) minimapShapes.push([x0, z0, x1, z1]);
+      /* v1.0d (Rahul, screenshot of the Killhouse M map: "big map is broken in
+         small and medium maps"): the 3.5 m2 footprint floor was tuned for
+         Urban's buildings and silently dropped every THIN WALL — a 0.3 x 8 m
+         partition is 2.4 m2 — so the arenas, which are made of nothing but thin
+         walls, baked as a few grey rectangles on a black square. Arenas now
+         also keep any wall-shaped collider (a thin side, 2 m or more long);
+         Urban keeps its landmark-only rule so its 320-shape budget holds. */
+      var wallLike = Math.min(w, d) <= 0.6 && Math.max(w, d) >= 2.0;
+      if ((w * d >= 3.5 && Math.max(w, d) >= 1.8) || (arena0 && wallLike)) minimapShapes.push([x0, z0, x1, z1]);
     }
   }
 
@@ -841,8 +863,10 @@ var World = (function () {
     sun.position.set(R.sunPos[0], R.sunPos[1], R.sunPos[2]);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -95; sun.shadow.camera.right = 95;
-    sun.shadow.camera.top = 95; sun.shadow.camera.bottom = -95;
+    /* v15.0 (fix 4): 95 -> 122 so the ring districts sit inside the shadow
+       frustum. Texel 0.093 -> 0.119 m; normalBias scaled with it below. */
+    sun.shadow.camera.left = -122; sun.shadow.camera.right = 122;
+    sun.shadow.camera.top = 122; sun.shadow.camera.bottom = -122;
     sun.shadow.camera.far = 260;
     /* v8.32 SHADOW ACNE — the black-and-white blinking on wall faces.
 
@@ -863,7 +887,7 @@ var World = (function () {
        half a texel; the constant bias is eased back because normalBias is now
        doing the work that was being forced out of it. */
     sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.045;
+    sun.shadow.normalBias = 0.058;   /* v15.0: half a texel at the wider frustum */
     scene.add(sun); lights.push(sun);
     scene.add(sun.target);
 
@@ -886,10 +910,11 @@ var World = (function () {
 
   function groundAndRoads() {
     // Ground: four slabs leaving a hole for the sunken tunnel trench (x[45.4,48.6] z[-28,-9])
-    seg(-110, 45.4, -1, 0, -110, 110, M.dirt, { cast: false });
-    seg(48.6, 110, -1, 0, -110, 110, M.dirt, { cast: false });
-    seg(45.4, 48.6, -1, 0, -110, -28, M.dirt, { cast: false });
-    seg(45.4, 48.6, -1, 0, -9, 110, M.dirt, { cast: false });
+    /* v15.0 (fix 4): the ground reaches 130 now that the map is 240 m across. */
+    seg(-130, 45.4, -1, 0, -130, 130, M.dirt, { cast: false });
+    seg(48.6, 130, -1, 0, -130, 130, M.dirt, { cast: false });
+    seg(45.4, 48.6, -1, 0, -130, -28, M.dirt, { cast: false });
+    seg(45.4, 48.6, -1, 0, -9, 130, M.dirt, { cast: false });
     // Roads (visual planes on top of the ground)
     seg(-7, 7, 0.005, 0.02, -68, 68, M.asphalt, { collide: false, cast: false });
     seg(-68, 68, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
@@ -992,6 +1017,164 @@ var World = (function () {
      a different defect with a different right answer, so those are counted and
      reported rather than silently demolished. Read the count in
      tools/verify-climb.js; do not widen this rule to make a number go green. */
+  /* ===== v1.0e - THE TRAIN PATH (shared by the rails and the train) =====
+     A closed polyline with filleted corners, parametrised by arc length.
+     trainPath(cfg) returns { length, at(s) -> {x, z, yaw, k} } where s wraps.
+     Each corner is replaced by an arc of radius cfg.fillet tangent to both
+     legs (clamped so two fillets never overlap on a short leg). yaw is the
+     heading in the +x/+z plane, atan2 convention: yaw 0 = +x. */
+  function trainPath(cfg) {
+    var W = cfg.waypoints, n = W.length, R = cfg.fillet || 6;
+    var segs = [];                      // straight and arc pieces in order, with cumulative s
+    function sub(a, b) { return [b[0] - a[0], b[1] - a[1]]; }
+    function len(v) { return Math.sqrt(v[0] * v[0] + v[1] * v[1]); }
+    function nrm(v) { var l = len(v) || 1; return [v[0] / l, v[1] / l]; }
+    // per corner: the tangent points where the arc begins/ends
+    var corners = [];
+    for (var i = 0; i < n; i++) {
+      var P0 = W[(i - 1 + n) % n], P1 = W[i], P2 = W[(i + 1) % n];
+      var din = nrm(sub(P0, P1)), dout = nrm(sub(P1, P2));
+      var cosT = -(din[0] * dout[0] + din[1] * dout[1]);       // cos of the turn angle
+      cosT = Math.max(-0.9999, Math.min(0.9999, cosT));
+      var theta = Math.acos(cosT);                               // interior angle at the corner
+      var t = R / Math.tan(theta / 2);                           // tangent distance from the corner
+      var lIn = len(sub(P0, P1)), lOut = len(sub(P1, P2));
+      var tmax = Math.min(lIn, lOut) * 0.49;
+      var r = R;
+      if (t > tmax) { t = tmax; r = t * Math.tan(theta / 2); }
+      var A = [P1[0] - dout[0] * -1 * 0, 0];                    // placeholder (unused)
+      var pIn = [P1[0] - din[0] * -t, P1[1] - din[1] * -t];     // din points from P0 to P1; back off t
+      pIn = [P1[0] - din[0] * t, P1[1] - din[1] * t];
+      var pOut = [P1[0] + dout[0] * t, P1[1] + dout[1] * t];
+      // arc centre: offset from P1 along the bisector by r / sin(theta/2)
+      var bis = nrm([ -din[0] + dout[0], -din[1] + dout[1] ]);
+      var C = [P1[0] + bis[0] * (r / Math.sin(theta / 2)), P1[1] + bis[1] * (r / Math.sin(theta / 2))];
+      var a0 = Math.atan2(pIn[1] - C[1], pIn[0] - C[0]), a1 = Math.atan2(pOut[1] - C[1], pOut[0] - C[0]);
+      var da = a1 - a0; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+      corners.push({ pIn: pIn, pOut: pOut, C: C, r: r, a0: a0, da: da, arcLen: Math.abs(da) * r });
+    }
+    var s = 0;
+    for (i = 0; i < n; i++) {
+      var c = corners[i], cn = corners[(i + 1) % n];
+      segs.push({ kind: 'arc', s0: s, len: c.arcLen, C: c.C, r: c.r, a0: c.a0, da: c.da });
+      s += c.arcLen;
+      var d = sub(c.pOut, cn.pIn), L = len(d), u = nrm(d);
+      segs.push({ kind: 'line', s0: s, len: L, p: c.pOut, u: u });
+      s += L;
+    }
+    var total = s;
+    function at(sq) {
+      sq = ((sq % total) + total) % total;
+      for (var k = 0; k < segs.length; k++) {
+        var g = segs[k];
+        if (sq > g.s0 + g.len + 1e-9) continue;
+        var f = sq - g.s0;
+        if (g.kind === 'line') return { x: g.p[0] + g.u[0] * f, z: g.p[1] + g.u[1] * f, yaw: Math.atan2(g.u[1], g.u[0]) };
+        var a = g.a0 + g.da * (f / g.len), sgn = g.da >= 0 ? 1 : -1;
+        return { x: g.C[0] + Math.cos(a) * g.r, z: g.C[1] + Math.sin(a) * g.r, yaw: a + sgn * Math.PI / 2 };
+      }
+      var last = segs[segs.length - 1];
+      return { x: last.p ? last.p[0] : last.C[0], z: last.p ? last.p[1] : last.C[1], yaw: 0 };
+    }
+    /* arc length from the start of the loop to the tangent-out point of waypoint i (where its straight begins) */
+    function sAtWaypoint(i) { return segs[(2 * i + 1) % segs.length].s0; }
+    return { length: total, at: at, sAtWaypoint: sAtWaypoint, segs: segs };
+  }
+
+  /* ===== v1.0e - LIFT THE DOORWAY LINTELS FOR THE TALL OPERATOR =====
+     Rahul: "make the avatar seriously tall... ensure all doors and places are
+     high enough to let the avatar go in and out across all maps."
+
+     The rendered operator is ~2.28 m (avatars.js RIG.y 1.62); the movement
+     capsule stays 1.92 (CFG.PLAYER), so no route changed — but the maps were
+     built with 2.1-2.3 m door lintels and a 2.28 m head walks through them.
+     This post-pass, in the stairwell cutter's style, finds every emitted box
+     that is a DOORWAY LINTEL and raises its underside to LINTEL above the floor
+     the door serves. A lintel is: a wall-thick box (one horizontal side under
+     0.6 m), at least 0.5 m tall, with AIR directly beneath its centre, over a
+     walkable surface 1.9-2.55 m below it, and with something solid under both
+     of its ends (the jambs). Floor slabs, roofs, stacked containers, sign
+     boards on posts and stair treads all fail one of those tests and are left
+     alone. Mesh and collider move together through the `solids` registry;
+     the pieces stay ≥ 0.25 m thick. Runs on every map before the merge. */
+  var LINTEL = 2.65;
+  function liftLintels() {
+    var n = 0, report = [];
+    function inside(x, y, z, skip) {
+      for (var i = 0; i < colliders.length; i++) {
+        if (i === skip) continue;
+        var c = colliders[i];
+        if (x >= c[0] && x <= c[3] && y >= c[1] && y <= c[4] && z >= c[2] && z <= c[5]) return true;
+      }
+      return false;
+    }
+    function topUnder(x, z, below, skip) {
+      var best = null;
+      for (var i = 0; i < colliders.length; i++) {
+        if (i === skip) continue;
+        var c = colliders[i];
+        if (x < c[0] || x > c[3] || z < c[2] || z > c[5]) continue;
+        if (c[4] <= below && (best === null || c[4] > best)) best = c[4];
+      }
+      return best;
+    }
+    for (var k = 0; k < solids.length; k++) {
+      var s = solids[k];
+      if (!s || s.opts.rotY) continue;
+      if (s.opts.tile === false) continue;                              // a sign board / billboard, never a wall
+      if (s.h < 0.3 || s.w > 60 || s.d > 60) continue;
+      var thin = Math.min(s.w, s.d);
+      if (thin > 0.6) continue;
+      var alongX = s.w >= s.d;                         // the wall runs along x (door span is in x)
+      var y0 = s.cy - s.h / 2, y1 = s.cy + s.h / 2;
+      /* Sample along the band: the door may sit anywhere under a merged
+         facade row, so the first sample with AIR beneath it is the opening. */
+      var L = alongX ? s.w : s.d, F = null, samples = Math.max(1, Math.min(9, Math.round(L / 0.6)));
+      for (var q = 0; q < samples && F === null; q++) {
+        var u = -L / 2 + 0.15 + (L - 0.3) * (samples === 1 ? 0.5 : q / (samples - 1));
+        var px = alongX ? s.cx + u : s.cx, pz = alongX ? s.cz : s.cz + u;
+        if (inside(px, y0 - 0.15, pz, s.ci)) continue;
+        var f0 = topUnder(px, pz, y0 - 0.15, s.ci);
+        if (f0 !== null && y0 - f0 >= 1.9 && y0 - f0 <= 2.55) F = f0;
+      }
+      if (F === null) continue;                                         // no doorway under this piece
+      var rel = y0 - F;
+      if (rel < 1.9 || rel > 2.55) { if (lintelDebug && rel > 1.5 && rel < 3.0) report.push(['rel', +s.cx.toFixed(1), +y0.toFixed(2), +s.cz.toFixed(1), +rel.toFixed(2)]); continue; }
+      var half = (alongX ? s.w : s.d) / 2 + 0.12;
+      var ex = alongX ? [[s.cx - half, s.cz], [s.cx + half, s.cz]] : [[s.cx, s.cz - half], [s.cx, s.cz + half]];
+      var jambs = 0;
+      for (var e = 0; e < 2; e++) if (inside(ex[e][0], y0 - 0.3, ex[e][1], s.ci)) jambs++;
+      /* A short piece needs a jamb under at least one end (a board on posts
+         has none); a long band is a facade row that merged the header above a
+         door with its neighbours' window headers — lifting it makes the
+         windows a little taller and the door tall enough. */
+      if (jambs < 1 && Math.max(s.w, s.d) < 3.0) { if (lintelDebug) report.push(['jamb', +s.cx.toFixed(1), +y0.toFixed(2), +s.cz.toFixed(1), jambs, +s.w.toFixed(1), +s.d.toFixed(1)]); continue; }
+      var ny0 = F + LINTEL;
+      if (ny0 <= y0 + 0.02) continue;
+      var c = colliders[s.ci];
+      if (y1 - ny0 < 0.25) {
+        /* A thin header band (the greedy facade emits the strip between a
+           2.3 m door top and the 2.7 m window line as its own 0.4 m piece):
+           lifting it would leave a sliver, so the band goes and the opening
+           runs up to the band above it, which starts at or beyond LINTEL. */
+        s.m.visible = false; scene.remove(s.m);
+        c[1] = c[4] - 0.001;
+        s.h = 0.001; s.cy = c[4] - 0.0005;
+      } else {
+        var nh = y1 - ny0, ncy = (ny0 + y1) / 2;
+        s.m.scale.y = nh / s.h; s.m.position.y = ncy; s.m.updateMatrix();
+        c[1] = ny0;
+        s.cy = ncy; s.h = nh;
+      }
+      n++;
+      if (lintelDebug) report.push([+s.cx.toFixed(1), +y0.toFixed(2), +s.cz.toFixed(1), +ny0.toFixed(2), +F.toFixed(2)]);
+    }
+    lintelsLifted = n;
+    lintelReport = report;
+    return n;
+  }
+  var lintelsLifted = 0, lintelReport = null, lintelDebug = false;
+
   function stairwells() {
     var NEED = CFG.PLAYER.standH + 0.22;   // 2.02 m: stand 1.80 + auto-step lift + slack
     var report = { cut: 0, pieces: 0, refused: [] };
@@ -1090,7 +1273,7 @@ var World = (function () {
        its loot "out of bounds". Nothing clamps the player against this — it is
        metadata the validators read — but leaving it hardcoded would have meant
        silently failing every new map that is not exactly Urban's size. */
-    BOUND: 100,
+    BOUND: 120,   /* v15.0 (fix 4): urban is 240 m across; buildMap overwrites per map */
     _colliders: function () { return colliders; }, // test-only introspection
     _stairs: function () { return stairs; },       // test-only introspection
     _recordBoxes: function (on) { boxLog = on ? [] : null; return boxLog; },
@@ -1114,6 +1297,9 @@ var World = (function () {
       if (urban) groundAndRoads();
     },
     _stairwells: function () { return stairwells(); },
+    _liftLintels: function () { return liftLintels(); },                       /* v1.0e */
+    trainPath: trainPath,                                                        /* v1.0e: rails and train share it */
+    _lintelStats: function (dbg) { lintelDebug = !!dbg; return { n: lintelsLifted, report: lintelReport }; },
     _internals: function () {
       return { box: box, seg: seg, cyl: cyl, stairFlight: stairFlight, crater: crater, M: M, rnd: rnd, addCollider: addCollider, emissive: emissiveMat, canvasTex: canvasTex, sceneRef: function () { return scene; } };
     },
@@ -1538,9 +1724,18 @@ World.build = function (sceneRef) {
         VLR = M.taillight, VBUS = M.busBody, VROOF = M.busRoof;
     var RY = r, CC = Math.cos(RY), SS = Math.sin(RY);
     function OFF(dx, dz) { return [cx + dx * CC - dz * SS, cz + dx * SS + dz * CC]; }
-    box(cx, 1.32, cz, 2.45, 1.3, 8.9, VBUS, { rotY: RY });
-    box(cx, 1.78, cz, 2.5, 0.42, 7.6, VGLASS, { rotY: RY, collide: false });
-    box(cx, 2.68, cz, 2.3, 0.1, 8.7, VROOF, { rotY: RY, collide: false });
+    /* v1.0d (Rahul, screenshot at the Bus Terminal): the roof slab sat at
+       2.63-2.73 over a window band that ended at 1.99 — a 64 cm gap of sky
+       between the glass and the roof, so every bus looked like three parts
+       stacked by a child. Body 0.55-1.75, glass 1.75-2.35, roof 2.35-2.47:
+       every band rests on the one below and the roof is a hair narrower than
+       the body, as on a real coach. */
+    box(cx, 1.15, cz, 2.45, 1.2, 8.9, VBUS, { rotY: RY });
+    box(cx, 2.05, cz, 2.42, 0.6, 7.6, VGLASS, { rotY: RY, collide: false });
+    box(cx, 2.41, cz, 2.36, 0.12, 8.8, VROOF, { rotY: RY, collide: false });
+    var fc = OFF(0, 4.125), bc = OFF(0, -4.125);                 // body-colour end caps beside the glass band
+    box(fc[0], 2.05, fc[1], 2.44, 0.6, 0.65, VBUS, { rotY: RY, collide: false });
+    box(bc[0], 2.05, bc[1], 2.44, 0.6, 0.65, VBUS, { rotY: RY, collide: false });
     var LAT = 1.05, LZF = 3.1;
     [[LAT, LZF], [-LAT, LZF], [LAT, -LZF], [-LAT, -LZF]].forEach(function (wf) {
       var wp = OFF(wf[0], wf[1]);
@@ -1903,19 +2098,17 @@ World.build = function (sceneRef) {
   seg(62.5, 67.5, 3.9, 4.3, -71.0, -69.9, M.railGreen);           // service gate lintel
   seg(69.6, 71.3, 0, 4.6, -44.8, -44.4, M.brick);     // piers either side of the mall
   seg(69.6, 71.3, 0, 4.6, -21.6, -21.2, M.brick);
-  // V4.2 outer perimeter
-  seg(-100.9, 100.9, 0, 3.2, -100.9, -100, M.concrete);
-  seg(-100.9, 100.9, 0, 3.2, 100, 100.9, M.concrete);
-  seg(-100.9, -100, 0, 3.2, -100, 100, M.concrete);
-  seg(100, 100.9, 0, 3.2, -100, 100, M.concrete);
-  // connector roads through the gates (visual)
-  seg(-7, 7, 0.005, 0.02, -96, -68, M.asphalt, { collide: false, cast: false });
-  seg(-7, 7, 0.005, 0.02, 68, 96, M.asphalt, { collide: false, cast: false });
-  seg(-96, -68, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
-  seg(68, 96, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
+  /* v15.0 (fix 4): the V4.2 perimeter at 100 is GONE — where it stood is the
+     ring boulevard, and the new wall at 120 is built with the outer districts
+     in World._buildPart6 (districts-outer.js). The connector roads now run to
+     the boulevard edge. */
+  seg(-7, 7, 0.005, 0.02, -98, -68, M.asphalt, { collide: false, cast: false });
+  seg(-7, 7, 0.005, 0.02, 68, 98, M.asphalt, { collide: false, cast: false });
+  seg(-98, -68, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
+  seg(68, 98, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
   for (var i = 0; i < 12; i++) {
     var ang = (i / 12) * Math.PI * 2;
-    var rr = 128 + rnd() * 24;
+    var rr = 150 + rnd() * 26;   /* v15.0: the skyline steps back with the wall */
     box(Math.cos(ang) * rr, 7 + rnd() * 10, Math.sin(ang) * rr,
       9 + rnd() * 11, 14 + rnd() * 20, 9 + rnd() * 11, M.dark, { collide: false, cast: false, recv: false });
   }
@@ -1939,6 +2132,14 @@ World.build = function (sceneRef) {
     bus: bus, sedan: sedan, van: van, jeep: jeep, truck: truck,
     M: M, rnd: rnd, scene: H.sceneRef()
   });
+  /* v15.0 (fix 4): the outer ring — four districts, four towers, the new wall.
+     Before deco so its lamps register their ground-pool spots. */
+  if (World._buildPart6) World._buildPart6({
+    seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win, emissive: emissiveMat,
+    container: container, crates: crates, brokenWall: brokenWall, lamp: lamp, barrel: barrel,
+    bus: bus, sedan: sedan, van: van, jeep: jeep, truck: truck,
+    M: M, rnd: rnd, scene: H.sceneRef()
+  });
   if (World._buildDeco) World._buildDeco({
     seg: seg, box: box, cyl: cyl, M: M, emissive: emissiveMat, scene: H.sceneRef()
   });
@@ -1954,6 +2155,7 @@ World.build = function (sceneRef) {
   /* Cut the stairwells BEFORE the landings. stairLandings() asks "is anything
      walkable already at the top of this flight"; if a slab has just had a hole
      cut in it, that question has to be asked of the geometry that survived. */
+  World._liftLintels();      /* v1.0e: doorways up to 2.65 for the tall operator (before the cutter reads the slabs) */
   World._stairwells();
   stairLandings();
   districtSigns();
@@ -1981,15 +2183,15 @@ World.buildMap = function (sceneRef, map) {
   /* v10.10: killhouse joins the same contract. A lookup rather than another
      nested ternary — three was already one too many and a fourth map would
      have made the line unreadable. */
-  var builder = ({ rural: World._buildRural, metro: World._buildMetro,
+  World._buildingMap = map;   /* v1.0d: the id is needed DURING the build (minimap shape filter); builtMap is only set after */
+  var builder = ({ metro: World._buildMetro,   /* v15.0 (fix 14): rural removed */
                    killhouse: World._buildKillhouse,
                    sunsetrow: World._buildSunsetRow,
                    freightyard: World._buildFreightyard,
                    bazaar: World._buildBazaar,
                    substation: World._buildSubstation,
                    riverside: World._buildRiverside,
-                   airfield: World._buildAirfield,
-                   blacksite: World._buildBlacksite })[map] || null;   /* v14.0: bot-mode-only */
+                   airfield: World._buildAirfield })[map] || null;
   if (map === 'urban' || !builder) {
     World.build(sceneRef);            // urban's own lighting: _initPart1 defaults map:'urban'
     World.builtMap = 'urban';
@@ -2001,6 +2203,7 @@ World.buildMap = function (sceneRef, map) {
     seg: H.seg, box: H.box, cyl: H.cyl, stairFlight: H.stairFlight,
     M: H.M, rnd: H.rnd, scene: H.sceneRef(), addCollider: H.addCollider
   });
+  World._liftLintels();      /* v1.0e: doorways up to 2.65 for the tall operator */
   World._stairwells();
   if (CFG.RENDER.mergeStatic !== false && typeof StaticMerge !== 'undefined') {
     StaticMerge.merge(THREE, H.sceneRef());

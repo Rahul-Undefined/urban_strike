@@ -50,7 +50,7 @@ vm.createContext(ctx);
 
 [ 'public/src/config/weapons.config.js', 'public/src/config/gameplay.config.js',
   'public/src/config/loot.config.js', 'public/src/config/world.config.js',
-  'public/src/config/maps-rural.config.js', 'public/src/config/maps-metro.config.js',
+  'public/src/config/maps-metro.config.js',
   'public/src/config/index.js', 'public/src/weapons/viewmodels.js',
   'public/src/networking/avatars.js'
 ].forEach(f => vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f }));

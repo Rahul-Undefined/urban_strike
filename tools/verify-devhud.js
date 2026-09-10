@@ -63,12 +63,12 @@ vm.createContext(ctx);
 [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+  "public/src/config/maps-metro.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js",
   "public/src/environment/merge.js", "public/src/environment/world.js",
   "public/src/environment/districts-south.js", "public/src/environment/districts-north.js",
   "public/src/environment/districts-outer.js", "public/src/environment/deco.js",
-  "public/src/environment/rural.js", "public/src/environment/metro.js",
+  "public/src/environment/metro.js",
   "public/src/environment/access.js", "public/src/ui/devhud.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
@@ -157,15 +157,19 @@ ok(!sawBlocked, "the stairwell-cut flight at (-37.7, 3.62, 24.35) is now clear a
    verify-stairs-quality rather than assert a particular verdict. The two are
    independent implementations of the same question, which is the whole value
    of having the panel at all. */
-t = at(-56.0, 3.78, 56.9);
+/* v1.0d: the ship is gone (Rahul's screenshots — it was built through the
+   stadium). The Training Ground clubhouse stands where its superstructure
+   did, with its own switchback read off the generator: leg A starts at
+   (-56.8, 0, 54.9) and climbs +x to 3.0. Stand on that flight instead. */
+t = at(-55.0, 1.70, 54.9);
 const st = field(t, "STAIR");
-ok(st !== null, "panel identifies the ship bridge flight at (-56.8, 3.40, 56.9) (" + st + ")");
+ok(st !== null, "panel identifies the clubhouse flight at (-56.8, 0.00, 54.9) (" + st + ")");
 const arrLine = String(t || "").split("\n").find(l => l.indexOf("top arrival") >= 0);
 ok(!!arrLine, "panel reports a top-arrival verdict for it (" + (arrLine || "missing").trim() + ")");
-/* The ship bridge was repaired in v10 (buildingAt switchback), and
-   verify-stairs-quality now reports urban arrival 0. The panel must say the
-   same. If this ever reddens, the two disagree and ONE of them is lying -
-   check verify-stairs-quality before touching the panel. */
+/* verify-stairs-quality reports urban arrival 0 (the clubhouse switchback
+   arrives on its own landing). The panel must say the same. If this ever
+   reddens, the two disagree and ONE of them is lying - check
+   verify-stairs-quality before touching the panel. */
 ok(/ok/.test(arrLine || ""),
   "and agrees with verify-stairs-quality that it now arrives (" + (arrLine || "missing").trim() + ")");
 

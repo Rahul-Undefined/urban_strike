@@ -36,7 +36,7 @@
       /* West bank — buildings and yard */
       [-48, 0.55, -30, "g"], [-42, 0.55, -14, "g"], [-50, 0.55, 4, "g"],
       [-44, 0.55, 20, "g"], [-38, 0.55, 32, "g"], [-30, 0.55, -34, "g"],
-      [-26, 0.55, -6, "s"], [-32, 0.55, 12, "g"], [-22, 0.55, 28, "g"],
+      [-26, 0.55, -6, "s"], [-32, 0.55, 12, "g"], [-22, 0.55, 25, "g"],
       [-52, 0.55, -20, "h"], [-52, 0.55, 26, "h"],
       /* The crossings — contested, and the only loot worth the risk */
       [-26, 0.55, -20, "s"], [0, 0.55, 0, "s"], [26, 0.55, 20, "s"],
@@ -52,7 +52,11 @@
          crate runs at z +/-34 top out at 1.10, not 2.35. Roofs are reachable
          and worth loot, but the point has to sit on a measured surface, so
          these move to the crate lids that actually exist. */
-      [-14, 1.65, 34, "h"], [14, 1.65, -34, "h"]
+      [-14, 1.65, 34, "h"], [14, 1.65, -34, "h"],
+      /* v15.0 (fix 15): the lock tower's decks and cab, the mill floor and roof,
+         the barge deck. Deck heights are the tower's own (4.2 / 8.4 / 12.85). */
+      [42, 4.75, -34.4, "h"], [42, 8.95, -34.4, "h"], [40, 13.40, -37, "s"],
+      [-22, 0.55, 34, "h"], [-26, 6.10, 34, "s"], [0, 0.99, 12, "s"]
     ],
     SPAWNS: [
       [-56, -24, 1.5708, "a"], [-56, -8, 1.5708, "a"], [-56, 8, 1.5708, "a"],
@@ -65,11 +69,11 @@
          mirrored 'a'-side points share the sign-flipped coordinates but sit
          one bay over and test clean. */
       [57, -24, -1.5708, "b"], [52, 32, -1.5708, "b"], [53, -32, -1.5708, "b"],
-      [-18, -40, 0, "n"], [18, -40, 0, "n"], [-18, 40, 3.1416, "n"], [18, 40, 3.1416, "n"]
+      [-18, -40, 0, "n"], [18, -40, 0, "n"], [-36, 40, 3.1416, "n"], [18, 40, 3.1416, "n"]   /* v15.0: (-18,40) moved west of the mill */
     ],
     /* v10.21: computed from the built geometry, not typed. [-34,26] and its
        mirror landed on the quay railings. */
-    AIRDROP_POINTS: [[6, 0], [-10, 4], [-11, -14], [21, 9], [0, 18], [12, -16], [-16, 21]]
+    AIRDROP_POINTS: [[6, 0], [-16, 0], [-16, -14], [21, 9], [-16, 24], [16, -16], [-20, 16]]   /* v15.0: [0,18] and [-16,21] moved off the barge and the mill approach */
   };
 
   var MAPS_AIRFIELD = {
@@ -90,7 +94,12 @@
       [-56, 0.55, -40, "h"], [56, 0.55, 40, "h"],
       [-56, 0.55, 40, "h"], [56, 0.55, -40, "h"],
       /* Measured: the stacked containers at the apron edge top out at 5.20. */
-      [-28, 5.75, 0, "h"], [28, 5.75, 0, "h"]
+      [-28, 5.75, 0, "h"], [28, 5.75, 0, "h"],
+      /* v15.0 (fix 15): the control tower, the airliner's roof and cabin shadow,
+         the fire station bays, the fuel farm. */
+      [20, 4.75, 43.6, "h"], [20, 8.95, 43.6, "h"], [18, 13.40, 41, "s"],
+      [-10, 4.95, 16, "s"], [-22, 0.55, 20, "g"], [2, 0.55, 12, "g"],
+      [46, 0.55, -10, "h"], [-47, 0.55, -41, "g"]
     ],
     SPAWNS: [
       [-60, -28, 1.5708, "a"], [-60, -10, 1.5708, "a"], [-60, 10, 1.5708, "a"],
@@ -103,7 +112,7 @@
     ],
     /* v10.21: computed. [0,0] was on the wrecked airframe and [0,+/-44] on the
        terminal blocks — three of seven typed drops were inside geometry. */
-    AIRDROP_POINTS: [[6, 0], [-10, 4], [-9, -12], [24, 0], [0, 18], [12, -16], [-26, 11]]
+    AIRDROP_POINTS: [[6, 0], [-10, 4], [-9, -12], [24, 0], [-2, 27], [12, -16], [-26, 9]]   /* v15.0: [0,18] and [-26,11] moved clear of the airliner */
   };
 
   return { MAPS_RIVERSIDE: MAPS_RIVERSIDE, MAPS_AIRFIELD: MAPS_AIRFIELD };

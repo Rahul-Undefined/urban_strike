@@ -90,6 +90,32 @@ console.log('\n--- v10.22: ONE nuke per five kills, not one per kill after five 
   ok(!p.nukeArmed, 'nothing is left armed at the end of the run');
 }
 {
+  /* ===== v1.0e: THE NUKE'S OWN KILLS DO NOT COUNT TOWARD THE NEXT NUKE =====
+     Rahul: "5 kills launched the nuke and the nuke killed 4 people, so that
+     player killing just 1 more person enables another strike." A strike's
+     victims are kills (kills++, streak++) but they raise `strikeKills` too,
+     and the arming reads streak - strikeKills. */
+  const room = mkRoom('killhouse');
+  const p = mkP('N5', 'a', 0, 0);
+  room.players.set(p.id, p);
+  for (let k = 1; k <= 5; k++) { p.streak = k; Nuke.onKill(room, p); }
+  ok(p.nukeArmed, 'five own kills arm the first nuke');
+  Nuke.requestStrike(room, p, 0, 0);
+  /* the nuke kills four: combat.js credits them as kills AND as strike kills */
+  p.streak = 9; p.strikeKills = 4; Nuke.onKill(room, p);
+  ok(!p.nukeArmed, 'four nuke kills arm nothing (own count still 5)');
+  p.streak = 10; Nuke.onKill(room, p);
+  ok(!p.nukeArmed, 'one more own kill after the nuke arms nothing either (own 6 of 10)');
+  for (let k = 11; k <= 13; k++) { p.streak = k; Nuke.onKill(room, p); }
+  ok(!p.nukeArmed, 'nine own kills: not yet');
+  p.streak = 14; Nuke.onKill(room, p);
+  ok(p.nukeArmed, 'the tenth OWN kill (streak 14 minus 4 by the nuke) arms the second');
+  const combatSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'server/lib/combat.js'), 'utf8');
+  ok(/if \(weapon === 'nuke' \|\| weapon === 'rocketstrike'\) attacker\.strikeKills = \(attacker\.strikeKills \| 0\) \+ 1;/.test(combatSrc),
+    'combat.js counts nuke and rocket kills as strike kills at the credit site');
+  ok(/victim\.strikeKills = 0;/.test(combatSrc), 'and the count dies with the streak');
+}
+{
   /* Dying resets the count: five more kills after a death must earn one, not
      require ten. */
   const room = mkRoom('sunsetrow');

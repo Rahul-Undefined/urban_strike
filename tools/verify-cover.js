@@ -39,11 +39,11 @@ vm.createContext(ctx);
      CFG.MAPS_RURAL undefined and produced 510 colliders where the browser
      produces 525 -- 15 objects short, on the gate whose entire job is to
      reproduce the browser build. Keep this list identical to index.html. */
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js",
+  "public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
-  "public/src/environment/deco.js", "public/src/environment/rural.js", "public/src/environment/metro.js",
+  "public/src/environment/deco.js", "public/src/environment/metro.js",
   /* v10.12: killhouse and sunsetrow were MISSING from this list while both were
      in the map loop above. buildMap fell through to the urban path for each, so
      this gate measured urban twice and printed the result under their names —
@@ -94,7 +94,7 @@ function analyse(map) {
   // usable cover: something that blocks a standing or crouching body
   const cover = cols.filter(c => c[4] >= 0.5 && c[4] <= 3.5 && (c[3] - c[0]) < 30 && (c[5] - c[2]) < 30);
   const _C = require('../public/src/config/index.js');
-  const MAPDATA = { rural: (_C.MAPS_RURAL || {}), metro: (_C.MAPS_METRO || {}) }[map] || {};
+  const MAPDATA = { metro: (_C.MAPS_METRO || {}) }[map] || {};
   const WATER = MAPDATA.WATER_ZONES || [];
   const n = Math.floor((BOUND * 2) / CELL);
   const grid = [], dead = [], skipped = { n: 0 };
@@ -151,7 +151,7 @@ let fail = 0;
    v9.0, but metro was never in this loop, so the budget was never applied to
    anything. Metro had no dead-ground measurement of any kind — the gate that
    exists to prove a map is fightable had never looked at it. */
-for (const map of ["urban", "rural", "metro", "killhouse", "sunsetrow", "freightyard", "bazaar", "substation", "riverside", "airfield"]) {
+for (const map of ["urban", "metro", "killhouse", "sunsetrow", "freightyard", "bazaar", "substation", "riverside", "airfield"]) {
   const r = analyse(map);
   const land = r.n * r.n - r.skipped;
   const pct = (r.dead.length / land * 100).toFixed(1);
@@ -197,7 +197,7 @@ for (const map of ["urban", "rural", "metro", "killhouse", "sunsetrow", "freight
    project's own rule is that ratchets fall and never rise. So rural stays red
    as a DOCUMENTED red alongside verify-access, verify-arch and verify-climb,
    and the fix is cover in rural's outer ring, not a bigger number here. */
-const DEAD_BUDGET = { urban: 0.06, rural: 0.15, metro: 0.06, killhouse: 0.02,
+const DEAD_BUDGET = { urban: 0.06, metro: 0.06, killhouse: 0.02,
     /* v10.12: set from the honest measurement, not guessed ahead of it.
        sunsetrow reads 0.9% and killhouse 0.0%, so 0.02 is a real ratchet on
        both rather than slack. */
