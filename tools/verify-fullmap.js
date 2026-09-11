@@ -41,8 +41,22 @@ console.log('--- the rule itself ---');
 /* v9.5: TWO switches. `showAllies` and `showEnemies` replaced the single
    `showContacts`, because your own squad and the enemy are opposite kinds of
    information — one is coordination, the other is intel. */
-ok(/var showEnemies = !teamMode/.test(src),
-  'enemy visibility is gated on the mode having no sides');
+/* v15.0 (fix 3): the rule tightened. Exact enemy pins are an explicit
+   per-mode opt-in (`fullMapContacts`), not the default for every no-sides
+   mode — in FFA the host's ENEMY INTEL toggle is the only enemy information
+   the M map may carry. `!teamMode` must be GONE from the condition. */
+ok(/var showEnemies = !!\(modeCfg && modeCfg\.fullMapContacts\);/.test(src),
+  'enemy visibility is an explicit per-mode opt-in (fullMapContacts)');
+ok(!/var showEnemies = !teamMode/.test(src),
+  'the v9.5 "any no-sides mode shows everyone" default is gone (v15.0 fix 3)');
+/* The Intel blobs are the FFA answer and must not ride the pin gate: they are
+   gated on the host toggle alone and drawn before the exact-pin loop. */
+const blobIdx = src.indexOf('if (matchNow.enemyIntel)');
+const pinGateIdx = src.indexOf('if (!(ally ? showAllies : showEnemies)) return;');
+ok(blobIdx > -1 && pinGateIdx > blobIdx,
+  'Intel blobs are drawn under the pins and gated on the host toggle, not on showEnemies');
+ok(src.slice(blobIdx, pinGateIdx).indexOf('showEnemies') === -1,
+  'the blob block never reads showEnemies — FFA with Intel ON still gets its rings');
 ok(/var showAllies\s*=\s*true/.test(src),
   'ally visibility is unconditional — a squad can always see itself');
 ok(/if \(!\(ally \? showAllies : showEnemies\)\) return;/.test(src),
@@ -70,15 +84,14 @@ ok(arrowIdx > gateIdx,
 console.log('\n--- which modes show contacts ---');
 /* Assert the OUTCOME per mode rather than re-implementing the condition, so a
    new mode is classified by this gate the moment it is registered. */
-const shows = m => !(CFG.MODES[m] && CFG.MODES[m].teams) ||
-  !!(CFG.MODES[m] && CFG.MODES[m].fullMapContacts);
-const expectShown = ['ffa', 'ls', 'bots', 'lsq2', 'lsq4'];
-const expectHidden = ['t2', 't3', 't4', 't5', 't6', 't8', 't10',
-  'sq2', 'sq4', 'co1', 'co2', 'co3', 'co4', 'co6', 'co10',
-  /* v14.0: Bot Mode follows the strike-team precedent, not outbreak —
-     machines take cover, flank and reposition, so FINDING them is part of
-     the game. A full map that marks them would delete the hunt. */
-  'bm_solo', 'bm_team', 'bm_battle'];
+const shows = m => !!(CFG.MODES[m] && CFG.MODES[m].fullMapContacts);
+/* v15.0 (fix 3): FFA moved from shown to hidden — exact pins in a match that
+   never pauses were the report. 'bots' (Overrun, hidden mode) follows the
+   strike-team precedent: finding the machines is the game. */
+const expectShown = ['ls', 'lsq2', 'lsq4'];
+const expectHidden = ['ffa', 't2', 't3', 't4', 't5', 't6', 't8', 't10',
+  'sq2', 'sq4',
+  'zone'];   /* v1.0j: Urban Zone is one life like Last Stand but the CIRCLE is the anti-camping device — exact pins would delete the hunt */
 /* v10.13: the outbreak modes. Enemies SHOWN on the full map, and that is a
    design decision rather than a default. In a PvP mode a full map that reveals
    the other side removes the whole game; here the other side is a wave of
@@ -92,7 +105,12 @@ expectShownZ.forEach(m => ok(CFG.MODES[m] && shows(m),
 expectShown.forEach(m => ok(CFG.MODES[m] && shows(m),
   m + ': the full map shows ENEMIES'));
 expectHidden.forEach(m => ok(CFG.MODES[m] && !shows(m),
-  m + ': team-shaped, so the full map hides enemies (allies still show)'));
+  m + ': no exact enemy pins on the full map (allies still show; Intel rings when the host toggles them)'));
+/* The FFA counterpart: with pins gone, the Intel toggle must still have
+   something to gate — the blob block must treat everyone else as hostile in a
+   mode without sides. */
+ok(/var hostile = myTeam \? \(b\.t !== myTeam\) : \(b\.i !== Net\.getMyId\(\)\);/.test(src),
+  'ffa: Intel rings treat every other operator as hostile, so the toggle is the FFA enemy feed');
 
 /* Nothing may fall through the classification. */
 Object.keys(CFG.MODES).forEach(m => {
@@ -109,7 +127,8 @@ Object.keys(CFG.MODES).forEach(m => {
    into minimap.js. This assertion exists so that trade-off is visible from the
    gate output instead of being rediscovered in a match. */
 console.log('\n--- known cost ---');
-ok(shows('ls'), 'Last Stand Solo keeps its anti-camping map');
+ok(shows('ls') && CFG.MODES.ls.fullMapContacts === true,
+  'Last Stand Solo keeps its anti-camping map — via the same flag as the squad variants (v15.0)');
 ok(shows('lsq2') && shows('lsq4'),
   'Last Stand Squads keeps it too, via fullMapContacts (v9.4)');
 /* And the thing that changed in v9.5: allies are never hidden anywhere. */

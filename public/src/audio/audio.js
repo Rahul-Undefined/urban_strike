@@ -279,6 +279,44 @@ var AudioSys = (function () {
     noiseBurst(null, { ftype: 'bandpass', f0: 220, f1: 90, dur: 2.6, vol: 0.22 });
     tone(null, { type: 'sawtooth', f0: 95, f1: 62, dur: 2.4, vol: 0.1 });
   }
+  /* v15.0 (fix 1): the EMP — a rising electric sweep, then a low thump. */
+  function empPulse(pos) {
+    if (!ctx) return;
+    tone(pos, { type: 'sawtooth', f0: 180, f1: 2600, dur: 0.35, vol: 0.28 });
+    noiseBurst(pos, { ftype: 'highpass', f0: 3000, dur: 0.25, vol: 0.18 });
+    setTimeout(function () { tone(pos, { type: 'sine', f0: 120, f1: 40, dur: 0.5, vol: 0.5 }); }, 220);
+  }
+  /* v15.0 (fix 10): rotor beat under the plane pass, so a helicopter reads as
+     a helicopter rather than as another airdrop. */
+  function heliBeat(sec) {
+    if (!ctx) return;
+    var n = Math.floor((sec || 5) * 6);
+    for (var i = 0; i < n; i++) {
+      setTimeout(function () { noiseBurst(null, { ftype: 'lowpass', f0: 400, f1: 120, dur: 0.11, vol: 0.20 }); }, i * 165);
+    }
+    tone(null, { type: 'sawtooth', f0: 70, f1: 84, dur: sec || 5, vol: 0.09 });
+  }
+  /* v1.0k: the zone's heartbeat — one low thump per bleed tick, un-positioned. */
+  function zoneTick() {
+    if (!ctx) return;
+    tone(null, { type: 'sine', f0: 62, f1: 48, dur: 0.22, vol: 0.55 });
+    noiseBurst(null, { ftype: 'lowpass', f0: 240, dur: 0.08, vol: 0.10 });
+  }
+  /* v1.0k: the train. rumble(pos, speedFrac) is called every ~0.7 s by the
+     train while it moves — a low positional roll scaled by speed; horn(pos)
+     once when it pulls out of the station. */
+  function trainRumble(pos, speedFrac) {
+    if (!ctx) return;
+    var v = 0.10 + 0.22 * Math.max(0, Math.min(1, speedFrac || 0));
+    noiseBurst(pos, { ftype: 'lowpass', f0: 180, f1: 90, dur: 0.75, vol: v });
+    tone(pos, { type: 'sawtooth', f0: 48, f1: 44, dur: 0.75, vol: v * 0.35 });
+  }
+  function trainHorn(pos) {
+    if (!ctx) return;
+    tone(pos, { type: 'sawtooth', f0: 311, f1: 311, dur: 0.9, vol: 0.42 });
+    tone(pos, { type: 'sawtooth', f0: 370, f1: 370, dur: 0.9, vol: 0.34 });
+    tone(pos, { type: 'square', f0: 155, f1: 155, dur: 0.9, vol: 0.12 });
+  }
   function crateThud(pos) {
     tone(pos, { type: 'sine', f0: 110, f1: 34, dur: 0.4, vol: 0.6 });
     noiseBurst(pos, { f0: 900, f1: 150, dur: 0.3, vol: 0.4 });
@@ -504,6 +542,8 @@ var AudioSys = (function () {
     shot: shot, reload: reload, magIn: magIn, bolt: bolt, step: step,
     dryFire: dryFire, shellIn: shellIn, pickupSnd: pickupSnd,
     planeFlyby: planeFlyby, crateThud: crateThud, stinger: stinger, fireCrackle: fireCrackle,
+    empPulse: empPulse, heliBeat: heliBeat,   /* v15.0 */
+    zoneTick: zoneTick, trainRumble: trainRumble, trainHorn: trainHorn,   /* v1.0k */
     setIndoors: setIndoors,
     explosion: explosion, impact: impact, flesh: flesh, hitmark: hitmark,
     whoosh: whoosh, bounce: bounce, pinPull: pinPull, flashRing: flashRing,

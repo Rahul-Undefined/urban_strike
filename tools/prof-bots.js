@@ -28,7 +28,6 @@ const now = () => clock;
 /* Copied from server.js mapData() deliberately — a profiler that resolves the
    map differently from the server is measuring a different game. */
 function mapPoints(mapId) {
-  if (mapId === 'rural' && CFG.MAPS_RURAL) return CFG.MAPS_RURAL;
   if (mapId === 'metro' && CFG.MAPS_METRO) return CFG.MAPS_METRO;
   return { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points };
 }

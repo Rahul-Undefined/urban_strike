@@ -30,12 +30,12 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
    for what happens when it drifts. */
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js",
  "public/src/config/loot.config.js","public/src/config/world.config.js",
- "public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js",
+ "public/src/config/maps-metro.config.js",
  "public/src/config/districts.config.js","public/src/config/index.js",
  "public/src/environment/merge.js","public/src/environment/world.js",
  "public/src/environment/districts-south.js","public/src/environment/districts-north.js",
  "public/src/environment/districts-outer.js","public/src/environment/deco.js",
- "public/src/environment/rural.js","public/src/environment/metro.js",
+ "public/src/environment/metro.js",
  "public/src/environment/access.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(f, "utf8"), ctx, { filename: f }));
 
@@ -110,51 +110,35 @@ function urbanLifts() {
        unreachable roof: where shortening it would orphan the top, it keeps its
        full height and gets a landing platform sized to the overshoot.
    Recorded with: node tools/verify-untouched.js --record */
+/* v15.0 (v1.0 release): RE-RECORDED for a DELIBERATE change to urban — the
+   outer ring (240 m map, four districts, four towers), 16 more spawns, 66 more
+   loot points, 4 more airdrop points. Reason written here, as the header asks. */
+/* v1.0d: RE-RECORDED for a DELIBERATE change to urban from Rahul's screenshots —
+   the Ship Harbour that had been built through the stadium is gone (quay deck
+   off the outfield, hull, crane, superstructure), the Training Ground stands
+   where it was, the Colony rear wall and the middle terrace house are out, the
+   stadium tiers are a storey taller, the bus helper is fixed. minimap 283 -> 247
+   because the hull and the harbour walls were landmark-sized shapes. */
 const BASELINE = {
-/* v10 BASELINE MOVE - the ship bridge switchback (districts-outer buildingAt).
-   Urban NET -2 colliders, +124 triangles from five geometry fixes, then -120 triangles and -14 DRAW CALLS from the sign atlas, from replacing one overshooting flight
-   plus a cantilevered landing with three shorter legs and three landings.
-   CASTERS AND DRAW CALLS ARE UNCHANGED at 62 and 112, which is the number that
-   actually matters - HANDOFF section 7 records Urban at ZERO caster headroom.
-   Recorded rather than silently rebaselined so the next reader can tell a
-   deliberate geometry change from a leak. */
-/* ===== BASELINE RE-RECORDED FOR v10.10 — a decision, not a convenience =====
-
-   URBAN: v10.19 CUT the lit windows the v10.12 pass added — 379 of their 444
-   panels were floating in open air on typed coordinates. draws are back to 98
-   and tris to 92,332, i.e. essentially the pre-v10.12 map.
-   `colliders` and `sum` are BYTE-IDENTICAL and casters is still 62. That is
-   the whole argument for re-recording: the collision hash did not move, so
-   nothing about how this map plays has changed. Lit windows and wet ground go
-   through still(), which never touches the collider set.
-
-   RURAL: the three river-bridge stair pairs climbed AWAY from the deck and
-   stopped 2.1 m short of it, so all six were unclimbable. Turned around and
-   given a third tread to land flush on 0.86. colliders 1066 -> 1072 is exactly
-   six flights gaining one tread; `sum` moves because tread positions moved.
-   Unlike urban, this one IS a gameplay change, and a deliberate one. */
-urban: {"colliders":3332,"sum":2336906291,"draws":98,"tris":92332,"casters":62,"lights":7,"minimap":236,"bound":100},
-  rural: {"colliders":1072,"sum":3781973245,"draws":32,"tris":54683,"casters":22,"lights":3,"minimap":210,"bound":150},
-  urbanData: {"loot":363,"spawns":44,"airdrops":10},
-  ruralData: {"loot":164,"spawns":50,"airdrops":12},
+  /* v1.0e: re-recorded — liftLintels() raised 67 doorway headers for the tall operator (see verify-fingerprint). */
+  /* v1.0e: re-recorded — the train's loop line, the station's third floor (see verify-fingerprint). */
+  /* v1.0i: ring signs moved off the train lane (see verify-fingerprint). */
+  urban: {"colliders":4454,"sum":2665002384,"draws":99,"tris":133120,"casters":62,"lights":7,"minimap":247,"bound":120},
+  urbanData: {"loot":430,"spawns":60,"airdrops":14},   /* v1.0e: +1 — the station roof point split into third-floor + roof */
   urbanLifts: "84.2:-25.5:1.6:0.25/3.25/6.25 | -76.2:-81.9:1.6:0.25/3.25/6.25"
 };
 // ---------------------------------------------------------------------------
 
 const actual = {
   urban: fingerprint("urban"),
-  rural: fingerprint("rural"),
   urbanData: dataFingerprint("urban"),
-  ruralData: dataFingerprint("MAPS_RURAL"),
   urbanLifts: urbanLifts()
 };
 
 if (process.argv.indexOf("--record") !== -1) {
   console.log("const BASELINE = {");
   console.log("  urban: " + JSON.stringify(actual.urban) + ",");
-  console.log("  rural: " + JSON.stringify(actual.rural) + ",");
   console.log("  urbanData: " + JSON.stringify(actual.urbanData) + ",");
-  console.log("  ruralData: " + JSON.stringify(actual.ruralData) + ",");
   console.log("  urbanLifts: " + JSON.stringify(actual.urbanLifts));
   console.log("};");
   process.exit(0);
@@ -163,7 +147,7 @@ if (process.argv.indexOf("--record") !== -1) {
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log("  PASS  " + m)) : (fail++, console.log("  FAIL  " + m)); };
 
-["urban", "rural"].forEach(map => {
+["urban"].forEach(map => {
   console.log("\n--- [" + map + "] untouched ---");
   const a = actual[map], b = BASELINE[map];
   Object.keys(b).forEach(k => {
@@ -173,7 +157,7 @@ const ok = (c, m) => { c ? (pass++, console.log("  PASS  " + m)) : (fail++, cons
 });
 
 console.log("\n--- shared config untouched ---");
-["urbanData", "ruralData"].forEach(k => {
+["urbanData"].forEach(k => {
   const a = actual[k], b = BASELINE[k];
   Object.keys(b).forEach(f =>
     ok(a[f] === b[f], k + "." + f + " unchanged (" + a[f] +

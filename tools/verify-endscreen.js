@@ -118,7 +118,7 @@ ctx.self = ctx; ctx.window = ctx; ctx.globalThis = ctx;
 vm.createContext(ctx);
 ['public/src/config/weapons.config.js', 'public/src/config/gameplay.config.js',
  'public/src/config/loot.config.js', 'public/src/config/world.config.js',
- 'public/src/config/maps-rural.config.js', 'public/src/config/maps-metro.config.js',
+ 'public/src/config/maps-metro.config.js',
  'public/src/config/index.js'
 ].forEach(f => vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f }));
 ctx.Net = new Proxy({}, { get: () => () => {} });
@@ -127,7 +127,7 @@ vm.runInContext(fs.readFileSync('public/src/ui/ui.js', 'utf8'), ctx, { filename:
 const payload = {
   reason: 'time', winnerId: 'p1', winnerTeam: null,
   players: [
-    { id: 'p1', name: 'Rahul',  kills: 26, deaths: 23, assists: 5, damage: 4011, bestStreak: 8, team: null, alive: true },
+    { id: 'p1', name: 'Rahul',  kills: 26, deaths: 23, assists: 5, damage: 4011, bestStreak: 8, mineKills: 3, team: null, alive: true },
     { id: 'p2', name: 'Bubka',  kills: 25, deaths: 24, assists: 4, damage: 3415, bestStreak: 4, team: null, alive: true },
     { id: 'p3', name: 'DD BI',  kills: 19, deaths: 19, assists: 4, damage: 2478, bestStreak: 3, team: null, alive: true },
     { id: 'p4', name: 'kaleen', kills: 18, deaths: 16, assists: 1, damage: 2665, bestStreak: 4, team: null, alive: true },
@@ -157,6 +157,47 @@ const L = cache['end-ins-left'], R = cache['end-ins-right'];
 const nL = L ? (L.innerHTML.match(/class="ins[ "]/g) || []).length : 0;
 const nR = R ? (R.innerHTML.match(/class="ins[ "]/g) || []).length : 0;
 ok(nL + nR === 9, 'all nine insight cards rendered [' + (nL + nR) + ']');
+/* v15.0 (fix 9): the MINES KPI — a column on the board and a tenth card. */
+{
+  const rows = (cache['end-body'] && cache['end-body'].children) || [];
+  const r1 = rows.map(r => r.innerHTML).find(h => /Rahul/.test(h)) || '';
+  ok(/<\/td><td>3<\/td><td>1\.13<\/td>$/.test(r1),
+    'end table: the MINES column sits between STREAK and K/D and reads the mineKills field [3]');
+  const r5 = rows.map(r => r.innerHTML).find(h => /Sandy/.test(h)) || '';
+  ok(/<\/td><td>0<\/td><td>0\.70<\/td>$/.test(r5),
+    'end table: a player with no mine kills reads 0, never undefined');
+  const html2 = fs.readFileSync('public/index.html', 'utf8');
+  ok(/<th>STREAK<\/th><th>MINES<\/th><th>K\/D<\/th>/.test(html2),
+    'end table header carries MINES in the same position as the row cell');
+  const hdrCells = (html2.match(/<table class="end-table"><thead><tr>(.*?)<\/tr>/) || ['', ''])[1];
+  const nTh = (hdrCells.match(/<th>/g) || []).length;
+  const nTd = (r1.match(/<td>/g) || []).length;
+  ok(nTh === nTd && nTh === 8, 'header and row agree on the column count [' + nTh + ' / ' + nTd + ']');
+  ok(/<td>TEAM ' \+ teamName\(t\) \+ '<\/td>(<td><\/td>){7}/.test(fs.readFileSync('public/src/ui/ui.js', 'utf8')),
+    'team header rows span the eight columns');
+  // the tenth card renders when the server sends it
+  const payload2 = JSON.parse(JSON.stringify(payload));
+  payload2.insights.mineKills = { name: 'Rahul', n: 3 };
+  let threw2 = null;
+  try { vm.runInContext('UI.showEnd(__d2, "p1", true);', Object.assign(ctx, { __d2: payload2 }), { filename: '<showEnd2>' }); }
+  catch (e) { threw2 = e.message; }
+  ok(!threw2, 'showEnd with a mineKills insight runs without throwing' + (threw2 ? ' [' + threw2 + ']' : ''));
+  const L2 = cache['end-ins-left'].innerHTML + cache['end-ins-right'].innerHTML;
+  ok(/MINEFIELD/.test(L2) && /3 mine kills/.test(L2), 'the MINEFIELD card renders from insights.mineKills');
+  ok((L2.match(/class="ins[ "]/g) || []).length === 10, 'ten cards when the server supplies all ten');
+  // server side: the KPI is counted where kills are credited and shipped in the roster
+  const combatSrc = fs.readFileSync('server/lib/combat.js', 'utf8');
+  ok(/if \(weapon === 'mine'\) attacker\.mineKills = \(attacker\.mineKills \| 0\) \+ 1;/.test(combatSrc),
+    'combat.js counts a mine kill at the one place kills are credited');
+  ok(/mineKills: p\.mineKills \| 0/.test(fs.readFileSync('server/lib/rooms.js', 'utf8')),
+    'lobbyPayload ships mineKills, so the end screen can read it');
+  ok(/out\.mineKills = miner/.test(fs.readFileSync('server.js', 'utf8')),
+    'buildInsights produces the minefield card');
+  // restore the original payload's board for the assertions that follow (the
+  // stub's innerHTML='' does not clear its children list, so do it by hand)
+  cache['end-body'].children.length = 0;
+  vm.runInContext('UI.showEnd(__d, "p1", true);', Object.assign(ctx, { __d: payload }), { filename: '<showEnd3>' });
+}
 ok(nL > 0 && nR > 0, 'cards land in BOTH columns, not one [' + nL + ' left / ' + nR + ' right]');
 ok(Math.abs(nL - nR) <= 1, 'the two columns stay level [' + nL + ' vs ' + nR + ']');
 ok(/MATCH INSIGHTS/.test(L ? L.innerHTML : ''), 'the section heading is rendered once');

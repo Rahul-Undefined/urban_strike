@@ -23,7 +23,7 @@ let THREE; try { THREE = require('three'); } catch (e) { console.log('SKIP: npm 
 function fakeCanvas(){const c={width:0,height:0,style:{}};const g=new Proxy({},{get:(t,k)=>{if(k==='canvas')return c;return function(){if(k==='createLinearGradient'||k==='createRadialGradient')return{addColorStop(){}};if(k==='measureText')return{width:10};if(k==='getImageData')return{data:new Uint8ClampedArray(4)};};},set:()=>true});c.getContext=()=>g;return c;}
 const ctx={console,Math,Date,JSON,Object,Array,Float32Array,Uint32Array,Uint16Array,Uint8ClampedArray,THREE,performance:{now:()=>Date.now()},document:{createElement:t=>(t==='canvas'?fakeCanvas():{style:{}})},navigator:{},setTimeout,setInterval,clearTimeout,clearInterval};
 ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
-['public/src/config/weapons.config.js','public/src/config/gameplay.config.js','public/src/config/loot.config.js','public/src/config/world.config.js','public/src/config/maps-rural.config.js','public/src/config/maps-metro.config.js','public/src/config/maps-killhouse.config.js','public/src/config/maps-sunsetrow.config.js','public/src/config/maps-small.config.js','public/src/config/maps-medium.config.js','public/src/config/districts.config.js','public/src/config/index.js','public/src/environment/merge.js','public/src/environment/world.js','public/src/environment/districts-south.js','public/src/environment/districts-north.js','public/src/environment/districts-outer.js','public/src/environment/deco.js','public/src/environment/rural.js','public/src/environment/metro.js','public/src/environment/killhouse.js','public/src/environment/sunsetrow.js','public/src/environment/smallmaps.js','public/src/environment/access.js']
+['public/src/config/weapons.config.js','public/src/config/gameplay.config.js','public/src/config/loot.config.js','public/src/config/world.config.js','public/src/config/maps-metro.config.js','public/src/config/maps-killhouse.config.js','public/src/config/maps-sunsetrow.config.js','public/src/config/maps-small.config.js','public/src/config/maps-medium.config.js','public/src/config/districts.config.js','public/src/config/index.js','public/src/environment/merge.js','public/src/environment/world.js','public/src/environment/districts-south.js','public/src/environment/districts-north.js','public/src/environment/districts-outer.js','public/src/environment/deco.js','public/src/environment/metro.js','public/src/environment/killhouse.js','public/src/environment/sunsetrow.js','public/src/environment/smallmaps.js','public/src/environment/access.js']
   .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }));
 
 const map = process.argv[2] || 'urban';
@@ -36,7 +36,7 @@ vm.runInContext('World.reset && World.isBuilt && World.isBuilt() && World.reset(
 const cols = ctx.World._colliders();
 const BOUND = ctx.World.BOUND;
 const CFG = ctx.CFG;
-const data = map === 'sunsetrow' ? CFG.MAPS_SUNSETROW : map === 'killhouse' ? CFG.MAPS_KILLHOUSE : map === 'metro' ? CFG.MAPS_METRO : map === 'rural' ? CFG.MAPS_RURAL
+const data = map === 'sunsetrow' ? CFG.MAPS_SUNSETROW : map === 'killhouse' ? CFG.MAPS_KILLHOUSE : map === 'metro' ? CFG.MAPS_METRO
   : { SPAWNS: CFG.SPAWNS, LOOT_POINTS: CFG.LOOT_POINTS };
 
 function overlap(x, y, z, hx, hy, hz, c) {
@@ -67,7 +67,10 @@ function supportAt(x, y, z) {
    produced rural spawns at -145 with their backs against the wall, which is a
    spawn you cannot retreat from. A 12% margin puts every generated point in
    playable ground. */
-const WALL = BOUND - Math.max(6, BOUND * 0.12);
+/* v15.0: urban's playable ground now runs to 4 m short of the wall — the ring
+   districts ARE the outer strip — so the margin is a fixed 4 m; the rural
+   12% rule went with rural. standingClear still refuses anything sealed in. */
+const WALL = BOUND - 4;
 const out = [];
 const existing = (kind === 'spawns' ? data.SPAWNS.map(s => [s[0], s[1]]) : data.LOOT_POINTS.map(p => [p[0], p[2]]));
 const MINSEP = kind === 'spawns' ? 11 : 6.5;

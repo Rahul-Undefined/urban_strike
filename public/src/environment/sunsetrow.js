@@ -21,7 +21,13 @@
   World._buildSunsetRow = function (T) {
     var seg = T.seg, box = T.box, cyl = T.cyl, M = T.M, rnd = T.rnd;
 
-    var HX = 32, HZ = 20;               // 64 x 40 m
+    /* v15.0 (fix 12): 64 x 40 -> 64 x 84 m. The original block (both houses,
+       the street, the bus) is untouched at z -20..20; two new END bands at
+       z 20..42 and -42..-20 each carry a pair of cottages behind the street,
+       a bus shelter on the road, cross walls and a parked car — so fifteen
+       players have four buildings and three bands to fight through instead of
+       two houses and a bus. Cap 8 -> 15, bound 34 -> 46 (world.config.js). */
+    var HX = 32, HZ = 42;               // 64 x 84 m
     var NCAST = { cast: false };
     var NBOTH = { cast: false, collide: false };
 
@@ -180,6 +186,49 @@
       boxx(s * 8.6, 0.45, -6.5, 0.8, 0.90, 0.8, M.railGreen);
       boxx(s * 8.6, 0.45, 6.5, 0.8, 0.90, 0.8, M.railGreen);
       cyl(s * 8.4, 0.35, 11.5, 0.16, 0.70, M.signalRed, NCAST);
+    });
+
+    /* ================= THE END BANDS (v15.0) ================= */
+    function cottage(cx, cz, s) {
+      var W = 9, D = 8, H = 3.0, TW = 0.18;
+      var x0 = cx - W / 2, x1 = cx + W / 2, z0 = cz - D / 2, z1 = cz + D / 2;
+      segx(x0, x1, 0, H, z0, z0 + TW, M.brick);
+      segx(x0, x1, 0, H, z1 - TW, z1, M.brick);
+      var inner = cx - s * (W / 2), outer = cx + s * (W / 2);
+      // street face: door in the middle, a window either side
+      segx(inner, inner + s * TW, 0, H, z0, cz - 3.0, M.brick);
+      segx(inner, inner + s * TW, 0, H, cz + 3.0, z1, M.brick);
+      segx(inner, inner + s * TW, 0, H, cz - 3.0, cz - 0.7, M.brick);
+      segx(inner, inner + s * TW, 0, H, cz + 0.7, cz + 3.0, M.brick);
+      segx(inner, inner + s * TW, 2.2, H, cz - 0.7, cz + 0.7, M.brick);
+      // back face: one window, no door — the cottage is a room with one way in
+      segx(outer, outer - s * TW, 0, H, z0, z1, M.brick);
+      [-2.2, 2.2].forEach(function (wz) {
+        boxx(inner + s * 0.09, 1.75, cz + wz, 0.10, 1.05, 1.3, M.shopGlass, NBOTH);
+        boxx(inner + s * 0.02, 1.05, cz + wz, 0.30, 0.10, 1.42, M.plaster, NCAST);
+      });
+      segx(x0 - 0.4, x1 + 0.4, H, H + 0.3, z0 - 0.4, z1 + 0.4, M.terracotta, NCAST);
+      boxx(cx + s * 2.0, 0.38, cz - 2.2, 1.6, 0.76, 0.9, M.wood);
+      boxx(cx - s * 2.2, 0.30, cz + 2.4, 1.0, 0.60, 1.8, M.cargoWood);
+    }
+    function shelter(cz) {
+      boxx(0, 0.09, cz, 6.0, 0.18, 2.6, M.concrete);
+      [-2.6, 2.6].forEach(function (px) { boxx(px, 1.4, cz - 1.0, 0.16, 2.6, 0.16, M.metal, NCAST); boxx(px, 1.4, cz + 1.0, 0.16, 2.6, 0.16, M.metal, NCAST); });
+      boxx(0, 2.75, cz, 6.4, 0.16, 3.0, M.roof, NCAST);
+      boxx(0, 0.45, cz, 5.0, 0.10, 0.5, M.wood);
+      boxx(0, 1.6, cz + 1.28, 6.0, 1.1, 0.06, M.shopGlass, NBOTH);
+    }
+    [-1, 1].forEach(function (q) {
+      pair(function (s) {
+        cottage(s * 21, q * 31, s);
+        // cross wall between the bands, with a gap, so the yards connect on foot
+        segx(s * 10, s * 17, 0, 1.05, q * 22 - 0.15, q * 22 + 0.15, M.brick);
+        segx(s * 20, s * 30, 0, 1.05, q * 22 - 0.15, q * 22 + 0.15, M.brick);
+        car(s * 13.5, q * 37.5, s * q * 0.35, M.carPaint[q > 0 ? 2 : 3]);
+        boxx(s * 28, 0.55, q * 24.5, 1.1, 1.10, 1.1, M.cargoWood);
+        boxx(s * 12, 0.42, q * 28, 1.0, 0.85, 1.6, M.foliage, NCAST);
+      });
+      shelter(q * 34);
     });
 
     /* ================= PERIMETER ================= */

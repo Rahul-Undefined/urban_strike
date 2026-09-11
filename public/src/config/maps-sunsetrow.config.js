@@ -61,7 +61,14 @@
 
       /* ---- behind the houses, near spawn: arm up, do not camp ---- */
       [-30, 0.55, -6, "g"], [30, 0.55, 6, "g"],
-      [-30, 0.55, 6, "g"], [30, 0.55, -6, "g"]
+      [-30, 0.55, 6, "g"], [30, 0.55, -6, "g"],
+      /* v15.0 (fix 12): the end bands — cottage interiors, the shelters, the
+         yards between. Ground points, proved by verify-map. */
+      [-21, 0.55, -31, "h"], [21, 0.55, -31, "h"], [-21, 0.55, 31, "h"], [21, 0.55, 31, "h"],
+      [0, 0.55, -34, "s"], [0, 0.55, 34, "s"],
+      [-14, 0.55, -26, "g"], [14, 0.55, -26, "g"], [-14, 0.55, 26, "g"], [14, 0.55, 26, "g"],
+      [-28, 0.55, -36, "g"], [28, 0.55, -36, "g"], [-28, 0.55, 36, "g"], [28, 0.55, 36, "g"],
+      [0, 0.55, -27, "g"], [0, 0.55, 27, "g"]
     ],
 
     /* SPAWNS — [x, z, facing]. Both sets sit BEHIND their own house, so the
@@ -90,12 +97,14 @@
       [-30.5, -6.5, 1.5708, "a"], [-30.5, -3.2, 1.5708, "a"], [-30.5, 0, 1.5708, "a"],
       [-30.5, 3.2, 1.5708, "a"], [-30.5, 6.5, 1.5708, "a"],
       [-29.0, -12, 1.5708, "a"], [-29.0, 12, 1.5708, "a"],
+      [-30.5, -31, 1.5708, "a"], [-30.5, 31, 1.5708, "a"],   // v15.0: behind the west cottages
       // east — team B, behind House B
       [30.5, -6.5, -1.5708, "b"], [30.5, -3.2, -1.5708, "b"], [30.5, 0, -1.5708, "b"],
       [30.5, 3.2, -1.5708, "b"], [30.5, 6.5, -1.5708, "b"],
       [29.0, -12, -1.5708, "b"], [29.0, 12, -1.5708, "b"],
+      [30.5, -31, -1.5708, "b"], [30.5, 31, -1.5708, "b"],   // v15.0: behind the east cottages
       // neutral yard ends, used by free-for-all
-      [0, -17.5, 0, "n"], [0, 17.5, 3.1416, "n"]
+      [-3, -40, 0, "n"], [3, -40, 0, "n"], [-3, 40, 3.1416, "n"], [3, 40, 3.1416, "n"]   /* v15.0: the street ends */
     ],
 
     /* AIRDROP_POINTS — [x, z]. Open sky only: nothing under a roof, nothing
@@ -106,7 +115,8 @@
        Three misses out of six on a hand-placed list is the argument for
        generating them, not eyeballing them. */
     AIRDROP_POINTS: [
-      [0, -17], [0, 17], [-5.5, 3.0], [5.5, -3.0], [-24, -12.5], [24, 12.5]
+      [0, -17], [0, 17], [-5.5, 3.0], [5.5, -3.0], [-24, -12.5], [24, 12.5],
+      [0, -27], [0, 27]   /* v15.0: the street between the bands */
     ]
   };
 

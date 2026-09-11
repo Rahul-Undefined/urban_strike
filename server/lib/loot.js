@@ -13,19 +13,13 @@ function initPickups(room) {
      CFG.WEAPON_ORDER indices, viewmodels and the bot kits keep resolving, but
      it never spawns for a player. This is the ONE place the cull is applied,
      so a retired weapon cannot leak back in through a second code path. */
-  /* v14.0 BOT MODE — THE POOL WALL, applied at the same single choke point
-     as the retired-cull, for the same reason: one place, no second path.
-     A botmode room's weapon rolls see ONLY pool:'botmode' guns; every other
-     room sees NONE of them. Non-weapon items (heals, ammo, armor, gear) have
-     no pool and stay shared — consumables are the "genuinely safe utilities"
-     the brief allows. */
-  const bmRoom = !!(CFG.MODES[room.settings.mode] && CFG.MODES[room.settings.mode].botmode);
+  /* v15.0: `bigOnly` items (shield, remote) never roll on an arena — small OR
+     medium — and `special` items never roll anywhere (the remote is PLANTED,
+     see plantRemote). Same choke point as the cull and the pool wall. */
+  const arena = !!(CFG.isArena && CFG.isArena(room.settings.map || 'urban'));
   for (const t in items) {
-    if (items[t].drop || items[t].retired) continue;
-    if (items[t].kind === 'weapon') {
-      const inPool = !!(CFG.WEAPONS[items[t].w] && CFG.WEAPONS[items[t].w].pool === 'botmode');
-      if (bmRoom !== inPool) continue;
-    }
+    if (items[t].drop || items[t].retired || items[t].special) continue;
+    if (items[t].bigOnly && arena) continue;
     byRar[items[t].rar].push(t);
   }
   room.nextLootId = 0;
@@ -37,8 +31,11 @@ function initPickups(room) {
     if (roll >= w.empty) {
       roll -= w.empty;
       const rar = roll < w.c ? 'c' : (roll < w.c + w.r ? 'r' : 'l');
-      const pool = byRar[rar];
-      t = pool[Math.floor(Math.random() * pool.length)];
+      /* v1.0b: an item with `cls` rolls only on points of that class (the
+         flamethrower lives indoors — 'h'). Filtered per point, so the rarity
+         odds of every other item are untouched on every other point. */
+      const pool = byRar[rar].filter(k => !items[k].cls || items[k].cls === pt[3]);
+      t = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
     }
     if (!t) return;
     if (t === 'armor3') hasA3 = true;
@@ -52,12 +49,47 @@ function initPickups(room) {
     if (cand.length) {
       // guarantee one legendary weapon on the ground, but only from the
       // normal-spawn set — the airdrop pool now contains a drop-exclusive gun
-      const legW = byRar.l.filter(k => items[k].kind === 'weapon');
-      if (legW.length) cand[Math.floor(Math.random() * cand.length)].t = legW[Math.floor(Math.random() * legW.length)];
+      const spot = cand[Math.floor(Math.random() * cand.length)];
+      const legW = byRar.l.filter(k => items[k].kind === 'weapon' && (!items[k].cls || items[k].cls === spot.cls));
+      if (legW.length) spot.t = legW[Math.floor(Math.random() * legW.length)];
     }
   }
+  plantRemote(room);
 }
-function pickupList(room) { return room.pickups.map(pk => ({ id: pk.id, t: pk.t, p: pk.pos, active: pk.active })); }
+
+/* ===== v15.0 - ONE HIDDEN REMOTE PER BIG-MAP MATCH (fix 10) =====
+   Rahul: "Add a remote in the house, can be anywhere on the map, random every
+   time... only 1 in the map and location unknown... only in the big maps...
+   hidden so that it is not easy to find and use."
+
+   Planted as an ordinary pickup record — so tryCollect, the pickup event and
+   the client mesh registry all handle it with zero new paths — but flagged
+   `hidden: 1` so the client draws no rarity ring and no bob, and placed on a
+   random INTERIOR/ELEVATED point ('h' class: inside buildings, on floors and
+   roofs) rather than a street. `noRespawn`: there is one, and once it is
+   taken the room is told that much and nothing more. Its own id so the client
+   can render it before the match table would otherwise reach it. */
+function plantRemote(room) {
+  if (!CFG.LOOT_ITEMS.remote) return;
+  if (CFG.isArena && CFG.isArena(room.settings.map || 'urban')) return;
+  const pts = mapData(room).LOOT_POINTS.filter(pt => pt[3] === 'h');
+  const pool = pts.length ? pts : mapData(room).LOOT_POINTS;
+  if (!pool.length) return;
+  const pt = pool[Math.floor(Math.random() * pool.length)];
+  /* Offset a little so it never sits exactly on top of the loot that rolled
+     on the same point — two meshes in one spot hide each other. */
+  const a = Math.random() * Math.PI * 2;
+  room.pickups.push({ id: room.nextLootId++, t: 'remote',
+    pos: [pt[0] + Math.cos(a) * 0.6, pt[1] - 0.25, pt[2] + Math.sin(a) * 0.6],
+    cls: 's', active: true, respawnAt: 0, noRespawn: true, hidden: 1 });
+}
+function pickupList(room) {
+  return room.pickups.map(pk => {
+    const o = { id: pk.id, t: pk.t, p: pk.pos, active: pk.active };
+    if (pk.hidden) o.h = 1;   /* v15.0: no ring, no bob — the remote hides */
+    return o;
+  });
+}
 
 function tryCollect(room, p) {
   if (!p.alive) return;
@@ -94,10 +126,6 @@ function tryCollect(room, p) {
       else { p.exW[it.w] = 1; grant = { t: 'weapon', w: it.w }; }
     } else if (it.kind === 'gear') {
       if (it.g === 'drone') {
-        /* v9.4: a drone pickup in a bot mode is dead weight — drones are
-           disabled there — so it is left on the ground rather than collected,
-           which is more honest than granting a count the player cannot spend. */
-        if (CFG.botsAllowed(room.settings.mode)) continue;
         if ((p.drones | 0) >= CFG.GEAR.drone.maxCarry) continue;
         p.drones = Math.min(CFG.GEAR.drone.maxCarry, (p.drones | 0) + it.n);
         grant = { t: 'gear', g: 'drone', n: p.drones };
@@ -113,6 +141,31 @@ function tryCollect(room, p) {
         if ((p.mines | 0) >= CFG.GEAR.mine.maxCarry) continue;
         p.mines = Math.min(CFG.GEAR.mine.maxCarry, (p.mines | 0) + it.n);
         grant = { t: 'gear', g: 'mine', n: p.mines };
+      } else if (it.g === 'emp') {
+        /* v15.0 (fix 1): a carried count, like drones — per match, never
+           refilled by dying. Left on the floor when the player is full. */
+        if ((p.emps | 0) >= CFG.GEAR.emp.maxCarry) continue;
+        p.emps = Math.min(CFG.GEAR.emp.maxCarry, (p.emps | 0) + it.n);
+        grant = { t: 'gear', g: 'emp', n: p.emps };
+      } else if (it.g === 'shield') {
+        /* v15.0 (fix 5): one shield at a time, per life. A second one while
+           the first still stands is left for someone who needs it. */
+        if ((p.shieldHp | 0) > 0) continue;
+        p.shieldHp = CFG.GEAR.shield.hp;
+        grant = { t: 'gear', g: 'shield', n: p.shieldHp };
+        io.to(room.code).emit('shield', { id: p.id, hp: p.shieldHp, max: CFG.GEAR.shield.hp });
+      } else if (it.g === 'c4') {
+        /* v1.0b: a carried count like the EMP; per match. */
+        if ((p.c4 | 0) >= CFG.GEAR.c4.maxCarry) continue;
+        p.c4 = Math.min(CFG.GEAR.c4.maxCarry, (p.c4 | 0) + it.n);
+        grant = { t: 'gear', g: 'c4', n: p.c4 };
+      } else if (it.g === 'remote') {
+        /* v15.0 (fix 10): a flag, not a count. The room learns THAT it was
+           found — tension without a name — never WHO holds it. */
+        if (p.hasRemote) continue;
+        p.hasRemote = true;
+        grant = { t: 'gear', g: 'remote', n: 1 };
+        io.to(room.code).emit('toast', { msg: 'The strike remote has been found' });
       } else {
         grant = { t: 'gear', g: 'molotov', n: it.n };
       }
@@ -127,7 +180,7 @@ function tryCollect(room, p) {
     }
     pk.active = false;
     pk.respawnAt = pk.noRespawn ? Infinity : now() + CFG.LOOT_RESPAWN[it.rar] * 1000;
-    io.to(p.id).emit('vitals', { hp: Math.round(p.hp), lv: p.armorLvl, du: Math.round(p.armorDur) });
+    io.to(p.id).emit('vitals', { hp: Math.round(p.hp), lv: p.armorLvl, du: Math.round(p.armorDur), sh: Math.round(p.shieldHp || 0) });
     if (grant) io.to(p.id).emit('grant', grant);
     io.to(room.code).emit('pickup', { id: pk.id, by: p.id, t: pk.t, gone: pk.noRespawn ? 1 : 0 });
     /* v10.9: A COLLECTED AIRDROP ITEM IS GONE. RETIRE IT.
@@ -173,19 +226,16 @@ function dropCrate(room) {
   /* v8.18: guard. A map shipping the wrong key name should degrade to "no
      airdrops on this map", not throw inside a timer and take the match with
      it. metro did exactly that until the config key was fixed. */
-  const pts = mapData(room).AIRDROP_POINTS || [];
+  let pts = mapData(room).AIRDROP_POINTS || [];
   if (!pts.length) return;
+  /* v1.0j: in Urban Zone the crate lands inside the circle as it will stand when
+     the crate arrives — a drop outside the zone is a drop nobody can take. */
+  if (room.zone && ctx.zoneCratePoints) pts = ctx.zoneCratePoints(room, pts, CFG.AIRDROP.fallSec) || pts;
   const pt = pts[Math.floor(Math.random() * pts.length)];
   io.to(room.code).emit('airdrop', { x: pt[0], z: pt[1], landAt: now() + CFG.AIRDROP.fallSec * 1000 });
   room.dropFall = setTimeout(() => {
     if (room.state !== 'playing') return;
-    /* v14.0: airdrops obey the same wall — a botmode room's drop draws from
-       the bm pool; a multiplayer drop can never carry a bm gun (the config
-       pool list contains none, but the filter holds even if someone edits it). */
-    const bmRoom2 = !!(CFG.MODES[room.settings.mode] && CFG.MODES[room.settings.mode].botmode);
-    const wp = bmRoom2
-      ? Object.keys(CFG.WEAPONS).filter(k => CFG.WEAPONS[k].pool === 'botmode')
-      : CFG.AIRDROP.weaponPool.filter(k => !(CFG.WEAPONS[k] && CFG.WEAPONS[k].pool === 'botmode'));
+    const wp = CFG.AIRDROP.weaponPool;
     const ap = CFG.AIRDROP.attPool;
     const types = [wp[(Math.random() * wp.length) | 0], 'armor3', 'medkit', ap[(Math.random() * ap.length) | 0]];
     /* v9.4: two extra RANDOM slots on top of the guaranteed four. Unknown items
@@ -193,7 +243,9 @@ function dropCrate(room) {
        Drawn without replacement so a crate never contains the same exotic
        twice, and skipped entirely if a pool entry has gone stale, because a
        crate that spawns `undefined` is a pickup nobody can collect. */
-    const pool = (CFG.AIRDROP.exoticPool || []).filter(t => CFG.LOOT_ITEMS[t]);
+    const arenaC = !!(CFG.isArena && CFG.isArena(room.settings.map || 'urban'));
+    const pool = (CFG.AIRDROP.exoticPool || []).filter(t => CFG.LOOT_ITEMS[t]
+      && !(CFG.LOOT_ITEMS[t].bigOnly && arenaC) && !CFG.LOOT_ITEMS[t].special);   /* v15.0: bigOnly stays off arena crates */
     for (let e = 0; e < (CFG.AIRDROP.extraCount || 0) && pool.length; e++) {
       types.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
     }

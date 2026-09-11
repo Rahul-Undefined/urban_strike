@@ -47,6 +47,36 @@ var Net = (function () {
   var scene = null;
   var P = CFG.PLAYER;
 
+  /* ===== v15.0 - THE CLOCK COMES BACK WITH THE SEAT (fix 7) =====
+     Rahul: "when someone is disconnected and reconnected, timer shows 00:00
+     and it doesn't show the live countdown."
+
+     Every reconnect door — token rejoin, name reclaim, transport recovery —
+     already CARRIED startedAt, serverNow and settings from the server, and
+     every one of them dropped the clock on the floor: only `matchStart` ever
+     wrote match.startedAt / match.serverOffset. After a page refresh those
+     sat at their boot values (startedAt 0), so remain = max(0, 0 + 15 min -
+     now) = 0 and the HUD read 0:00 for the rest of the match while the
+     server's own clock ran on. The lobby push that follows a rejoin restores
+     minutes/killTarget/mode, which is why everything ELSE on the HUD looked
+     right — the one field nobody re-sent was the one the timer derives from.
+
+     One helper, three callers, so no door can forget again. Tolerant of a
+     payload without a clock (createRoom/joinRoom answers) — it writes only
+     what it is given. */
+  function absorbMatchClock(res) {
+    if (!res) return;
+    if (typeof res.startedAt === 'number' && res.startedAt > 0) match.startedAt = res.startedAt;
+    if (typeof res.serverNow === 'number' && res.serverNow > 0) match.serverOffset = res.serverNow - Date.now();
+    if (res.settings) {
+      if (res.settings.killTarget !== undefined) match.killTarget = res.settings.killTarget;
+      if (res.settings.minutes !== undefined) match.minutes = res.settings.minutes;
+      match.mode = res.settings.mode || match.mode || 'ffa';
+      match.enemyIntel = !!res.settings.enemyIntel;
+    }
+    if (res.team !== undefined) myTeam = res.team || null;
+  }
+
   function init(sceneRef) { scene = sceneRef; }
 
   function connect() {
@@ -194,11 +224,19 @@ var Net = (function () {
   }
 
   var visorOn = false;
+  /* v15.0 (fix 2): the visor marks ENEMIES. A remote is an ally when it shares
+     the local side; in a mode without sides nobody is, so everyone shows. The
+     flag lives in CFG.GEAR.visor so the reading can be reversed in one word. */
+  function visorShows(r) {
+    if (!visorOn) return false;
+    if (CFG.GEAR && CFG.GEAR.visor && CFG.GEAR.visor.showAllies) return true;
+    return !(myTeam && r && r.team === myTeam);
+  }
   function setVisor(on) {
     visorOn = !!on;
     for (var id in remotes) {
       var r = remotes[id];
-      if (r && r.av && r.av.xray) r.av.xray.visible = visorOn;
+      if (r && r.av && r.av.xray) r.av.xray.visible = visorShows(r);
     }
     if (UI.setVisorHud) UI.setVisorHud(visorOn);
   }
@@ -206,12 +244,37 @@ var Net = (function () {
 
   /* v10.10: a player who joins or respawns while you are wearing a visor must
      be visible through walls immediately. setVisor() only walks the avatars
-     that existed when it ran, so the flag is re-read here at build time. */
-  function applyVisorTo(av) { if (av && av.xray) av.xray.visible = visorOn; }
+     that existed when it ran, so the flag is re-read here at build time.
+     v15.0: side is unknown at build time (team arrives with the snapshot), so
+     this starts it OFF and updateRemotes settles it per frame from r.team. */
+  function applyVisorTo(av) { if (av && av.xray) av.xray.visible = false; }
+
+  /* v15.0 (fix 5): a translucent slab the bearer holds in front of the body.
+     Built lazily on the first shield, parented to the rig so it follows pose
+     and yaw; one shared material for every remote (v10.9's rule). */
+  var SHIELD_MAT = null;
+  function setRemoteShield(r, on) {
+    if (!r || !r.av) return;
+    if (!r.shieldMesh) {
+      if (!on) return;
+      if (!SHIELD_MAT) SHIELD_MAT = new THREE.MeshLambertMaterial({ color: 0x3a5a7c, transparent: true, opacity: 0.72 });
+      var m = new THREE.Mesh(new THREE.BoxGeometry(0.72, 1.05, 0.06), SHIELD_MAT);
+      m.position.set(0.05, -0.05, 0.42);   // rig faces local +Z (see the v8.36 note in updateRemotes)
+      var slit = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.8 }));
+      slit.position.set(0, 0.3, 0.04); m.add(slit);
+      r.av.group.add(m);
+      r.shieldMesh = m;
+    }
+    r.shieldMesh.visible = !!on;
+  }
 
   function removeRemote(id) {
     var r = remotes[id];
-    if (r) { scene.remove(r.av.group); Avatars.disposeAvatar(r.av); delete remotes[id]; }
+    if (r) {
+      if (r.shieldMesh) { r.av.group.remove(r.shieldMesh); r.shieldMesh.geometry.dispose(); r.shieldMesh = null; }
+      scene.remove(r.av.group); Avatars.disposeAvatar(r.av); delete remotes[id];
+    }
   }
 
   function bind(s) {
@@ -248,7 +311,10 @@ var Net = (function () {
         var ex = remotes[p.id];
         if (ex && ex.color !== p.color) removeRemote(p.id); // team recolor -> rebuild avatar
         var r2 = ensureRemote(p);
-        if (r2) r2.team = p.team || null;
+        if (r2) {
+          r2.team = p.team || null;
+          if (p.shield !== undefined) { r2.shieldHp = p.shield | 0; setRemoteShield(r2, r2.shieldHp > 0); }   // v15.0
+        }
       });
       for (var id in remotes) {
         if (!d.players.some(function (p) { return p.id === id; })) removeRemote(id);
@@ -274,12 +340,17 @@ var Net = (function () {
        keyframe the server forced. */
     s.on('recovered', function (d) {
       UI.toast('Reconnected');
+      absorbMatchClock(d);             // v15.0 (fix 7): the clock rides every reconnect door
+      if (d && d.zone !== undefined && typeof Zone !== 'undefined') Zone.set(d.zone);   /* v1.0j */
       if (d && typeof d.mines === 'number' && Weapons.setMines) Weapons.setMines(d.mines);
+      if (d && typeof d.emps === 'number' && Weapons.setEmps) Weapons.setEmps(d.emps);
+      if (d && d.remote !== undefined && Weapons.setRemote) Weapons.setRemote(d.remote);
       if (d && d.state === 'playing' && phase === 'playing' &&
           typeof Game !== 'undefined' && Game.onRecovered) Game.onRecovered(d);
     });
 
     s.on('matchStart', function (d) {
+      if (typeof Zone !== 'undefined') Zone.set(d && d.zone ? d.zone : null);   /* v1.0j: the circle schedule, or none */
       phase = 'playing';
       match.killTarget = d.settings.killTarget;
       match.minutes = d.settings.minutes;
@@ -391,9 +462,82 @@ var Net = (function () {
       }
     });
 
-    s.on('vitals', function (d) { UI.setVitals(d.hp, d.lv, d.du); });
+    s.on('vitals', function (d) { UI.setVitals(d.hp, d.lv, d.du); if (d.sh !== undefined && UI.setShield) UI.setShield(d.sh, CFG.GEAR.shield.hp); });
     /* v10.10 NUKE — killhouse killstreak. The client is told it HAS one; it
        never decides that for itself. See server/lib/nuke.js. */
+    /* ===== v15.0 - SHIELD STATE (fix 5) =====
+       Server-owned hp, broadcast on every change (pickup, hit, break, death).
+       Not in the snapshot codec — the wire format stays untouched — because it
+       changes on events, not every tick. For a remote it drives a translucent
+       slab on the avatar so everyone can read WHY he is not dying. */
+    s.on('shield', function (d) {
+      if (!d) return;
+      if (d.id === myIdV) {
+        if (UI.setShield) UI.setShield(d.hp, d.max || CFG.GEAR.shield.hp);
+        if (d.broke) UI.toast(d.sniper ? 'Shield SHATTERED by a sniper round' : 'Shield destroyed', true);
+        return;
+      }
+      var r = remotes[d.id];
+      if (!r) return;
+      r.shieldHp = d.hp | 0;
+      setRemoteShield(r, r.shieldHp > 0);
+    });
+    /* ===== v15.0 - EMP BLAST (fix 1) ===== the server lists the mines it fried */
+    s.on('empBlast', function (d) {
+      if (!d) return;
+      (d.mines || []).forEach(function (m) { Pickups.mineBoom(m.id); });
+      FX.empBlast(d);
+      if (AudioSys.empPulse) AudioSys.empPulse(new THREE.Vector3(d.x, d.y, d.z));
+    });
+    /* ===== v15.0 - AIR STRIKE (fix 10) ===== */
+    s.on('heliStrike', function (d) {
+      if (!d) return;
+      var mineCall = d.by === myIdV;
+      var ally = !!(myTeam && d.team && d.team === myTeam);
+      UI.announce(mineCall ? 'STRIKE INBOUND' : (ally ? 'FRIENDLY AIR STRIKE INBOUND' : 'ENEMY AIR STRIKE INBOUND'));
+      UI.toast((d.byName || 'Someone') + ' called in a helicopter \u00b7 ' + (d.approach || 5) + ' s', !mineCall && !ally);
+      FX.heliStrike(d);
+      if (AudioSys.heliBeat) AudioSys.heliBeat((d.approach || 5) + 2); else AudioSys.planeFlyby();
+      if (!mineCall && !ally && FX.damageFlash) FX.damageFlash(0.2);
+    });
+    s.on('heliDone', function (d) {
+      if (!d) return;
+      if (d.by === myIdV) UI.toast('Air strike \u00b7 ' + (d.n | 0) + ' eliminated');
+      FX.shake(0.7);
+    });
+    /* ===== v1.0b - ROCKET LADDER (big maps) / FIRE ZONES / C4 ===== */
+    s.on('rocketReady', function (d) { if (UI.rocketReady) UI.rocketReady(d); });
+    s.on('rocketLost', function (d) { if (UI.rocketLost) UI.rocketLost(d && d.reason); });
+    s.on('rocketStrike', function (d) {
+      if (!d) return;
+      FX.rocketStrike(d);
+      AudioSys.explosion(new THREE.Vector3(d.x, d.y, d.z), true);
+      if (d.by === myIdV) UI.toast('ROCKET STRIKE \u00b7 direct hit');
+      else UI.announce((d.byName || 'Someone') + ' called a rocket strike');
+    });
+    s.on('fireZone', function (d) {
+      if (!d) return;
+      FX.fireZone(d);
+      if (AudioSys.fireCrackle) AudioSys.fireCrackle(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.dur || 10);
+      if (d.by === myIdV) UI.toast('Fire zone \u00b7 ' + (d.r | 0) + ' m for ' + (d.dur | 0) + ' s');
+      else UI.toast('FIRE \u2014 ' + (d.r | 0) + ' m burning', true);
+    });
+    s.on('fireZoneEnd', function (d) { if (d) FX.fireZoneEnd(d.id); });
+    s.on('bombPlanted', function (d) {
+      if (!d) return;
+      Pickups.bombPlanted(d);
+      if (d.by !== myIdV) UI.toast('C4 PLANTED nearby \u2014 ' + (d.fuse || 5) + ' s', true);
+      if (AudioSys.empPulse) AudioSys.empPulse(new THREE.Vector3(d.p[0], d.p[1], d.p[2]));
+    });
+    s.on('bombBoom', function (d) {
+      if (!d) return;
+      Pickups.bombBoom(d.id);
+      var p = new THREE.Vector3(d.p[0], d.p[1], d.p[2]);
+      FX.explosion(p, 8);
+      AudioSys.explosion(p, true);
+      FX.shake(Math.max(0.2, 0.9 - p.distanceTo(PlayerCtl.pos) * 0.02));
+    });
+    s.on('zoneNotice', function (d) { if (typeof Zone !== 'undefined') Zone.notice(d); });   /* v1.0j */
     s.on('nukeReady', function (d) { UI.nukeReady(d); });
     s.on('nukeLost', function (d) { UI.nukeLost(d && d.reason); });
     s.on('nukeIncoming', function (d) { UI.nukeIncoming(d); FX.nukeStart(d); });
@@ -430,6 +574,7 @@ var Net = (function () {
         var r = remotes[d.id];
         if (r) {
           r.buf = []; r.alive = true;
+          r.shieldHp = 0; setRemoteShield(r, false);   // v15.0: the shield is per life
           r.renderPos.set(d.pos[0], d.pos[1], d.pos[2]);
           /* v11.0: a spawn is a genuine snap — never glide into it. */
           if (r.smooth) r.smooth.copy(r.renderPos); else r.smooth = new THREE.Vector3().copy(r.renderPos);
@@ -441,7 +586,9 @@ var Net = (function () {
 
     s.on('damaged', function (d) {
       UI.setVitals(d.hp, d.lv, d.du);
-      FX.damageFlash(0.3);
+      if (d.sh !== undefined && UI.setShield) UI.setShield(d.sh, CFG.GEAR.shield.hp);   // v15.0 (fix 5)
+      FX.damageFlash(d.zone ? 0.18 : d.dmg === 0 ? 0.12 : 0.3);   // a shield hit stings less; the zone bleeds
+      if (d.zone && AudioSys.zoneTick) AudioSys.zoneTick();          /* v1.0k: the heartbeat */
       FX.shake(0.12);
       if (d.fromPos) {
         var dx = d.fromPos[0] - PlayerCtl.pos.x, dz = d.fromPos[2] - PlayerCtl.pos.z;
@@ -483,6 +630,7 @@ var Net = (function () {
            does not linger for a second after you are dead. */
         setVisor(false);
         UI.nukeLost('died');
+        if (UI.rocketLost) UI.rocketLost('died');   /* v1.0b: the server also says so; belt and braces */
         AudioSys.death(); Game.onLocalDeath(d);
       }
       else {
@@ -498,6 +646,7 @@ var Net = (function () {
     });
 
     s.on('backToLobby', function () {
+      if (typeof Zone !== 'undefined') Zone.dispose();   /* v1.0j */
       phase = 'lobby';
       Game.onBackToLobby();
     });
@@ -540,6 +689,8 @@ var Net = (function () {
         phase = (res.inProgress || res.state === 'playing') ? 'playing' : 'lobby';
         roomCode = res.code;
         if (res.token) saveSession(res.code, res.token);   // v9.11
+        if (res.id) myIdV = res.id;
+        absorbMatchClock(res);           // v15.0 (fix 7): reclaimSeat answers carry startedAt/serverNow
       }
       cb(res);
     };
@@ -562,9 +713,14 @@ var Net = (function () {
         myIdV = res.id; roomCode = res.code;
         phase = res.state === 'playing' ? 'playing' : 'lobby';
         saveSession(res.code, res.token);
+        absorbMatchClock(res);             // v15.0 (fix 7): startedAt + serverOffset, or the HUD reads 0:00
+        if (res.zone !== undefined && typeof Zone !== 'undefined') Zone.set(res.zone);   /* v1.0j */
         snapCache = {}; slotToId = {};     // the old wire slots died with the old id
         if (res.pickups) Pickups.init(res.pickups);
         if (typeof res.mines === 'number' && Weapons.setMines) Weapons.setMines(res.mines);
+        if (typeof res.emps === 'number' && Weapons.setEmps) Weapons.setEmps(res.emps);      // v15.0
+        if (res.remote !== undefined && Weapons.setRemote) Weapons.setRemote(res.remote);   // v15.0
+        if (typeof res.c4 === 'number' && Weapons.setC4) Weapons.setC4(res.c4);                 // v1.0b
         UI.toast('Reconnected' + (res.team ? ' \u00b7 TEAM ' + (UI.teamName ? UI.teamName(res.team) : res.team).toUpperCase() : ''));
         if (typeof Game !== 'undefined' && Game.onRejoin) Game.onRejoin(res);
       } else {
@@ -910,6 +1066,13 @@ var Net = (function () {
          it. Belt and braces with the isFinite check in poseAvatar. */
       if (isFinite(r.smooth.y)) r.av.baseY = r.smooth.y;
 
+      /* v15.0 (fix 2): the through-wall marker follows the SIDE, settled here
+         every frame because r.team arrives with the snapshot, after the avatar
+         was built. One boolean write per visible remote — no allocation. */
+      if (r.av.xray) {
+        var xv = visorShows(r);
+        if (r.av.xray.visible !== xv) r.av.xray.visible = xv;
+      }
       /* Equipment visibility straight off the snapshot. setGear only touches
          .visible when a tier actually changes, so this is free per frame. */
       var hl = b.hl | 0, al = b.lv | 0;
@@ -1016,6 +1179,13 @@ var Net = (function () {
     spot: function (yaw, pitch) { if (socket) socket.emit('spot', { yaw: yaw, pitch: pitch }); },
     ping: function (kind, x, y, z) { if (socket) socket.emit('ping', { k: kind, x: x, y: y, z: z }); },
     launchDrone: function (cb) { if (socket) socket.emit('launchDrone', {}, cb); },
+    /* v15.0: the EMP and the strike remote. Requests only; the server decides. */
+    useEmp: function (cb) { if (socket) socket.emit('useEmp', {}, cb); },
+    /* v1.0b */
+    launchRocket: function (cb) { if (socket) socket.emit('launchRocket', {}, cb); },
+    plantBomb: function (p, cb) { if (socket) socket.emit('plantBomb', { p: p }, cb); },
+    dropItem: function (d, cb) { if (socket) socket.emit('dropItem', d, cb); },
+    callStrike: function (cb) { if (socket) socket.emit('callStrike', {}, cb); },
     droneHit: function (id, dmg) { if (socket) socket.emit('droneHit', { id: id, dmg: dmg }); },
     setPlayerTeam: function (id, team) { if (socket) socket.emit('setPlayerTeam', { id: id, team: team }); },
     shuffleTeams: function () { if (socket) socket.emit('shuffleTeams'); },   // v8.37

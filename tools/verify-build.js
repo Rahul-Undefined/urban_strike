@@ -45,7 +45,7 @@ const files = [
      CFG.MAPS_RURAL undefined and produced 510 colliders where the browser
      produces 525 -- 15 objects short, on the gate whose entire job is to
      reproduce the browser build. Keep this list identical to index.html. */
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+  "public/src/config/maps-metro.config.js", "public/src/config/maps-killhouse.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js",
   "public/src/environment/merge.js",
   "public/src/environment/world.js",
@@ -53,8 +53,7 @@ const files = [
   "public/src/environment/districts-north.js",
   "public/src/environment/districts-outer.js",
   "public/src/environment/deco.js",
-  "public/src/environment/rural.js",
-  "public/src/environment/metro.js",
+  "public/src/environment/metro.js", "public/src/environment/killhouse.js",
   "public/src/environment/access.js"
 ];
 for (const f of files) {
@@ -84,13 +83,13 @@ try {
       var scene2 = new THREE.Scene();
       // intentionally rebuild on a fresh scene after reset: exercises disposal
       World.reset();
-      World.buildMap(scene2, "rural");
+      World.buildMap(scene2, "killhouse");
       var meshes = 0;
       scene2.traverse(function (o) { if (o.isMesh) meshes++; });
       return { map: World.builtMap, meshes: meshes, colliders: World.colliders.length };
     })();
-  `, ctx, { filename: "<rural-run>" });
-  console.log("RURAL BUILD OK: " + JSON.stringify(rural));
+  `, ctx, { filename: "<killhouse-run>" });
+  console.log("KILLHOUSE BUILD OK: " + JSON.stringify(rural));
   ctx.__m3 = "metro";
   const metro = vm.runInContext(`(function(){var sc=new THREE.Scene();World.reset();World.buildMap(sc,__m3);
     var g=null;for(var i=0;i<sc.children.length;i++)if(sc.children[i].isGroup)g=sc.children[i];
@@ -98,7 +97,7 @@ try {
     return {map:World.builtMap,meshes:m,colliders:World._colliders().length};})();`, ctx, { filename: "<metro>" });
   console.log("METRO BUILD OK: " + JSON.stringify(metro));
   if (metro.map !== "metro" || metro.colliders < 50) { console.log("metro build unhealthy"); process.exit(1); }
-  if (rural.map !== "rural" || rural.colliders < 300) { console.log("rural build unhealthy"); process.exit(1); }
+  if (rural.map !== "killhouse" || rural.colliders < 60) { console.log("killhouse build unhealthy"); process.exit(1); }
 
   /* ---- coplanar-ground gate (added v4.8) -------------------------------
      Two large horizontal surfaces whose top faces share the same Y AND whose
@@ -106,7 +105,7 @@ try {
      shipped this way in v4.7 because _initPart1 laid the Urban ground (top
      y=0) under the rural grass (top y=0). Fail the build if it comes back. */
   ctx.CFG.RENDER.mergeStatic = false;   // keep source meshes addressable
-  for (const map of ["urban", "rural", "metro"]) {
+  for (const map of ["urban", "metro"]) {
     ctx.__m = map;
     const bad = vm.runInContext(`
       (function () {

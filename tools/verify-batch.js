@@ -61,12 +61,11 @@ vm.createContext(ctx);
 const FILES = [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/maps-rural.config.js", "public/src/config/maps-metro.config.js",
+  "public/src/config/maps-metro.config.js",
   "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
-  "public/src/environment/deco.js", "public/src/environment/rural.js",
-  "public/src/environment/metro.js", "public/src/environment/access.js"
+  "public/src/environment/deco.js", "public/src/environment/metro.js", "public/src/environment/access.js"
 ];
 for (const f of FILES) {
   try { vm.runInContext(fs.readFileSync(f, "utf8"), ctx, { filename: f }); }
@@ -101,24 +100,32 @@ for (const f of FILES) {
    handful of batches no matter how much geometry goes in.
 
    Urban and metro budgets are untouched. */
-const BUDGET = { urban: 115, rural: 40, metro: 45 };
-const CAST_BUDGET = { urban: 62, rural: 26, metro: 22 };
-const TRI_BUDGET = { urban: 120000, rural: 70000, metro: 26000 };
+const BUDGET = { urban: 115, metro: 45 };
+const CAST_BUDGET = { urban: 62, metro: 22 };
+/* v15.0 (fix 4): urban 120,000 -> 136,000, THE SPEND ITEMIZED. The map grew
+   from 200 to 240 m across: four control towers (the South Terminal tower
+   ported, ~3,500 tris each with both stair routes and stringers = ~14,000),
+   plus the ring boulevard and four strip districts (~9,000 after every
+   decorative cylinder that could be a box became one). Measured 129,064 on the
+   first green build; 136,000 leaves ~7,000 of headroom, the same proportion the
+   old ceiling left the old map. A ratchet moves for a deliberate expansion
+   with its cost written down — never for drift. */
+const TRI_BUDGET = { urban: 136000, metro: 26000 };
 /* v9.0: rural 200 -> 215. Hollow Ridge is 1.9x the area of the old map and
    its cover is drystone walls, which the minimap draws as shapes. Measured at
    210. Urban's 320 is untouched. */
-const MM_BUDGET = { urban: 320, rural: 215, metro: 260 };
+const MM_BUDGET = { urban: 320, metro: 260 };
 /* Urban ran 10 lights before v7.5 (3 scene + 7 point). Three point lights were
    removed: two street lamps and one open-air construction work light, all
    replaced by emissive geometry. The four that remain light ENCLOSED volumes
    (warehouse, apartment, sunken tunnel, depot roof) that no emissive prop can
    fake. Budget is set at the current count on purpose: adding a point light to
    Urban should be a deliberate decision, not a drift. */
-const LIGHT_BUDGET = { urban: 7, rural: 6, metro: 6 };
+const LIGHT_BUDGET = { urban: 7, metro: 6 };
 
 const VERBOSE = process.argv.indexOf("-v") !== -1;
 
-for (const map of ["urban", "rural", "metro"]) {
+for (const map of ["urban", "metro"]) {
   console.log("\n--- [" + map + "] batching ---");
   ctx.__m = map;
   const r = vm.runInContext(`

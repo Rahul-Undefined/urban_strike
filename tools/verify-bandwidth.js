@@ -135,7 +135,40 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
    loot labels. One spare KB against gzip jitter, same margin every previous
    raise carried. The v10.14 note still names the real fix: per-map builder
    loading. */
-const GZ_BUDGET_KB = 392;
+/* ===== v15.0 / v1.0 — 392 -> 408 KB. THE RISE IS CONTENT, STATED PLAINLY =====
+   Measured 406 gzipped, AFTER Rural (builder + config, ~9 KB gz) left the
+   payload. What the net ~14 KB bought, itemized: the Urban outer ring — four
+   districts, the reusable control tower, the palette pass (~8 KB gz in
+   districts-outer.js); Killhouse's deck and corridors, the small-map outer
+   rings and the two medium-map landmark sets (~3.5 KB gz); the EMP, shield
+   and strike-remote items across weapons/net/pickups/effects/ui (~2.5 KB gz).
+   Two spare KB against gzip jitter, the same margin every previous raise
+   carried. Bandwidth impact, stated plainly: ~13,380 -> ~12,900 fresh loads
+   per 5 GB. The v10.14 note still names the real fix: per-map builder
+   loading — with nine builders shipping to every player it is now the single
+   largest thing on this list. */
+/* ===== v1.0b — 408 -> 416 KB. THE RISE IS FOUR WEAPON SYSTEMS, STATED PLAINLY =====
+   Measured 412 gzipped. What ~4 KB gz bought: the flamethrower (viewmodel,
+   third-person tube, fire-stream FX, the 20 m fire-zone renderer), the C4
+   charge (slot, plant ray, planted-brick visual), the big-map rocket ladder
+   (banner + FX) and the K/L drop keys, across weapons/net/pickups/effects/
+   ui. Two spare KB against gzip jitter, as every raise before it. Bandwidth
+   impact: ~12,900 -> ~12,700 fresh loads per 5 GB. Per-map builder loading
+   remains the real fix and is still the largest item on this list. */
+/* ===== v1.0c — 416 -> 420 KB. THE QUALITY SYSTEM, STATED PLAINLY =====
+   Measured 416.4 gzipped: src/core/quality.js (five tiers, the hysteresis
+   scaler, the pause-panel preference) and its hooks in game.js/ui.js, ~2 KB gz.
+   Two spare KB, as always. ~12,600 fresh loads per 5 GB. */
+/* ===== v1.0e — 420 -> 426 KB. THE TRAIN, THE TALL OPERATOR, HOLD BREATH =====
+   Measured 420.3 gzipped: src/environment/train.js (schedule, loco + three
+   coaches, the rider floor), the controller's moving-floor hook, the shared
+   path math and lintel pass in world.js, the breath meter. Two spare KB, as
+   always. ~12,400 fresh loads per 5 GB. */
+/* ===== v1.0j — 426 -> 432 KB. URBAN ZONE, STATED PLAINLY =====
+   Measured 427 gzipped: src/environment/zone.js (wall, banner, outside warning),
+   the M-map/radar overlays, the shared schedule math in world.config.js and the
+   mode/category entries. ~3 KB gz. Two spare KB, as every raise before it. */
+const GZ_BUDGET_KB = 432;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');
@@ -232,9 +265,10 @@ console.log('\n--- bots do NOT broadcast gunfire ---');
    match, nearest-first, AUDIO ONLY, no raycast and no tracer - measured with a
    frame-time percentile on real hardware before it ships. */
 ok(!/botFired/.test(serverSrc), 'the server does not broadcast bot gunfire');
+/* v1.0d: bots.js is the geometry harness now — it fires nothing at all. */
 const botsSrc = fs.readFileSync(path.join(ROOT, 'server/lib/bots.js'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-ok(!/botFired/.test(botsSrc), 'and bots.js does not call it');
+ok(!/botFired|botShoot|addBots/.test(botsSrc), 'and bots.js fields no bot to fire it');
 
 console.log('\n--- nothing else was added to the per-frame client path ---');
 /* The rule this whole section exists to protect: anything that runs once per
