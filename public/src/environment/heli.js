@@ -21,6 +21,13 @@ var Heli = (function () {
   var bailUntil = 0, wasAboard = false, boardToastAt = 0, rotorSoundAt = 0;
   var CAB_HX = 1.4, CAB_HZ = 1.25, CAB_H = 2.1;
   var sign = null, signCtx = null, signTex = null, signText = '', signAt = 0, promptOn = false;
+  /* v1.0n: the last state the server sent, kept ACROSS init/dispose. The client
+     rebuilds the whole map on matchStart (Game.onMatchStart → buildWorld →
+     Heli.init) a moment AFTER net.js has already applied `heliState` from the
+     matchStart payload; build 13 dropped that state in dispose(), so the machine
+     came back invisible with no prompt — Rahul's "helicopter pura vanish".
+     Now init() re-applies whatever the server last said. */
+  var pending = null;
 
   function serverNow() {
     var m = (typeof Net !== 'undefined' && Net.getMatch) ? Net.getMatch() : null;
@@ -118,7 +125,7 @@ var Heli = (function () {
     group = build();
     scene.add(group);
     sign = buildSign(); scene.add(sign); signText = '';
-    set(null);
+    set(pending);                                   // re-apply the server's last word (see `pending`)
     return true;
   }
   function dispose() {
@@ -130,6 +137,7 @@ var Heli = (function () {
     if (typeof UI !== 'undefined' && UI.setHeliHud) UI.setHeliHud(null);
   }
   function set(st) {
+    pending = st || null;
     var prevState = state ? state.state : null;
     state = st || null;
     if (state && prevState !== state.state) state.liftIn = 0;
@@ -246,7 +254,8 @@ var Heli = (function () {
     return { t: t, point: _hit.clone().applyMatrix4(group.matrixWorld) };
   }
 
-  return { init: init, dispose: dispose, set: set, hpUpdate: hpUpdate, update: update, floorAt: floorAt, bail: bail, rayHit: rayHit,
+  function clear() { pending = null; set(null); }   /* v1.0n: leaving the match forgets the machine */
+  return { init: init, dispose: dispose, set: set, clear: clear, hpUpdate: hpUpdate, update: update, floorAt: floorAt, bail: bail, rayHit: rayHit,
     canBoard: canBoard, board: board, onSeat: onSeat,
     active: active, isRiding: isRiding, pose: function () { return pose; }, state: function () { return state; } };
 })();

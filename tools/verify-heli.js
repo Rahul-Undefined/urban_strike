@@ -111,6 +111,46 @@ ok(room.heli.state === 'gone', 'not a second early');
 T0 = room.heli.respawnAt + 1; Srv.tick(room);
 ok(room.heli.state === 'pad' && room.heli.hp === H.hp && room.heli.riders.length === 0, 'and it is back on the pad, full health, empty');
 
+console.log('--- the client, in the order the game really runs ---');
+/* v1.0n: net.js applies matchStart.heli, THEN Game.onMatchStart rebuilds the
+   map (Heli.init). Build 13 lost the state in that rebuild and the machine
+   vanished. Load the real client module and run that order. */
+{
+  const vm = require('vm'), THREE = require('three');
+  function fakeCanvas() { const c = { width: 0, height: 0, style: {} }; const g = new Proxy({}, { get: (t, k) => { if (k === 'canvas') return c; return function () { if (k === 'createLinearGradient' || k === 'createRadialGradient') return { addColorStop() {} }; if (k === 'measureText') return { width: 10 }; if (k === 'getImageData') return { data: new Uint8ClampedArray(4) }; }; }, set: () => true }); c.getContext = () => g; return c; }
+  const els = {};
+  const cx = { console, Math, Date, JSON, Object, Array, String, Number, Boolean, Error, isFinite, isNaN, parseInt, parseFloat, Float32Array, Uint32Array, Uint16Array, Uint8ClampedArray, THREE,
+    performance: { now: () => Date.now() },
+    document: { createElement: t => (t === 'canvas' ? fakeCanvas() : { style: {}, classList: { add() {}, remove() {}, toggle() {} } }), getElementById: id => (els[id] = els[id] || { style: {}, classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } }, textContent: '' }), addEventListener() {} },
+    navigator: {}, setTimeout, setInterval, clearTimeout, clearInterval };
+  cx.self = cx; cx.window = cx; cx.globalThis = cx; vm.createContext(cx);
+  const bsrc = fs.readFileSync(path.join(__dirname, '..', 'server/lib/bots.js'), 'utf8');
+  const files = [...bsrc.matchAll(/'(public\/src\/[^']+\.js)'/g)].map(m => m[1]).filter((v, i, a) => a.indexOf(v) === i);
+  files.forEach(f => vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), cx, { filename: f }));
+  ['public/src/environment/train.js', 'public/src/environment/heli.js', 'public/src/player/controller.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), cx, { filename: f }));
+  const r = vm.runInContext(`(function(){
+    var sc = new THREE.Scene(); World.reset(); World.buildMap(sc, 'urban');
+    Net = { getMatch: function(){ return { startedAt: 1000, serverOffset: 0 }; }, getMyId: function(){ return 'me'; }, boardHeli: function(cb){ cb({ ok: true, aboard: true }); } };
+    UI = { toast: function(){}, setHeliHud: function(){}, announce: function(){} }; AudioSys = {};
+    Heli.set({ state: 'pad', t0: Date.now(), hp: 900, riders: [], respawnAt: 0 });   // matchStart.heli, applied by net.js first
+    Heli.init(sc, 'urban');                                                          // Game.onMatchStart -> buildWorld -> Heli.init
+    Heli.init(sc, 'urban');                                                          // a watchdog rebuild does it again
+    Heli.update(0.016);
+    var act = Heli.active(), pose = Heli.pose();
+    PlayerCtl.alive = true; PlayerCtl.spawnAt([CFG.HELI.pad[0] + 3, CFG.PLAYER.standH / 2 + 0.3, CFG.HELI.pad[1]], 0);
+    Heli.update(0.016);
+    var near = Heli.canBoard(), boarded = Heli.board();
+    var far = (function(){ PlayerCtl.spawnAt([CFG.HELI.pad[0] + 30, 1, CFG.HELI.pad[1]], 0); Heli.update(0.016); return Heli.canBoard(); })();
+    Heli.set({ state: 'gone', t0: Date.now(), hp: 0, riders: [], respawnAt: Date.now() + 100000 }); Heli.update(0.016);
+    var goneActive = Heli.active();
+    return { act: act, pose: pose, near: near, boarded: boarded, far: far, goneActive: goneActive };
+  })()`, cx);
+  ok(r.act === true && r.pose && Math.abs(r.pose.x - H.pad[0]) < 0.01, 'the machine is on the pad after the map rebuild that follows matchStart');
+  ok(r.near === true && r.boarded === true, 'near the pad the client offers boarding and Z boards');
+  ok(r.far === false, '30 m away it does not');
+  ok(r.goneActive === false, 'when the server says gone, the machine is gone (the board counts down)');
+}
+
 console.log('--- the wiring ---');
 const srv = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 ok(/Heli\.tick\(room\)/.test(srv) && /Heli\.reset\(room\)/.test(srv) && /heli: heliSnap/.test(srv) && /socket\.on\('hitHeli'/.test(srv) && /socket\.on\('boardHeli'/.test(srv), 'server ticks, resets, ships, takes hits and boards');

@@ -666,6 +666,7 @@ var Net = (function () {
 
     s.on('backToLobby', function () {
       if (typeof Zone !== 'undefined') Zone.dispose();   /* v1.0j */
+      if (typeof Heli !== 'undefined' && Heli.clear) Heli.clear();   /* v1.0n */
       phase = 'lobby';
       Game.onBackToLobby();
     });
