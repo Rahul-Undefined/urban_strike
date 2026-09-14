@@ -173,7 +173,7 @@ module.exports = function initHazards(ctx) {
     let P = null;
     try { P = ctx.trainPath(mapId); } catch (e) { P = null; }
     if (!P) return;
-    if (!room.trainSched) room.trainSched = CFG.trainSchedule(cfg, P.length, P.sAtWaypoint(cfg.stationAt || 0) + (cfg.stopOffset || 0));
+    if (!room.trainSched) room.trainSched = CFG.trainSchedule(cfg, P.length, CFG.trainStops(cfg, P));   /* v1.0l */
     const t = now();
     const h = CFG.trainHeadAt(room.trainSched, (t - room.startedAt) / 1000);
     const cars = CFG.trainCars(cfg), FLOOR = cfg.floor || 1.05, half = CFG.PLAYER.standH / 2;

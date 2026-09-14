@@ -39,6 +39,7 @@ const MODULES = new Set(['CFG', 'THREE', 'World', 'Avatars', 'Net', 'UI', 'FX', 
   'Quality',  // v1.0c: quality tiers + adaptive scaler (src/core/quality.js)
   'Train',    // v1.0e: the moving train (src/environment/train.js)
   'Zone',     // v1.0j: Urban Zone's circle (src/environment/zone.js)
+  'Heli',     // v1.0l: the helicopter (src/environment/heli.js)
   'PlayerCtl', 'Weapons', 'WeaponModels', 'Pickups', 'Minimap', 'DevHUD',
   'Game', 'Input', 'Districts', 'Access', 'Deco', 'Merge', 'MetroMap', 'RuralMap', 'io',
   'StaticMerge',

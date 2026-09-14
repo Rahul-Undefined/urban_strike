@@ -29,9 +29,9 @@
     { id: 'southfield', name: 'SOUTHFIELD PARK',
       x0: -120, x1: 120, z0: 106, z1: 120, sign: [-20, 99.6, 3.1416], tone: 'sage' },
     { id: 'eastmarket', name: 'EAST MARKET',
-      x0: 106, x1: 120, z0: -106, z1: 106, sign: [99.6, -14, -1.5708], tone: 'dustyPink' },
+      x0: 106, x1: 120, z0: -106, z1: 106, sign: [99.6, 40, -1.5708], tone: 'dustyPink' },   /* v1.0l: clear of EAST HALT */
     { id: 'westbarracks', name: 'WEST BARRACKS',
-      x0: -120, x1: -106, z0: -106, z1: 106, sign: [-99.6, -6, 1.5708], tone: 'facadeOlive' },
+      x0: -120, x1: -106, z0: -106, z1: 106, sign: [-99.6, -40, 1.5708], tone: 'facadeOlive' },   /* v1.0l: clear of WEST HALT */
 
     { id: 'construction', name: 'CONSTRUCTION SITE',
       x0: -20, x1: 20, z0: -70, z1: -52, sign: [0, -51.0, 0], tone: 'rust' },

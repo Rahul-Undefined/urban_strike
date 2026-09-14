@@ -1,3 +1,67 @@
+# v1.0 (build 12) — SQUADS IN THE ZONE, FOUR HALTS, THE HELICOPTER (2026-09-14)
+
+Same release name, same `1.0.0`. Tagged `v1.0l`.
+
+**Urban Zone as a team.** Rahul: "solo or as a team, rest of the gameplay the
+same." Two squad variants beside Solo in the Urban Zone category — Duos
+(7 × 2) and Squads (5 × 3) — the Last Stand squad shapes with the circle: one
+life each, a squad wins when it is the last side breathing. Same schedule,
+same bleed, same drops, same map lock.
+
+**The train stops on all four sides.** Rahul: "stop at multiple locations, a
+small station on each side." The schedule is a chain of legs now (dwell,
+accelerate, cruise, brake) between any number of stops, shared by client and
+server as before; a leg too short for cruise becomes a triangle profile. Four
+stops a lap: Sector 7 Central (north) and three HALTS on the inner lane of the
+boulevard — EAST HALT, SOUTH HALT, WEST HALT — each a 2.7 m platform at coach-
+floor height with three steps at both ends, a shelter on four posts, a bench, a
+name board and a lamp, built from the same config the stops read so platform
+and train cannot disagree. A lap is ~139 s. The two district signs that stood
+where the east and west halts went moved along the lane.
+
+**The helicopter.** Rahul's brief, point by point:
+  - *an area where a helicopter is* — the HELIPAD on open ground by the
+    airport (a raised disc, an H, edge lights), and the machine sits on it:
+    cabin with a floor and hip rails, open sides, glass nose, tail boom and fin,
+    skids, a spinning main rotor and tail rotor, a searchlight;
+  - *someone boards, it starts* — stand in the cabin on the pad for 3 s; it
+    climbs to 32 m, flies a filleted loop over the city at 14 m/s, comes back
+    over the pad, descends, unloads;
+  - *the player can shoot players below* — the cabin floor is a moving floor
+    (the train's contract); you stand, aim and fire as anywhere else;
+  - *real looking, natural physics, players don't fall out on their own* — the
+    fuselage banks into every turn in proportion to how fast the heading
+    changes and noses down out of the climb; the cabin is walled on all four
+    sides while airborne, so nobody falls out by accident: the ONLY way out in
+    the air is to jump (Space), which is a choice;
+  - *not every gun damages it; snipers little, assault rifles well; not five
+    rounds and down; fun to bring down* — 900 hull points, damage by weapon
+    class: assault and full-auto 100% (an AK needs 18 hits — a magazine and a
+    half), semi-auto 75%, snipers 30% (an AWM needs 28), rockets a flat 150
+    (six), knives/drones/EMP nothing; a health bar for everyone while it exists;
+  - *if a player falls out — instant kill, the opponent gets the point, the
+    helicopter comes back to its place* — a rider found outside the cabin in
+    the air is dead, tagged "fell from the helicopter", credited to whoever hit
+    the machine within the last 10 s (else nobody); with nobody left aboard the
+    machine goes home;
+  - *destroyed — instant kill* — at zero hull every rider dies, credited to the
+    shooter, "SHOT DOWN THE HELICOPTER" across the room, a fireball;
+  - *a new one every 5 minutes on the same spot if used* — 300 s after
+    take-off it is back on the pad, full health, empty.
+  Everything about WHERE it is is a function of the server's take-off time
+  (`heliState`), so every client draws the same machine and the server can
+  judge who is aboard, who fell and whether a shot could have reached it.
+  Urban only; every other map is unchanged. The M map shows it as a cross.
+
+Gates: `verify-heli` 39/0 (route over the map and through the pad, smooth
+climb/descent, damage classes and the no-five-round rule across every weapon,
+boarding, mid-flight riding, a fall credited to the shooter, shoot-down with two
+aboard, the 300 s respawn to the second); `verify-train` 53/0 (four stops, one
+per side, each halt spanning its coaches); `verify-zone` 41/0 (squads).
+Fingerprints re-recorded for the halts and the pad. Board: 48 gates, 45 green,
+the same three documented reds. Live: `test.js` 325/0 (an Urban match ships the
+helicopter on the pad with matchStart).
+
 # v1.0 (build 11) — SOUND AND COUNT (2026-09-11)
 
 Same release name, same `1.0.0`. Tagged `v1.0k`. Polish on the two newest

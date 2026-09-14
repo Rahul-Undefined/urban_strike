@@ -168,7 +168,12 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
    Measured 427 gzipped: src/environment/zone.js (wall, banner, outside warning),
    the M-map/radar overlays, the shared schedule math in world.config.js and the
    mode/category entries. ~3 KB gz. Two spare KB, as every raise before it. */
-const GZ_BUDGET_KB = 432;
+/* ===== v1.0l — 432 -> 440 KB. THE HELICOPTER, STATED PLAINLY =====
+   Measured 437 gzipped: src/environment/heli.js (the machine, its pose,
+   cabin floor and hit box), the halts and helipad in districts-outer.js, the
+   multi-stop schedule in world.config.js, the HUD and the zone squad variants.
+   ~5 KB gz. Two spare KB, as every raise before it. */
+const GZ_BUDGET_KB = 440;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

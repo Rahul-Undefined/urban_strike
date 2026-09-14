@@ -347,6 +347,8 @@
     heli: { label: 'Air Strike' },
     train: { label: 'Train' },   /* v1.0f: the kill-feed tag for being run over */
     zone: { label: 'The Zone' },  /* v1.0j: the kill-feed tag for bleeding out outside the circle */
+    helidown: { label: 'Helicopter' },   /* v1.0l: shot down with the helicopter */
+    helifall: { label: 'Fell from the helicopter' },
     /* ===== v1.0e - HOLD BREATH (Rahul: "when scoped, if the player clicks
        Shift it should slow the shakiness of the scope for a few seconds so
        the player can mark and shoot properly") =====

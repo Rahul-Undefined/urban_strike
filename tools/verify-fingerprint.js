@@ -200,7 +200,11 @@ const BASELINE = {
   /* v1.0i: the four ring-district signs moved from the boulevard's outer edge
      (the train's lane) to its inner edge — same count, different coordinates,
      so only the signatures move. */
-  urban: { colliders: 4454, draws: 99, tris: 133120, casters: 62, lights: 7, bound: 120, colSig: -1196154746, meshSig: -800629700 },
+  /* v1.0l: three HALTS on the inner boulevard lane (platform, steps, shelter,
+     bench, board, lamp each) and the HELIPAD by the airport (disc, H, edge
+     lights, post): +44 colliders, +1.2k tris, no new material/cast pair
+     (draws 99, casters 62 unchanged). minimap 247 -> 250: the platforms. */
+  urban: { colliders: 4498, draws: 99, tris: 134332, casters: 62, lights: 7, bound: 120, colSig: -1374038366, meshSig: 1268776079 },
   /* v10.10: rural moved on purpose. The three river-bridge stair pairs climbed
      AWAY from the deck and finished 2.1 m short of it, so all six were
      unclimbable (verify-climb, "reached 0.05m"). Turned around and extended

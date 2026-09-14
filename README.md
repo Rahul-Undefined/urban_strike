@@ -8,6 +8,12 @@ doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
 every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
 count toward the next strike; Shift while scoped holds your breath.
 
+**v1.0 build 12 — THE HELICOPTER.** Board it on the airport pad (3 s), fly a
+loop over the city and shoot from the cabin; 900 hull points, assault rifles
+hurt it, snipers barely, rockets a lot; fall out and you die, shoot it down and
+everyone aboard dies; back on the pad five minutes later. The train now stops
+at four halts, one per side. Urban Zone can be played Solo, Duos or Squads.
+
 **v1.0 build 10 — URBAN ZONE.** A new category: one life on Urban, the circle
 closes minute by minute from 2:00 to 12:00 (random every match), 10% health a
 second outside it, drops land inside, the train still runs. Red is danger,

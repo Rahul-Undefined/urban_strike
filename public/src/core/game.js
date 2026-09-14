@@ -152,7 +152,7 @@ var Game = (function () {
         World.reset();
         World.buildMap(scene, currentMapId || 'urban');
         if (window.Quality) Quality.setSun(World.getSun());   /* v1.0c: the restored context gets the tier's shadow map */
-        if (window.Train) { Train.init(scene, currentMapId || 'urban'); PlayerCtl.setPlatform(Train.isActive() ? Train.floorAt : null); }   /* v1.0e */
+        if (window.Train) { Train.init(scene, currentMapId || 'urban'); if (window.Heli) Heli.init(scene, currentMapId || 'urban'); PlayerCtl.setPlatform(platformProbe); }   /* v1.0e / v1.0l */
         Minimap.invalidate(); Minimap.init();
         Pickups.build(scene);
         UI.toast('Graphics restored');
@@ -321,6 +321,8 @@ var Game = (function () {
          every other map, and for every player who has not earned one, N falls
          through to whatever else wants it. UI.nukeToggleAim reports whether it
          consumed the key rather than this line guessing. */
+      /* v1.0l: jumping out of the flying helicopter is a choice — the floor lets go */
+      if (e.code === 'Space' && window.Heli && Heli.isRiding && Heli.isRiding()) Heli.bail();
       if (e.code === 'KeyN' && UI.nukeToggleAim && UI.nukeToggleAim()) { e.preventDefault(); return; }
       /* v1.0b: on a big map N is the ROCKET. The two rewards refuse each other's
          maps on the server, so only one of these lines can ever consume N. */
@@ -474,6 +476,13 @@ var Game = (function () {
     }, { passive: true });
   }
 
+  /* v1.0l: one moving-floor probe for the controller — the train's, then the
+     helicopter's. Whichever has the player answers. */
+  function platformProbe(pos, halfY) {
+    var r = (window.Train && Train.isActive()) ? Train.floorAt(pos, halfY) : null;
+    if (!r && window.Heli && Heli.active()) r = Heli.floorAt(pos, halfY);
+    return r;
+  }
   function clearInput() {
     for (var k in Input) Input[k] = false;
     Weapons.setTrigger(false);
@@ -568,7 +577,7 @@ var Game = (function () {
       UI.setLoadingMap((CFG.MAPS[mapId] || CFG.MAPS.urban).label);
       World.buildMap(scene, mapId);
       if (window.Quality) Quality.setSun(World.getSun());   /* v1.0c: the tier's shadow map applies to the new sun */
-      if (window.Train) { Train.init(scene, mapId); PlayerCtl.setPlatform(Train.isActive() ? Train.floorAt : null); }   /* v1.0e */
+      if (window.Train) { Train.init(scene, mapId); if (window.Heli) Heli.init(scene, mapId); PlayerCtl.setPlatform(platformProbe); }   /* v1.0e / v1.0l */
       Minimap.invalidate();
       Weapons.matchReset();
       Pickups.build(scene);
@@ -591,7 +600,7 @@ var Game = (function () {
         World.reset();
         World.buildMap(scene, currentMapId);
         if (window.Quality) Quality.setSun(World.getSun());   /* v1.0c */
-        if (window.Train) { Train.init(scene, currentMapId); PlayerCtl.setPlatform(Train.isActive() ? Train.floorAt : null); }   /* v1.0e */
+        if (window.Train) { Train.init(scene, currentMapId); if (window.Heli) Heli.init(scene, currentMapId); PlayerCtl.setPlatform(platformProbe); }   /* v1.0e / v1.0l */
         Minimap.invalidate();
         Weapons.matchReset();
         Pickups.build(scene);
@@ -878,6 +887,7 @@ var Game = (function () {
 
     if (window.Train && World.isBuilt()) step('train', function () { Train.update(dt); });   /* v1.0e: the train runs in the lobby too (deterministic clock) */
     if (window.Zone && World.isBuilt()) step('zone', function () { Zone.update(dt); });      /* v1.0j: the circle */
+    if (window.Heli && World.isBuilt()) step('heli', function () { Heli.update(dt); });      /* v1.0l: the helicopter */
     if (playing && World.isBuilt()) {
       if (Weapons.setBreath) Weapons.setBreath(Input.sprint);   /* v1.0e: Shift while scoped = hold breath */
       var wu = step('weapons', function () { return Weapons.update(dt); });

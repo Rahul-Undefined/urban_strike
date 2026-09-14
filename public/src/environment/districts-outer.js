@@ -1885,6 +1885,61 @@ World._buildPart6 = function (T) {
     }
   }
 
+  /* ---- THE HALTS (v1.0l) -----------------------------------------------
+     Rahul: "make the train stop at multiple locations, a small station on all
+     four sides." Sector 7 Central is the north stop; these are the other three,
+     on the INNER lane of the boulevard beside the track: a 2.7 m platform at
+     coach-floor height (1.05), three 0.35 m steps at each end, a shelter roof
+     on four posts, a bench, a name board. The outer edge sits 0.2 m clear of
+     the coaches' boarding steps. Built from CFG.TRAIN.urban.stations so the
+     schedule's stops and the platforms cannot disagree. */
+  if (CFG.TRAIN && CFG.TRAIN.urban && CFG.TRAIN.urban.stations) {
+    CFG.TRAIN.urban.stations.forEach(function (st) {
+      var PLAT = 1.05, W0 = 98.3, W1 = 101.0;
+      var along = st.side === 'S';                                  // platform runs along x on the south side
+      function P(a0, a1, y0, y1, w0, w1, mat, o) {                  // a/b along the platform, w across (98.3..101 or mirrored)
+        if (st.side === 'E') return segx(w0, w1, y0, y1, a0, a1, mat, o);
+        if (st.side === 'W') return segx(-w1, -w0, y0, y1, a0, a1, mat, o);
+        return segx(a0, a1, y0, y1, w0, w1, mat, o);               // S
+      }
+      P(st.a, st.b, 0, PLAT, W0, W1, M.concrete);                   // the deck
+      P(st.a, st.b, PLAT, PLAT + 0.05, W0 + 0.1, W1 - 0.1, M.roadPaintY, NBOTH);   // edge paint
+      [[st.a - 3.6, st.a], [st.b, st.b + 3.6]].forEach(function (r) {   // three steps at each end
+        for (var k = 0; k < 3; k++) {
+          var u0 = r[0] + k * 1.2, u1 = u0 + 1.2;
+          var far = r[0] < st.a;                                    // the low step is farthest from the deck
+          var h = far ? 0.35 * (k + 1) : 0.35 * (3 - k);
+          P(u0, u1, 0, h, W0, W1, M.concrete);
+        }
+      });
+      var mid = (st.a + st.b) / 2;
+      [[mid - 4, W0 + 0.35], [mid + 4, W0 + 0.35], [mid - 4, W1 - 0.35], [mid + 4, W1 - 0.35]].forEach(function (c) {
+        P(c[0] - 0.14, c[0] + 0.14, PLAT, PLAT + 2.9, c[1] - 0.14, c[1] + 0.14, M.metal);
+      });
+      P(mid - 4.6, mid + 4.6, PLAT + 2.9, PLAT + 3.15, W0 - 0.2, W1 + 0.2, M.roof);
+      P(mid - 1.0, mid + 1.0, PLAT, PLAT + 0.5, W0 + 0.4, W0 + 1.0, M.wood);      // bench
+      P(mid - 4.14, mid + 4.14, PLAT + 2.1, PLAT + 2.8, W0 + 0.28, W0 + 0.42, M.facadeIndigo, { collide: false });   // name board, spanning the two inner posts
+      lamp(st.side === 'E' ? W0 - 0.6 : st.side === 'W' ? -(W0 - 0.6) : st.a - 5,
+           st.side === 'S' ? W0 - 0.6 : st.a - 5, st.side === 'E' ? 'e' : st.side === 'W' ? 'w' : 's');
+    });
+  }
+
+  /* ---- THE HELIPAD (v1.0l) -----------------------------------------------
+     Open ground by the airport (measured 9 m clear). A raised disc at CFG.HELI
+     padY, an H, edge lights, a windsock. The helicopter itself is heli.js's;
+     it sits here between flights. */
+  if (CFG.HELI && CFG.HELI.pad) {
+    var HP = CFG.HELI.pad, HY = CFG.HELI.padY || 0.3;
+    cyl(HP[0], HY / 2, HP[1], 6.2, HY, M.concrete);
+    cyl(HP[0], HY + 0.01, HP[1], 5.6, 0.02, M.roadPaintY, NBOTH);
+    cyl(HP[0], HY + 0.02, HP[1], 5.0, 0.02, M.concrete, NBOTH);
+    box(HP[0] - 1.3, HY + 0.035, HP[1], 0.45, 0.03, 3.2, M.roadPaintY, NBOTH);
+    box(HP[0] + 1.3, HY + 0.035, HP[1], 0.45, 0.03, 3.2, M.roadPaintY, NBOTH);
+    box(HP[0], HY + 0.035, HP[1], 2.2, 0.03, 0.45, M.roadPaintY, NBOTH);
+    for (var hl = 0; hl < 8; hl++) { var ha = hl / 8 * Math.PI * 2; box(HP[0] + Math.cos(ha) * 5.9, HY + 0.12, HP[1] + Math.sin(ha) * 5.9, 0.25, 0.24, 0.25, M.amberGlow, NBOTH); }
+    box(HP[0] + 7.4, 1.0, HP[1] - 6.8, 0.2, 2.0, 0.2, M.metal);              // a marker post at the pad edge
+  }
+
   /* ---- THE FOUR TOWERS, one per side, cab facing the map ---------------- */
   World._towerAt(T, -4, -118.6, false);    // NORTH  x -4..4,   z -118.6..-106.6  (escape east)
   World._towerAt(T, 26, 106.6, false);     // SOUTH  x 26..34,  z 106.6..118.6

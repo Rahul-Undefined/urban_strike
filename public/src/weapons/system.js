@@ -595,6 +595,20 @@ var Weapons = (function () {
     for (var i = 0; i < pellets; i++) {
       var d = rayDir(spread, new THREE.Vector3());
       var hit = castRay(o, d, reach);
+      /* v1.0l: the helicopter is a target. If the ray meets its fuselage before
+         anything else, the round stops there and the server is told. */
+      if (typeof Heli !== 'undefined' && Heli.active && Heli.active()) {
+        var hh = Heli.rayHit(o, d, reach);
+        if (hh && (!hit || hh.t < hit.t) && !(hit && hit.remote)) {
+          var hEnd = hh.point;
+          FX.tracer(mz, hEnd, w.trc); FX.impact(hEnd, d.clone().negate());
+          Net.hitHeli(current, function (res) {
+            if (res && res.ok && res.dmg > 0) UI.hitmarker(false);
+            if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard');
+          });
+          continue;
+        }
+      }
       var end = hit ? hit.point : o.clone().addScaledVector(d, w.flame ? w.range : 120);
       if (w.flame) { FX.tracer(mz, end, w.trc); FX.tracer(mz, end, 0xffd060); FX.groundFire(end, 0.7, 0.35); }
       else FX.tracer(mz, end, w.trc);

@@ -342,6 +342,7 @@ var Net = (function () {
       UI.toast('Reconnected');
       absorbMatchClock(d);             // v15.0 (fix 7): the clock rides every reconnect door
       if (d && d.zone !== undefined && typeof Zone !== 'undefined') Zone.set(d.zone);   /* v1.0j */
+      if (d && d.heli !== undefined && typeof Heli !== 'undefined') Heli.set(d.heli);   /* v1.0l */
       if (d && typeof d.mines === 'number' && Weapons.setMines) Weapons.setMines(d.mines);
       if (d && typeof d.emps === 'number' && Weapons.setEmps) Weapons.setEmps(d.emps);
       if (d && d.remote !== undefined && Weapons.setRemote) Weapons.setRemote(d.remote);
@@ -351,6 +352,7 @@ var Net = (function () {
 
     s.on('matchStart', function (d) {
       if (typeof Zone !== 'undefined') Zone.set(d && d.zone ? d.zone : null);   /* v1.0j: the circle schedule, or none */
+      if (typeof Heli !== 'undefined') Heli.set(d && d.heli ? d.heli : null);   /* v1.0l */
       phase = 'playing';
       match.killTarget = d.settings.killTarget;
       match.minutes = d.settings.minutes;
@@ -538,6 +540,17 @@ var Net = (function () {
       FX.shake(Math.max(0.2, 0.9 - p.distanceTo(PlayerCtl.pos) * 0.02));
     });
     s.on('zoneNotice', function (d) { if (typeof Zone !== 'undefined') Zone.notice(d); });   /* v1.0j */
+    /* ===== v1.0l - THE HELICOPTER ===== state, health, notices, the crash */
+    s.on('heliState', function (d) { if (typeof Heli !== 'undefined') Heli.set(d); });
+    s.on('heliHp', function (d) { if (typeof Heli !== 'undefined') Heli.hpUpdate(d); });
+    s.on('heliNotice', function (d) { if (d && d.kind === 'boarding') UI.toast('Helicopter boarding \u00b7 lifting off in ' + d.in + ' s'); });
+    s.on('heliBoom', function (d) {
+      if (!d) return;
+      var p = new THREE.Vector3(d.x, d.y, d.z);
+      FX.explosion(p, 10); AudioSys.explosion(p, true);
+      UI.announce((d.byName || 'Someone') + ' SHOT DOWN THE HELICOPTER');
+      if (d.by === myIdV) UI.toast('Helicopter down \u00b7 ' + (d.n | 0) + ' eliminated');
+    });
     s.on('nukeReady', function (d) { UI.nukeReady(d); });
     s.on('nukeLost', function (d) { UI.nukeLost(d && d.reason); });
     s.on('nukeIncoming', function (d) { UI.nukeIncoming(d); FX.nukeStart(d); });
@@ -715,6 +728,7 @@ var Net = (function () {
         saveSession(res.code, res.token);
         absorbMatchClock(res);             // v15.0 (fix 7): startedAt + serverOffset, or the HUD reads 0:00
         if (res.zone !== undefined && typeof Zone !== 'undefined') Zone.set(res.zone);   /* v1.0j */
+        if (res.heli !== undefined && typeof Heli !== 'undefined') Heli.set(res.heli);   /* v1.0l */
         snapCache = {}; slotToId = {};     // the old wire slots died with the old id
         if (res.pickups) Pickups.init(res.pickups);
         if (typeof res.mines === 'number' && Weapons.setMines) Weapons.setMines(res.mines);
@@ -1183,6 +1197,7 @@ var Net = (function () {
     useEmp: function (cb) { if (socket) socket.emit('useEmp', {}, cb); },
     /* v1.0b */
     launchRocket: function (cb) { if (socket) socket.emit('launchRocket', {}, cb); },
+    hitHeli: function (w, cb) { if (socket) socket.emit('hitHeli', { w: w }, cb); },   /* v1.0l */
     plantBomb: function (p, cb) { if (socket) socket.emit('plantBomb', { p: p }, cb); },
     dropItem: function (d, cb) { if (socket) socket.emit('dropItem', d, cb); },
     callStrike: function (cb) { if (socket) socket.emit('callStrike', {}, cb); },

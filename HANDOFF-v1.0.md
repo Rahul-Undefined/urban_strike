@@ -103,6 +103,21 @@ the six has been seen in a browser by a human. Live at ship: `test.js` 317/0
 (Phase 19), `verify-client` 66/0, `probe-net-degraded` 10/0 (the probe now
 measures travel relative to the first snapshot — see CHANGELOG).
 
+## §1l BUILD 12 — ZONE SQUADS, FOUR HALTS, THE HELICOPTER (tagged v1.0l)
+
+- Zone: `zsq2`/`zsq3` (cat `zone`, squads, lives 1, mapLock urban).
+- Train: `CFG.TRAIN.urban.stops` + `stations`; `trainSchedule(cfg, L, stopsS[])`
+  chains legs; `trainStops(cfg, path)`; halts built in `_buildPart6`.
+- Helicopter: `CFG.HELI` (+ `heliPoseAt`, `heliDamageFor`); the pad waypoint is
+  COLLINEAR with its neighbours so the filleted route passes over it
+  (`World.trainPath` now handles straight-through waypoints). Server
+  `server/lib/heli.js` (pad → flying → landed → gone; hits; falls; respawn) via
+  `Bots.trainPath('urban','heli')`; client `environment/heli.js` (mesh, banking,
+  cabin floor through `game.js platformProbe`, `bail()` on Space, `rayHit` in
+  the hitscan); `hitHeli` handler; HUD `#heli-hud`. Gate: verify-heli.
+- Balance knobs: `HELI.hp`, `HELI.dmgClass`, `HELI.respawnSec`, `HELI.speed`,
+  `HELI.alt`. Unseen in a browser, like every system before it.
+
 ## §1k BUILD 11 — SOUND AND COUNT (tagged v1.0k)
 
 Zone banner appends "N ALIVE" (from the last roster, `UI.aliveCount`); each

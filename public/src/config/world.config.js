@@ -107,8 +107,16 @@
        map shows danger red and safe green. Take ideas from PUBG."
        One life (the Last Stand rules do the elimination and the win), Urban
        only (`mapLock`), the clock's fixed 15 minutes shaped by ZONE below. */
-    zone: { label: 'Urban Zone', vlabel: 'Solo \u00b7 the circle closes \u00b7 last one breathing wins',
-            cat: 'zone', teams: false, teamCount: 0, maxPlayers: 15, lives: 1, zone: true, mapLock: 'urban', fullMapContacts: false }
+    zone: { label: 'Urban Zone \u00b7 Solo', vlabel: 'Solo \u00b7 every operator for themselves',
+            cat: 'zone', teams: false, teamCount: 0, maxPlayers: 15, lives: 1, zone: true, mapLock: 'urban', fullMapContacts: false },
+    /* v1.0l (Rahul: "Urban Zone should have the option to join as a team as
+       well — solo or as a team, rest of the gameplay the same"): squad
+       variants, the Last Stand squad shapes with the circle. One life each;
+       a squad wins when it is the last side breathing. */
+    zsq2: { label: 'Urban Zone \u00b7 Duos 7 \u00d7 2', vlabel: '7 squads of 2',
+            cat: 'zone', teams: true, squads: true, teamCount: 7, squadSize: 2, maxPlayers: 14, lives: 1, zone: true, mapLock: 'urban', fullMapContacts: false },
+    zsq3: { label: 'Urban Zone \u00b7 Squads 5 \u00d7 3', vlabel: '5 squads of 3',
+            cat: 'zone', teams: true, squads: true, teamCount: 5, squadSize: 3, maxPlayers: 15, lives: 1, zone: true, mapLock: 'urban', fullMapContacts: false }
   };
 
   /* ===== v1.0j - THE ZONE SCHEDULE =====
@@ -347,27 +355,116 @@
     urban: {
       waypoints: [[-103, -103], [-6, -103], [9, -88], [103, -88], [103, 103], [-103, 103]],
       fillet: 8, speed: 8.0, dwellSec: 3, brakeM: 24, accelM: 30,
-      stationAt: 2, stopOffset: 62,          // waypoint 2 is (9,-88): the HEAD stops at x ~74, so all three coaches stand along the island platform (x 26..68)
+      /* v1.0l (Rahul: "stop at multiple locations, a small station on all four
+         sides"): the HEAD stops `offset` metres past the start of the straight
+         after waypoint `at`. Sector 7 Central (north), then a small platform on
+         the inner lane of the boulevard on the east, south and west sides —
+         built by districts-outer.js from `stations` below. */
+      stops: [{ at: 2, offset: 62 }, { at: 3, offset: 100 }, { at: 4, offset: 115 }, { at: 5, offset: 115 }],
+      stations: [
+        { name: 'EAST HALT',  side: 'E', a: -30, b: 8 },    // x 98.3..101.0, z a..b
+        { name: 'SOUTH HALT', side: 'S', a: -8, b: 30 },    // z 98.3..101.0, x a..b
+        { name: 'WEST HALT',  side: 'W', a: -8, b: 30 }     // x -101.0..-98.3, z a..b
+      ],
+      stationAt: 2, stopOffset: 62,          // kept for readers of the old field; `stops` is what runs
       floor: 1.05, roof: 3.75,               // coach floor (platform height) and roof walking surface
       cars: 4                                 // locomotive + 3 coaches
     }
   };
 
+  /* ===== v1.0l - THE HELICOPTER (Urban only) =====
+     Rahul: "an area where a helicopter is; someone boards, it starts and the
+     player can shoot players below; opponents shooting it bring its health
+     down and destroy it — instant kill; it flies over the map with the player
+     in it; a new one respawns every 5 minutes at the same place if used; real
+     looking, natural physics, players don't fall out on their own; not every
+     gun damages it — snipers little, assault rifles well — not five rounds and
+     down, fun to bring down; a player who falls out dies and the opponent gets
+     the point; the helicopter comes back to its place."
+     THE PAD is open ground by the airport. Boarding is standing in the cabin
+     on the pad for `boardSec`; then it climbs for `climbSec`, flies `route`
+     (a filleted loop over the city, World.trainPath again) at `alt` and
+     `speed`, comes back over the pad, descends for `landSec`, unloads, and is
+     gone until `respawnSec` after take-off. Everything about where it is is a
+     pure function of the server's take-off time — the train's pattern. Damage
+     is by weapon class: `dmgClass` scales a weapon's body damage; rockets are
+     a flat number. Falling out (jumping while airborne) is death, credited to
+     whoever hit the helicopter last within `creditSec`. */
+  var HELI = {
+    pad: [-73, -68], padY: 0.3, cabinFloor: 0.6, alt: 32, speed: 14,
+    /* the pad is waypoint 0 and lies ON the straight between its neighbours
+       (collinear), so the filleted loop passes exactly over it — a corner would
+       be cut and the machine would never be over its own pad */
+    route: [[-73, -68], [-51, -76], [30, -90], [90, -30], [78, 62], [0, 92], [-72, 62], [-88, -20], [-95, -60]], fillet: 28,
+    boardSec: 3, climbSec: 5, landSec: 6, unloadSec: 6, respawnSec: 300, creditSec: 10,
+    hp: 900,
+    dmgClass: { auto: 1.0, burst: 1.0, semi: 0.75, smg: 0.55, shotgun: 0.35, bolt: 0.30, pistol: 0.25, melee: 0, bow: 0, drone: 0, emp: 0, c4: 0, flame: 0.3 },
+    rocketDmg: 150
+  };
+  /* pose along the flight: t = seconds since take-off; returns {x,y,z,yaw,phase,s}
+     phase: 'climb' | 'cruise' | 'descend' | 'down' */
+  function heliPoseAt(cfg, path, t) {
+    var P = cfg.pad, L = path.length, tCruise = L / cfg.speed;
+    if (t < cfg.climbSec) { var f = t / cfg.climbSec; var q0 = path.at(0); return { x: P[0], z: P[1], y: cfg.padY + (cfg.alt - cfg.padY) * (f * f * (3 - 2 * f)), yaw: q0.yaw, phase: 'climb', s: 0 }; }
+    var u = t - cfg.climbSec;
+    if (u < tCruise) { var q = path.at(u * cfg.speed); return { x: q.x, z: q.z, y: cfg.alt, yaw: q.yaw, phase: 'cruise', s: u * cfg.speed }; }
+    var d = u - tCruise;
+    if (d < cfg.landSec) { var g = d / cfg.landSec; var qe = path.at(0); return { x: P[0], z: P[1], y: cfg.alt - (cfg.alt - cfg.padY) * (g * g * (3 - 2 * g)), yaw: qe.yaw, phase: 'descend', s: L }; }
+    var qd = path.at(0);
+    return { x: P[0], z: P[1], y: cfg.padY, yaw: qd.yaw, phase: 'down', s: L };
+  }
+  function heliDamageFor(cfg, weapons, w) {
+    var def = weapons[w];
+    if (!def) return 0;
+    if (def.type === 'rocket') return cfg.rocketDmg;
+    var k = cfg.dmgClass[def.type];
+    if (k === undefined) k = 0.5;
+    return Math.round((def.dmg || 0) * k);
+  }
+
   /* v1.0f: THE SCHEDULE IS SHARED. The server kills whoever the moving train
      hits, so it must place the train exactly where every client draws it —
      the same two pure functions, called with the same match time. */
-  function trainSchedule(cfg, length, stationS) {
-    var L = length, v = cfg.speed, A = Math.min(cfg.accelM || 30, L / 4), B = Math.min(cfg.brakeM || 24, L / 4), D = cfg.dwellSec || 3;
-    var tA = 2 * A / v, tB = 2 * B / v, tC = (L - A - B) / v;
-    return { L: L, v: v, A: A, B: B, D: D, tA: tA, tB: tB, tC: tC, T: D + tA + tC + tB, s0: stationS };
+  /* v1.0l: MANY STOPS. `stopsS` is the list of head positions (arc length) at
+     which the train dwells, in loop order; the schedule is a chain of legs
+     (dwell, accelerate, cruise, brake) from each stop to the next, the last leg
+     wrapping round to the first. A leg shorter than accel+brake becomes a
+     triangle profile that peaks below cruise. Lap time is the sum. A single
+     number in `stopsS` is the old one-station schedule. */
+  function trainSchedule(cfg, length, stopsS) {
+    var L = length, v = cfg.speed, D = cfg.dwellSec || 3;
+    var list = Array.isArray(stopsS) ? stopsS.slice() : [stopsS];
+    list = list.map(function (x) { return ((x % L) + L) % L; }).sort(function (a, b) { return a - b; });
+    var legs = [], t = 0;
+    for (var i = 0; i < list.length; i++) {
+      var s0 = list[i], s1 = list[(i + 1) % list.length];
+      var dist = i === list.length - 1 ? (s1 + L - s0) : (s1 - s0);
+      if (dist <= 0) dist += L;
+      var A = Math.min(cfg.accelM || 30, dist / 2), B = Math.min(cfg.brakeM || 24, dist / 2);
+      var vp = v;
+      if (A + B > dist) { A = dist / 2; B = dist / 2; }
+      if (dist < (cfg.accelM || 30) + (cfg.brakeM || 24)) vp = v * Math.sqrt(dist / ((cfg.accelM || 30) + (cfg.brakeM || 24)));   // triangle: peak below cruise
+      var tA = 2 * A / vp, tB = 2 * B / vp, tC = Math.max(0, dist - A - B) / vp;
+      legs.push({ s0: s0, dist: dist, A: A, B: B, vp: vp, tD: t, tA: tA, tB: tB, tC: tC, dur: D + tA + tC + tB });
+      t += D + tA + tC + tB;
+    }
+    return { L: L, v: v, D: D, T: t, legs: legs, s0: list[0], stops: list };
   }
   function trainHeadAt(S, tMatch) {
-    var tau = ((tMatch % S.T) + S.T) % S.T, s, vv;
-    if (tau < S.D) { s = 0; vv = 0; }
-    else if (tau < S.D + S.tA) { var a = (tau - S.D) / S.tA; s = S.A * a * a; vv = S.v * a; }
-    else if (tau < S.D + S.tA + S.tC) { s = S.A + S.v * (tau - S.D - S.tA); vv = S.v; }
-    else { var b = (tau - S.D - S.tA - S.tC) / S.tB; s = S.A + S.v * S.tC + S.B * (2 * b - b * b); vv = S.v * (1 - b); }
-    return { s: S.s0 + s, v: vv };
+    var tau = ((tMatch % S.T) + S.T) % S.T;
+    var g = S.legs[0];
+    for (var i = 0; i < S.legs.length; i++) { if (tau < S.legs[i].tD + S.legs[i].dur) { g = S.legs[i]; break; } }
+    var u = tau - g.tD, s, vv;
+    if (u < S.D) { s = 0; vv = 0; }
+    else if (u < S.D + g.tA) { var a = (u - S.D) / g.tA; s = g.A * a * a; vv = g.vp * a; }
+    else if (u < S.D + g.tA + g.tC) { s = g.A + g.vp * (u - S.D - g.tA); vv = g.vp; }
+    else { var b = Math.min(1, (u - S.D - g.tA - g.tC) / g.tB); s = g.A + g.vp * g.tC + g.B * (2 * b - b * b); vv = g.vp * (1 - b); }
+    return { s: g.s0 + s, v: vv, leg: g };
+  }
+  /* the head positions of every stop for a path: [s...] */
+  function trainStops(cfg, path) {
+    var stops = cfg.stops || [{ at: cfg.stationAt || 0, offset: cfg.stopOffset || 0 }];
+    return stops.map(function (st) { return path.sAtWaypoint(st.at) + st.offset; });
   }
   /* The train's car layout, shared too: [length, offset of each car's centre behind the head]. */
   function trainCars(cfg) {
@@ -377,8 +474,9 @@
   }
 
   return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams, TRAIN: TRAIN,
-    trainSchedule: trainSchedule, trainHeadAt: trainHeadAt, trainCars: trainCars,
+    trainSchedule: trainSchedule, trainHeadAt: trainHeadAt, trainCars: trainCars, trainStops: trainStops,
     ZONE: ZONE, zoneSchedule: zoneSchedule, zoneCircleAt: zoneCircleAt, zoneInside: zoneInside,
+    HELI: HELI, heliPoseAt: heliPoseAt, heliDamageFor: heliDamageFor,
     spawnProtectFor: spawnProtectFor, isArena: isArena,
     MODE_CATS: VISIBLE_CATS, ALL_MODE_CATS: MODE_CATS, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
     MINIMAP: MINIMAP, RENDER: RENDER, MAPS: MAPS };

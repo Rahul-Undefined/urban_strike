@@ -682,6 +682,7 @@ function phase19() {
               ok(startZ.zone && startZ.zone.circles[0].r === CFG.ZONE.r0 && Math.abs(startZ.zone.circles[CFG.ZONE.shrinkPhases].r - CFG.ZONE.rFinal) < 1e-6,
                 'it opens with the whole map and ends at the final radius');
               ok(CFG.livesFor('zone') === 1, 'one life — the Last Stand rules run the elimination');
+              ok(startZ.heli && startZ.heli.state === 'pad' && startZ.heli.hp === CFG.HELI.hp, 'v1.0l: an Urban match ships a full-health helicopter on the pad with matchStart [' + JSON.stringify(startZ.heli && { state: startZ.heli.state, hp: startZ.heli.hp }) + ']');
               Az.disconnect(); Bz.disconnect();
               setTimeout(dropPhase, 500);
             };

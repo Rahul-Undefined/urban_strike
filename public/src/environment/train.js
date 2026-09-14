@@ -44,7 +44,7 @@ var Train = (function () {
 
   /* ---------- schedule: shared with the server (world.config.js) ---------- */
   function buildSchedule() {
-    sched = CFG.trainSchedule(cfg, path.length, path.sAtWaypoint(cfg.stationAt || 0) + (cfg.stopOffset || 0));
+    sched = CFG.trainSchedule(cfg, path.length, CFG.trainStops(cfg, path));   /* v1.0l: every stop */
   }
   function headAt(tMatch) { return CFG.trainHeadAt(sched, tMatch); }
 

@@ -1035,6 +1035,13 @@ var World = (function () {
       var P0 = W[(i - 1 + n) % n], P1 = W[i], P2 = W[(i + 1) % n];
       var din = nrm(sub(P0, P1)), dout = nrm(sub(P1, P2));
       var cosT = -(din[0] * dout[0] + din[1] * dout[1]);       // cos of the turn angle
+      if (cosT < -0.9995) {
+        /* v1.0l: a waypoint the path runs straight THROUGH (the helipad lies
+           on the line between its neighbours): no corner, no arc — the path
+           passes exactly over the point. */
+        corners.push({ pIn: [P1[0], P1[1]], pOut: [P1[0], P1[1]], C: [P1[0], P1[1]], r: 0, a0: 0, da: 0, arcLen: 0 });
+        continue;
+      }
       cosT = Math.max(-0.9999, Math.min(0.9999, cosT));
       var theta = Math.acos(cosT);                               // interior angle at the corner
       var t = R / Math.tan(theta / 2);                           // tangent distance from the corner
@@ -1067,6 +1074,7 @@ var World = (function () {
       sq = ((sq % total) + total) % total;
       for (var k = 0; k < segs.length; k++) {
         var g = segs[k];
+        if (g.len <= 1e-9) continue;                                     // a straight-through waypoint's empty arc
         if (sq > g.s0 + g.len + 1e-9) continue;
         var f = sq - g.s0;
         if (g.kind === 'line') return { x: g.p[0] + g.u[0] * f, z: g.p[1] + g.u[1] * f, yaw: Math.atan2(g.u[1], g.u[0]) };

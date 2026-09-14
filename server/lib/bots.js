@@ -31,9 +31,9 @@ const stairCache = Object.create(null);
 
 const pathCache = {};
 /* v1.0f: the train's arc-length path for a map, or null when it has none. */
-function trainPath(mapId) {
+function trainPath(mapId, which) {
   if (!(mapId in pathCache)) buildColliders(mapId);
-  return pathCache[mapId] || null;
+  return pathCache[which === 'heli' ? mapId + '#heli' : mapId] || null;
 }
 function buildColliders(mapId) {
   if (colliderCache[mapId]) return colliderCache[mapId];
@@ -89,6 +89,10 @@ function buildColliders(mapId) {
       if (vm.runInContext('!!(CFG.TRAIN && CFG.TRAIN[' + JSON.stringify(mapId) + '] && World.trainPath)', ctx)) {
         pathCache[mapId] = vm.runInContext('World.trainPath(CFG.TRAIN[' + JSON.stringify(mapId) + '])', ctx);
       } else pathCache[mapId] = null;
+      /* v1.0l: the helicopter's route, same fillet math, Urban only */
+      if (mapId === 'urban' && vm.runInContext('!!(CFG.HELI && World.trainPath)', ctx)) {
+        pathCache[mapId + '#heli'] = vm.runInContext('World.trainPath({ waypoints: CFG.HELI.route, fillet: CFG.HELI.fillet })', ctx);
+      } else pathCache[mapId + '#heli'] = null;
     } catch (e2) { pathCache[mapId] = null; }
     /* v9.2: the STAIR REGISTRY comes out with the colliders. World already
        records every flight it builds — base, top, direction, end point — and

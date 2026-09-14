@@ -470,6 +470,14 @@ var Minimap = (function () {
       }
       g.restore();
     }
+    /* v1.0l: THE HELICOPTER on the M map — a small cross where it is (airborne or on the pad). */
+    if (typeof Heli !== 'undefined' && Heli.active() && Heli.pose()) {
+      var hp = Heli.pose();
+      g.save(); g.translate(sx(hp.x), sz(hp.z)); g.rotate(hp.yaw);
+      g.fillStyle = 'rgba(255,240,160,0.95)';
+      g.fillRect(-6 * S, -0.9 * S, 12 * S, 1.8 * S); g.fillRect(-0.9 * S, -6 * S, 1.8 * S, 12 * S);
+      g.restore();
+    }
     /* v1.0e: THE TRAIN on the M map — each car as a small rotated bar in the
        loot-gold tone, drawn from the deterministic pose every client shares.
        You can see where it is, and time your walk to the platform. */

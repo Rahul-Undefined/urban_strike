@@ -91,7 +91,7 @@ const shows = m => !!(CFG.MODES[m] && CFG.MODES[m].fullMapContacts);
 const expectShown = ['ls', 'lsq2', 'lsq4'];
 const expectHidden = ['ffa', 't2', 't3', 't4', 't5', 't6', 't8', 't10',
   'sq2', 'sq4',
-  'zone'];   /* v1.0j: Urban Zone is one life like Last Stand but the CIRCLE is the anti-camping device — exact pins would delete the hunt */
+  'zone', 'zsq2', 'zsq3'];   /* v1.0j/l: Urban Zone is one life like Last Stand but the CIRCLE is the anti-camping device — exact pins would delete the hunt */
 /* v10.13: the outbreak modes. Enemies SHOWN on the full map, and that is a
    design decision rather than a default. In a PvP mode a full map that reveals
    the other side removes the whole game; here the other side is a wave of

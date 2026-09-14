@@ -71,9 +71,31 @@ function headAt(tSec) {
   return vm.runInContext('(function(){ Date.now = function(){ return 1000 + ' + Math.round(tSec * 1000) + '; }; Train.update(0.016); return Train.head(); })()', ctx);
 }
 const h0 = headAt(0.1), h1 = headAt(T.dwellSec - 0.1), h2 = headAt(T.dwellSec + 5), hEnd = headAt(S.T - 0.05), hNext = headAt(S.T + 0.5);
+/* v1.0l: four stops a lap — Sector 7 Central and the three halts. */
+ok(S.stops.length === 4 && S.legs.length === 4, 'the schedule has four stops and four legs a lap [' + S.stops.length + ']');
+ok(S.T > 120 && S.T < 200, 'a lap with four dwells takes ' + S.T.toFixed(0) + ' s');
+{
+  const stopsWorld = S.stops.map(st => P.at(st));
+  const sides = stopsWorld.map(q => Math.abs(q.z + 88) < 0.1 ? 'N' : Math.abs(q.x - 103) < 0.1 ? 'E' : Math.abs(q.z - 103) < 0.1 ? 'S' : Math.abs(q.x + 103) < 0.1 ? 'W' : '?');
+  ok(sides.sort().join('') === 'ENSW', 'one stop on each side of the map [' + sides.join(',') + ']');
+  // each halt's platform lies alongside the coaches at its stop
+  (T.stations || []).forEach(st => {
+    const q = stopsWorld.find(q2 => (st.side === 'E' && Math.abs(q2.x - 103) < 0.1) || (st.side === 'W' && Math.abs(q2.x + 103) < 0.1) || (st.side === 'S' && Math.abs(q2.z - 103) < 0.1));
+    const along = st.side === 'S' ? q.x : q.z;                       // head position along the platform axis
+    const dir = st.side === 'E' ? 1 : st.side === 'S' ? -1 : -1;     // travel direction along that axis (E: +z, S: -x, W: -z)
+    const coachNear = along - dir * (11 + 0.9), coachFar = along - dir * (11 + 0.9 + 3 * 12 + 2 * 0.9);
+    const lo = Math.min(coachNear, coachFar), hi = Math.max(coachNear, coachFar);
+    ok(st.a <= lo + 2 && st.b >= hi - 2, st.name + ' platform (' + st.a + '..' + st.b + ') spans the coaches at the stop (' + lo.toFixed(0) + '..' + hi.toFixed(0) + ')');
+  });
+  for (let k = 0; k < S.stops.length; k++) {
+    const tk = S.legs[k].tD + 0.5;
+    const hk = headAt(tk);
+    ok(hk.v === 0 && Math.abs(hk.s - S.stops[k]) < 1e-6, 'the head stands at stop ' + (k + 1) + ' during its dwell');
+  }
+}
 ok(h0.v === 0 && Math.abs(h0.s - h1.s) < 1e-6, 'the train stands still through the dwell');
 ok(h2.v > 0 && h2.s > h1.s, 'and moves after it');
-ok(Math.abs(hEnd.s - (S.s0 + P.length)) < 1.0 && hEnd.v < 0.6, 'one cycle later it has done the whole loop and is stopping at the station again [' + (hEnd.s - S.s0 - P.length).toFixed(2) + ' m]');
+ok(Math.abs(hEnd.s - (S.s0 + P.length)) < 1.0 && hEnd.v < 0.6, 'one lap later it has done the whole loop and is stopping at Sector 7 again [' + (hEnd.s - S.s0 - P.length).toFixed(2) + ' m]');
 ok(hNext.v === 0, 'and dwells again');
 let vmax = 0;
 for (let t = 0; t < S.T; t += 0.5) vmax = Math.max(vmax, headAt(t).v);
@@ -118,7 +140,7 @@ vm.runInContext(`
   function __run(frames, inp) { for (var i = 0; i < frames; i++) PlayerCtl.update(1/60, inp || __inp, 1, false); return { x: PlayerCtl.pos.x, y: PlayerCtl.pos.y, z: PlayerCtl.pos.z, grounded: PlayerCtl.grounded, onPlat: PlayerCtl.onPlatform }; }
 `, ctx);
 // freeze the train mid-cruise: pick a time where v = cruise on the north straight
-const tCruise = T.dwellSec + S.tA + 8;
+const tCruise = T.dwellSec + S.legs[0].tA + 8;   // v1.0l: the first leg's acceleration
 let cars = vm.runInContext('(function(){ Date.now = function(){ return 1000 + ' + Math.round(tCruise * 1000) + '; }; Train.update(0.016); return Train.cars().map(function(c){ return { x:c.x, z:c.z, yaw:c.yaw, vx:c.vx, vz:c.vz, coach:c.coach }; }); })()', ctx);
 const coach = cars[1];
 ok(coach.coach && Math.hypot(coach.vx, coach.vz) > 7, 'a coach is moving at cruise [' + Math.hypot(coach.vx, coach.vz).toFixed(1) + ' m/s]');
@@ -235,7 +257,7 @@ console.log('--- v1.0f: corners, walls, and what the train does to a bystander -
   const H = require('../server/lib/hazards.js')({ io: { to: () => ({ emit() {} }) }, now: () => Date.now(),   // late-bound: poseAt() re-mocks Date.now per call
     applyDamage: (room, v, dmg, by, w, hs, pb) => { v.alive = false; v.killedBy = w; },
     modeInfo: () => ({ teams: false }), colliders: () => [], trainPath: (m) => Bots.trainPath(m) });
-  const tMove = T.dwellSec + S.tA + 6;
+  const tMove = T.dwellSec + S.legs[0].tA + 6;
   const carsM = poseAt(tMove), cm = carsM[2];                      // poseAt first: it sets the mocked clock the room's startedAt is derived from
   const room = { code: 'R', settings: { map: 'urban' }, startedAt: Date.now() - tMove * 1000, players: new Map() };
   const under = { id: 'U', name: 'U', alive: true, pos: [cm.x, CFG.PLAYER.standH / 2, cm.z] };                         // on the road, inside the car body

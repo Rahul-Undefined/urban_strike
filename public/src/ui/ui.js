@@ -601,7 +601,9 @@ var UI = (function () {
     var wLabel = (CFG.WEAPONS[d.weapon] && CFG.WEAPONS[d.weapon].label) ||
       (CFG.THROWS[d.weapon] && CFG.THROWS[d.weapon].label) ||
       (CFG.GEAR[d.weapon] && CFG.GEAR[d.weapon].label) || d.weapon || '?';
-    if (d.weapon === 'zone') {
+    if (d.weapon === 'helifall') {
+      row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">fell from the helicopter</span>' + (d.self ? '' : ' <span class="fw">(hit by</span> <b>' + d.killerName + '</b><span class="fw">)</span>');   /* v1.0l */
+    } else if (d.weapon === 'zone') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">bled out in the zone</span>';   /* v1.0j */
     } else if (d.weapon === 'train') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">was run over by the train</span>';   /* v1.0f */
@@ -995,6 +997,16 @@ var UI = (function () {
     e.classList.toggle('held', !!held);
     var f = document.getElementById('breath-fill');
     if (f) f.style.height = Math.round(frac * 100) + '%';
+  }
+  /* v1.0l: the helicopter's health, shown while one exists */
+  function setHeliHud(h) {
+    var e = document.getElementById('heli-hud');
+    if (!e) return;
+    if (!h) { e.classList.remove('on'); return; }
+    e.classList.add('on');
+    var f = document.getElementById('heli-fill'), t = document.getElementById('heli-txt');
+    if (f) f.style.width = Math.round(100 * Math.max(0, h.hp) / Math.max(1, h.max)) + '%';
+    if (t) t.textContent = (h.state === 'flying' ? 'HELICOPTER AIRBORNE' : h.state === 'landed' ? 'HELICOPTER LANDED' : 'HELICOPTER ON THE PAD') + ' \u00b7 ' + Math.max(0, h.hp | 0);
   }
   /* v1.0j: the zone banner under the timer */
   function setZoneBanner(text, urgent) {
@@ -1433,6 +1445,7 @@ var UI = (function () {
     setQualityReadout: setQualityReadout,   /* v1.0c */
     setBreath: setBreath,                   /* v1.0e */
     setZoneBanner: setZoneBanner,           /* v1.0j */
+    setHeliHud: setHeliHud,                 /* v1.0l */
     aliveCount: function () {               /* v1.0k: operators still in it (Urban Zone's "N ALIVE") */
       if (!lastLobby || !lastLobby.players) return 0;
       return lastLobby.players.filter(function (p) { return !p.out && p.connected !== false; }).length;

@@ -123,7 +123,8 @@ const BASELINE = {
   /* v1.0e: re-recorded — liftLintels() raised 67 doorway headers for the tall operator (see verify-fingerprint). */
   /* v1.0e: re-recorded — the train's loop line, the station's third floor (see verify-fingerprint). */
   /* v1.0i: ring signs moved off the train lane (see verify-fingerprint). */
-  urban: {"colliders":4454,"sum":2665002384,"draws":99,"tris":133120,"casters":62,"lights":7,"minimap":247,"bound":120},
+  /* v1.0l: halts + helipad (see verify-fingerprint). */
+  urban: {"colliders":4498,"sum":915579400,"draws":99,"tris":134332,"casters":62,"lights":7,"minimap":250,"bound":120},
   urbanData: {"loot":430,"spawns":60,"airdrops":14},   /* v1.0e: +1 — the station roof point split into third-floor + roof */
   urbanLifts: "84.2:-25.5:1.6:0.25/3.25/6.25 | -76.2:-81.9:1.6:0.25/3.25/6.25"
 };

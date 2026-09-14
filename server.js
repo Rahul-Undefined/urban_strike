@@ -241,6 +241,8 @@ const Nuke = require('./server/lib/nuke.js')({ io, now, applyDamage: (...a) => a
    Hazards read the SAME collider set the bots see through, so "line of sight
    to the fire" and "under a roof" are decided against the real map. */
 const Rocket = require('./server/lib/rocket.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo });
+const Heli = require('./server/lib/heli.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo,
+  trainPath: (mapId, which) => Bots.trainPath(mapId, which) });   /* v1.0l: the helicopter, Urban only */
 const Zone = require('./server/lib/zone.js')({ io, now, applyDamage: (...a) => applyDamage(...a),
   colliders: (mapId) => Bots.buildColliders(mapId) });   /* v1.0j: Urban Zone; colliders for the open-ground crate fallback */
 const Hazards = require('./server/lib/hazards.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo,
@@ -612,13 +614,15 @@ function startMatch(room) {
      One push here costs one message per match. */
   pushLobby(room);
   const zoneSched = Zone.start(room);   /* v1.0j: null unless the mode is Urban Zone */
+  const heliSnap = Heli.start(room);    /* v1.0l: null unless the map is Urban */
   io.to(room.code).emit('matchStart', {
     settings: room.settings,
     startedAt: room.startedAt,
     serverNow: now(),
     players: lobbyPayload(room).players,
     pickups: pickupList(room),
-    zone: zoneSched
+    zone: zoneSched,
+    heli: heliSnap
   });
   for (const p of room.players.values()) spawnPlayer(room, p);
   cancelCountdown(room);
@@ -682,6 +686,7 @@ function startSnapshots(room) {
     Nuke.tick(room);                         // v10.10 killhouse killstreak
     Hazards.tick(room);                      // v1.0b fire zones + C4 fuses
     Zone.tick(room);                         // v1.0j the circle
+    Heli.tick(room);                         // v1.0l the helicopter
     regenTick(room);
     if (++room.snapN % 60 === 0) pushLobby(room); // live K/D/assists/damage refresh (~4 s)
 
@@ -853,7 +858,7 @@ function endMatch(room, winnerId, reason) {
   Mines.clear(room);
   Nuke.reset(room);           // v10.10: no strike survives the final whistle
   Rocket.reset(room); Hazards.reset(room);   // v1.0b
-  Zone.reset(room);                          // v1.0j
+  Zone.reset(room); Heli.reset(room);        // v1.0j / v1.0l
   const teams = modeInfo(room).teams;
   const insights = buildInsights(room);
   let winnerTeam = null;
@@ -915,6 +920,7 @@ io.on('connection', (socket) => {
         team: p.team || null, mines: p.mines | 0,
         emps: p.emps | 0, remote: !!p.hasRemote, shield: p.shieldHp | 0, c4: p.c4 | 0,   /* v15.0 / v1.0b */
         zone: room.zone ? room.zone.sched : null,   /* v1.0j */
+        heli: Heli.snapshot(room),   /* v1.0l */
         respawnSec: p.respawnSec || CFG.MATCH.respawnDelay
       });
       pushLobby(room);
@@ -994,7 +1000,8 @@ io.on('connection', (socket) => {
         settings: room.settings, startedAt: room.startedAt, serverNow: now(),
         players: lobbyPayload(room).players,
         pickups: pickupList(room),
-        zone: room.zone ? room.zone.sched : null   /* v1.0j */
+        zone: room.zone ? room.zone.sched : null,   /* v1.0j */
+        heli: Heli.snapshot(room)                   /* v1.0l */
       });
       spawnPlayer(room, p);
     }
@@ -1255,6 +1262,20 @@ io.on('connection', (socket) => {
     const p = room.players.get(socket.id);
     if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
     ack(Mines.emp(room, p));
+  });
+  /* ===== v1.0l - SHOOTING THE HELICOPTER ===== the client claims a hit with a
+     weapon id; the server checks reach and aboard-ness and applies the class
+     damage (Heli.hit). Fire-rate is the weapon's own, checked as for any hit. */
+  socket.on('hitHeli', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    const p = room.players.get(socket.id);
+    if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
+    const w = d && CFG.WEAPONS[d.w] ? d.w : null;
+    if (!w) return ack({ ok: false, err: 'Unknown weapon' });
+    if (!fireRateOk(p, w)) return ack({ ok: false, err: 'Too fast' });
+    ack(Heli.hit(room, p, w));
   });
   /* ===== v15.0 - THE STRIKE REMOTE (fix 10) =====
      Big maps only, one per match, held by whoever found it. The caller sends
@@ -1613,6 +1634,7 @@ io.on('connection', (socket) => {
           team: p.team || null, mines: p.mines | 0,
           emps: p.emps | 0, remote: !!p.hasRemote, shield: p.shieldHp | 0, c4: p.c4 | 0,   /* v15.0 / v1.0b */
         zone: room.zone ? room.zone.sched : null,   /* v1.0j */
+        heli: Heli.snapshot(room),   /* v1.0l */
           settings: room.settings, state: room.state,
           startedAt: room.startedAt, serverNow: now(),
           pickups: pickupList(room).filter(k => k.active) });
@@ -1658,6 +1680,7 @@ io.on('connection', (socket) => {
           team: p.team || null, mines: p.mines | 0,
           emps: p.emps | 0, remote: !!p.hasRemote, shield: p.shieldHp | 0, c4: p.c4 | 0,   /* v15.0 / v1.0b */
         zone: room.zone ? room.zone.sched : null,   /* v1.0j */
+        heli: Heli.snapshot(room),   /* v1.0l */
           settings: room.settings, state: room.state,
           startedAt: room.startedAt, serverNow: now(),
           pickups: pickupList(room).filter(k => k.active) });

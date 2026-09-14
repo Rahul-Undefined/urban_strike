@@ -16,6 +16,13 @@ ok(M.mapLock === 'urban', 'and is locked to Urban');
 ok(CFG.MODE_CATS.some(c => c.id === 'zone') && CFG.modesInCat('zone').indexOf('zone') >= 0, 'the picker has an Urban Zone category with the mode in it');
 ok(CFG.MODE_CATS.map(c => c.id).slice(0, 4).join(',') === 'ffa,team,squads,last', 'the four human categories still lead');
 ok(CFG.GEAR.zone && CFG.GEAR.zone.label, 'the kill feed has a name for it');
+/* v1.0l: squads */
+ok(CFG.MODES.zsq2 && CFG.MODES.zsq2.zone && CFG.MODES.zsq2.teams && CFG.MODES.zsq2.squads && CFG.MODES.zsq2.lives === 1 && CFG.MODES.zsq2.mapLock === 'urban',
+  'Urban Zone Duos: squads of 2, one life, the circle, Urban');
+ok(CFG.MODES.zsq3 && CFG.MODES.zsq3.zone && CFG.MODES.zsq3.teamCount === 5 && CFG.MODES.zsq3.squadSize === 3 && CFG.MODES.zsq3.maxPlayers === 15,
+  'Urban Zone Squads: five squads of three');
+ok(CFG.modesInCat('zone').length === 3, 'the Urban Zone category offers Solo, Duos and Squads [' + CFG.modesInCat('zone').join(',') + ']');
+ok(CFG.activeTeams('zsq3').length === 5 && CFG.livesFor('zsq3') === 1, 'the team and life helpers read the squad variant like Last Stand squads');
 
 console.log('--- the schedule ---');
 const Z = CFG.ZONE;
