@@ -1277,6 +1277,15 @@ io.on('connection', (socket) => {
     if (!fireRateOk(p, w)) return ack({ ok: false, err: 'Too fast' });
     ack(Heli.hit(room, p, w));
   });
+  /* ===== v1.0m - BOARDING THE HELICOPTER (Z near it on the pad) ===== */
+  socket.on('boardHeli', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    const p = room.players.get(socket.id);
+    if (!p) return ack({ ok: false, err: 'Not in the room' });
+    ack(Heli.board(room, p));
+  });
   /* ===== v15.0 - THE STRIKE REMOTE (fix 10) =====
      Big maps only, one per match, held by whoever found it. The caller sends
      only the request; `hasRemote` lives here and is cleared BEFORE the timer is

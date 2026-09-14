@@ -396,7 +396,7 @@
        (collinear), so the filleted loop passes exactly over it — a corner would
        be cut and the machine would never be over its own pad */
     route: [[-73, -68], [-51, -76], [30, -90], [90, -30], [78, 62], [0, 92], [-72, 62], [-88, -20], [-95, -60]], fillet: 28,
-    boardSec: 3, climbSec: 5, landSec: 6, unloadSec: 6, respawnSec: 300, creditSec: 10,
+    boardSec: 3, climbSec: 5, landSec: 6, unloadSec: 6, respawnSec: 180, creditSec: 10,   /* v1.0m: every 3 minutes (Rahul) */
     hp: 900,
     dmgClass: { auto: 1.0, burst: 1.0, semi: 0.75, smg: 0.55, shotgun: 0.35, bolt: 0.30, pistol: 0.25, melee: 0, bow: 0, drone: 0, emp: 0, c4: 0, flame: 0.3 },
     rocketDmg: 150

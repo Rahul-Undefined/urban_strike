@@ -103,6 +103,14 @@ the six has been seen in a browser by a human. Live at ship: `test.js` 317/0
 (Phase 19), `verify-client` 66/0, `probe-net-degraded` 10/0 (the probe now
 measures travel relative to the first snapshot — see CHANGELOG).
 
+## §1m BUILD 13 — Z TO BOARD, THE PAD BOARD (tagged v1.0m)
+
+`heli.js` server: `board(room,p)` seats/unseats (SEATS, `p.justSpawned`),
+`fallen()` = feet < floor−3 or 6.5 m off (lag-tolerant), riders filtered to
+the cabin at lift-off; `boardHeli` handler. Client: `canBoard/board/onSeat`,
+`#heli-prompt`, `buildSign/updateSign` (canvas board, live countdown),
+`state.liftIn`. `HELI.respawnSec` 180. Game.js: Z boards before pickup/lift.
+
 ## §1l BUILD 12 — ZONE SQUADS, FOUR HALTS, THE HELICOPTER (tagged v1.0l)
 
 - Zone: `zsq2`/`zsq3` (cat `zone`, squads, lives 1, mapLock urban).

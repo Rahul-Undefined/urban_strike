@@ -47,20 +47,34 @@ const half = CFG.PLAYER.standH / 2;
 const mk = (id, x, y, z) => ({ id, name: id, alive: true, pos: [x, y, z] });
 ok(Srv.start(room) && room.heli.state === 'pad' && room.heli.hp === H.hp, 'start() puts a full-health helicopter on the pad');
 ok(Srv.start({ settings: { map: 'metro' } }) === null, 'not on Metro');
-const rider = mk('R', H.pad[0], H.padY + H.cabinFloor + half, H.pad[1]);
+/* v1.0m: boarding is Z near the machine — the server seats the player */
+const rider = mk('R', H.pad[0] + 4, half, H.pad[1] + 1);
 const bystander = mk('B', H.pad[0] + 12, half, H.pad[1]);
 room.players.set('R', rider); room.players.set('B', bystander);
 Srv.tick(room);
-ok(room.heli.state === 'pad' && room.heli.boardSince === T0, 'a player in the cabin starts the boarding count');
+ok(room.heli.state === 'pad' && !room.heli.boardSince && room.heli.riders.length === 0, 'standing on the pad boards nobody — boarding is an act');
+ok(!Srv.board(room, bystander).ok, 'Z from 12 m away is refused');
+const b1 = Srv.board(room, rider);
+ok(b1.ok && b1.aboard && room.heli.riders[0] === 'R' && room.heli.boardSince === T0, 'Z near the machine boards: seated, listed, the lift-off count starts');
+ok(Math.hypot(rider.pos[0] - H.pad[0], rider.pos[2] - H.pad[1]) < 1.5 && Math.abs(rider.pos[1] - (H.padY + H.cabinFloor + half + 0.03)) < 0.01 && rider.justSpawned, 'the server put the rider in the cabin at a seat and flagged the teleport');
+ok(emitted.some(e => e.ev === 'heliSeat' && e.to === 'R' && e.d.aboard), 'and told the rider where they sit');
+const b2 = Srv.board(room, rider);
+ok(b2.ok && !b2.aboard && room.heli.riders.length === 0 && !room.heli.boardSince, 'Z again steps off: unlisted, beside the pad, the count cancelled');
+Srv.board(room, rider);
 T0 += H.boardSec * 1000 - 200; Srv.tick(room);
 ok(room.heli.state === 'pad', 'not yet');
 T0 += 400; Srv.tick(room);
-ok(room.heli.state === 'flying' && room.heli.riders.length === 1 && room.heli.riders[0] === 'R', 'three seconds aboard: airborne with the one rider');
+ok(room.heli.state === 'flying' && room.heli.riders.length === 1 && room.heli.riders[0] === 'R', 'three seconds after boarding: airborne with the one rider');
 const tOff = room.heli.t0;
 // mid-flight: the rider rides (position follows the pose); the bystander stays on the ground
 function ride(q) { const p = CFG.heliPoseAt(H, P, (T0 - tOff) / 1000); q.pos = [p.x, p.y + H.cabinFloor + half, p.z]; }
 T0 += (H.climbSec + 8) * 1000; ride(rider); Srv.tick(room);
 ok(room.heli.state === 'flying' && room.heli.riders.length === 1 && rider.alive, 'mid-flight the seated rider is aboard and alive');
+/* v1.0m: a rider whose reported position trails the machine by a network delay is NOT a faller */
+{ const p = CFG.heliPoseAt(H, P, (T0 - tOff) / 1000); const back = Math.atan2(-Math.sin(p.yaw), -Math.cos(p.yaw));
+  rider.pos = [p.x + Math.cos(p.yaw) * -2.6, p.y + H.cabinFloor + half - 0.6, p.z + Math.sin(p.yaw) * -2.6];   // 2.6 m behind, 0.6 m low: 150 ms of lag at speed
+  Srv.tick(room);
+  ok(rider.alive && room.heli.riders.length === 1, 'a rider trailing 2.6 m behind and 0.6 m below the seat (network lag) stays aboard'); ride(rider); }
 // a shot from the ground
 const shooter = mk('S', 0, half, 0); room.players.set('S', shooter);
 const r1 = Srv.hit(room, shooter, 'ak47');
@@ -70,14 +84,15 @@ ok(!Srv.hit(room, rider, 'ak47').ok, 'a rider cannot shoot the machine he is in'
 const far = mk('F', 400, half, 400); room.players.set('F', far);
 ok(!Srv.hit(room, far, 'ak47').ok, 'a shot from 400 m away is refused');
 // the rider leaves the cabin in the air: dead, credited to the last shooter
-rider.pos = [rider.pos[0] + 6, rider.pos[1] - 3, rider.pos[2]];
+rider.pos = [rider.pos[0] + 8, rider.pos[1] - 4, rider.pos[2]];   // 8 m off and 4 m down: falling
 T0 += 200; Srv.tick(room);
 ok(!rider.alive && killed.length === 1 && killed[0].w === 'helifall' && killed[0].by === 'S', 'a rider outside the cabin in the air has fallen: dead, tagged helifall, credited to the shooter who hit the machine');
 ok(room.heli.state === 'landed', 'with nobody aboard the machine goes home');
 // a fresh flight with two riders, shot down
 T0 += 20000; room.heli.state = 'pad'; room.heli.t0 = T0; room.heli.hp = H.hp; room.heli.riders = []; room.heli.boardSince = 0;
-const r2 = mk('R2', H.pad[0] + 0.5, H.padY + H.cabinFloor + half, H.pad[1]), r3 = mk('R3', H.pad[0] - 0.5, H.padY + H.cabinFloor + half, H.pad[1] + 0.4);
+const r2 = mk('R2', H.pad[0] + 3, half, H.pad[1]), r3 = mk('R3', H.pad[0] - 3, half, H.pad[1] + 2);
 room.players.set('R2', r2); room.players.set('R3', r3);
+Srv.board(room, r2); Srv.board(room, r3);
 Srv.tick(room); T0 += H.boardSec * 1000 + 100; Srv.tick(room);
 ok(room.heli.state === 'flying' && room.heli.riders.length === 2, 'two riders take off together');
 const tOff2 = room.heli.t0;
@@ -90,7 +105,7 @@ while (room.heli.state === 'flying' && hits < 200) { res = Srv.hit(room, shooter
 ok(res && res.destroyed && res.n === 2, 'enough rifle hits bring it down with both riders [' + hits + ' hits]');
 ok(killed.length === 2 && killed.every(k => k.w === 'helidown' && k.by === 'S'), 'both riders die, credited to the shooter, tagged helidown');
 ok(room.heli.state === 'gone' && emitted.some(e => e.ev === 'heliBoom'), 'the machine is gone and the room saw it burn');
-ok(room.heli.respawnAt >= T0 + H.respawnSec * 1000 - 1, 'it comes back ' + H.respawnSec + ' s later');
+ok(room.heli.respawnAt >= T0 + H.respawnSec * 1000 - 1 && H.respawnSec === 180, 'it comes back ' + H.respawnSec + ' s later — every three minutes');
 T0 = room.heli.respawnAt - 1000; Srv.tick(room);
 ok(room.heli.state === 'gone', 'not a second early');
 T0 = room.heli.respawnAt + 1; Srv.tick(room);
@@ -98,12 +113,16 @@ ok(room.heli.state === 'pad' && room.heli.hp === H.hp && room.heli.riders.length
 
 console.log('--- the wiring ---');
 const srv = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-ok(/Heli\.tick\(room\)/.test(srv) && /Heli\.reset\(room\)/.test(srv) && /heli: heliSnap/.test(srv) && /socket\.on\('hitHeli'/.test(srv), 'server ticks, resets, ships and takes hits');
+ok(/Heli\.tick\(room\)/.test(srv) && /Heli\.reset\(room\)/.test(srv) && /heli: heliSnap/.test(srv) && /socket\.on\('hitHeli'/.test(srv) && /socket\.on\('boardHeli'/.test(srv), 'server ticks, resets, ships, takes hits and boards');
+const heliC = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/heli.js'), 'utf8');
+ok(/NEXT HELICOPTER IN/.test(heliC) && /PRESS Z TO BOARD|press Z to board/i.test(heliC) && /function buildSign/.test(heliC), 'the pad has a board with the live countdown and the Z prompt');
+
 ok((srv.match(/heli: Heli\.snapshot\(room\)/g) || []).length >= 4, 'every reconnect door carries the state');
 const html = fs.readFileSync(path.join(__dirname, '..', 'public/index.html'), 'utf8');
 ok(/src\/environment\/heli\.js/.test(html) && /id="heli-hud"/.test(html), 'the client has the module and the health bar');
 const game = fs.readFileSync(path.join(__dirname, '..', 'public/src/core/game.js'), 'utf8');
 ok(/function platformProbe/.test(game) && /Heli\.floorAt\(pos, halfY\)/.test(game) && /Heli\.bail\(\)/.test(game), 'the controller gets the cabin floor and Space bails');
+ok(/Heli\.canBoard\(\)\) \{ Heli\.board\(\)/.test(game), 'Z near the machine boards it before anything else');
 const wsys = fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/system.js'), 'utf8');
 ok(/Heli\.rayHit\(o, d, reach\)/.test(wsys) && /Net\.hitHeli\(current/.test(wsys), 'the hitscan tests the fuselage first and reports the weapon');
 const outer = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/districts-outer.js'), 'utf8');

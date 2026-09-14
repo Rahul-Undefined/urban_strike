@@ -43,6 +43,10 @@
 #heli-hud.on{display:block}
 #heli-hud .bar{height:6px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.25);margin-top:3px}
 #heli-fill{height:100%;background:linear-gradient(90deg,#7f9448,#d6913f)}
+/* v1.0m: the boarding prompt, centre-low like an interact hint */
+#heli-prompt{position:fixed;left:50%;top:60%;transform:translateX(-50%);display:none;z-index:43;font-size:13px;letter-spacing:.16em;
+  color:#7ef0ff;text-shadow:0 2px 4px #000;padding:5px 14px;border:1px solid rgba(126,240,255,.5);background:rgba(10,14,20,.6);border-radius:3px}
+#heli-prompt.on{display:block}
 #zone-edge{position:fixed;inset:0;pointer-events:none;z-index:41;opacity:0;transition:opacity .25s linear;
   background:radial-gradient(ellipse at center, rgba(255,40,30,0) 45%, rgba(255,40,30,.55) 100%)}
 #breath-fill{width:100%;height:100%;background:rgba(220,235,255,.8);transition:height .08s linear}
@@ -308,6 +312,7 @@
   <div id="breath-bar" class="hidden"><div id="breath-fill"></div></div>
   <div id="zone-edge"></div>
   <div id="heli-hud"><div id="heli-txt">HELICOPTER</div><div class="bar"><div id="heli-fill"></div></div></div>
+  <div id="heli-prompt"></div>
   <div id="zone-banner"></div>
   <div id="remote-pip">STRIKE REMOTE &middot; HOLD <b>Z</b> TO CALL THE HELICOPTER</div>
   <div id="nuke-flash"></div>

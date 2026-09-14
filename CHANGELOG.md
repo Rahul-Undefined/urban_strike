@@ -1,3 +1,35 @@
+# v1.0 (build 13) — BOARD IT WITH Z; THE BOARD AT THE PAD (2026-09-14)
+
+Same release name, same `1.0.0`. Tagged `v1.0m`. Rahul, after flying it:
+"it requires the player to stand in the helipad for the helicopter to come —
+when the user comes near it should say press Z to board; currently the player
+is falling down from the helicopter"; "when there is no helicopter, a signboard
+should show the next one in mm:ss with a live countdown; every 3 minutes."
+
+**Boarding is an act now.** Walk up to the machine on its pad and a prompt
+appears — "Z — BOARD THE HELICOPTER". Z asks the server, which SEATS you (eight
+cabin seats; a server teleport the next state update honours), lists you, and
+starts the 3 s lift-off count from the first boarding; everyone else in the
+match hears who boarded. Z again before lift-off steps you off beside the pad.
+Nobody boards by standing around, and the machine is on the pad from the
+first second of every Urban match.
+
+**Why riders were "falling".** The server judged "aboard" with a tight cabin
+test against the rider's REPORTED position — which trails the machine by a
+network delay, a metre or two at 14 m/s — so a seated rider at the back of the
+cabin read as outside and was killed as a faller. "Fallen" is now what a body
+in free fall does and a seated rider never does: three metres below the floor
+or six and a half metres from the cabin. Proved with a rider 2.6 m behind and
+0.6 m below the seat staying aboard, and one 8 m off and 4 m down dying.
+
+**The board.** A signboard at the pad edge with a live canvas: "NEXT HELICOPTER
+IN 02:31" while it is away (the respawn is **every 3 minutes** now), "LIFT-OFF
+IN 3 · press Z to board" during boarding, "HELICOPTER READY · walk up · press Z"
+when it sits, "AIRBORNE · back in 00:41" while it flies.
+
+`verify-heli` 47/0. Board: 48 gates, 45 green, the same three documented reds.
+Live: `test.js` 325/0.
+
 # v1.0 (build 12) — SQUADS IN THE ZONE, FOUR HALTS, THE HELICOPTER (2026-09-14)
 
 Same release name, same `1.0.0`. Tagged `v1.0l`.

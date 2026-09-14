@@ -49,6 +49,50 @@ module.exports = function initHeli(ctx) {
     const feet = q.pos[1] - CFG.PLAYER.standH / 2, floor = pose.y + CFG.HELI.cabinFloor;
     return Math.abs(lx) <= CAB_HX + 0.4 && Math.abs(lz) <= CAB_HZ + 0.4 && feet >= floor - 1.2 && feet <= floor + 2.6;
   }
+  /* v1.0m: SEATS. Boarding is an act (press Z near the machine on the pad):
+     the server puts the player in the cabin at a seat and lists them; the
+     first boarding starts the lift-off count. Cabin-local seat slots. */
+  const SEATS = [[-0.9, -0.6], [0.9, -0.6], [-0.9, 0.6], [0.9, 0.6], [-0.3, -0.6], [0.3, -0.6], [-0.3, 0.6], [0.3, 0.6]];
+  function seatWorld(pose, i) {
+    const s = SEATS[i % SEATS.length], cs = Math.cos(pose.yaw), sn = Math.sin(pose.yaw);
+    return [pose.x + s[0] * cs - s[1] * sn, pose.y + CFG.HELI.cabinFloor + CFG.PLAYER.standH / 2 + 0.03, pose.z + s[0] * sn + s[1] * cs];
+  }
+  function board(room, p) {
+    if (!has(room) || !p || !p.alive || p.out) return { ok: false, err: 'Not alive' };
+    const h = room.heli;
+    if (h.state !== 'pad' && h.state !== 'landed') return { ok: false, err: h.state === 'gone' ? 'No helicopter on the pad' : 'The helicopter is airborne' };
+    const pose = poseNow(room);
+    if (!pose) return { ok: false, err: 'No helicopter' };
+    const d = Math.hypot(p.pos[0] - pose.x, p.pos[2] - pose.z);
+    if (d > 7) return { ok: false, err: 'Get closer to the helicopter' };
+    if (h.riders.indexOf(p.id) >= 0) {                              // second press: step off
+      h.riders = h.riders.filter(id => id !== p.id);
+      p.pos = [pose.x + Math.sin(pose.yaw) * 4.5, CFG.HELI.padY + CFG.PLAYER.standH / 2 + 0.03, pose.z - Math.cos(pose.yaw) * 4.5];
+      p.justSpawned = true;
+      if (!h.riders.length) h.boardSince = 0;
+      broadcast(room);
+      io.to(p.id).emit('heliSeat', { pos: p.pos, aboard: false });
+      return { ok: true, aboard: false };
+    }
+    if (h.riders.length >= SEATS.length) return { ok: false, err: 'The cabin is full' };
+    h.riders.push(p.id);
+    const seat = seatWorld(pose, h.riders.length - 1);
+    p.pos = seat; p.justSpawned = true;                              // a server teleport: the next state update passes
+    if (!h.boardSince) { h.boardSince = now(); io.to(room.code).emit('heliNotice', { kind: 'boarding', in: CFG.HELI.boardSec, name: p.name }); }
+    broadcast(room);
+    io.to(p.id).emit('heliSeat', { pos: seat, aboard: true, liftIn: Math.max(0, CFG.HELI.boardSec - (now() - h.boardSince) / 1000) });
+    return { ok: true, aboard: true, seat: seat };
+  }
+  /* v1.0m: "fallen" is DROPPING away, not lagging behind. A rider's server
+     position trails the machine by a network delay — at 14 m/s that is a
+     metre or two behind a seat — so the test is a rider well below the floor
+     or well away from the cabin, which a body in free fall is within a second
+     and a seated rider never is. */
+  function fallen(pose, q) {
+    const feet = q.pos[1] - CFG.PLAYER.standH / 2, floor = pose.y + CFG.HELI.cabinFloor;
+    const dh = Math.hypot(q.pos[0] - pose.x, q.pos[2] - pose.z);
+    return feet < floor - 3.0 || dh > 6.5;
+  }
   function flightSec(room) { return (now() - room.heli.t0) / 1000; }
   function totalFlight(P) { return CFG.HELI.climbSec + P.length / CFG.HELI.speed + CFG.HELI.landSec; }
 
@@ -62,19 +106,17 @@ module.exports = function initHeli(ctx) {
     }
     const pose = poseNow(room);
     if (h.state === 'pad' || h.state === 'landed') {
-      const aboard = [];
-      for (const q of room.players.values()) { if (q.alive && !q.out && inCabin(pose, q)) aboard.push(q.id); }
+      /* riders are those who pressed Z and are still in the cabin */
+      h.riders = h.riders.filter(id => { const q = room.players.get(id); return q && q.alive && !q.out && inCabin(pose, q); });
       if (h.state === 'pad') {
-        if (aboard.length) { if (!h.boardSince) { h.boardSince = t; io.to(room.code).emit('heliNotice', { kind: 'boarding', in: CFG.HELI.boardSec }); } }
-        else h.boardSince = 0;
-        if (h.boardSince && t - h.boardSince >= CFG.HELI.boardSec * 1000) {
-          h.state = 'flying'; h.t0 = t; h.riders = aboard; h.boardSince = 0; h.flightStart = t;
+        if (!h.riders.length) h.boardSince = 0;
+        if (h.boardSince && t - h.boardSince >= CFG.HELI.boardSec * 1000 && h.riders.length) {
+          h.state = 'flying'; h.t0 = t; h.boardSince = 0; h.flightStart = t;
           broadcast(room);
-          io.to(room.code).emit('toast', { msg: 'The helicopter is airborne \u00b7 ' + aboard.length + ' aboard' });
+          io.to(room.code).emit('toast', { msg: 'The helicopter is airborne \u00b7 ' + h.riders.length + ' aboard' });
         }
       } else {                                                  // landed: unload, then leave
-        h.riders = aboard;
-        if (!aboard.length) { if (!h.emptySince) h.emptySince = t; if (t - h.emptySince >= CFG.HELI.unloadSec * 1000) { leave(room, h.flightStart + CFG.HELI.respawnSec * 1000); } }
+        if (!h.riders.length) { if (!h.emptySince) h.emptySince = t; if (t - h.emptySince >= CFG.HELI.unloadSec * 1000) { leave(room, h.flightStart + CFG.HELI.respawnSec * 1000); } }
         else h.emptySince = 0;
       }
       return;
@@ -87,7 +129,7 @@ module.exports = function initHeli(ctx) {
         for (const id of h.riders) {
           const q = room.players.get(id);
           if (!q || !q.alive || q.out) continue;
-          if (inCabin(pose, q)) { still.push(id); continue; }
+          if (!fallen(pose, q)) { still.push(id); continue; }
           /* fell out */
           const by = (h.lastHitBy && t - h.lastHitAt < CFG.HELI.creditSec * 1000 && room.players.has(h.lastHitBy) && h.lastHitBy !== id) ? h.lastHitBy : id;
           applyDamage(room, q, 999, by, 'helifall', false, true);
@@ -128,5 +170,5 @@ module.exports = function initHeli(ctx) {
     return { ok: true, dmg, hp: h.hp };
   }
   function reset(room) { room.heli = null; }
-  return { start, tick, hit, snapshot, reset, poseNow, inCabin };
+  return { start, tick, hit, board, snapshot, reset, poseNow, inCabin, fallen };
 };

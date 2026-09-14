@@ -20,6 +20,7 @@ var Heli = (function () {
   var state = null, pose = null, prevPose = null, lastYaw = 0, roll = 0, pitch = 0;
   var bailUntil = 0, wasAboard = false, boardToastAt = 0, rotorSoundAt = 0;
   var CAB_HX = 1.4, CAB_HZ = 1.25, CAB_H = 2.1;
+  var sign = null, signCtx = null, signTex = null, signText = '', signAt = 0, promptOn = false;
 
   function serverNow() {
     var m = (typeof Net !== 'undefined' && Net.getMatch) ? Net.getMatch() : null;
@@ -64,6 +65,50 @@ var Heli = (function () {
     return g;
   }
 
+  /* v1.0m: THE BOARD at the pad edge — a live countdown when the machine is
+     away, "PRESS Z TO BOARD" when it is here, "AIRBORNE" while it flies. */
+  function buildSign() {
+    var g = new THREE.Group();
+    var post = mat('metal');
+    var cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
+    signCtx = cv.getContext('2d');
+    signTex = new THREE.CanvasTexture(cv);
+    var board = new THREE.Mesh(new THREE.BoxGeometry(4.0, 1.0, 0.12), [post, post, post, post,
+      new THREE.MeshBasicMaterial({ map: signTex }), new THREE.MeshBasicMaterial({ map: signTex })]);
+    board.position.set(0, 2.6, 0); g.add(board);
+    var p1 = new THREE.Mesh(new THREE.BoxGeometry(0.16, 3.1, 0.16), post); p1.position.set(-1.7, 1.55, 0); g.add(p1);
+    var p2 = new THREE.Mesh(new THREE.BoxGeometry(0.16, 3.1, 0.16), post); p2.position.set(1.7, 1.55, 0); g.add(p2);
+    g.position.set(cfg.pad[0] - 8.6, cfg.padY, cfg.pad[1] + 2.0);   // beside the pad, facing the approach
+    g.rotation.y = Math.PI / 2;
+    return g;
+  }
+  function drawSign(text, sub, color) {
+    if (!signCtx) return;
+    var g = signCtx; g.fillStyle = '#10151c'; g.fillRect(0, 0, 512, 128);
+    g.fillStyle = color || '#ffd36b'; g.fillRect(0, 0, 512, 8);
+    g.font = 'bold 44px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#eef3f8';
+    g.fillText(text, 256, sub ? 48 : 64);
+    if (sub) { g.font = '24px sans-serif'; g.fillStyle = color || '#ffd36b'; g.fillText(sub, 256, 96); }
+    signTex.needsUpdate = true;
+  }
+  function fmt(sec) { sec = Math.max(0, Math.ceil(sec)); var m = Math.floor(sec / 60), s2 = sec % 60; return (m < 10 ? '0' : '') + m + ':' + (s2 < 10 ? '0' : '') + s2; }
+  function updateSign() {
+    if (!signCtx || !state) return;
+    var t = performance.now(); if (t - signAt < 250) return; signAt = t;
+    var text, sub, col;
+    if (state.state === 'gone') { text = 'NEXT HELICOPTER IN'; sub = fmt((state.respawnAt - serverNow()) / 1000); col = '#ff9a4a'; }
+    else if (state.state === 'flying') { text = 'HELICOPTER AIRBORNE'; sub = 'back in ' + fmt(flightLeft()); col = '#7ef0ff'; }
+    else if (state.liftIn > 0) { text = 'LIFT-OFF IN ' + Math.ceil(state.liftIn); sub = 'press Z to board'; col = '#7ef0ff'; }
+    else { text = 'HELICOPTER READY'; sub = 'walk up \u00b7 press Z to board'; col = '#7ef0ff'; }
+    var key = text + '|' + sub; if (key === signText) return; signText = key;
+    drawSign(text, sub, col);
+  }
+  function flightLeft() {
+    if (!state || state.state !== 'flying' || !path) return 0;
+    var total = cfg.climbSec + path.length / cfg.speed + cfg.landSec;
+    return total - (serverNow() - state.t0) / 1000;
+  }
+
   function init(sc, map) {
     dispose();
     scene = sc;
@@ -72,16 +117,22 @@ var Heli = (function () {
     path = World.trainPath({ waypoints: cfg.route, fillet: cfg.fillet });
     group = build();
     scene.add(group);
+    sign = buildSign(); scene.add(sign); signText = '';
     set(null);
     return true;
   }
   function dispose() {
     if (group && scene) { scene.remove(group); group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); }
-    group = null; state = null; pose = null; prevPose = null; cfg = null; path = null;
+    if (sign && scene) { scene.remove(sign); sign.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); }
+    if (signTex) signTex.dispose();
+    group = null; sign = null; signCtx = null; signTex = null; state = null; pose = null; prevPose = null; cfg = null; path = null;
+    setPrompt(false);
     if (typeof UI !== 'undefined' && UI.setHeliHud) UI.setHeliHud(null);
   }
   function set(st) {
+    var prevState = state ? state.state : null;
     state = st || null;
+    if (state && prevState !== state.state) state.liftIn = 0;
     if (group) group.visible = !!(state && state.state !== 'gone');
     if (typeof UI !== 'undefined' && UI.setHeliHud) UI.setHeliHud(state && state.state !== 'gone' ? { hp: state.hp, max: cfg ? cfg.hp : 900, state: state.state } : null);
   }
@@ -97,7 +148,8 @@ var Heli = (function () {
   }
   function update(dt) {
     if (!group || !state) return;
-    if (state.state === 'gone') { group.visible = false; return; }
+    if (state.liftIn > 0 && state.state === 'pad') state.liftIn = Math.max(0, state.liftIn - dt);
+    if (state.state === 'gone') { group.visible = false; updateSign(); if (promptOn) setPrompt(false); return; }
     prevPose = pose;
     pose = computePose();
     if (!prevPose) prevPose = pose;
@@ -114,7 +166,41 @@ var Heli = (function () {
     fuselage.rotation.set(roll, 0, pitch);
     var spin = state.state === 'flying' ? 0.55 : (state.state === 'pad' && state.boarding ? 0.25 : 0.06);
     rotor.rotation.y += spin; tailRotor.rotation.x += spin * 1.6;
-    riderHud(); rotorSound();
+    riderHud(); rotorSound(); updateSign(); updatePrompt();
+  }
+  /* v1.0m: "press Z to board" when standing near the machine on the pad */
+  function nearForBoarding() {
+    if (!active() || !pose || typeof PlayerCtl === 'undefined' || !PlayerCtl.alive) return false;
+    if (state.state !== 'pad' && state.state !== 'landed') return false;
+    return Math.hypot(PlayerCtl.pos.x - pose.x, PlayerCtl.pos.z - pose.z) <= 6.5;
+  }
+  function setPrompt(on, text) {
+    var e = document.getElementById('heli-prompt');
+    if (!e) return;
+    if (on) { e.textContent = text || ''; e.classList.add('on'); } else e.classList.remove('on');
+    promptOn = !!on;
+  }
+  function updatePrompt() {
+    if (!nearForBoarding()) { if (promptOn) setPrompt(false); return; }
+    var me = (typeof Net !== 'undefined' && Net.getMyId) ? Net.getMyId() : null;
+    var aboard = !!(state.riders && me && state.riders.indexOf(me) >= 0);
+    setPrompt(true, aboard ? 'Z \u2014 STEP OFF' + (state.liftIn > 0 ? ' \u00b7 lift-off in ' + Math.ceil(state.liftIn) : '') : 'Z \u2014 BOARD THE HELICOPTER');
+  }
+  function canBoard() { return nearForBoarding(); }
+  function board() {
+    if (!canBoard() || typeof Net === 'undefined' || !Net.boardHeli) return false;
+    Net.boardHeli(function (res) {
+      if (!res || !res.ok) { if (res && res.err && typeof UI !== 'undefined') UI.toast(res.err, true); return; }
+      if (res.aboard && typeof UI !== 'undefined') UI.toast('Aboard \u00b7 lifting off in ' + cfg.boardSec + ' s \u00b7 press Z again to step off');
+    });
+    return true;
+  }
+  /* the server seats (or unseats) us: take the position it chose */
+  function onSeat(d) {
+    if (!d || !d.pos || typeof PlayerCtl === 'undefined') return;
+    PlayerCtl.pos.set(d.pos[0], d.pos[1], d.pos[2]);
+    if (PlayerCtl.vel) PlayerCtl.vel.set(0, 0, 0);
+    if (state && d.aboard && d.liftIn !== undefined) state.liftIn = d.liftIn;
   }
   function riderHud() {
     if (typeof PlayerCtl === 'undefined' || typeof UI === 'undefined') return;
@@ -161,5 +247,6 @@ var Heli = (function () {
   }
 
   return { init: init, dispose: dispose, set: set, hpUpdate: hpUpdate, update: update, floorAt: floorAt, bail: bail, rayHit: rayHit,
+    canBoard: canBoard, board: board, onSeat: onSeat,
     active: active, isRiding: isRiding, pose: function () { return pose; }, state: function () { return state; } };
 })();

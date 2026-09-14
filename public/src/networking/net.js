@@ -543,7 +543,13 @@ var Net = (function () {
     /* ===== v1.0l - THE HELICOPTER ===== state, health, notices, the crash */
     s.on('heliState', function (d) { if (typeof Heli !== 'undefined') Heli.set(d); });
     s.on('heliHp', function (d) { if (typeof Heli !== 'undefined') Heli.hpUpdate(d); });
-    s.on('heliNotice', function (d) { if (d && d.kind === 'boarding') UI.toast('Helicopter boarding \u00b7 lifting off in ' + d.in + ' s'); });
+    s.on('heliNotice', function (d) {
+      if (d && d.kind === 'boarding') {
+        UI.toast((d.name ? d.name + ' boarded the helicopter \u00b7 ' : 'Helicopter boarding \u00b7 ') + 'lifting off in ' + d.in + ' s');
+        if (typeof Heli !== 'undefined' && Heli.state && Heli.state()) Heli.state().liftIn = d.in;
+      }
+    });
+    s.on('heliSeat', function (d) { if (typeof Heli !== 'undefined') Heli.onSeat(d); });   /* v1.0m: the server seats us */
     s.on('heliBoom', function (d) {
       if (!d) return;
       var p = new THREE.Vector3(d.x, d.y, d.z);
@@ -1198,6 +1204,7 @@ var Net = (function () {
     /* v1.0b */
     launchRocket: function (cb) { if (socket) socket.emit('launchRocket', {}, cb); },
     hitHeli: function (w, cb) { if (socket) socket.emit('hitHeli', { w: w }, cb); },   /* v1.0l */
+    boardHeli: function (cb) { if (socket) socket.emit('boardHeli', {}, cb); },       /* v1.0m */
     plantBomb: function (p, cb) { if (socket) socket.emit('plantBomb', { p: p }, cb); },
     dropItem: function (d, cb) { if (socket) socket.emit('dropItem', d, cb); },
     callStrike: function (cb) { if (socket) socket.emit('callStrike', {}, cb); },

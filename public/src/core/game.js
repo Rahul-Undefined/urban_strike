@@ -400,6 +400,9 @@ var Game = (function () {
       // work in the lobby too, so it does NOT live here. The old duplicate also
       // shadowed the smoke grenade, which had been unbindable ever since.
       if (e.code === 'KeyZ') {
+        /* v1.0m: near the helicopter on its pad, Z boards it (or steps off) and
+           nothing else — a pickup at your feet can wait a second. */
+        if (window.Heli && Heli.canBoard && Heli.canBoard()) { Heli.board(); e.preventDefault(); return; }
         /* v10.6: Z is the one INTERACT key. It rides a lift when you are stood
            in a shaft and picks up loot when you are stood on some; the two can
            never both apply, because a lift stop is not a loot spawn. Loot no
