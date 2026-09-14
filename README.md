@@ -8,6 +8,10 @@ doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
 every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
 count toward the next strike; Shift while scoped holds your breath.
 
+**v1.0.1 — THE HELICOPTER, PROPERLY.** Walk up to it on the airport pad and
+press Z to board (Z again to step off); it lifts 3 s after the first boarding.
+Asset URLs now carry a content hash, so a deploy never serves a stale client.
+
 **v1.0 build 12 — THE HELICOPTER.** Board it on the airport pad (3 s), fly a
 loop over the city and shoot from the cabin; 900 hull points, assault rifles
 hurt it, snipers barely, rockets a lot; fall out and you die, shoot it down and

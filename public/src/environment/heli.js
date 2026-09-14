@@ -199,7 +199,8 @@ var Heli = (function () {
     if (!canBoard() || typeof Net === 'undefined' || !Net.boardHeli) return false;
     Net.boardHeli(function (res) {
       if (!res || !res.ok) { if (res && res.err && typeof UI !== 'undefined') UI.toast(res.err, true); return; }
-      if (res.aboard && typeof UI !== 'undefined') UI.toast('Aboard \u00b7 lifting off in ' + cfg.boardSec + ' s \u00b7 press Z again to step off');
+      if (res.seat) onSeat({ pos: res.seat, aboard: true, liftIn: cfg.boardSec });   // v1.0o: sit down NOW, before the next state update goes out
+      if (res.aboard && typeof UI !== 'undefined') UI.toast('Aboard the helicopter \u00b7 lifting off in ' + cfg.boardSec + ' s \u00b7 Z again to step off');
     });
     return true;
   }
@@ -212,7 +213,7 @@ var Heli = (function () {
   }
   function riderHud() {
     if (typeof PlayerCtl === 'undefined' || typeof UI === 'undefined') return;
-    var aboard = !!PlayerCtl.onPlatform && isRiding();
+    var aboard = !!PlayerCtl.onPlatform && PlayerCtl.platformSrc === 'heli' && isRiding();
     if (aboard && !wasAboard && UI.toast && performance.now() - boardToastAt > 4000) { UI.toast('AIRBORNE \u2014 do not jump; falling from the helicopter is fatal', true); boardToastAt = performance.now(); }
     wasAboard = aboard;
   }

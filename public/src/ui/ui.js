@@ -601,7 +601,9 @@ var UI = (function () {
     var wLabel = (CFG.WEAPONS[d.weapon] && CFG.WEAPONS[d.weapon].label) ||
       (CFG.THROWS[d.weapon] && CFG.THROWS[d.weapon].label) ||
       (CFG.GEAR[d.weapon] && CFG.GEAR[d.weapon].label) || d.weapon || '?';
-    if (d.weapon === 'helifall') {
+    if (d.weapon === 'helidown') {
+      row.innerHTML = '<b>' + d.killerName + '</b> <span class="fw">shot down the helicopter with</span> <b>' + d.victimName + '</b> <span class="fw">aboard</span>';   /* v1.0o */
+    } else if (d.weapon === 'helifall') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">fell from the helicopter</span>' + (d.self ? '' : ' <span class="fw">(hit by</span> <b>' + d.killerName + '</b><span class="fw">)</span>');   /* v1.0l */
     } else if (d.weapon === 'zone') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">bled out in the zone</span>';   /* v1.0j */
@@ -713,7 +715,14 @@ var UI = (function () {
     /* v11.0: the range rides the death event (combat.js). Killer, weapon and
        DISTANCE together answer "where did that come from" — 8 m and 80 m are
        different lessons, and until now the screen taught neither. */
-    els['death-info'].textContent = d.self ? 'Careful with those explosives.'
+    /* v1.0o: the world's own causes say what happened; "explosives" is only
+       for a grenade that came back. */
+    var cause = d.weapon === 'train' ? 'Run over by the train.'
+      : d.weapon === 'zone' ? 'Bled out outside the zone.'
+      : d.weapon === 'helifall' ? (d.self ? 'You fell from the helicopter.' : 'Fell from the helicopter after ' + d.killerName + ' hit it.')
+      : d.weapon === 'helidown' ? 'Shot down with the helicopter by ' + d.killerName + '.'
+      : null;
+    els['death-info'].textContent = cause ? cause : d.self ? 'Careful with those explosives.'
       : 'Taken out by ' + d.killerName + (wl ? ' \u00b7 ' + wl : '') +
         (typeof d.dist === 'number' ? ' \u00b7 ' + d.dist + ' m' : '') +
         (d.headshot ? ' \u00b7 HEADSHOT' : '');

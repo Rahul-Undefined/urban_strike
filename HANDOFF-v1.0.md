@@ -1,3 +1,49 @@
+# v1.0.1 (build 15) — THE HELICOPTER, PROPERLY (2026-09-14)
+
+**Version 1.0.1**, and asset URLs now carry a content hash — see the last
+point. Tagged `v1.0o`. Rahul's four errors, each with its cause:
+
+**1. "Onboarded, but the message is about the train."** The train's boarding
+hint fired on ANY moving floor, because the controller only knew "on a
+platform", not whose. The floor result now carries its source; the train hint
+fires on the train's floor only, the helicopter's on the helicopter's.
+
+**2. "Pressed Z, boarded, but the helicopter is not going up."** A race. The
+server seats you and lists you; but your client had already sent a position
+update with the OLD position (3 m outside the cabin) — it lands a moment later,
+overwrites the seat, and the next server tick drops you from the riders
+before your client has even learned where it sits. No riders, no lift-off.
+Fixed twice: a rider is trusted aboard for 2.5 s after boarding whatever
+position arrives (the boarding grace), and the client sits down from the Z
+acknowledgement itself, before its next update goes out. Proved live with the
+stale update deliberately injected.
+
+**3. "Lifted off and the players died."** The same race at lift-off: a rider
+whose reported position was stale read as "fallen" in the first second of the
+climb. The fall test now waits until the flight is 2.5 s old and the machine
+is well up, and "fallen" was already metres-below-or-away, not a tight box.
+
+**4. "Killed by explosives" for train and helicopter deaths.** The death screen
+said "Careful with those explosives" for every self-tagged death — the train,
+the zone, a fall from the helicopter. Each now says what happened: "Run over
+by the train.", "Bled out outside the zone.", "You fell from the helicopter." /
+"Fell from the helicopter after X hit it.", "Shot down with the helicopter by
+X." The kill feed has a line for a shoot-down too.
+
+**The one that made the others worse.** Fourteen builds went out under one
+version string while the game was live. The `?v=` cache key never changed, so
+browsers held old scripts against new ones — a cached game.js talking to a new
+server. That is why "vanished" looked the way it did and why the fixes seemed
+not to land. Asset URLs now carry `version-<sha1 of every client file>`,
+computed at boot: any change to any client file changes every URL on deploy,
+whether or not anyone remembered the version. `/version` still reports the
+plain version.
+
+`verify-heli` 57/0 (the race, the climb grace, the hints, the death texts, the
+stamp); new live phase: Z with a stale update → lift-off on time → alive
+through the climb. Board: 48 gates, 45 green, the same three documented reds.
+Live: `test.js` 329/0.
+
 # v1.0 (build 14) — THE HELICOPTER THAT VANISHED (2026-09-14)
 
 Same release name, same `1.0.0`. Tagged `v1.0n`. Rahul: "helicopter pura

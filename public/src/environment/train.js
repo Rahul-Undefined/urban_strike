@@ -159,7 +159,7 @@ var Train = (function () {
   /* v1.0g: the rider's HUD hint. Once per boarding: leaving a moving train is
      fatal (the server rule in hazards.js); the station stop is the way off. */
   function riderHint(dt) {
-    var aboard = !!(typeof PlayerCtl !== 'undefined' && PlayerCtl.onPlatform);
+    var aboard = !!(typeof PlayerCtl !== 'undefined' && PlayerCtl.onPlatform && PlayerCtl.platformSrc === 'train');   /* v1.0o: the train's floor, not the helicopter's */
     if (aboard && !wasAboard && typeof UI !== 'undefined' && UI.toast) {
       var nowT = performance.now();
       if (nowT - boardToastAt > 4000) { UI.toast('ABOARD \u2014 leaving a moving train is fatal; get off at the station stop', true); boardToastAt = nowT; }

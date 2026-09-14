@@ -88,6 +88,25 @@ rider.pos = [rider.pos[0] + 8, rider.pos[1] - 4, rider.pos[2]];   // 8 m off and
 T0 += 200; Srv.tick(room);
 ok(!rider.alive && killed.length === 1 && killed[0].w === 'helifall' && killed[0].by === 'S', 'a rider outside the cabin in the air has fallen: dead, tagged helifall, credited to the shooter who hit the machine');
 ok(room.heli.state === 'landed', 'with nobody aboard the machine goes home');
+/* v1.0o: THE BOARDING RACE. A state update with the OLD position lands right
+   after the server seated the rider (the client had already sent it). The
+   rider must survive the tick and the lift-off must still happen. */
+{
+  T0 += 20000; room.heli.state = 'pad'; room.heli.t0 = T0; room.heli.hp = H.hp; room.heli.riders = []; room.heli.boardSince = 0; room.heli.boardedAt = {};
+  const late = mk('L', H.pad[0] + 4, half + H.padY, H.pad[1]); room.players.set('L', late);
+  const bl = Srv.board(room, late);
+  late.pos = [H.pad[0] + 4, half + H.padY, H.pad[1]];              // the stale update overwrites the seat
+  T0 += 70; Srv.tick(room);
+  ok(bl.ok && room.heli.riders.indexOf('L') >= 0 && room.heli.boardSince > 0, 'a stale position right after boarding does not unseat the rider (boarding grace)');
+  late.pos = bl.seat.slice();                                        // the client sat down
+  T0 += H.boardSec * 1000; Srv.tick(room);
+  ok(room.heli.state === 'flying' && room.heli.riders[0] === 'L', 'and the lift-off happens on time');
+  T0 += 1000; late.pos = [H.pad[0] + 4, half + H.padY, H.pad[1]];   // a second stale update during the first second of the climb
+  Srv.tick(room);
+  ok(late.alive && room.heli.riders.length === 1, 'the fall test waits out the climb\'s first seconds — no phantom fall');
+  const pL = CFG.heliPoseAt(H, P, (T0 - room.heli.t0) / 1000); late.pos = [pL.x, pL.y + H.cabinFloor + half, pL.z];
+  room.heli.state = 'landed'; room.heli.riders = []; room.heli.t0 = T0; room.heli.emptySince = T0; room.heli.flightStart = T0 - 60000;
+}
 // a fresh flight with two riders, shot down
 T0 += 20000; room.heli.state = 'pad'; room.heli.t0 = T0; room.heli.hp = H.hp; room.heli.riders = []; room.heli.boardSince = 0;
 const r2 = mk('R2', H.pad[0] + 3, half, H.pad[1]), r3 = mk('R3', H.pad[0] - 3, half, H.pad[1] + 2);
@@ -167,6 +186,12 @@ const wsys = fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/syst
 ok(/Heli\.rayHit\(o, d, reach\)/.test(wsys) && /Net\.hitHeli\(current/.test(wsys), 'the hitscan tests the fuselage first and reports the weapon');
 const outer = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/districts-outer.js'), 'utf8');
 ok(/CFG\.HELI\.pad/.test(outer), 'the pad is built from the same config');
+/* v1.0o: the hints and the death screen name the right machine */
+const trainC = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/train.js'), 'utf8');
+ok(/PlayerCtl\.platformSrc === 'train'/.test(trainC) && /PlayerCtl\.platformSrc === 'heli'/.test(heliC) && /r\.src = 'heli'/.test(game), 'the train hint fires on the train\'s floor only, the helicopter hint on the helicopter\'s');
+const uiC = fs.readFileSync(path.join(__dirname, '..', 'public/src/ui/ui.js'), 'utf8');
+ok(/Run over by the train\./.test(uiC) && /Bled out outside the zone\./.test(uiC) && /You fell from the helicopter\./.test(uiC) && /Shot down with the helicopter by/.test(uiC), 'the death screen names train, zone and helicopter deaths — not "explosives"');
+ok(/ASSET_STAMP = /.test(srv) && /createHash\('sha1'\)/.test(srv) && /'\?v=' \+ ASSET_STAMP/.test(srv), 'asset URLs carry a content hash, so a deploy can never serve a stale client');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

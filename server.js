@@ -125,10 +125,24 @@ const app = express();
    every release and this handles itself; that is the whole point of it being
    read from there rather than typed here. */
 const APP_VERSION = require('./package.json').version;
+/* v1.0o: the stamp is the version PLUS a hash of every client file, computed
+   once at boot. Fourteen builds shipped under one version string while the
+   game was live, and browsers held old scripts against new ones — the
+   "helicopter vanished" and half of the next report were a cached game.js
+   talking to a new server. Now any change to any client file changes every
+   asset URL on deploy, whether or not anyone remembered the version. */
+const ASSET_STAMP = (function () {
+  try {
+    const crypto = require('crypto'), h = crypto.createHash('sha1');
+    const walk = (dir) => { for (const f of fs.readdirSync(dir).sort()) { const fp = path.join(dir, f); const st = fs.statSync(fp); if (st.isDirectory()) walk(fp); else if (/\.(js|css|html)$/.test(f)) h.update(fs.readFileSync(fp)); } };
+    walk(path.join(__dirname, 'public'));
+    return APP_VERSION + '-' + h.digest('hex').slice(0, 8);
+  } catch (e) { return APP_VERSION + '-' + Date.now().toString(36); }
+})();
 const INDEX_HTML = (function () {
   const raw = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
   return raw.replace(/(src|href)="(?!https?:|[/][/]|[/]socket[.]io[/]|data:|#)([^"?]+)"/g,
-    (m, attr, url) => attr + '="' + url + '?v=' + APP_VERSION + '"');
+    (m, attr, url) => attr + '="' + url + '?v=' + ASSET_STAMP + '"');
 })();
 function sendIndex(req, res) {
   res.set('Cache-Control', 'no-cache');

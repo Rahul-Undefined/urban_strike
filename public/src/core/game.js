@@ -483,7 +483,8 @@ var Game = (function () {
      helicopter's. Whichever has the player answers. */
   function platformProbe(pos, halfY) {
     var r = (window.Train && Train.isActive()) ? Train.floorAt(pos, halfY) : null;
-    if (!r && window.Heli && Heli.active()) r = Heli.floorAt(pos, halfY);
+    if (r) r.src = 'train';
+    if (!r && window.Heli && Heli.active()) { r = Heli.floorAt(pos, halfY); if (r) r.src = 'heli'; }
     return r;
   }
   function clearInput() {

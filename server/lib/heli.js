@@ -78,6 +78,13 @@ module.exports = function initHeli(ctx) {
     h.riders.push(p.id);
     const seat = seatWorld(pose, h.riders.length - 1);
     p.pos = seat; p.justSpawned = true;                              // a server teleport: the next state update passes
+    /* v1.0o: BOARDING GRACE. The client's next state update may already be
+       in flight with the OLD position (outside the cabin); it would overwrite
+       the seat the server just set and the tick would drop the rider before
+       the client even learned where it sits — Rahul's "boarded but the
+       helicopter is not going up". A rider is trusted aboard for graceMs
+       after boarding, whatever position arrives. */
+    h.boardedAt = h.boardedAt || {}; h.boardedAt[p.id] = now();
     if (!h.boardSince) { h.boardSince = now(); io.to(room.code).emit('heliNotice', { kind: 'boarding', in: CFG.HELI.boardSec, name: p.name }); }
     broadcast(room);
     io.to(p.id).emit('heliSeat', { pos: seat, aboard: true, liftIn: Math.max(0, CFG.HELI.boardSec - (now() - h.boardSince) / 1000) });
@@ -106,8 +113,10 @@ module.exports = function initHeli(ctx) {
     }
     const pose = poseNow(room);
     if (h.state === 'pad' || h.state === 'landed') {
-      /* riders are those who pressed Z and are still in the cabin */
-      h.riders = h.riders.filter(id => { const q = room.players.get(id); return q && q.alive && !q.out && inCabin(pose, q); });
+      /* riders are those who pressed Z and are still in the cabin (a fresh
+         boarder is trusted for the grace window — see board()) */
+      const GRACE = 2500;
+      h.riders = h.riders.filter(id => { const q = room.players.get(id); if (!q || !q.alive || q.out) return false; if (h.boardedAt && t - (h.boardedAt[id] || 0) < GRACE) return true; return inCabin(pose, q); });
       if (h.state === 'pad') {
         if (!h.riders.length) h.boardSince = 0;
         if (h.boardSince && t - h.boardSince >= CFG.HELI.boardSec * 1000 && h.riders.length) {
@@ -124,7 +133,10 @@ module.exports = function initHeli(ctx) {
     if (h.state === 'flying') {
       const T = flightSec(room);
       if (T >= totalFlight(P)) { h.state = 'landed'; h.t0 = t; h.emptySince = 0; broadcast(room); return; }
-      if (pose.y > CFG.HELI.padY + 3.5) {
+      /* the fall test waits until the machine is well up AND the flight is
+         2.5 s old — the seat teleport and a client's first airborne frames
+         settle in that window (v1.0o) */
+      if (pose.y > CFG.HELI.padY + 3.5 && T > 2.5) {
         const still = [];
         for (const id of h.riders) {
           const q = room.players.get(id);
@@ -144,7 +156,7 @@ module.exports = function initHeli(ctx) {
   }
   function leave(room, respawnAt) {
     const h = room.heli;
-    h.state = 'gone'; h.t0 = now(); h.respawnAt = Math.max(now() + 5000, respawnAt || (now() + CFG.HELI.respawnSec * 1000)); h.riders = [];
+    h.state = 'gone'; h.t0 = now(); h.respawnAt = Math.max(now() + 5000, respawnAt || (now() + CFG.HELI.respawnSec * 1000)); h.riders = []; h.boardedAt = {};
     broadcast(room);
   }
   function hit(room, shooter, w) {

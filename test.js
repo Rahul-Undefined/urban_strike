@@ -684,12 +684,59 @@ function phase19() {
               ok(CFG.livesFor('zone') === 1, 'one life — the Last Stand rules run the elimination');
               ok(startZ.heli && startZ.heli.state === 'pad' && startZ.heli.hp === CFG.HELI.hp, 'v1.0l: an Urban match ships a full-health helicopter on the pad with matchStart [' + JSON.stringify(startZ.heli && { state: startZ.heli.state, hp: startZ.heli.hp }) + ']');
               Az.disconnect(); Bz.disconnect();
-              setTimeout(dropPhase, 500);
+              setTimeout(heliPhase, 500);
             };
             waitStart();
           }, 400);
         }, 500);
       });
+    }
+  }
+  /* --- v1.0o: THE HELICOPTER, live: Z boards with a stale position in flight, lifts off on time, the rider survives the climb --- */
+  function heliPhase() {
+    const Ah = io(URL), Bh = io(URL);
+    let uph = 0, states = [], deathsH = [], offH = 0, seatH = null, posH = null;
+    const Bots2 = require('./server/lib/bots.js')({}), PH = Bots2.trainPath('urban', 'heli'), HH = CFG.HELI, halfH = CFG.PLAYER.standH / 2;
+    Ah.on('heliState', d => states.push(d));
+    Ah.on('death', d => deathsH.push(d));
+    Ah.on('heliSeat', d => { seatH = d; });
+    [Ah, Bh].forEach(s2 => s2.on('connect', () => { if (++uph === 2) goH(); }));
+    function goH() {
+      Ah.emit('createRoom', { name: 'Pilot', settings: { mode: 'ffa', map: 'urban', killTarget: 0, minutes: 15 } }, (res) => {
+        Bh.emit('joinRoom', { name: 'Gunner', code: res.code }, () => {});
+        Ah.on('matchStart', d => {
+          offH = d.serverNow - Date.now();
+          ok(d.heli && d.heli.state === 'pad', 'the machine is on the pad at match start');
+          setTimeout(boardH, CFG.MATCH.spawnProtect * 1000 + 500);
+        });
+        setTimeout(() => { [Ah, Bh].forEach(s2 => s2.emit('setReady', { v: true })); setTimeout(() => Ah.emit('startMatch'), 300); }, 400);
+      });
+    }
+    function st() { if (posH) Ah.emit('st', { p: posH, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0, ping: 20 }); }
+    function boardH() {
+      posH = [HH.pad[0] + 3, halfH + HH.padY, HH.pad[1]]; st();
+      setTimeout(() => {
+        Ah.emit('boardHeli', {}, (r) => {
+          ok(r && r.ok && r.aboard && Array.isArray(r.seat), 'Z near the machine boards and returns the seat [' + JSON.stringify(r && r.seat) + ']');
+          st();                                                        // the RACE: a stale position lands right after the seat
+          setTimeout(() => { posH = r.seat.slice(); }, 120);
+          const iv = setInterval(() => {
+            const hs = states[states.length - 1];
+            if (hs && hs.state === 'flying') { const t = Math.max(0, (Date.now() + offH - hs.t0) / 1000 - 0.12); const p = CFG.heliPoseAt(HH, PH, t); posH = [p.x, p.y + HH.cabinFloor + halfH + 0.02, p.z]; }
+            st();
+          }, 50);
+          setTimeout(() => {
+            const hs = states[states.length - 1];
+            ok(hs && hs.state === 'flying' && hs.riders.length === 1, 'three seconds later it is airborne with the rider aboard despite the stale update [' + (hs && hs.state) + ']');
+            setTimeout(() => {
+              const hs2 = states[states.length - 1];
+              ok(hs2 && hs2.state === 'flying' && hs2.riders.length === 1 && deathsH.length === 0, 'ten seconds into the flight the rider is still aboard and alive [deaths ' + deathsH.length + ']');
+              clearInterval(iv); Ah.disconnect(); Bh.disconnect();
+              setTimeout(dropPhase, 500);
+            }, 6500);
+          }, HH.boardSec * 1000 + 1200);
+        });
+      }, 300);
     }
   }
   function dropPhase() {

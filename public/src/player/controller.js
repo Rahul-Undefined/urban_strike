@@ -6,7 +6,7 @@ var PlayerCtl = (function () {
   var vel = new THREE.Vector3();
   var yaw = 0, pitch = 0;
   var crouch = false, prone = false, grounded = false, alive = false;
-  var platformFn = null, onPlatform = false;   /* v1.0e: the train's moving floor, see update() */
+  var platformFn = null, onPlatform = false, platformSrc = null;   /* v1.0e: the train's moving floor, see update(); v1.0o: which one */
   var landHit = 0; // set on hard landings, consumed by main for a camera dip
   var lastSurf = 0; // footstep surface of the collider underfoot
   var lean = 0;          // -1 left .. 1 right (smoothed)
@@ -261,7 +261,7 @@ var PlayerCtl = (function () {
        static resolution — the world still wins every argument first, which is
        what keeps this from being the marginal physics the lifts avoided. */
     var plat = platformFn ? platformFn(pos, halfY) : null;
-    onPlatform = false;
+    onPlatform = false; platformSrc = plat && plat.src ? plat.src : null;
     if (plat && plat.block) {
       /* v1.0f/v1.0i: the train is a WALL to anyone not aboard. `inward` means
          the player is on the interior side of the wall thickness (a rider who
@@ -344,6 +344,7 @@ var PlayerCtl = (function () {
     consumeLand: function () { var l = landHit; landHit = 0; return l; },
     setPlatform: function (fn) { platformFn = typeof fn === 'function' ? fn : null; },   /* v1.0e */
     get onPlatform() { return onPlatform; },
+    get platformSrc() { return onPlatform ? platformSrc : null; },   /* v1.0o: 'train' | 'heli' */
     spawnAt: spawnAt,
     update: update,
     eyePosition: eyePosition,
