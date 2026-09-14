@@ -1,3 +1,37 @@
+# v1.0.2 (build 16) — NOBODY FALLS WITHOUT A REASON (2026-09-14)
+
+Tagged `v1.0p`. Rahul: "onboarded, but after going to a height the player is
+automatically killed — 'fallen from helicopter'. It should work like the
+train: carry the player, let them move inside, never drop them for no reason."
+
+**The cause, finally named.** "Fallen" was still a position test — is the
+rider's reported position near where the server thinks the machine is? —
+with a 3 m / 6.5 m tolerance. A rider's reported position trails the machine
+by the network delay plus the update interval, and the client and the server
+each compute the pose from their own clock; during the climb the machine moves
+12.8 m/s straight up, so a quarter second of lag or skew is three metres of
+"gap". The test fired the moment the machine got high enough to test.
+
+**The fix, in principle.** The only way off a flying helicopter is the rider's
+own jump — so the CLIENT REPORTS THE JUMP (`heliBail`), and that is what kills
+(tagged "fell from the helicopter", credited to whoever hit the machine in the
+last 10 s). The position test survives only as a sanity net for a client that
+stopped riding without saying so, and it is deliberately huge: 12 m below the
+floor or 25 m away, on two consecutive ticks.
+
+**And on the client.** A listed rider is LOCKED to the cabin floor whatever a
+frame did — a 350 ms hitch at 12.8 m/s of climb used to open more gap than the
+snap window and drop the rider through the cabin. Proved with three 350 ms
+hitches through the climb: zero gap, never off the floor.
+
+**Proved end to end**, not with a stub: a live match, Z with the stale update
+race, then every position update 700 ms behind the machine (400 ms lag plus
+300 ms of clock skew) for a WHOLE FLIGHT — airborne on time, aboard at 30 s,
+landed at 52 s with the rider still listed, zero deaths. The suite's
+helicopter phase now runs with that 700 ms handicap. `verify-heli` 65/0.
+Board: 48 gates, 45 green, the same three documented reds. Live: `test.js`
+329/0.
+
 # v1.0.1 (build 15) — THE HELICOPTER, PROPERLY (2026-09-14)
 
 **Version 1.0.1**, and asset URLs now carry a content hash — see the last

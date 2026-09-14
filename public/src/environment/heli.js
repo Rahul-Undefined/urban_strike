@@ -230,17 +230,29 @@ var Heli = (function () {
     var feet = pos.y - halfY, floor = pose.y + cfg.cabinFloor;
     var dx = pos.x - prevPose.x, dz = pos.z - prevPose.z, cs = Math.cos(prevPose.yaw), sn = Math.sin(prevPose.yaw);
     var lx = dx * cs + dz * sn, lz = -dx * sn + dz * cs;
-    if (Math.abs(lx) > CAB_HX + 0.5 || Math.abs(lz) > CAB_HZ + 0.6) return null;
+    if ((Math.abs(lx) > CAB_HX + 0.5 || Math.abs(lz) > CAB_HZ + 0.6) && !(isRiding() && state.state === 'flying')) return null;
     var airborne = state.state === 'flying' && pose.y > cfg.padY + 1.0;
     if (performance.now() < bailUntil) return null;                     // bailing: no floor, no walls
-    if (feet < floor - 1.3 || feet > floor + CAB_H + 0.5) return null;
+    /* v1.0p: a LISTED rider on a flying machine is held to the floor whatever
+       the frame did — a hitch of a few hundred ms at 12.8 m/s of climb used to
+       open more gap than the snap window and drop the rider through the
+       cabin. The only way off is bail(). */
+    var rider = isRiding() && state.state === 'flying';
+    if (!rider && (feet < floor - 1.3 || feet > floor + CAB_H + 0.5)) return null;
     var inside = Math.abs(lx) <= CAB_HX && Math.abs(lz) <= CAB_HZ;
-    if (!inside && !airborne) return null;                              // on the pad the cabin is open at the sides
+    if (!inside && !airborne && !rider) return null;                    // on the pad the cabin is open at the sides
     return { y: floor, inside: true, doorZone: !airborne, ceil: floor + CAB_H, px: prevPose.x, pz: prevPose.z, pyaw: prevPose.yaw,
-      cx: pose.x, cz: pose.z, yaw: pose.yaw, lx: lx, lz: lz, halfW: CAB_HZ - 0.05, halfL: CAB_HX - 0.05, vx: 0, vz: 0 };
+      cx: pose.x, cz: pose.z, yaw: pose.yaw, lx: lx, lz: lz, halfW: CAB_HZ - 0.05, halfL: CAB_HX - 0.05, vx: 0, vz: 0, lock: rider };
   }
   /* jumping while airborne = bail: the floor lets go for a second */
-  function bail() { if (isRiding() && state.state === 'flying' && pose && pose.y > cfg.padY + 1.0) { bailUntil = performance.now() + 1500; return true; } return false; }
+  function bail() {
+    if (isRiding() && state.state === 'flying' && pose && pose.y > cfg.padY + 1.0) {
+      bailUntil = performance.now() + 1500;
+      if (typeof Net !== 'undefined' && Net.heliBail) Net.heliBail();   /* v1.0p: tell the server — the jump is the ONLY way off */
+      return true;
+    }
+    return false;
+  }
 
   /* ---------- shooting it ---------- */
   var _inv = new THREE.Matrix4(), _o = new THREE.Vector3(), _d = new THREE.Vector3(), _box = new THREE.Box3(new THREE.Vector3(-7.2, 0, -1.6), new THREE.Vector3(3.8, 3.6, 1.6)), _ray = new THREE.Ray(), _hit = new THREE.Vector3();

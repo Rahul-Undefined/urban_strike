@@ -286,7 +286,9 @@ var PlayerCtl = (function () {
       var ncs = Math.cos(plat.yaw), nsn = Math.sin(plat.yaw);
       pos.x = plat.cx + lx * ncs - lz * nsn;                        // RIGID CARRY: previous seat, new pose
       pos.z = plat.cz + lx * nsn + lz * ncs;
-      if (vel.y <= 0.6 && feet <= plat.y + 0.45 && feet >= plat.y - 0.95) {
+      /* v1.0p: `lock` (a listed helicopter rider) is held to the floor whatever
+         the gap — frame hitches on a fast climb are not a reason to fall. */
+      if ((plat.lock && vel.y <= 0.6) || (vel.y <= 0.6 && feet <= plat.y + 0.45 && feet >= plat.y - 0.95)) {
         pos.y = plat.y + halfY + EPS; vel.y = 0; grounded = true; lastSurf = 1;
         onPlatform = true;
       } else if (plat.inside || plat.step) onPlatform = true;      // airborne inside the coach still counts as aboard

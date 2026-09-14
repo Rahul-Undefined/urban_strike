@@ -1206,6 +1206,7 @@ var Net = (function () {
     launchRocket: function (cb) { if (socket) socket.emit('launchRocket', {}, cb); },
     hitHeli: function (w, cb) { if (socket) socket.emit('hitHeli', { w: w }, cb); },   /* v1.0l */
     boardHeli: function (cb) { if (socket) socket.emit('boardHeli', {}, cb); },       /* v1.0m */
+    heliBail: function (cb) { if (socket) socket.emit('heliBail', {}, cb); },         /* v1.0p */
     plantBomb: function (p, cb) { if (socket) socket.emit('plantBomb', { p: p }, cb); },
     dropItem: function (d, cb) { if (socket) socket.emit('dropItem', d, cb); },
     callStrike: function (cb) { if (socket) socket.emit('callStrike', {}, cb); },

@@ -722,7 +722,7 @@ function phase19() {
           setTimeout(() => { posH = r.seat.slice(); }, 120);
           const iv = setInterval(() => {
             const hs = states[states.length - 1];
-            if (hs && hs.state === 'flying') { const t = Math.max(0, (Date.now() + offH - hs.t0) / 1000 - 0.12); const p = CFG.heliPoseAt(HH, PH, t); posH = [p.x, p.y + HH.cabinFloor + halfH + 0.02, p.z]; }
+            if (hs && hs.state === 'flying') { const t = Math.max(0, (Date.now() + offH - hs.t0) / 1000 - 0.70); const p = CFG.heliPoseAt(HH, PH, t); posH = [p.x, p.y + HH.cabinFloor + halfH + 0.02, p.z]; }   // v1.0p: 700 ms of lag + clock skew, on purpose
             st();
           }, 50);
           setTimeout(() => {
@@ -730,7 +730,7 @@ function phase19() {
             ok(hs && hs.state === 'flying' && hs.riders.length === 1, 'three seconds later it is airborne with the rider aboard despite the stale update [' + (hs && hs.state) + ']');
             setTimeout(() => {
               const hs2 = states[states.length - 1];
-              ok(hs2 && hs2.state === 'flying' && hs2.riders.length === 1 && deathsH.length === 0, 'ten seconds into the flight the rider is still aboard and alive [deaths ' + deathsH.length + ']');
+              ok(hs2 && hs2.state === 'flying' && hs2.riders.length === 1 && deathsH.length === 0, 'ten seconds into the flight — the whole climb, with 700 ms of lag and skew in every update — the rider is still aboard and alive [deaths ' + deathsH.length + ']');
               clearInterval(iv); Ah.disconnect(); Bh.disconnect();
               setTimeout(dropPhase, 500);
             }, 6500);

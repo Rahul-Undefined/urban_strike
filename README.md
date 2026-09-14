@@ -8,6 +8,10 @@ doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
 every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
 count toward the next strike; Shift while scoped holds your breath.
 
+**v1.0.2 — NOBODY FALLS WITHOUT A REASON.** A rider leaves the flying
+helicopter only by jumping (Space); lag, clock skew and frame hitches can no
+longer count as a fall.
+
 **v1.0.1 — THE HELICOPTER, PROPERLY.** Walk up to it on the airport pad and
 press Z to board (Z again to step off); it lifts 3 s after the first boarding.
 Asset URLs now carry a content hash, so a deploy never serves a stale client.

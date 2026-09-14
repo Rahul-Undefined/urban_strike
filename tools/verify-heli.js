@@ -83,11 +83,33 @@ ok(emitted.some(e => e.ev === 'heliHp'), 'and the room is told the health');
 ok(!Srv.hit(room, rider, 'ak47').ok, 'a rider cannot shoot the machine he is in');
 const far = mk('F', 400, half, 400); room.players.set('F', far);
 ok(!Srv.hit(room, far, 'ak47').ok, 'a shot from 400 m away is refused');
-// the rider leaves the cabin in the air: dead, credited to the last shooter
-rider.pos = [rider.pos[0] + 8, rider.pos[1] - 4, rider.pos[2]];   // 8 m off and 4 m down: falling
+/* v1.0p: position disagreement is NOT a fall. 700 ms of lag+skew at cruise, or a
+   4 m gap mid-climb, keeps the rider aboard; only the rider's own JUMP (bail),
+   or a client 12 m below / 25 m away for two ticks, ends the ride. */
+rider.pos = [rider.pos[0] - 9.5, rider.pos[1] - 4, rider.pos[2]];        // 9.5 m behind and 4 m low: bad lag, not a fall
 T0 += 200; Srv.tick(room);
-ok(!rider.alive && killed.length === 1 && killed[0].w === 'helifall' && killed[0].by === 'S', 'a rider outside the cabin in the air has fallen: dead, tagged helifall, credited to the shooter who hit the machine');
+ok(rider.alive && room.heli.riders.length === 1, 'a rider 9.5 m behind and 4 m below the seat (lag, skew) stays aboard and alive');
+ride(rider);
+rider.pos = [rider.pos[0] + 30, rider.pos[1] - 14, rider.pos[2]];        // 30 m off and 14 m down: the client stopped riding without saying so
+T0 += 70; Srv.tick(room);
+ok(rider.alive && room.heli.riders.length === 1, 'one tick that far away is not yet a fall');
+T0 += 70; Srv.tick(room);
+ok(!rider.alive && killed.length === 1 && killed[0].w === 'helifall' && killed[0].by === 'S', 'two ticks that far away: dead, tagged helifall, credited to the shooter who hit the machine');
 ok(room.heli.state === 'landed', 'with nobody aboard the machine goes home');
+/* the jump: the rider says so and dies at once */
+{
+  T0 += 20000; room.heli.state = 'pad'; room.heli.t0 = T0; room.heli.hp = H.hp; room.heli.riders = []; room.heli.boardSince = 0; room.heli.boardedAt = {}; room.heli.outCount = {};
+  const jumper = mk('JMP', H.pad[0] + 3, half + H.padY, H.pad[1]); room.players.set('JMP', jumper);
+  const bj = Srv.board(room, jumper); jumper.pos = bj.seat.slice();
+  T0 += H.boardSec * 1000 + 100; Srv.tick(room);
+  ok(room.heli.state === 'flying', 'a new flight');
+  ok(!Srv.bail(room, jumper).ok, 'bailing at 0.1 s (still on the pad) is refused — too low to matter');
+  T0 += 6000; const pj = CFG.heliPoseAt(H, P, 6.1); jumper.pos = [pj.x, pj.y + H.cabinFloor + half, pj.z];
+  killed = [];
+  const bb = Srv.bail(room, jumper);
+  ok(bb.ok && !jumper.alive && killed.length === 1 && killed[0].w === 'helifall' && killed[0].by === 'JMP', 'a rider who jumps at altitude dies at once, tagged helifall (nobody hit the machine: no credit)');
+  ok(room.heli.riders.length === 0 && room.heli.state === 'landed', 'and the empty machine goes home');
+}
 /* v1.0o: THE BOARDING RACE. A state update with the OLD position lands right
    after the server seated the rider (the client had already sent it). The
    rider must survive the tick and the lift-off must still happen. */
@@ -104,6 +126,9 @@ ok(room.heli.state === 'landed', 'with nobody aboard the machine goes home');
   T0 += 1000; late.pos = [H.pad[0] + 4, half + H.padY, H.pad[1]];   // a second stale update during the first second of the climb
   Srv.tick(room);
   ok(late.alive && room.heli.riders.length === 1, 'the fall test waits out the climb\'s first seconds — no phantom fall');
+  const heliCl = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/heli.js'), 'utf8');
+  ok(/Net\.heliBail\(\)/.test(heliCl) && /lock: rider/.test(heliCl), 'the client reports its jump and locks a listed rider to the floor across frame hitches');
+  ok(/socket\.on\('heliBail'/.test(fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8')), 'the server takes the jump');
   const pL = CFG.heliPoseAt(H, P, (T0 - room.heli.t0) / 1000); late.pos = [pL.x, pL.y + H.cabinFloor + half, pL.z];
   room.heli.state = 'landed'; room.heli.riders = []; room.heli.t0 = T0; room.heli.emptySince = T0; room.heli.flightStart = T0 - 60000;
 }

@@ -1291,6 +1291,15 @@ io.on('connection', (socket) => {
     if (!fireRateOk(p, w)) return ack({ ok: false, err: 'Too fast' });
     ack(Heli.hit(room, p, w));
   });
+  /* ===== v1.0p - JUMPING FROM THE HELICOPTER (the rider says so) ===== */
+  socket.on('heliBail', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false });
+    const p = room.players.get(socket.id);
+    if (!p) return ack({ ok: false });
+    ack(Heli.bail(room, p));
+  });
   /* ===== v1.0m - BOARDING THE HELICOPTER (Z near it on the pad) ===== */
   socket.on('boardHeli', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};

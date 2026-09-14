@@ -95,10 +95,36 @@ module.exports = function initHeli(ctx) {
      metre or two behind a seat — so the test is a rider well below the floor
      or well away from the cabin, which a body in free fall is within a second
      and a seated rider never is. */
+  /* v1.0p: the ONLY way off a flying machine is the rider's own jump, which
+     the client reports (bail). The position test below is a SANITY NET for a
+     client that stopped riding without saying so — it is deliberately huge,
+     because a rider's reported position trails the machine by network delay
+     plus the update interval, and during the climb (12.8 m/s at mid-climb) or
+     a clock skew of a quarter second that is metres; Rahul was killed as a
+     faller three builds running by tests that were too tight. */
   function fallen(pose, q) {
     const feet = q.pos[1] - CFG.PLAYER.standH / 2, floor = pose.y + CFG.HELI.cabinFloor;
     const dh = Math.hypot(q.pos[0] - pose.x, q.pos[2] - pose.z);
-    return feet < floor - 3.0 || dh > 6.5;
+    return feet < floor - 12.0 || dh > 25.0;
+  }
+  function fall(room, q, tag) {
+    const h = room.heli, t = now();
+    const by = (h.lastHitBy && t - h.lastHitAt < CFG.HELI.creditSec * 1000 && room.players.has(h.lastHitBy) && h.lastHitBy !== q.id) ? h.lastHitBy : q.id;
+    applyDamage(room, q, 999, by, 'helifall', false, true);
+    io.to(room.code).emit('toast', { msg: q.name + (tag === 'bail' ? ' jumped from the helicopter' : ' fell from the helicopter') });
+  }
+  /* the rider says they jumped */
+  function bail(room, p) {
+    if (!has(room) || !p || !p.alive || p.out) return { ok: false };
+    const h = room.heli;
+    if (h.state !== 'flying' || h.riders.indexOf(p.id) < 0) return { ok: false, err: 'Not riding' };
+    const pose = poseNow(room);
+    if (!pose || pose.y < CFG.HELI.padY + 3.5) return { ok: false, err: 'Too low to matter' };
+    h.riders = h.riders.filter(id => id !== p.id);
+    fall(room, p, 'bail');
+    broadcast(room);
+    if (!h.riders.length) { h.state = 'landed'; h.t0 = now(); h.emptySince = now(); broadcast(room); }
+    return { ok: true };
   }
   function flightSec(room) { return (now() - room.heli.t0) / 1000; }
   function totalFlight(P) { return CFG.HELI.climbSec + P.length / CFG.HELI.speed + CFG.HELI.landSec; }
@@ -138,14 +164,16 @@ module.exports = function initHeli(ctx) {
          settle in that window (v1.0o) */
       if (pose.y > CFG.HELI.padY + 3.5 && T > 2.5) {
         const still = [];
+        h.outCount = h.outCount || {};
         for (const id of h.riders) {
           const q = room.players.get(id);
           if (!q || !q.alive || q.out) continue;
-          if (!fallen(pose, q)) { still.push(id); continue; }
-          /* fell out */
-          const by = (h.lastHitBy && t - h.lastHitAt < CFG.HELI.creditSec * 1000 && room.players.has(h.lastHitBy) && h.lastHitBy !== id) ? h.lastHitBy : id;
-          applyDamage(room, q, 999, by, 'helifall', false, true);
-          io.to(room.code).emit('toast', { msg: q.name + ' fell from the helicopter' });
+          if (!fallen(pose, q)) { h.outCount[id] = 0; still.push(id); continue; }
+          /* far from the machine on TWO consecutive ticks: the client is no
+             longer riding it and never said why */
+          h.outCount[id] = (h.outCount[id] || 0) + 1;
+          if (h.outCount[id] < 2) { still.push(id); continue; }
+          fall(room, q, 'lost');
         }
         if (still.length !== h.riders.length) { h.riders = still; broadcast(room); }
         if (!h.riders.length) {                                 // nobody left aboard: it goes home
@@ -182,5 +210,5 @@ module.exports = function initHeli(ctx) {
     return { ok: true, dmg, hp: h.hp };
   }
   function reset(room) { room.heli = null; }
-  return { start, tick, hit, board, snapshot, reset, poseNow, inCabin, fallen };
+  return { start, tick, hit, board, bail, snapshot, reset, poseNow, inCabin, fallen };
 };
