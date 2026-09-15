@@ -204,7 +204,11 @@ const BASELINE = {
      bench, board, lamp each) and the HELIPAD by the airport (disc, H, edge
      lights, post): +44 colliders, +1.2k tris, no new material/cast pair
      (draws 99, casters 62 unchanged). minimap 247 -> 250: the platforms. */
-  urban: { colliders: 4498, draws: 99, tris: 134332, casters: 62, lights: 7, bound: 120, colSig: -1374038366, meshSig: 1268776079 },
+  /* v1.0r: the three inner-lane halts removed (-42 colliders), the second
+     train's rails and finer chords on curves (+5.4k tris), the stadium pavilion
+     narrowed, practice nets/container/signs moved off the lanes. draws 99,
+     casters 62 unchanged. minimap 250 -> 247 (the halt platforms). */
+  urban: { colliders: 4456, draws: 99, tris: 139720, casters: 62, lights: 7, bound: 120, colSig: -813453232, meshSig: -1040616970 },
   /* v10.10: rural moved on purpose. The three river-bridge stair pairs climbed
      AWAY from the deck and finished 2.1 m short of it, so all six were
      unclimbable (verify-climb, "reached 0.05m"). Turned around and extended

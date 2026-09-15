@@ -1927,6 +1927,9 @@ World.build = function (sceneRef) {
      form of Rahul's instruction: check what is already there before placing
      anything. */
   function signClear(sx, sz, face, BW, BH, PH) {
+    /* v1.0r: never on the ring boulevard — both of its lanes are railway now.
+       The four ring-district signs sit at ±96.6 on purpose, just inside. */
+    if ((World._buildingMap || World.builtMap) === 'urban' && Math.max(Math.abs(sx), Math.abs(sz)) > 97.2) return false;
     var cols = World._colliders();
     var dx = Math.cos(face), dz = Math.sin(face);
     var px = -dz, pz = dx;

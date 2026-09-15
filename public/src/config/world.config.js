@@ -353,7 +353,10 @@
      platforms and under the footbridge, back out to the east side. */
   var TRAIN = {
     urban: {
-      waypoints: [[-103, -103], [-6, -103], [9, -88], [103, -88], [103, 103], [-103, 103]],
+      /* v1.0r: ±103.2 (was 103) so two trains passing on the ring keep their
+         step boards apart; the stadium pavilion's west wall moved in for the
+         second train's inner track. */
+      waypoints: [[-103.2, -103.2], [-6, -103.2], [9, -88], [103.2, -88], [103.2, 103.2], [-103.2, 103.2]],
       fillet: 8, speed: 8.0, dwellSec: 3, brakeM: 24, accelM: 30,
       /* v1.0l (Rahul: "stop at multiple locations, a small station on all four
          sides"): the HEAD stops `offset` metres past the start of the straight
@@ -361,11 +364,10 @@
          the inner lane of the boulevard on the east, south and west sides —
          built by districts-outer.js from `stations` below. */
       stops: [{ at: 2, offset: 62 }, { at: 3, offset: 100 }, { at: 4, offset: 115 }, { at: 5, offset: 115 }],
-      stations: [
-        { name: 'EAST HALT',  side: 'E', a: -30, b: 8 },    // x 98.3..101.0, z a..b
-        { name: 'SOUTH HALT', side: 'S', a: -8, b: 30 },    // z 98.3..101.0, x a..b
-        { name: 'WEST HALT',  side: 'W', a: -8, b: 30 }     // x -101.0..-98.3, z a..b
-      ],
+      /* v1.0r: the three inner-lane halts are gone — that lane is the second
+         train's track now. Every stop still boards from the road by the coach
+         step boards (0.55 m) as the original design did. */
+      stations: [],
       stationAt: 2, stopOffset: 62,          // kept for readers of the old field; `stops` is what runs
       floor: 1.05, roof: 3.75,               // coach floor (platform height) and roof walking surface
       cars: 4                                 // locomotive + 3 coaches
@@ -391,27 +393,76 @@
      a flat number. Falling out (jumping while airborne) is death, credited to
      whoever hit the helicopter last within `creditSec`. */
   var HELI = {
-    pad: [-73, -68], padY: 0.3, cabinFloor: 0.6, alt: 32, speed: 14,
-    /* the pad is waypoint 0 and lies ON the straight between its neighbours
-       (collinear), so the filleted loop passes exactly over it — a corner would
-       be cut and the machine would never be over its own pad */
-    route: [[-73, -68], [-51, -76], [30, -90], [90, -30], [78, 62], [0, 92], [-72, 62], [-88, -20], [-95, -60]], fillet: 28,
-    boardSec: 3, climbSec: 5, landSec: 6, unloadSec: 6, respawnSec: 180, creditSec: 10,   /* v1.0m: every 3 minutes (Rahul) */
+    pad: [-73, -68], padY: 0.3, cabinFloor: 0.6, alt: 32, speed: 14, returnSpeed: 16,
+    /* v1.0q (Rahul: "not a fixed path like the train — it should fly
+       everywhere"): every flight rolls a SEED on the server; heliRoute(seed)
+       turns it into a wandering loop of `routeN` random waypoints over the map
+       (legs legMin..legMax, no hairpins), the same on every client, flown round
+       and round until a rider presses Q. The pad is waypoint 0 and lies on the
+       straight between its neighbours so the loop passes over it. */
+    fillet: 28, routeN: 18, legMin: 55, legMax: 150, routeBound: 92,
+    boardSec: 3, climbSec: 5, landSec: 6, unloadSec: 8, respawnSec: 180, creditSec: 10,   /* v1.0m: every 3 minutes (Rahul) */
     hp: 900,
     dmgClass: { auto: 1.0, burst: 1.0, semi: 0.75, smg: 0.55, shotgun: 0.35, bolt: 0.30, pistol: 0.25, melee: 0, bow: 0, drone: 0, emp: 0, c4: 0, flame: 0.3 },
     rocketDmg: 150
   };
-  /* pose along the flight: t = seconds since take-off; returns {x,y,z,yaw,phase,s}
-     phase: 'climb' | 'cruise' | 'descend' | 'down' */
+  /* a small deterministic PRNG (mulberry32) so server and clients roll the
+     same route from the same seed */
+  function heliRng(seed) {
+    var a = (seed >>> 0) || 1;
+    return function () { a = (a + 0x6D2B79F5) >>> 0; var t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+  /* the wandering loop for one flight */
+  function heliRoute(cfg, seed) {
+    var r = heliRng(seed), P = cfg.pad, B = cfg.routeBound || 92, N = cfg.routeN || 18;
+    // the straight through the pad: both 40 m helper points must stay over the MAP
+    // (the pad sits near a corner, so the wander bound B is too tight for them)
+    // ...and the first leg heads INTO the city (within 70 degrees of the map centre),
+    // so the walk is never asked to continue into the wall
+    var HB = 108, toC = Math.atan2(-P[1], -P[0]), ang0, u, tries0 = 0;
+    do { ang0 = toC + (r() - 0.5) * (140 * Math.PI / 180); u = [Math.cos(ang0), Math.sin(ang0)]; tries0++; }
+    while (tries0 < 400 && (Math.abs(P[0] + u[0] * 40) > HB || Math.abs(P[1] + u[1] * 40) > HB || Math.abs(P[0] - u[0] * 40) > HB || Math.abs(P[1] - u[1] * 40) > HB));
+    var pts = [[P[0], P[1]], [P[0] + u[0] * 40, P[1] + u[1] * 40]];
+    var guard = 0, stuck = 0;
+    while (pts.length < N + 1 && guard++ < 60000) {
+      var prev = pts[pts.length - 1], prev2 = pts[pts.length - 2];
+      var d = cfg.legMin + r() * (cfg.legMax - cfg.legMin), a = r() * Math.PI * 2;
+      var nx = prev[0] + Math.cos(a) * d, nz = prev[1] + Math.sin(a) * d;
+      var okPt = Math.abs(nx) <= B && Math.abs(nz) <= B;
+      if (okPt) {
+        // no hairpins: the turn at `prev` must be under 110 degrees
+        var v1 = [prev[0] - prev2[0], prev[1] - prev2[1]], v2 = [nx - prev[0], nz - prev[1]];
+        var cosT = (v1[0] * v2[0] + v1[1] * v2[1]) / (Math.hypot(v1[0], v1[1]) * Math.hypot(v2[0], v2[1]));
+        if (cosT < Math.cos(110 * Math.PI / 180)) okPt = false;
+      }
+      if (!okPt) { if (++stuck > 300 && pts.length > 2) { pts.pop(); stuck = 0; } continue; }   // boxed in: back up one point
+      stuck = 0;
+      pts.push([nx, nz]);
+    }
+    // close: the last point must approach the pad from the far side of the first leg, collinear with the pad
+    pts.push([P[0] - u[0] * 40, P[1] - u[1] * 40]);
+    return { waypoints: pts, fillet: cfg.fillet };
+  }
+  /* pose along the flight: t = seconds since take-off; the loop is flown
+     ROUND AND ROUND (path.at wraps) until a rider lands it — v1.0q.
+     phase: 'climb' | 'cruise' */
   function heliPoseAt(cfg, path, t) {
-    var P = cfg.pad, L = path.length, tCruise = L / cfg.speed;
+    var P = cfg.pad;
     if (t < cfg.climbSec) { var f = t / cfg.climbSec; var q0 = path.at(0); return { x: P[0], z: P[1], y: cfg.padY + (cfg.alt - cfg.padY) * (f * f * (3 - 2 * f)), yaw: q0.yaw, phase: 'climb', s: 0 }; }
-    var u = t - cfg.climbSec;
-    if (u < tCruise) { var q = path.at(u * cfg.speed); return { x: q.x, z: q.z, y: cfg.alt, yaw: q.yaw, phase: 'cruise', s: u * cfg.speed }; }
-    var d = u - tCruise;
-    if (d < cfg.landSec) { var g = d / cfg.landSec; var qe = path.at(0); return { x: P[0], z: P[1], y: cfg.alt - (cfg.alt - cfg.padY) * (g * g * (3 - 2 * g)), yaw: qe.yaw, phase: 'descend', s: L }; }
-    var qd = path.at(0);
-    return { x: P[0], z: P[1], y: cfg.padY, yaw: qd.yaw, phase: 'down', s: L };
+    var u2 = t - cfg.climbSec;
+    var q = path.at(u2 * cfg.speed);
+    return { x: q.x, z: q.z, y: cfg.alt, yaw: q.yaw, phase: 'cruise', s: u2 * cfg.speed };
+  }
+  /* the return leg: from a frozen pose straight back to the pad at returnSpeed,
+     then the descent. t = seconds since Q was pressed. phase: 'return' |
+     'descend' | 'down' */
+  function heliReturnPose(cfg, from, t) {
+    var P = cfg.pad, dx = P[0] - from.x, dz = P[1] - from.z, d = Math.hypot(dx, dz);
+    var yaw = d > 0.5 ? Math.atan2(dz, dx) : from.yaw, tTravel = d / (cfg.returnSpeed || 16);
+    if (t < tTravel) { var f = t / tTravel; return { x: from.x + dx * f, z: from.z + dz * f, y: from.y, yaw: yaw, phase: 'return', s: 0, left: tTravel - t + cfg.landSec }; }
+    var g = (t - tTravel) / cfg.landSec;
+    if (g < 1) return { x: P[0], z: P[1], y: cfg.alt - (cfg.alt - cfg.padY) * (g * g * (3 - 2 * g)), yaw: yaw, phase: 'descend', s: 0, left: cfg.landSec * (1 - g) };
+    return { x: P[0], z: P[1], y: cfg.padY, yaw: yaw, phase: 'down', s: 0, left: 0 };
   }
   function heliDamageFor(cfg, weapons, w) {
     var def = weapons[w];
@@ -421,6 +472,31 @@
     if (k === undefined) k = 0.5;
     return Math.round((def.dmg || 0) * k);
   }
+
+  /* ===== v1.0r - THE SECOND TRAIN =====
+     Rahul: "add another railway track and this time a train from right to
+     left, a good medium to travel across the map." Track 2 is the INNER lane
+     of the ring boulevard (±99.4; -100.5 on the west, past the stadium
+     pavilion), run COUNTER-clockwise — westbound along the north side, the
+     opposite hand to the first train — with four stops of its own. Both
+     trains are pure functions of the match clock; the second has the same
+     lap time as the first (speed tuned) and a fixed phase offset, so their
+     one crossing (the first train's S-bend across the north inner lane) is
+     provably never a collision — see verify-train. */
+  var TRAIN2 = {
+    urban: {
+      waypoints: [[-99.4, -99.4], [-99.4, 99.4], [99.4, 99.4], [99.4, -99.4]],
+      /* speed 7.8362 makes lap 2 exactly lap 1 (139.29 s) so the phase between
+         the trains is constant; tOffset 40 sits in the middle of a 52 s window
+         in which no car of one ever overlaps a car of the other (2D OBB, every
+         0.1 s of a lap — verify-train). Change either train and re-tune both. */
+      fillet: 8, speed: 7.8362, dwellSec: 3, brakeM: 24, accelM: 30,
+      stops: [{ at: 0, offset: 134 }, { at: 1, offset: 134 }, { at: 2, offset: 134 }, { at: 3, offset: 60 }],
+      tOffset: 40,
+      floor: 1.05, roof: 3.75, cars: 4, livery: 'olive'
+    }
+  };
+  var TRAINS = { urban: [TRAIN.urban, TRAIN2.urban] };
 
   /* v1.0f: THE SCHEDULE IS SHARED. The server kills whoever the moving train
      hits, so it must place the train exactly where every client draws it —
@@ -473,10 +549,10 @@
     return out;
   }
 
-  return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams, TRAIN: TRAIN,
+  return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams, TRAIN: TRAIN, TRAIN2: TRAIN2, TRAINS: TRAINS,
     trainSchedule: trainSchedule, trainHeadAt: trainHeadAt, trainCars: trainCars, trainStops: trainStops,
     ZONE: ZONE, zoneSchedule: zoneSchedule, zoneCircleAt: zoneCircleAt, zoneInside: zoneInside,
-    HELI: HELI, heliPoseAt: heliPoseAt, heliDamageFor: heliDamageFor,
+    HELI: HELI, heliPoseAt: heliPoseAt, heliReturnPose: heliReturnPose, heliRoute: heliRoute, heliDamageFor: heliDamageFor,
     spawnProtectFor: spawnProtectFor, isArena: isArena,
     MODE_CATS: VISIBLE_CATS, ALL_MODE_CATS: MODE_CATS, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,
     MINIMAP: MINIMAP, RENDER: RENDER, MAPS: MAPS };

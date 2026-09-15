@@ -76,11 +76,11 @@ ok(S.stops.length === 4 && S.legs.length === 4, 'the schedule has four stops and
 ok(S.T > 120 && S.T < 200, 'a lap with four dwells takes ' + S.T.toFixed(0) + ' s');
 {
   const stopsWorld = S.stops.map(st => P.at(st));
-  const sides = stopsWorld.map(q => Math.abs(q.z + 88) < 0.1 ? 'N' : Math.abs(q.x - 103) < 0.1 ? 'E' : Math.abs(q.z - 103) < 0.1 ? 'S' : Math.abs(q.x + 103) < 0.1 ? 'W' : '?');
+  const sides = stopsWorld.map(q => Math.abs(q.z + 88) < 0.1 ? 'N' : Math.abs(q.x - 103.2) < 0.1 ? 'E' : Math.abs(q.z - 103.2) < 0.1 ? 'S' : Math.abs(q.x + 103.2) < 0.1 ? 'W' : '?');
   ok(sides.sort().join('') === 'ENSW', 'one stop on each side of the map [' + sides.join(',') + ']');
   // each halt's platform lies alongside the coaches at its stop
   (T.stations || []).forEach(st => {
-    const q = stopsWorld.find(q2 => (st.side === 'E' && Math.abs(q2.x - 103) < 0.1) || (st.side === 'W' && Math.abs(q2.x + 103) < 0.1) || (st.side === 'S' && Math.abs(q2.z - 103) < 0.1));
+    const q = stopsWorld.find(q2 => (st.side === 'E' && Math.abs(q2.x - 103.2) < 0.1) || (st.side === 'W' && Math.abs(q2.x + 103.2) < 0.1) || (st.side === 'S' && Math.abs(q2.z - 103.2) < 0.1));
     const along = st.side === 'S' ? q.x : q.z;                       // head position along the platform axis
     const dir = st.side === 'E' ? 1 : st.side === 'S' ? -1 : -1;     // travel direction along that axis (E: +z, S: -x, W: -z)
     const coachNear = along - dir * (11 + 0.9), coachFar = along - dir * (11 + 0.9 + 3 * 12 + 2 * 0.9);
@@ -101,8 +101,29 @@ let vmax = 0;
 for (let t = 0; t < S.T; t += 0.5) vmax = Math.max(vmax, headAt(t).v);
 ok(Math.abs(vmax - T.speed) < 0.01, 'cruise speed is the configured ' + T.speed + ' m/s');
 
-console.log('--- nothing stands in its way ---');
+console.log('--- two trains, opposite hands, never touching ---');
 const Bots = require('../server/lib/bots.js')({});
+{
+  const c2 = CFG.TRAIN2.urban, P2b = Bots.pathFrom(c2.waypoints, c2.fillet);
+  const S2 = CFG.trainSchedule(c2, P2b.length, CFG.trainStops(c2, P2b));
+  ok(Math.abs(S2.T - S.T) < 0.01, 'the second train\'s lap equals the first\'s to 10 ms [' + S2.T.toFixed(3) + ' vs ' + S.T.toFixed(3) + '], so their phase never drifts');
+  const n1 = P.at(P.sAtWaypoint(0) + 20), n2 = P2b.at(P2b.sAtWaypoint(3) + 20);
+  ok(Math.cos(n1.yaw) > 0.9 && Math.cos(n2.yaw) < -0.9, 'on the north side the first train runs left-to-right and the second right-to-left');
+  ok(S2.stops.length === 4, 'the second train has four stops');
+  const cars = CFG.trainCars(T);
+  const posesAt = (PP, SS, t) => { const h = CFG.trainHeadAt(SS, t); return cars.map(c => { const q = PP.at(h.s - c.off); return { x: q.x, z: q.z, yaw: q.yaw, L: c.L }; }); };
+  const corners = c => { const cs = Math.cos(c.yaw), sn = Math.sin(c.yaw), hl = c.L / 2, hw = 1.8; return [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]].map(p => [c.x + p[0] * cs - p[1] * sn, c.z + p[0] * sn + p[1] * cs]); };
+  const proj = (pts, ax) => { let mn = 1e9, mx = -1e9; for (const p of pts) { const v = p[0] * ax[0] + p[1] * ax[1]; mn = Math.min(mn, v); mx = Math.max(mx, v); } return [mn, mx]; };
+  const obb = (a, b) => { const A = corners(a), Bc = corners(b); for (const ax of [[Math.cos(a.yaw), Math.sin(a.yaw)], [-Math.sin(a.yaw), Math.cos(a.yaw)], [Math.cos(b.yaw), Math.sin(b.yaw)], [-Math.sin(b.yaw), Math.cos(b.yaw)]]) { const pa = proj(A, ax), pb = proj(Bc, ax); if (pa[1] < pb[0] || pb[1] < pa[0]) return false; } return true; };
+  let overlaps = 0;
+  for (let t = 0; t < S.T; t += 0.1) { const a = posesAt(P, S, t), b = posesAt(P2b, S2, t + (c2.tOffset || 0)); for (const ca of a) for (const cb of b) if (obb(ca, cb)) overlaps++; }
+  ok(overlaps === 0, 'over a whole lap, at the phase the config sets, no car of one train ever overlaps a car of the other (2D OBB incl. step boards, every 0.1 s) [' + overlaps + ']');
+  let marginBad = 0;
+  for (const d of [-20, 20]) for (let t = 0; t < S.T; t += 0.25) { const a = posesAt(P, S, t), b = posesAt(P2b, S2, t + (c2.tOffset || 0) + d); for (const ca of a) for (const cb of b) if (obb(ca, cb)) marginBad++; }
+  ok(marginBad === 0, 'and the phase has at least 20 s of margin either side');
+}
+
+console.log('--- nothing stands in its way (either train) ---');
 const cols = Bots.buildColliders('urban');
 const HALF_W = 1.5, HEIGHT = 4.1, offs = [5.5, 11 + 0.9 + 6, 11 + 0.9 + 12 + 0.9 + 6, 11 + 0.9 + 24 + 1.8 + 6];
 /* colliders bucketed on a 10 m grid so 400 poses x 4 cars x ~175 footprint
@@ -117,9 +138,11 @@ for (const c of cols) {
     }
 }
 const hits = new Map();
-for (let s = 0; s < P.length; s += 2.0) {
+const T2 = CFG.TRAIN2.urban, P2 = Bots.pathFrom(T2.waypoints, T2.fillet);   /* v1.0r: the second loop is swept too */
+ok(!!P2 && P2.length > 700, 'the second train has a loop of its own [' + (P2 ? P2.length.toFixed(0) : 0) + ' m]');
+for (const PP of [P, P2]) for (let s = 0; s < PP.length; s += 2.0) {
   for (const o of offs) {
-    const q = P.at(s - o), cs = Math.cos(q.yaw), sn = Math.sin(q.yaw);
+    const q = PP.at(s - o), cs = Math.cos(q.yaw), sn = Math.sin(q.yaw);
     for (let lx = -6; lx <= 6; lx += 0.5) for (let lz = -HALF_W; lz <= HALF_W; lz += 0.5) {
       const x = q.x + lx * cs - lz * sn, z = q.z + lx * sn + lz * cs;
       const list = grid.get(Math.floor(x / cell) + ',' + Math.floor(z / cell));
@@ -128,7 +151,7 @@ for (let s = 0; s < P.length; s += 2.0) {
     }
   }
 }
-ok(hits.size === 0, 'the swept four-car envelope meets no static collider along the loop [' + hits.size + ']');
+ok(hits.size === 0, 'the swept four-car envelopes meet no static collider along either loop [' + hits.size + ']');
 [...hits.values()].slice(0, 6).forEach(c => console.log('        in the way: ' + JSON.stringify(c.slice(0, 6).map(v => +v.toFixed(2)))));
 const bridge = cols.find(c => Math.abs(c[0] - 75.2) < 0.1 && c[1] > 4.3 && c[5] > -80);
 ok(!!bridge && bridge[1] >= 4.3, 'the footbridge deck clears the roof [' + (bridge ? bridge[1].toFixed(2) : 'missing') + ' m]');

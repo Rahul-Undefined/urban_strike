@@ -173,7 +173,10 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
    cabin floor and hit box), the halts and helipad in districts-outer.js, the
    multi-stop schedule in world.config.js, the HUD and the zone squad variants.
    ~5 KB gz. Two spare KB, as every raise before it. */
-const GZ_BUDGET_KB = 440;
+/* ===== v1.0q — 440 -> 444 KB. THE WANDERING FLIGHT + Q-LANDING, STATED PLAINLY =====
+   Measured 441 gzipped: the seeded route generator and endless/return poses in
+   world.config.js, the client route-from-seed and Q-landing in heli.js. ~2 KB gz. */
+const GZ_BUDGET_KB = 444;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

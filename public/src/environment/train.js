@@ -36,8 +36,13 @@
    where the snapshot puts them, ~0.2 s behind their true seat while the train
    moves. The footbridge at x 76 clears the roof by 0.6 m: a roof rider goes
    under it prone or gets swept off. */
-var Train = (function () {
-  var scene = null, cfg = null, path = null, cars = [], group = null;
+/* v1.0r: ONE MODULE, MANY TRAINS. makeTrain(cfg) is the original single-train
+   machine; Train (below) holds one per CFG.TRAINS[map] entry and fans out
+   init/update/floorAt across them. Everything a caller used before —
+   Train.cars(), Train.head(), Train.schedule(), Train.path() — still answers
+   for the FIRST train, so the M map, the gates and the hints keep working. */
+function makeTrain(cfgIn, sceneIn) {
+  var scene = sceneIn, cfg = cfgIn, path = null, cars = [], group = null;
   var active = false, headS = 0, headV = 0, mapId = null;
   var CL = 12.0, LOCO_L = 11.0, GAP = 0.9, HALF_W = 1.5, FLOOR = 1.05, ROOF = 3.75, STEP_Y = 0.55;
   var sched = null;
@@ -88,7 +93,8 @@ var Train = (function () {
   }
   function buildCoach(idx) {
     var g = new THREE.Group();
-    var body = mat(idx % 2 ? 'facadeIndigo' : 'steelBlue', 'metal'), steel = mat('metal'), dark = mat('dark', 'metal'), glass = mat('shopGlass', 'metal'), roofM = mat('roof', 'dark'), seat = mat('seatSand', 'wood'), floorM = mat('wood');
+    var olive = cfg && cfg.livery === 'olive';
+    var body = mat(olive ? (idx % 2 ? 'facadeOlive' : 'contRed') : (idx % 2 ? 'facadeIndigo' : 'steelBlue'), 'metal'), steel = mat('metal'), dark = mat('dark', 'metal'), glass = mat('shopGlass', 'metal'), roofM = mat('roof', 'dark'), seat = mat('seatSand', 'wood'), floorM = mat('wood');
     bx(g, 0, 0.9, 0, CL, 0.4, 2.9, steel);                              // underframe
     bx(g, 0, FLOOR - 0.06, 0, CL - 0.4, 0.12, 2.6, floorM);             // floor (walking surface at FLOOR)
     bx(g, 0, 1.45, -HALF_W + 0.05, CL, 0.9, 0.1, body);                 // lower side panels
@@ -120,10 +126,8 @@ var Train = (function () {
     return g;
   }
 
-  function init(sc, map) {
+  function init() {
     dispose();
-    scene = sc; mapId = map;
-    cfg = CFG.TRAIN && CFG.TRAIN[map];
     active = !!cfg;
     if (!active) return false;
     FLOOR = cfg.floor || 1.05; ROOF = cfg.roof || 3.75;
@@ -146,14 +150,14 @@ var Train = (function () {
       scene.remove(group);
       group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
     }
-    group = null; cars = []; active = false; path = null; cfg = null;
+    group = null; cars = []; active = false; path = null;
   }
 
   /* ---------- per frame ---------- */
   function matchTime() {
     var m = (typeof Net !== 'undefined' && Net.getMatch) ? Net.getMatch() : null;
     if (!m || !m.startedAt) return 0;
-    return (Date.now() + (m.serverOffset || 0) - m.startedAt) / 1000;
+    return (Date.now() + (m.serverOffset || 0) - m.startedAt) / 1000 + (cfg && cfg.tOffset ? cfg.tOffset : 0);
   }
   var wasAboard = false, boardToastAt = 0;
   /* v1.0g: the rider's HUD hint. Once per boarding: leaving a moving train is
@@ -256,5 +260,27 @@ var Train = (function () {
 
   return { init: init, dispose: dispose, update: update, floorAt: floorAt,
     isActive: function () { return active; }, cars: function () { return cars; },
-    head: function () { return { s: headS, v: headV }; }, schedule: function () { return sched; }, path: function () { return path; } };
+    head: function () { return { s: headS, v: headV }; }, schedule: function () { return sched; }, path: function () { return path; }, cfg: function () { return cfg; } };
+}
+
+var Train = (function () {
+  var list = [];
+  function init(sc, map) {
+    dispose();
+    var cfgs = (CFG.TRAINS && CFG.TRAINS[map]) || (CFG.TRAIN && CFG.TRAIN[map] ? [CFG.TRAIN[map]] : []);
+    list = cfgs.map(function (c) { var t = makeTrain(c, sc); t.init(); return t; });
+    return list.length > 0;
+  }
+  function dispose() { list.forEach(function (t) { t.dispose(); }); list = []; }
+  function update(dt) { for (var i = 0; i < list.length; i++) list[i].update(dt); }
+  function floorAt(pos, halfY) { for (var i = 0; i < list.length; i++) { var r = list[i].floorAt(pos, halfY); if (r) return r; } return null; }
+  function first() { return list[0]; }
+  return { init: init, dispose: dispose, update: update, floorAt: floorAt,
+    isActive: function () { return list.length > 0; },
+    trains: function () { return list; },
+    allCars: function () { var out = []; list.forEach(function (t) { out = out.concat(t.cars()); }); return out; },
+    cars: function () { return list[0] ? list[0].cars() : []; },
+    head: function () { return list[0] ? list[0].head() : { s: 0, v: 0 }; },
+    schedule: function () { return list[0] ? list[0].schedule() : null; },
+    path: function () { return list[0] ? list[0].path() : null; } };
 })();

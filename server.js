@@ -256,12 +256,13 @@ const Nuke = require('./server/lib/nuke.js')({ io, now, applyDamage: (...a) => a
    to the fire" and "under a roof" are decided against the real map. */
 const Rocket = require('./server/lib/rocket.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo });
 const Heli = require('./server/lib/heli.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo,
-  trainPath: (mapId, which) => Bots.trainPath(mapId, which) });   /* v1.0l: the helicopter, Urban only */
+  pathFrom: (wp, fillet) => Bots.pathFrom(wp, fillet) });   /* v1.0l/q: the helicopter, Urban only; per-flight routes */
 const Zone = require('./server/lib/zone.js')({ io, now, applyDamage: (...a) => applyDamage(...a),
   colliders: (mapId) => Bots.buildColliders(mapId) });   /* v1.0j: Urban Zone; colliders for the open-ground crate fallback */
 const Hazards = require('./server/lib/hazards.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo,
   colliders: (mapId) => Bots.buildColliders(mapId),
-  trainPath: (mapId) => Bots.trainPath(mapId) });   /* v1.0f: the moving train kills what it hits */
+  trainPath: (mapId) => Bots.trainPath(mapId),
+  pathFrom: (wp, fillet) => Bots.pathFrom(wp, fillet) });   /* v1.0f/r: the moving trains kill what they hit */
 /* v10.14: OUTBREAK REMOVED. It shipped in v10.13 having never been run, and it
    did not work: the zombies stood still holding rifles and could not be killed.
 
@@ -1036,6 +1037,19 @@ io.on('connection', (socket) => {
        already guaranteed by the guard at the top of this handler. */
     /* v1.0d: backfill, botCount, bmDiff and botSkill are no longer settings —
        Bot Mode was removed. A stale client sending them is ignored. */
+    /* v1.0r: dress colours — a hex per team id, or 'all' for FFA; merged, then
+       everyone is recoloured so the lobby list and the avatars agree at once */
+    if (s && s.dressColors && typeof s.dressColors === 'object') {
+      const dc = Object.assign({}, room.settings.dressColors || {});
+      for (const k of Object.keys(s.dressColors)) {
+        if (k !== 'all' && !CFG.TEAMS[k]) continue;
+        const v = s.dressColors[k];
+        if (v === null || v === '') { delete dc[k]; continue; }             // reset to default
+        const hx = Rooms.cleanHex(v); if (hx) dc[k] = hx;
+      }
+      room.settings.dressColors = dc;
+      Rooms.recolor(room);
+    }
     if (s && s.teamNames) {
       /* v8.34: rename any side the mode fields. Sides not sent keep whatever
          they had, so editing team A never blanks team B. */
@@ -1291,6 +1305,15 @@ io.on('connection', (socket) => {
     if (!fireRateOk(p, w)) return ack({ ok: false, err: 'Too fast' });
     ack(Heli.hit(room, p, w));
   });
+  /* ===== v1.0q - LANDING THE HELICOPTER (a rider presses Q) ===== */
+  socket.on('heliLand', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false });
+    const p = room.players.get(socket.id);
+    if (!p) return ack({ ok: false });
+    ack(Heli.land(room, p));
+  });
   /* ===== v1.0p - JUMPING FROM THE HELICOPTER (the rider says so) ===== */
   socket.on('heliBail', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};
@@ -1440,7 +1463,7 @@ io.on('connection', (socket) => {
          the next join, leave or settings change — and, before v10.22, the
          balancer that ran again at match start. */
       p.teamLocked = true;
-      p.color = CFG.TEAMS[p.team].color;
+      p.color = Rooms.colorFor(room, p, 0);   /* v1.0r */
     });
     pushLobby(room);
   });
@@ -1459,7 +1482,7 @@ io.on('connection', (socket) => {
     if (!p) return;
     p.team = d.team;
     p.teamLocked = true;
-    p.color = CFG.TEAMS[d.team].color;
+    p.color = Rooms.colorFor(room, p, 0);   /* v1.0r */
     pushLobby(room);
   });
 

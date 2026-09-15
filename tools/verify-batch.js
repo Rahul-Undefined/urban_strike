@@ -110,7 +110,11 @@ const CAST_BUDGET = { urban: 62, metro: 22 };
    first green build; 136,000 leaves ~7,000 of headroom, the same proportion the
    old ceiling left the old map. A ratchet moves for a deliberate expansion
    with its cost written down — never for drift. */
-const TRI_BUDGET = { urban: 136000, metro: 26000 };
+/* v1.0r: 136k -> 144k. THE SECOND TRACK, STATED PLAINLY. Measured 139,720:
+   a second 782 m loop of chord-laid rails and sleepers (~4.6k tris, one
+   material pair each — draws unchanged) plus finer chords on both loops'
+   curves. Four thousand spare, as every raise before it. */
+const TRI_BUDGET = { urban: 144000, metro: 26000 };
 /* v9.0: rural 200 -> 215. Hollow Ridge is 1.9x the area of the old map and
    its cover is drystone walls, which the minimap draws as shapes. Measured at
    210. Urban's 320 is untouched. */

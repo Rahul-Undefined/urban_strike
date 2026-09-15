@@ -482,11 +482,11 @@ var Minimap = (function () {
        loot-gold tone, drawn from the deterministic pose every client shares.
        You can see where it is, and time your walk to the platform. */
     if (typeof Train !== 'undefined' && Train.isActive && Train.isActive()) {
-      var cars = Train.cars();
+      var cars = Train.allCars ? Train.allCars() : Train.cars();   /* v1.0r: both trains */
       for (var ci = 0; ci < cars.length; ci++) {
         var c = cars[ci];
         g.save(); g.translate(sx(c.x), sz(c.z)); g.rotate(c.yaw);
-        g.fillStyle = ci === 0 ? 'rgba(255,214,120,0.95)' : 'rgba(255,196,96,0.85)';
+        g.fillStyle = !c.coach ? 'rgba(255,214,120,0.95)' : 'rgba(255,196,96,0.85)';
         g.fillRect(-c.L * S / 2, -1.6 * S, c.L * S, 3.2 * S);
         g.restore();
       }

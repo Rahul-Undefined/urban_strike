@@ -34,6 +34,11 @@
   background:rgba(0,0,0,.35);z-index:42;pointer-events:none;display:flex;flex-direction:column;justify-content:flex-end}
 #breath-bar.hidden{display:none}
 /* v1.0j: Urban Zone — banner under the clock, red edge while outside */
+/* v1.0r: dress colour pickers */
+.team-dress{width:22px;height:22px;padding:0;border:1px solid rgba(255,255,255,.25);background:none;vertical-align:middle;margin-right:6px;cursor:pointer}
+.dress-row{display:flex;gap:8px;align-items:center}
+#lobby-dress{width:44px;height:26px;padding:0;border:1px solid rgba(255,255,255,.25);background:none;cursor:pointer}
+button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#dfe7f2;cursor:pointer}
 #zone-banner{position:fixed;left:50%;top:calc(6% + 78px);transform:translateX(-50%);display:none;z-index:43;font-size:12px;letter-spacing:.16em;
   color:#dfe7f2;text-shadow:0 2px 4px #000;padding:4px 12px;border:1px solid rgba(255,255,255,.18);background:rgba(10,14,20,.55);border-radius:3px}
 #zone-banner.on{display:block}
@@ -234,6 +239,7 @@
             <label class="field" id="lobby-var-field"><span>SETUP</span><select id="lobby-mode"></select></label>
             <label class="field"><span>THEATRE</span><select id="lobby-map"></select></label>
             <label class="field"><span>DURATION</span><select id="lobby-time"></select></label>
+            <label class="field" id="lobby-dress-field"><span>DRESS COLOUR</span><span class="dress-row"><input type="color" id="lobby-dress" title="Everyone's outfit accent in this mode"><button type="button" id="lobby-dress-reset" class="mini" title="Back to the identity palette">RESET</button></span></label>
             <!-- v12.0 (item 10): host toggle for approximate enemy blobs on the M map.
                  A select, not a checkbox: it inherits the host-lock styling and the
                  change-listener plumbing every other config control already has. -->

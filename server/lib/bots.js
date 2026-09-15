@@ -35,6 +35,14 @@ function trainPath(mapId, which) {
   if (!(mapId in pathCache)) buildColliders(mapId);
   return pathCache[which === 'heli' ? mapId + '#heli' : mapId] || null;
 }
+/* v1.0q: a filleted path from arbitrary waypoints (the helicopter's per-flight
+   route), evaluated in the harness vm that holds World.trainPath. */
+const vmCtx = {};
+function pathFrom(waypoints, fillet) {
+  if (!vmCtx.ctx) { buildColliders('urban'); }
+  if (!vmCtx.ctx) return null;
+  try { return vm.runInContext('World.trainPath(' + JSON.stringify({ waypoints: waypoints, fillet: fillet }) + ')', vmCtx.ctx); } catch (e) { return null; }
+}
 function buildColliders(mapId) {
   if (colliderCache[mapId]) return colliderCache[mapId];
   let cols = [];
@@ -83,6 +91,7 @@ function buildColliders(mapId) {
                     topY: f.topY, endX: f.endX, endZ: f.endZ }; }) }; })();`,
       ctx, { filename: '<bot-colliders>' });
     cols = built.c;
+    vmCtx.ctx = ctx;   /* v1.0q: kept for pathFrom() */
     /* v1.0f: the train's path, evaluated in the same vm that built the map —
        the server needs it to kill whoever the moving train hits. */
     try {
@@ -90,9 +99,7 @@ function buildColliders(mapId) {
         pathCache[mapId] = vm.runInContext('World.trainPath(CFG.TRAIN[' + JSON.stringify(mapId) + '])', ctx);
       } else pathCache[mapId] = null;
       /* v1.0l: the helicopter's route, same fillet math, Urban only */
-      if (mapId === 'urban' && vm.runInContext('!!(CFG.HELI && World.trainPath)', ctx)) {
-        pathCache[mapId + '#heli'] = vm.runInContext('World.trainPath({ waypoints: CFG.HELI.route, fillet: CFG.HELI.fillet })', ctx);
-      } else pathCache[mapId + '#heli'] = null;
+      pathCache[mapId + '#heli'] = null;   /* v1.0q: the helicopter's route is per flight — see pathFrom() */
     } catch (e2) { pathCache[mapId] = null; }
     /* v9.2: the STAIR REGISTRY comes out with the colliders. World already
        records every flight it builds — base, top, direction, end point — and
@@ -381,5 +388,5 @@ module.exports = function initGeometryHarness(ctx) {
   /* v1.0d: no bots. The factory shape survives for the thirty callers; every
      former product verb is gone rather than stubbed, so a call site that still
      expects one fails loudly at load instead of silently fielding nothing. */
-  return { buildColliders, stairsFor, planClimb, segmentBlocked, groundAt, bodyBlocked, trainPath };
+  return { buildColliders, stairsFor, planClimb, segmentBlocked, groundAt, bodyBlocked, trainPath, pathFrom };
 };

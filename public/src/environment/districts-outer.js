@@ -1116,7 +1116,7 @@ World._buildPart5 = function (T) {
 
     /* ---- pavilion on the west side: the one enclosed position ------------ */
     (function pavilion() {
-      var X0 = -99, X1 = -92, Z0 = 55, Z1 = 73, TT = 0.3;
+      var X0 = -97.6, X1 = -92, Z0 = 55, Z1 = 73, TT = 0.3;   /* v1.0r: west wall in 1.4 m — the second train's track runs past it */
       /* A wide opening onto the ground and NO side windows. Each window costs
          a mullion that overlaps the wall it is cut into, and with the props
          budget already carrying stadium debt this pavilion is not the place to
@@ -1155,7 +1155,7 @@ World._buildPart5 = function (T) {
     });
 
     /* ---- practice nets, outside the bowl where they belong -------------- */
-    [-95, -87].forEach(function (nx) {
+    [-92.5, -84.5].forEach(function (nx) {   /* v1.0r: 2.5 m east — the west posts stood in the second train's lane */
       [90, 93].forEach(function (nz) {
         cyl(nx - 3, 2.15, nz, 0.1, 4.3, M.metal);
         cyl(nx + 3, 2.15, nz, 0.1, 4.3, M.metal);
@@ -1593,7 +1593,7 @@ World._buildPart5 = function (T) {
   /* v1.0e: the two containers at x -100 (and the stacked one) stood on the
      old perimeter line — which is the ring boulevard now, and the train's
      west straight. Gone. The two by the stadium's north side stay. */
-  [[-70, 96, Math.PI / 2], [-74, 84, 0]].forEach(function (c3) {
+  [[-70, 94, Math.PI / 2], [-74, 84, 0]].forEach(function (c3) {   /* v1.0r: 2 m off the inner track */
     box(c3[0], 1.3, c3[1], 6.0, 2.6, 2.44, CBOX[(rnd() * CBOX.length) | 0], { rotY: c3[2] });
   });
   crates(-62, 36);
@@ -1871,18 +1871,33 @@ World._buildPart6 = function (T) {
      moving train follows (World.trainPath), so track and train cannot
      disagree. Non-colliding paint-level geometry; skipped where SECTOR 7
      CENTRAL already lays Track 2's own rails (x 18..94 on the station straight). */
-  if (CFG.TRAIN && CFG.TRAIN.urban && World.trainPath) {
-    var TP = World.trainPath(CFG.TRAIN.urban), STEP = 5.2, GA = 0.72;
-    for (var ts = 0; ts < TP.length; ts += STEP) {
-      var q0 = TP.at(ts), q1 = TP.at(Math.min(TP.length, ts + STEP));
-      var mx = (q0.x + q1.x) / 2, mzz = (q0.z + q1.z) / 2, yaw = q0.yaw;
-      if (mx > 16 && mx < 96 && Math.abs(mzz + 88) < 3) continue;       // the station lays its own
-      var cs2 = Math.cos(yaw), sn2 = Math.sin(yaw);
-      var segL = Math.hypot(q1.x - q0.x, q1.z - q0.z) * 1.04;
-      box(mx - sn2 * GA * -1, 0.10, mzz + cs2 * GA * -1, segL, 0.10, 0.12, M.metal, { rotY: -yaw, collide: false });
-      box(mx + sn2 * GA * -1, 0.10, mzz - cs2 * GA * -1, segL, 0.10, 0.12, M.metal, { rotY: -yaw, collide: false });
-      box(mx, 0.035, mzz, 0.26, 0.07, 2.4, M.wood, { rotY: -yaw, collide: false, cast: false });
+  /* v1.0r (Rahul: "at the corners the tracks are broken"): each rail piece is
+     a CHORD between two points ON the path, angled along the chord — so
+     consecutive pieces meet end to end round a curve instead of splaying off
+     the start tangent. Curves are sampled finer than straights. Laid for
+     every train loop on the map. */
+  function layRails(TP, skipStation) {
+    var GA = 0.72, ts = 0;
+    while (ts < TP.length - 0.01) {
+      var q0 = TP.at(ts), qProbe = TP.at(Math.min(TP.length, ts + 2.6));
+      var dyawP = qProbe.yaw - q0.yaw; while (dyawP > Math.PI) dyawP -= 2 * Math.PI; while (dyawP < -Math.PI) dyawP += 2 * Math.PI;
+      var STEP = Math.abs(dyawP) > 0.02 ? 2.6 : 5.2;                        // curve: short chords
+      var q1 = TP.at(Math.min(TP.length, ts + STEP));
+      var mx = (q0.x + q1.x) / 2, mzz = (q0.z + q1.z) / 2;
+      var cyaw = Math.atan2(q1.z - q0.z, q1.x - q0.x);                      // the CHORD's heading
+      var segL = Math.hypot(q1.x - q0.x, q1.z - q0.z) * 1.02;
+      ts += STEP;
+      if (skipStation && mx > 16 && mx < 96 && Math.abs(mzz + 88) < 3) continue;   // the station lays its own
+      var cs2 = Math.cos(cyaw), sn2 = Math.sin(cyaw);
+      box(mx + sn2 * GA, 0.10, mzz - cs2 * GA, segL, 0.10, 0.12, M.metal, { rotY: -cyaw, collide: false });
+      box(mx - sn2 * GA, 0.10, mzz + cs2 * GA, segL, 0.10, 0.12, M.metal, { rotY: -cyaw, collide: false });
+      box(mx, 0.035, mzz, 0.26, 0.07, 2.4, M.wood, { rotY: -cyaw, collide: false, cast: false });   // one sleeper per piece
     }
+  }
+  if (CFG.TRAINS && CFG.TRAINS.urban && World.trainPath) {
+    CFG.TRAINS.urban.forEach(function (tc, i) { layRails(World.trainPath(tc), i === 0); });
+  } else if (CFG.TRAIN && CFG.TRAIN.urban && World.trainPath) {
+    layRails(World.trainPath(CFG.TRAIN.urban), true);
   }
 
   /* ---- THE HALTS (v1.0l) -----------------------------------------------

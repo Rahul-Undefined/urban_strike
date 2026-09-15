@@ -8,6 +8,13 @@ doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
 every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
 count toward the next strike; Shift while scoped holds your breath.
 
+**v1.0.4 — A SECOND TRAIN.** Two trains on the ring, opposite hands, provably
+never touching; rails that meet round the corners; the host picks dress colours.
+
+**v1.0.3 — THE HELICOPTER FLIES FREE.** It stays airborne on a different
+wandering route every match until a rider presses Q to land; Z re-launches a
+landed one; shoot the ground from the cabin; next one 3 minutes after it leaves.
+
 **v1.0.2 — NOBODY FALLS WITHOUT A REASON.** A rider leaves the flying
 helicopter only by jumping (Space); lag, clock skew and frame hitches can no
 longer count as a fall.

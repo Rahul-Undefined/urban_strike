@@ -15,7 +15,7 @@ var UI = (function () {
       'deploy-panel', 'btn-deploy-close', 'btn-create-quick', 'join-code', 'btn-join', 'deploy-hint',
       'wave-banner', 'wave-title', 'wave-sub',
       'reclaim-overlay', 'reclaim-body', 'btn-reclaim-yes', 'btn-reclaim-fresh',
-      'lobby-cat', 'lobby-mode', 'lobby-var-field', 'lobby-map', 'lobby-time', 'lobby-intel',
+      'lobby-cat', 'lobby-mode', 'lobby-var-field', 'lobby-map', 'lobby-time', 'lobby-intel', 'lobby-dress', 'lobby-dress-field', 'lobby-dress-reset',
       'lobby-summary', 'cfg-role', 'intel-map-name', 'intel-map-meta',
       'btn-shuffle', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
       'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count',
@@ -270,6 +270,8 @@ var UI = (function () {
         if (sel) { Net.setPlayerTeam(sel.getAttribute('data-id'), sel.value); return; }
         var inp = e.target.closest && e.target.closest('.team-rename');
         if (inp) pushTeamName(inp.getAttribute('data-team'), inp.value);
+        var col = e.target.closest && e.target.closest('.team-dress');   /* v1.0r */
+        if (col) { var dc = {}; dc[col.getAttribute('data-team')] = col.value; Net.updateSettings({ dressColors: dc }); }
       });
       els['lobby-players'].addEventListener('keydown', function (e) {
         var inp = e.target.closest && e.target.closest('.team-rename');
@@ -307,11 +309,16 @@ var UI = (function () {
           /* Renaming happens IN PLACE on the team header. Ten sides would need
              ten inputs in the rules panel; here each one sits exactly where it
              already reads, and there is nothing extra to find. */
-          hdr.innerHTML = '<input class="team-rename" data-team="' + t +
+          /* v1.0r: the DRESS COLOUR picker sits beside the name — the host's pick
+             for this side, or the side's default colour. */
+          var dress = ((d.settings && d.settings.dressColors) || {})[t] || tint;
+          hdr.innerHTML = '<input type="color" class="team-dress" data-team="' + t + '" value="' + dress + '" title="Dress colour">' +
+            '<input class="team-rename" data-team="' + t +
             '" maxlength="12" value="' + esc(teamName(t)) +
-            '" style="color:' + tint + '"><em class="tcount">' + members.length + '</em>';
+            '" style="color:' + dress + '"><em class="tcount">' + members.length + '</em>';
         } else {
-          hdr.innerHTML = '<span style="color:' + tint + '">' + esc(teamName(t)) +
+          var dress2 = ((d.settings && d.settings.dressColors) || {})[t] || tint;
+          hdr.innerHTML = '<span style="color:' + dress2 + '">' + esc(teamName(t)) +
             '</span><em class="tcount">' + members.length + '</em>';
         }
         els['lobby-players'].appendChild(hdr);
@@ -473,6 +480,13 @@ var UI = (function () {
       els['lobby-map'].title = mlMode.mapLock ? 'Urban Zone is played on Urban' : '';
     if (els['lobby-time'] && document.activeElement !== els['lobby-time'])
       els['lobby-time'].value = String(d.settings.minutes);
+    /* v1.0r: in a mode without sides the one dress colour applies to everyone */
+    if (els['lobby-dress'] && els['lobby-dress-field']) {
+      var mdT = (CFG.MODES[d.settings.mode] || {}).teams;
+      els['lobby-dress-field'].style.display = mdT ? 'none' : '';
+      els['lobby-dress'].disabled = !isHost || counting;
+      if (document.activeElement !== els['lobby-dress']) els['lobby-dress'].value = ((d.settings && d.settings.dressColors) || {}).all || CFG.COLORS[0];
+    }
     if (els['lobby-intel'] && document.activeElement !== els['lobby-intel'])
       els['lobby-intel'].value = d.settings.enemyIntel ? '1' : '0';   // v12.0 (item 10)
     /* v12.0 (item 7): a bot mode is Urban-only. The map select is forced to
@@ -1015,7 +1029,7 @@ var UI = (function () {
     e.classList.add('on');
     var f = document.getElementById('heli-fill'), t = document.getElementById('heli-txt');
     if (f) f.style.width = Math.round(100 * Math.max(0, h.hp) / Math.max(1, h.max)) + '%';
-    if (t) t.textContent = (h.state === 'flying' ? 'HELICOPTER AIRBORNE' : h.state === 'landed' ? 'HELICOPTER LANDED' : 'HELICOPTER ON THE PAD') + ' \u00b7 ' + Math.max(0, h.hp | 0);
+    if (t) t.textContent = (h.state === 'flying' ? 'HELICOPTER AIRBORNE' : h.state === 'returning' ? 'HELICOPTER RETURNING' : h.state === 'landed' ? 'HELICOPTER LANDED' : 'HELICOPTER ON THE PAD') + ' \u00b7 ' + Math.max(0, h.hp | 0);
   }
   /* v1.0j: the zone banner under the timer */
   function setZoneBanner(text, urgent) {
@@ -1217,6 +1231,8 @@ var UI = (function () {
     });
     if (els['lobby-mode']) els['lobby-mode'].addEventListener('change', pushSettings);
     if (els['lobby-map']) els['lobby-map'].addEventListener('change', pushSettings);
+    if (els['lobby-dress']) els['lobby-dress'].addEventListener('change', function () { Net.updateSettings({ dressColors: { all: els['lobby-dress'].value } }); });   /* v1.0r */
+    if (els['lobby-dress-reset']) els['lobby-dress-reset'].addEventListener('click', function () { Net.updateSettings({ dressColors: { all: null } }); });
     if (els['lobby-time']) els['lobby-time'].addEventListener('change', pushSettings);
     /* ===== v13.0 - THE INTEL "REVERSAL" WAS THIS MISSING LINE =====
        Every config select above pushes on change; v12 added the intel select

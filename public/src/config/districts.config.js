@@ -25,13 +25,13 @@
        outside every old region, so they cannot steal a match, and the tower
        at the centre of each side belongs to the strip it stands in. */
     { id: 'northyards', name: 'NORTH YARDS',
-      x0: -120, x1: 120, z0: -120, z1: -106, sign: [20, -99.6, 0], tone: 'contBlue' },       /* v1.0i: inner edge of the boulevard — the outer lane is the train's */
+      x0: -120, x1: 120, z0: -120, z1: -106, sign: [20, -96.6, 0], tone: 'contBlue' },       /* v1.0i: inner edge of the boulevard — the outer lane is the train's */
     { id: 'southfield', name: 'SOUTHFIELD PARK',
-      x0: -120, x1: 120, z0: 106, z1: 120, sign: [-20, 99.6, 3.1416], tone: 'sage' },
+      x0: -120, x1: 120, z0: 106, z1: 120, sign: [-20, 96.6, 3.1416], tone: 'sage' },
     { id: 'eastmarket', name: 'EAST MARKET',
-      x0: 106, x1: 120, z0: -106, z1: 106, sign: [99.6, 40, -1.5708], tone: 'dustyPink' },   /* v1.0l: clear of EAST HALT */
+      x0: 106, x1: 120, z0: -106, z1: 106, sign: [96.6, 40, -1.5708], tone: 'dustyPink' },   /* v1.0r */
     { id: 'westbarracks', name: 'WEST BARRACKS',
-      x0: -120, x1: -106, z0: -106, z1: 106, sign: [-99.6, -40, 1.5708], tone: 'facadeOlive' },   /* v1.0l: clear of WEST HALT */
+      x0: -120, x1: -106, z0: -106, z1: 106, sign: [-96.6, -40, 1.5708], tone: 'facadeOlive' },   /* v1.0r */
 
     { id: 'construction', name: 'CONSTRUCTION SITE',
       x0: -20, x1: 20, z0: -70, z1: -52, sign: [0, -51.0, 0], tone: 'rust' },

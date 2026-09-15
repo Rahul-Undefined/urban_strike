@@ -323,6 +323,8 @@ var Game = (function () {
          consumed the key rather than this line guessing. */
       /* v1.0l: jumping out of the flying helicopter is a choice — the floor lets go */
       if (e.code === 'Space' && window.Heli && Heli.isRiding && Heli.isRiding()) Heli.bail();
+      /* v1.0q: Q aboard the flying helicopter brings it down (a lean is pointless up there) */
+      if (e.code === 'KeyQ' && window.Heli && Heli.isRiding && Heli.isRiding()) { Heli.landRequest(); e.preventDefault(); return; }
       if (e.code === 'KeyN' && UI.nukeToggleAim && UI.nukeToggleAim()) { e.preventDefault(); return; }
       /* v1.0b: on a big map N is the ROCKET. The two rewards refuse each other's
          maps on the server, so only one of these lines can ever consume N. */

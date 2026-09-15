@@ -1,6 +1,27 @@
 /* Room + lobby domain: codes, membership, team balancing, lobby payloads. */
 'use strict';
 const CFG = require('../../public/src/config/index.js');
+
+/* ===== v1.0r - THE DRESS COLOUR =====
+   Rahul: "the host can change team names and shuffle members but not the
+   colour of the dress — add that." `room.settings.dressColors` holds the
+   host's picks: a hex per team id in team modes, or one under 'all' in FFA
+   (where the default is the ten-colour identity palette). One function decides
+   a player's colour everywhere, so the accent, the name tag, the radar dot and
+   the scoreboard all agree. */
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+function cleanHex(v) { return (typeof v === 'string' && HEX_RE.test(v)) ? v.toLowerCase() : null; }
+function colorFor(room, p, i) {
+  const dc = (room && room.settings && room.settings.dressColors) || {};
+  const mode = CFG.MODES[room.settings.mode] || {};
+  if (mode.teams && p.team) return dc[p.team] || (CFG.TEAMS[p.team] || {}).color || CFG.COLORS[0];
+  return dc.all || CFG.COLORS[(i | 0) % CFG.COLORS.length];
+}
+function recolor(room) {
+  let i = 0;
+  for (const p of room.players.values()) { p.color = colorFor(room, p, i++); }
+}
+
 module.exports = function initRoomsModule(ctx) {
   const { io, rooms, now } = ctx;
   const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -173,21 +194,21 @@ function refreshTeamsAndColors(room, preserve) {
          locked or not. Only a player with no team, or one stranded on a side
          this mode does not field, is reassigned. */
       if (preserve && ids.indexOf(p.team) >= 0) {
-        p.color = CFG.TEAMS[p.team].color;
+        p.color = colorFor(room, p, i);
         return;
       }
       if (p.teamLocked && ids.indexOf(p.team) >= 0) {
-        p.color = CFG.TEAMS[p.team].color;
+        p.color = colorFor(room, p, i);
         return;
       }
       p.team = ids[autoIdx++ % ids.length];
       /* v11.0: a fill that happens while the match is running is immediately a
          settled fact — lock it, or the next joiner's refresh moves this one. */
       p.teamLocked = !inLobby;
-      p.color = CFG.TEAMS[p.team].color;
+      p.color = colorFor(room, p, i);
     } else {
       p.team = null; p.teamLocked = false;
-      p.color = CFG.COLORS[i % CFG.COLORS.length];
+      p.color = colorFor(room, p, i);
     }
   });
 }
@@ -222,5 +243,5 @@ function pushLobby(room) { io.to(room.code).emit('lobby', lobbyPayload(room)); }
 // ---------- spawns ----------
 
   return { makeCode, cleanName, cleanTeamName, num, clampOpt, modeInfo, makeRoom, zeroTeamKills,
-    addPlayer, refreshTeamsAndColors, lobbyPayload, pushLobby };
+    addPlayer, refreshTeamsAndColors, lobbyPayload, pushLobby, colorFor, recolor, cleanHex };   /* v1.0r */
 };

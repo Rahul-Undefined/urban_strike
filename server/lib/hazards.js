@@ -166,16 +166,19 @@ module.exports = function initHazards(ctx) {
      the body. The death is tagged 'train' with no killer: nobody earns it. */
   const HALF_W = 1.5;
   function tickTrain(room) {
-    if (!ctx.trainPath || !CFG.TRAIN || !CFG.trainHeadAt) return;
+    if (!CFG.trainHeadAt || !room.startedAt) return;
     const mapId = room.settings.map || 'urban';
-    const cfg = CFG.TRAIN[mapId];
-    if (!cfg || !room.startedAt) return;
+    const cfgs = (CFG.TRAINS && CFG.TRAINS[mapId]) || (CFG.TRAIN && CFG.TRAIN[mapId] ? [CFG.TRAIN[mapId]] : []);
+    for (let ti = 0; ti < cfgs.length; ti++) tickOneTrain(room, cfgs[ti], ti);
+  }
+  function tickOneTrain(room, cfg, ti) {
     let P = null;
-    try { P = ctx.trainPath(mapId); } catch (e) { P = null; }
+    try { P = ti === 0 && ctx.trainPath ? ctx.trainPath(room.settings.map || 'urban') : (ctx.pathFrom ? ctx.pathFrom(cfg.waypoints, cfg.fillet) : null); } catch (e) { P = null; }
     if (!P) return;
-    if (!room.trainSched) room.trainSched = CFG.trainSchedule(cfg, P.length, CFG.trainStops(cfg, P));   /* v1.0l */
+    room.trainScheds = room.trainScheds || {};
+    if (!room.trainScheds[ti]) room.trainScheds[ti] = CFG.trainSchedule(cfg, P.length, CFG.trainStops(cfg, P));
     const t = now();
-    const h = CFG.trainHeadAt(room.trainSched, (t - room.startedAt) / 1000);
+    const h = CFG.trainHeadAt(room.trainScheds[ti], (t - room.startedAt) / 1000 + (cfg.tOffset || 0));
     const cars = CFG.trainCars(cfg), FLOOR = cfg.floor || 1.05, half = CFG.PLAYER.standH / 2;
     const poses = cars.map(c => { const p = P.at(h.s - c.off); return { c, p, cs: Math.cos(p.yaw), sn: Math.sin(p.yaw) }; });
     /* local coordinates of a player against each car; `inBody` with the tight
@@ -216,7 +219,7 @@ module.exports = function initHazards(ctx) {
   }
 
   function tick(room) { tickFire(room); tickBombs(room); tickTrain(room); }
-  function reset(room) { room.fireZones = []; room.bombs = []; room.trainSched = null; }
+  function reset(room) { room.fireZones = []; room.bombs = []; room.trainSched = null; room.trainScheds = null; }
 
   return { ignite, plant, tick, reset, roofAbove, segmentBlocked, tickTrain };
 };

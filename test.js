@@ -673,8 +673,25 @@ function phase19() {
           setTimeout(() => {
             const L2 = lobbiesZ[lobbiesZ.length - 1];
             ok(L2.settings.map === 'urban', 'a host map change is refused in a locked mode [' + L2.settings.map + ']');
-            [Az, Bz].forEach(s2 => s2.emit('setReady', { v: true }));
-            setTimeout(() => Az.emit('startMatch'), 300);
+            /* v1.0r: the DRESS COLOUR — solo zone is FFA-shaped: one colour for everyone; bad hex refused; reset restores the palette */
+            Az.emit('updateSettings', { dressColors: { all: '#12ab34' } });
+            setTimeout(() => {
+              const L3 = lobbiesZ[lobbiesZ.length - 1];
+              ok(L3.settings.dressColors && L3.settings.dressColors.all === '#12ab34', 'the host sets everyone\'s dress colour [' + JSON.stringify(L3.settings.dressColors) + ']');
+              ok(L3.players.every(p => p.color === '#12ab34'), 'and every player in the lobby wears it');
+              Az.emit('updateSettings', { dressColors: { all: 'red; drop table' } });
+              setTimeout(() => {
+                const L4 = lobbiesZ[lobbiesZ.length - 1];
+                ok(L4.settings.dressColors.all === '#12ab34', 'a non-hex value is ignored');
+                Az.emit('updateSettings', { dressColors: { all: null } });
+                setTimeout(() => {
+                  const L5 = lobbiesZ[lobbiesZ.length - 1];
+                  ok(!L5.settings.dressColors.all && L5.players.some(p => p.color === CFG.COLORS[0]), 'reset brings the identity palette back');
+                  [Az, Bz].forEach(s2 => s2.emit('setReady', { v: true }));
+                  setTimeout(() => Az.emit('startMatch'), 300);
+                }, 300);
+              }, 300);
+            }, 300);
             const waitStart = () => {
               if (!startZ) return setTimeout(waitStart, 300);
               ok(startZ.zone && Array.isArray(startZ.zone.circles) && startZ.zone.circles.length === CFG.ZONE.shrinkPhases + 1,
@@ -696,7 +713,9 @@ function phase19() {
   function heliPhase() {
     const Ah = io(URL), Bh = io(URL);
     let uph = 0, states = [], deathsH = [], offH = 0, seatH = null, posH = null;
-    const Bots2 = require('./server/lib/bots.js')({}), PH = Bots2.trainPath('urban', 'heli'), HH = CFG.HELI, halfH = CFG.PLAYER.standH / 2;
+    const Bots2 = require('./server/lib/bots.js')({}), HH = CFG.HELI, halfH = CFG.PLAYER.standH / 2;
+    const heliPaths = {};
+    const PHfor = (seed) => { if (!heliPaths[seed]) { const R = CFG.heliRoute(HH, seed); heliPaths[seed] = Bots2.pathFrom(R.waypoints, R.fillet); } return heliPaths[seed]; };
     Ah.on('heliState', d => states.push(d));
     Ah.on('death', d => deathsH.push(d));
     Ah.on('heliSeat', d => { seatH = d; });
@@ -722,7 +741,7 @@ function phase19() {
           setTimeout(() => { posH = r.seat.slice(); }, 120);
           const iv = setInterval(() => {
             const hs = states[states.length - 1];
-            if (hs && hs.state === 'flying') { const t = Math.max(0, (Date.now() + offH - hs.t0) / 1000 - 0.70); const p = CFG.heliPoseAt(HH, PH, t); posH = [p.x, p.y + HH.cabinFloor + halfH + 0.02, p.z]; }   // v1.0p: 700 ms of lag + clock skew, on purpose
+            if (hs && (hs.state === 'flying' || hs.state === 'returning')) { const t = Math.max(0, (Date.now() + offH - hs.t0) / 1000 - 0.70); const p = hs.state === 'returning' ? CFG.heliReturnPose(HH, hs.from, t) : CFG.heliPoseAt(HH, PHfor(hs.seed), t); posH = [p.x, p.y + HH.cabinFloor + halfH + 0.02, p.z]; }   // v1.0p/q: 700 ms of lag + skew, following the rolled route
             st();
           }, 50);
           setTimeout(() => {
@@ -731,8 +750,16 @@ function phase19() {
             setTimeout(() => {
               const hs2 = states[states.length - 1];
               ok(hs2 && hs2.state === 'flying' && hs2.riders.length === 1 && deathsH.length === 0, 'ten seconds into the flight — the whole climb, with 700 ms of lag and skew in every update — the rider is still aboard and alive [deaths ' + deathsH.length + ']');
-              clearInterval(iv); Ah.disconnect(); Bh.disconnect();
-              setTimeout(dropPhase, 500);
+              /* v1.0q: it keeps flying (no auto-landing), then Q brings it home */
+              Ah.emit('heliLand', {}, (lr) => {
+                ok(lr && lr.ok, 'Q brings the helicopter down');
+                setTimeout(() => {
+                  const hs3 = states[states.length - 1];
+                  ok(hs3 && (hs3.state === 'returning' || hs3.state === 'landed') && deathsH.length === 0, 'it returns to the pad, the rider alive [' + (hs3 && hs3.state) + ']');
+                  clearInterval(iv); Ah.disconnect(); Bh.disconnect();
+                  setTimeout(dropPhase, 500);
+                }, 3000);
+              });
             }, 6500);
           }, HH.boardSec * 1000 + 1200);
         });

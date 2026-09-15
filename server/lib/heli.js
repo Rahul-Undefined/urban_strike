@@ -20,28 +20,37 @@
 const CFG = require('../../public/src/config/index.js');
 
 module.exports = function initHeli(ctx) {
-  const { io, now, applyDamage, trainPath, modeInfo } = ctx;
+  const { io, now, applyDamage, pathFrom, modeInfo } = ctx;
+  const routes = {};   // seed -> path (per flight)
   const CAB_HX = 1.4, CAB_HZ = 1.25;                              // cabin half-extents (along / across), matches heli.js
 
   function has(room) { return !!(room.heli && CFG.HELI && (room.settings.map || 'urban') === 'urban'); }
-  function pathFor() { try { return trainPath('urban', 'heli') || null; } catch (e) { return null; } }
+  /* v1.0q: the path for a flight's seed — the same wandering loop every client builds */
+  function pathFor(seed) {
+    if (routes[seed]) return routes[seed];
+    const R = CFG.heliRoute(CFG.HELI, seed);
+    const P = pathFrom(R.waypoints, R.fillet);
+    if (P) routes[seed] = P;
+    return P || null;
+  }
+  function baseYaw(room) { const P = pathFor(room.heli.seed || 1); const q = P ? P.at(0) : { yaw: 0 }; return q.yaw; }
   function start(room) {
     if ((room.settings.map || 'urban') !== 'urban' || !CFG.HELI) { room.heli = null; return null; }
-    room.heli = { state: 'pad', t0: now(), hp: CFG.HELI.hp, riders: [], lastHitBy: null, lastHitAt: 0, boardSince: 0, respawnAt: 0 };
+    room.heli = { state: 'pad', t0: now(), hp: CFG.HELI.hp, riders: [], lastHitBy: null, lastHitAt: 0, boardSince: 0, respawnAt: 0, seed: 1 + Math.floor(Math.random() * 2147483000), from: null };
     return snapshot(room);
   }
   function snapshot(room) {
     const h = room.heli;
     if (!h) return null;
-    return { state: h.state, t0: h.t0, hp: h.hp, riders: h.riders.slice(), respawnAt: h.respawnAt || 0 };
+    return { state: h.state, t0: h.t0, hp: h.hp, riders: h.riders.slice(), respawnAt: h.respawnAt || 0, seed: h.seed || 1, from: h.from || null };
   }
   function broadcast(room) { io.to(room.code).emit('heliState', snapshot(room)); }
   function poseNow(room) {
-    const h = room.heli, P = pathFor();
-    if (!h || !P) return null;
-    if (h.state === 'flying') return CFG.heliPoseAt(CFG.HELI, P, (now() - h.t0) / 1000);
-    const q = P.at(0);
-    return { x: CFG.HELI.pad[0], z: CFG.HELI.pad[1], y: CFG.HELI.padY, yaw: q.yaw, phase: h.state === 'gone' ? 'gone' : 'down', s: 0 };
+    const h = room.heli;
+    if (!h) return null;
+    if (h.state === 'flying') { const P = pathFor(h.seed); return P ? CFG.heliPoseAt(CFG.HELI, P, (now() - h.t0) / 1000) : null; }
+    if (h.state === 'returning' && h.from) return CFG.heliReturnPose(CFG.HELI, h.from, (now() - h.t0) / 1000);
+    return { x: CFG.HELI.pad[0], z: CFG.HELI.pad[1], y: CFG.HELI.padY, yaw: baseYaw(room), phase: h.state === 'gone' ? 'gone' : 'down', s: 0 };
   }
   function inCabin(pose, q) {
     const dx = q.pos[0] - pose.x, dz = q.pos[2] - pose.z, cs = Math.cos(pose.yaw), sn = Math.sin(pose.yaw);
@@ -65,7 +74,10 @@ module.exports = function initHeli(ctx) {
     if (!pose) return { ok: false, err: 'No helicopter' };
     const d = Math.hypot(p.pos[0] - pose.x, p.pos[2] - pose.z);
     if (d > 7) return { ok: false, err: 'Get closer to the helicopter' };
-    if (h.riders.indexOf(p.id) >= 0) {                              // second press: step off
+    if (h.riders.indexOf(p.id) >= 0) {
+      /* v1.0q: aboard a LANDED machine, Z means FLY AGAIN — arm the lift-off
+         from the riders already in the cabin, don't step the presser off. */
+      if (h.state === 'landed' && !h.boardSince) { h.boardSince = now(); io.to(room.code).emit('heliNotice', { kind: 'boarding', in: CFG.HELI.boardSec, name: p.name }); broadcast(room); return { ok: true, aboard: true, relaunch: true, seat: p.pos.slice() }; }
       h.riders = h.riders.filter(id => id !== p.id);
       p.pos = [pose.x + Math.sin(pose.yaw) * 4.5, CFG.HELI.padY + CFG.PLAYER.standH / 2 + 0.03, pose.z - Math.cos(pose.yaw) * 4.5];
       p.justSpawned = true;
@@ -102,10 +114,16 @@ module.exports = function initHeli(ctx) {
      plus the update interval, and during the climb (12.8 m/s at mid-climb) or
      a clock skew of a quarter second that is metres; Rahul was killed as a
      faller three builds running by tests that were too tight. */
-  function fallen(pose, q) {
+  function fallen(room, pose, q) {
     const feet = q.pos[1] - CFG.PLAYER.standH / 2, floor = pose.y + CFG.HELI.cabinFloor;
-    const dh = Math.hypot(q.pos[0] - pose.x, q.pos[2] - pose.z);
-    return feet < floor - 12.0 || dh > 25.0;
+    if (feet < floor - 12.0) return true;                          // a body in free fall drops fast
+    /* horizontal: near ANY of the machine's recent positions (it left a trail
+       over the last second) counts as following it — a lagging rider on a
+       curving route is always near a point the machine actually occupied. */
+    const trail = room.heli.trail || [[pose.x, pose.z]];
+    let best = Infinity;
+    for (const p of trail) { const d = Math.hypot(q.pos[0] - p[0], q.pos[2] - p[1]); if (d < best) best = d; }
+    return best > 22.0;
   }
   function fall(room, q, tag) {
     const h = room.heli, t = now();
@@ -123,42 +141,71 @@ module.exports = function initHeli(ctx) {
     h.riders = h.riders.filter(id => id !== p.id);
     fall(room, p, 'bail');
     broadcast(room);
-    if (!h.riders.length) { h.state = 'landed'; h.t0 = now(); h.emptySince = now(); broadcast(room); }
+    if (!h.riders.length) { h.from = { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw }; h.state = 'returning'; h.t0 = now(); broadcast(room); }
     return { ok: true };
   }
   function flightSec(room) { return (now() - room.heli.t0) / 1000; }
-  function totalFlight(P) { return CFG.HELI.climbSec + P.length / CFG.HELI.speed + CFG.HELI.landSec; }
+  /* v1.0q: a rider presses Q — the machine turns for the pad from where it is */
+  function land(room, p) {
+    if (!has(room) || !p) return { ok: false };
+    const h = room.heli;
+    if (h.state !== 'flying') return { ok: false, err: h.state === 'returning' ? 'Already heading home' : 'Not flying' };
+    if (h.riders.indexOf(p.id) < 0) return { ok: false, err: 'Not riding' };
+    const pose = poseNow(room);
+    if (!pose) return { ok: false };
+    h.from = { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw };
+    h.state = 'returning'; h.t0 = now();
+    broadcast(room);
+    io.to(room.code).emit('toast', { msg: p.name + ' is bringing the helicopter down' });
+    return { ok: true };
+  }
 
   function tick(room) {
     if (!has(room) || room.state !== 'playing') return;
-    const h = room.heli, P = pathFor(), t = now();
-    if (!P) return;
+    const h = room.heli, t = now();
     if (h.state === 'gone') {
-      if (t >= h.respawnAt) { h.state = 'pad'; h.t0 = t; h.hp = CFG.HELI.hp; h.riders = []; h.lastHitBy = null; broadcast(room); io.to(room.code).emit('toast', { msg: 'A helicopter has landed at the airport pad' }); }
+      if (t >= h.respawnAt) { h.state = 'pad'; h.t0 = t; h.hp = CFG.HELI.hp; h.riders = []; h.lastHitBy = null; h.seed = 1 + Math.floor(Math.random() * 2147483000); h.from = null; broadcast(room); io.to(room.code).emit('toast', { msg: 'A helicopter has landed at the airport pad' }); }
       return;
     }
     const pose = poseNow(room);
+    if (!pose) return;
     if (h.state === 'pad' || h.state === 'landed') {
       /* riders are those who pressed Z and are still in the cabin (a fresh
          boarder is trusted for the grace window — see board()) */
       const GRACE = 2500;
       h.riders = h.riders.filter(id => { const q = room.players.get(id); if (!q || !q.alive || q.out) return false; if (h.boardedAt && t - (h.boardedAt[id] || 0) < GRACE) return true; return inCabin(pose, q); });
-      if (h.state === 'pad') {
-        if (!h.riders.length) h.boardSince = 0;
-        if (h.boardSince && t - h.boardSince >= CFG.HELI.boardSec * 1000 && h.riders.length) {
-          h.state = 'flying'; h.t0 = t; h.boardSince = 0; h.flightStart = t;
-          broadcast(room);
-          io.to(room.code).emit('toast', { msg: 'The helicopter is airborne \u00b7 ' + h.riders.length + ' aboard' });
-        }
-      } else {                                                  // landed: unload, then leave
-        if (!h.riders.length) { if (!h.emptySince) h.emptySince = t; if (t - h.emptySince >= CFG.HELI.unloadSec * 1000) { leave(room, h.flightStart + CFG.HELI.respawnSec * 1000); } }
+      /* v1.0q: a boarding lifts off from the pad OR from a landing — the same
+         machine flies again with a fresh route; a landed machine nobody boards
+         leaves after unloadSec, and the next one comes respawnSec later. */
+      if (h.riders.length && h.boardSince && t - h.boardSince >= CFG.HELI.boardSec * 1000) {
+        h.state = 'flying'; h.t0 = t; h.boardSince = 0; h.flightStart = t; h.emptySince = 0; h.from = null; h.trail = []; h.outCount = {};
+        h.seed = 1 + Math.floor(Math.random() * 2147483000); pathFor(h.seed);
+        broadcast(room);
+        io.to(room.code).emit('toast', { msg: 'The helicopter is airborne \u00b7 ' + h.riders.length + ' aboard \u00b7 a rider presses Q to land' });
+        return;
+      }
+      if (!h.riders.length) h.boardSince = 0;
+      if (h.state === 'landed') {
+        if (!h.riders.length) { if (!h.emptySince) h.emptySince = t; if (t - h.emptySince >= CFG.HELI.unloadSec * 1000) leave(room, t + CFG.HELI.respawnSec * 1000); }
         else h.emptySince = 0;
       }
       return;
     }
+    if (h.state === 'returning') {
+      h.trail = [[pose.x, pose.z]];
+      if (pose.y > CFG.HELI.padY + 3.5) {
+        h.outCount = h.outCount || {};
+        const still = [];
+        for (const id of h.riders) { const q = room.players.get(id); if (!q || !q.alive || q.out) continue; if (!fallen(room, pose, q)) { h.outCount[id] = 0; still.push(id); continue; } h.outCount[id] = (h.outCount[id] || 0) + 1; if (h.outCount[id] < 2) { still.push(id); continue; } fall(room, q, 'lost'); }
+        if (still.length !== h.riders.length) { h.riders = still; broadcast(room); }
+      }
+      if (pose.phase === 'down') { h.state = 'landed'; h.t0 = t; h.emptySince = 0; h.from = null; broadcast(room); io.to(room.code).emit('toast', { msg: 'The helicopter has landed \u00b7 Z to fly again, ' + CFG.HELI.unloadSec + ' s before it leaves' }); }
+      return;
+    }
     if (h.state === 'flying') {
       const T = flightSec(room);
-      if (T >= totalFlight(P)) { h.state = 'landed'; h.t0 = t; h.emptySince = 0; broadcast(room); return; }
+      /* keep a one-second trail of the head's position for the fall test */
+      h.trail = h.trail || []; h.trail.push([pose.x, pose.z]); if (h.trail.length > 20) h.trail.shift();
       /* the fall test waits until the machine is well up AND the flight is
          2.5 s old — the seat teleport and a client's first airborne frames
          settle in that window (v1.0o) */
@@ -168,7 +215,7 @@ module.exports = function initHeli(ctx) {
         for (const id of h.riders) {
           const q = room.players.get(id);
           if (!q || !q.alive || q.out) continue;
-          if (!fallen(pose, q)) { h.outCount[id] = 0; still.push(id); continue; }
+          if (!fallen(room, pose, q)) { h.outCount[id] = 0; still.push(id); continue; }
           /* far from the machine on TWO consecutive ticks: the client is no
              longer riding it and never said why */
           h.outCount[id] = (h.outCount[id] || 0) + 1;
@@ -177,7 +224,7 @@ module.exports = function initHeli(ctx) {
         }
         if (still.length !== h.riders.length) { h.riders = still; broadcast(room); }
         if (!h.riders.length) {                                 // nobody left aboard: it goes home
-          h.state = 'landed'; h.t0 = t; h.emptySince = t; h.homing = true; broadcast(room);
+          h.from = { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw }; h.state = 'returning'; h.t0 = t; broadcast(room);
         }
       }
     }
@@ -190,7 +237,7 @@ module.exports = function initHeli(ctx) {
   function hit(room, shooter, w) {
     if (!has(room) || !shooter || !shooter.alive) return { ok: false, err: 'Not alive' };
     const h = room.heli;
-    if (h.state === 'gone') return { ok: false, err: 'No helicopter' };
+    if (h.state === 'gone') return { ok: false, err: 'No helicopter' };   // pad, flying, returning, landed: all fair game
     const pose = poseNow(room);
     if (!pose) return { ok: false, err: 'No helicopter' };
     const dx = pose.x - shooter.pos[0], dy = pose.y - shooter.pos[1], dz = pose.z - shooter.pos[2];
@@ -210,5 +257,5 @@ module.exports = function initHeli(ctx) {
     return { ok: true, dmg, hp: h.hp };
   }
   function reset(room) { room.heli = null; }
-  return { start, tick, hit, board, bail, snapshot, reset, poseNow, inCabin, fallen };
+  return { start, tick, hit, board, bail, land, snapshot, reset, poseNow, inCabin, fallen, pathFor };
 };

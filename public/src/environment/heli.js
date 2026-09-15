@@ -28,6 +28,13 @@ var Heli = (function () {
      came back invisible with no prompt — Rahul's "helicopter pura vanish".
      Now init() re-applies whatever the server last said. */
   var pending = null;
+  var pathSeed = null;                                          // v1.0q: the seed the current `path` was built from
+  function ensurePath() {
+    if (!state || !cfg) return null;
+    var seed = state.seed || 1;
+    if (!path || pathSeed !== seed) { var R = CFG.heliRoute(cfg, seed); path = World.trainPath({ waypoints: R.waypoints, fillet: R.fillet }); pathSeed = seed; }
+    return path;
+  }
 
   function serverNow() {
     var m = (typeof Net !== 'undefined' && Net.getMatch) ? Net.getMatch() : null;
@@ -104,24 +111,22 @@ var Heli = (function () {
     var t = performance.now(); if (t - signAt < 250) return; signAt = t;
     var text, sub, col;
     if (state.state === 'gone') { text = 'NEXT HELICOPTER IN'; sub = fmt((state.respawnAt - serverNow()) / 1000); col = '#ff9a4a'; }
-    else if (state.state === 'flying') { text = 'HELICOPTER AIRBORNE'; sub = 'back in ' + fmt(flightLeft()); col = '#7ef0ff'; }
+    else if (state.state === 'flying') { text = 'HELICOPTER AIRBORNE'; sub = 'a rider presses Q to bring it down'; col = '#7ef0ff'; }
+    else if (state.state === 'returning') { text = 'HELICOPTER RETURNING'; sub = pose && pose.left !== undefined ? 'landing in ' + fmt(pose.left) : 'coming back to the pad'; col = '#7ef0ff'; }
+    else if (state.state === 'landed') { text = 'HELICOPTER LANDED'; sub = 'Z to fly again \u00b7 leaves in ' + fmt(cfg.unloadSec - (serverNow() - state.t0) / 1000); col = '#7ef0ff'; }
     else if (state.liftIn > 0) { text = 'LIFT-OFF IN ' + Math.ceil(state.liftIn); sub = 'press Z to board'; col = '#7ef0ff'; }
     else { text = 'HELICOPTER READY'; sub = 'walk up \u00b7 press Z to board'; col = '#7ef0ff'; }
     var key = text + '|' + sub; if (key === signText) return; signText = key;
     drawSign(text, sub, col);
   }
-  function flightLeft() {
-    if (!state || state.state !== 'flying' || !path) return 0;
-    var total = cfg.climbSec + path.length / cfg.speed + cfg.landSec;
-    return total - (serverNow() - state.t0) / 1000;
-  }
+  function flightLeft() { return 0; }   /* v1.0q: flights are open-ended */
 
   function init(sc, map) {
     dispose();
     scene = sc;
     cfg = (map === 'urban' && CFG.HELI) ? CFG.HELI : null;
     if (!cfg) return false;
-    path = World.trainPath({ waypoints: cfg.route, fillet: cfg.fillet });
+    path = null; pathSeed = null;                              // v1.0q: built per flight from the server's seed
     group = build();
     scene.add(group);
     sign = buildSign(); scene.add(sign); signText = '';
@@ -146,12 +151,16 @@ var Heli = (function () {
   }
   function hpUpdate(d) { if (state) { state.hp = d.hp; if (typeof UI !== 'undefined' && UI.setHeliHud) UI.setHeliHud({ hp: d.hp, max: d.max, state: state.state }); } }
   function active() { return !!(cfg && state && state.state !== 'gone'); }
-  function isRiding() { return !!(state && state.riders && typeof Net !== 'undefined' && state.riders.indexOf(Net.getMyId()) >= 0 && state.state === 'flying'); }
+  function inAir() { return !!(state && (state.state === 'flying' || state.state === 'returning')); }
+  function isRiding() { return !!(state && state.riders && typeof Net !== 'undefined' && state.riders.indexOf(Net.getMyId()) >= 0 && inAir()); }
 
   function computePose() {
     if (!state) return null;
-    if (state.state === 'flying') return CFG.heliPoseAt(cfg, path, (serverNow() - state.t0) / 1000);
-    var q = path.at(0);
+    var P = ensurePath();
+    if (!P) return null;
+    if (state.state === 'flying') return CFG.heliPoseAt(cfg, P, (serverNow() - state.t0) / 1000);
+    if (state.state === 'returning' && state.from) return CFG.heliReturnPose(cfg, state.from, (serverNow() - state.t0) / 1000);
+    var q = P.at(0);
     return { x: cfg.pad[0], z: cfg.pad[1], y: cfg.padY, yaw: q.yaw, phase: 'down', s: 0 };
   }
   function update(dt) {
@@ -199,9 +208,16 @@ var Heli = (function () {
     if (!canBoard() || typeof Net === 'undefined' || !Net.boardHeli) return false;
     Net.boardHeli(function (res) {
       if (!res || !res.ok) { if (res && res.err && typeof UI !== 'undefined') UI.toast(res.err, true); return; }
+      if (res.relaunch) { if (typeof UI !== 'undefined') UI.toast('Lifting off again in ' + cfg.boardSec + ' s'); return; }   // v1.0q: already seated, flying again
       if (res.seat) onSeat({ pos: res.seat, aboard: true, liftIn: cfg.boardSec });   // v1.0o: sit down NOW, before the next state update goes out
       if (res.aboard && typeof UI !== 'undefined') UI.toast('Aboard the helicopter \u00b7 lifting off in ' + cfg.boardSec + ' s \u00b7 Z again to step off');
     });
+    return true;
+  }
+  /* v1.0q: Q — a rider brings the machine down (the server turns it for the pad) */
+  function landRequest() {
+    if (!isRiding() || !state || state.state !== 'flying' || typeof Net === 'undefined' || !Net.heliLand) return false;
+    Net.heliLand(function (res) { if (res && !res.ok && res.err && typeof UI !== 'undefined') UI.toast(res.err, true); });
     return true;
   }
   /* the server seats (or unseats) us: take the position it chose */
@@ -214,7 +230,7 @@ var Heli = (function () {
   function riderHud() {
     if (typeof PlayerCtl === 'undefined' || typeof UI === 'undefined') return;
     var aboard = !!PlayerCtl.onPlatform && PlayerCtl.platformSrc === 'heli' && isRiding();
-    if (aboard && !wasAboard && UI.toast && performance.now() - boardToastAt > 4000) { UI.toast('AIRBORNE \u2014 do not jump; falling from the helicopter is fatal', true); boardToastAt = performance.now(); }
+    if (aboard && !wasAboard && UI.toast && performance.now() - boardToastAt > 4000) { UI.toast('AIRBORNE \u2014 move freely inside; Q brings it down at the pad; jumping is fatal', true); boardToastAt = performance.now(); }
     wasAboard = aboard;
   }
   function rotorSound() {
@@ -230,14 +246,14 @@ var Heli = (function () {
     var feet = pos.y - halfY, floor = pose.y + cfg.cabinFloor;
     var dx = pos.x - prevPose.x, dz = pos.z - prevPose.z, cs = Math.cos(prevPose.yaw), sn = Math.sin(prevPose.yaw);
     var lx = dx * cs + dz * sn, lz = -dx * sn + dz * cs;
-    if ((Math.abs(lx) > CAB_HX + 0.5 || Math.abs(lz) > CAB_HZ + 0.6) && !(isRiding() && state.state === 'flying')) return null;
-    var airborne = state.state === 'flying' && pose.y > cfg.padY + 1.0;
+    if ((Math.abs(lx) > CAB_HX + 0.5 || Math.abs(lz) > CAB_HZ + 0.6) && !isRiding()) return null;
+    var airborne = inAir() && pose.y > cfg.padY + 1.0;
     if (performance.now() < bailUntil) return null;                     // bailing: no floor, no walls
     /* v1.0p: a LISTED rider on a flying machine is held to the floor whatever
        the frame did — a hitch of a few hundred ms at 12.8 m/s of climb used to
        open more gap than the snap window and drop the rider through the
        cabin. The only way off is bail(). */
-    var rider = isRiding() && state.state === 'flying';
+    var rider = isRiding();
     if (!rider && (feet < floor - 1.3 || feet > floor + CAB_H + 0.5)) return null;
     var inside = Math.abs(lx) <= CAB_HX && Math.abs(lz) <= CAB_HZ;
     if (!inside && !airborne && !rider) return null;                    // on the pad the cabin is open at the sides
@@ -246,7 +262,7 @@ var Heli = (function () {
   }
   /* jumping while airborne = bail: the floor lets go for a second */
   function bail() {
-    if (isRiding() && state.state === 'flying' && pose && pose.y > cfg.padY + 1.0) {
+    if (isRiding() && pose && pose.y > cfg.padY + 1.0) {
       bailUntil = performance.now() + 1500;
       if (typeof Net !== 'undefined' && Net.heliBail) Net.heliBail();   /* v1.0p: tell the server — the jump is the ONLY way off */
       return true;
@@ -269,6 +285,6 @@ var Heli = (function () {
 
   function clear() { pending = null; set(null); }   /* v1.0n: leaving the match forgets the machine */
   return { init: init, dispose: dispose, set: set, clear: clear, hpUpdate: hpUpdate, update: update, floorAt: floorAt, bail: bail, rayHit: rayHit,
-    canBoard: canBoard, board: board, onSeat: onSeat,
+    canBoard: canBoard, board: board, onSeat: onSeat, landRequest: landRequest,
     active: active, isRiding: isRiding, pose: function () { return pose; }, state: function () { return state; } };
 })();

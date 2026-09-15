@@ -10,24 +10,36 @@ const CFG = require('../public/src/config/index.js');
 const Bots = require('../server/lib/bots.js')({});
 let pass = 0, fail = 0;
 function ok(c, m) { console.log('  ' + (c ? 'PASS' : 'FAIL') + '  ' + m); c ? pass++ : fail++; }
-const H = CFG.HELI, P = Bots.trainPath('urban', 'heli');
+const H = CFG.HELI;
+/* a route to reason about the pose with (the gate rolls its own like the server) */
+const P = Bots.pathFrom(CFG.heliRoute(H, 12345).waypoints, CFG.heliRoute(H, 12345).fillet);
 
-console.log('--- the route and the pose ---');
-ok(!!P && P.length > 400, 'the route is a filleted loop over the city [' + (P ? P.length.toFixed(0) : 0) + ' m]');
-let onMap = true;
-for (let s = 0; s < P.length; s += 2) { const q = P.at(s); if (Math.abs(q.x) > 118 || Math.abs(q.z) > 118) onMap = false; }
-ok(onMap, 'every point of the route is over the map');
-const q0 = P.at(0);
-ok(Math.hypot(q0.x - H.pad[0], q0.z - H.pad[1]) < 0.5, 'the route begins and ends over the pad');
-const tCruise = P.length / H.speed, tTotal = H.climbSec + tCruise + H.landSec;
-const pa = CFG.heliPoseAt(H, P, 0), pb = CFG.heliPoseAt(H, P, H.climbSec), pc = CFG.heliPoseAt(H, P, H.climbSec + tCruise / 2), pd = CFG.heliPoseAt(H, P, tTotal + 1);
-ok(pa.phase === 'climb' && Math.abs(pa.y - H.padY) < 1e-6 && pa.x === H.pad[0], 'at take-off it sits on the pad');
-ok(pb.phase === 'cruise' && Math.abs(pb.y - H.alt) < 1e-6, 'after the climb it is at altitude ' + H.alt);
-ok(pc.phase === 'cruise' && Math.hypot(pc.x - H.pad[0], pc.z - H.pad[1]) > 60, 'mid-flight it is far from the pad [' + Math.hypot(pc.x - H.pad[0], pc.z - H.pad[1]).toFixed(0) + ' m]');
-ok(pd.phase === 'down' && Math.abs(pd.y - H.padY) < 1e-6, 'after the descent it is on the pad again');
-let maxDy = 0; for (let t = 0; t < tTotal; t += 0.1) { maxDy = Math.max(maxDy, Math.abs(CFG.heliPoseAt(H, P, t + 0.1).y - CFG.heliPoseAt(H, P, t).y)); }
-ok(maxDy < 1.2, 'no vertical step exceeds 1.2 m per 0.1 s — the climb and descent are smooth [' + maxDy.toFixed(2) + ']');
-ok(tTotal > 30 && tTotal < 120, 'a flight takes ' + tTotal.toFixed(0) + ' s');
+console.log('--- the route wanders and the flight is endless ---');
+{
+  let onMap = true, minLen = 99, distinct = new Set();
+  for (let seed = 1; seed <= 400; seed++) {
+    const R = CFG.heliRoute(H, seed), W = R.waypoints;
+    if (W.length !== H.routeN + 2) minLen = Math.min(minLen, W.length);
+    for (const p of W) if (Math.abs(p[0]) > 110 || Math.abs(p[1]) > 110) onMap = false;
+    distinct.add(W.slice(2, 6).map(p => Math.round(p[0]) + ',' + Math.round(p[1])).join('|'));
+  }
+  ok(minLen === 99, 'every seed makes a ' + (H.routeN + 2) + '-point route');
+  ok(onMap, 'no waypoint leaves the map');
+  ok(distinct.size > 350, 'the route is different almost every match (' + distinct.size + ' distinct of 400) — not a fixed path');
+  ok(Math.hypot(P.at(0).x - H.pad[0], P.at(0).z - H.pad[1]) < 0.5, 'the route passes over the pad it starts from');
+  // endless cruise: the pose keeps moving long past the old ~52 s flight, and never leaves altitude
+  const tOld = H.climbSec + P.length / H.speed + H.landSec;
+  let allCruise = true, moved = 0, prev = null;
+  for (let t = tOld + 5; t < tOld + 5 + P.length / H.speed; t += 1) { const q = CFG.heliPoseAt(H, P, t); if (q.phase !== 'cruise' || Math.abs(q.y - H.alt) > 1e-6) allCruise = false; if (prev) moved += Math.hypot(q.x - prev.x, q.z - prev.z); prev = q; }
+  ok(allCruise, 'well past the old flight time every sample is still cruising at altitude — the loop never ends on its own');
+  ok(moved > P.length * 0.9, 'and over the next lap it travels a full loop again (' + moved.toFixed(0) + ' m)');
+  // the return leg brings it home
+  const from = CFG.heliPoseAt(H, P, H.climbSec + 30);
+  const r0 = CFG.heliReturnPose(H, from, 0.1), rEnd = CFG.heliReturnPose(H, from, 999);
+  ok(r0.phase === 'return' && rEnd.phase === 'down' && Math.abs(rEnd.x - H.pad[0]) < 0.5 && Math.abs(rEnd.z - H.pad[1]) < 0.5, 'the return leg flies it back to the pad and sets it down');
+  let maxDy = 0; for (let t = 0; t < H.climbSec + 6; t += 0.1) maxDy = Math.max(maxDy, Math.abs(CFG.heliPoseAt(H, P, t + 0.1).y - CFG.heliPoseAt(H, P, t).y));
+  ok(maxDy < 1.2, 'the climb is smooth (' + maxDy.toFixed(2) + ' m/0.1 s)');
+}
 
 console.log('--- damage by class ---');
 const dmg = w => CFG.heliDamageFor(H, CFG.WEAPONS, w);
@@ -41,11 +53,12 @@ console.log('--- the machine, on the server ---');
 let T0 = 5000000, killed = [], emitted = [];
 const io = { to: id => ({ emit: (ev, d) => emitted.push({ to: id, ev, d }) }) };
 const Srv = require('../server/lib/heli.js')({ io, now: () => T0, applyDamage: (room, v, dmg2, by, w) => { v.alive = false; killed.push({ id: v.id, by, w }); },
-  modeInfo: () => ({ teams: false }), trainPath: (m, which) => Bots.trainPath(m, which) });
+  modeInfo: () => ({ teams: false }), pathFrom: (wp, fillet) => Bots.pathFrom(wp, fillet) });
 const room = { code: 'H', state: 'playing', settings: { map: 'urban', mode: 'ffa' }, players: new Map() };
 const half = CFG.PLAYER.standH / 2;
 const mk = (id, x, y, z) => ({ id, name: id, alive: true, pos: [x, y, z] });
 ok(Srv.start(room) && room.heli.state === 'pad' && room.heli.hp === H.hp, 'start() puts a full-health helicopter on the pad');
+room.heli.seed = 12345;   /* pin the room's route to the P this gate reasons with, so poses line up */
 ok(Srv.start({ settings: { map: 'metro' } }) === null, 'not on Metro');
 /* v1.0m: boarding is Z near the machine — the server seats the player */
 const rider = mk('R', H.pad[0] + 4, half, H.pad[1] + 1);
@@ -64,6 +77,7 @@ Srv.board(room, rider);
 T0 += H.boardSec * 1000 - 200; Srv.tick(room);
 ok(room.heli.state === 'pad', 'not yet');
 T0 += 400; Srv.tick(room);
+room.heli.seed = 12345; room.heli.trail = [];   /* the lift-off re-rolled the seed; pin it to the P this section reasons with */
 ok(room.heli.state === 'flying' && room.heli.riders.length === 1 && room.heli.riders[0] === 'R', 'three seconds after boarding: airborne with the one rider');
 const tOff = room.heli.t0;
 // mid-flight: the rider rides (position follows the pose); the bystander stays on the ground
@@ -83,19 +97,19 @@ ok(emitted.some(e => e.ev === 'heliHp'), 'and the room is told the health');
 ok(!Srv.hit(room, rider, 'ak47').ok, 'a rider cannot shoot the machine he is in');
 const far = mk('F', 400, half, 400); room.players.set('F', far);
 ok(!Srv.hit(room, far, 'ak47').ok, 'a shot from 400 m away is refused');
-/* v1.0p: position disagreement is NOT a fall. 700 ms of lag+skew at cruise, or a
-   4 m gap mid-climb, keeps the rider aboard; only the rider's own JUMP (bail),
-   or a client 12 m below / 25 m away for two ticks, ends the ride. */
-rider.pos = [rider.pos[0] - 9.5, rider.pos[1] - 4, rider.pos[2]];        // 9.5 m behind and 4 m low: bad lag, not a fall
+/* v1.0p/q: position disagreement is NOT a fall. A rider trailing the machine
+   along its own recent path stays aboard; only a JUMP (bail) or a client far
+   from EVERY recent position for two ticks ends the ride. */
+{ const p = CFG.heliPoseAt(H, P, (T0 - tOff) / 1000); rider.pos = [p.x - 9.5, p.y + H.cabinFloor + half - 4, p.z]; }   // 9.5 m behind, 4 m low
 T0 += 200; Srv.tick(room);
 ok(rider.alive && room.heli.riders.length === 1, 'a rider 9.5 m behind and 4 m below the seat (lag, skew) stays aboard and alive');
 ride(rider);
-rider.pos = [rider.pos[0] + 30, rider.pos[1] - 14, rider.pos[2]];        // 30 m off and 14 m down: the client stopped riding without saying so
+{ const p = CFG.heliPoseAt(H, P, (T0 - tOff) / 1000); rider.pos = [p.x + 40, p.y + H.cabinFloor + half - 14, p.z + 40]; }   // 56 m off and 14 m down: not riding
 T0 += 70; Srv.tick(room);
 ok(rider.alive && room.heli.riders.length === 1, 'one tick that far away is not yet a fall');
 T0 += 70; Srv.tick(room);
 ok(!rider.alive && killed.length === 1 && killed[0].w === 'helifall' && killed[0].by === 'S', 'two ticks that far away: dead, tagged helifall, credited to the shooter who hit the machine');
-ok(room.heli.state === 'landed', 'with nobody aboard the machine goes home');
+ok(room.heli.state === 'returning', 'with nobody aboard the machine heads home');
 /* the jump: the rider says so and dies at once */
 {
   T0 += 20000; room.heli.state = 'pad'; room.heli.t0 = T0; room.heli.hp = H.hp; room.heli.riders = []; room.heli.boardSince = 0; room.heli.boardedAt = {}; room.heli.outCount = {};
@@ -108,7 +122,7 @@ ok(room.heli.state === 'landed', 'with nobody aboard the machine goes home');
   killed = [];
   const bb = Srv.bail(room, jumper);
   ok(bb.ok && !jumper.alive && killed.length === 1 && killed[0].w === 'helifall' && killed[0].by === 'JMP', 'a rider who jumps at altitude dies at once, tagged helifall (nobody hit the machine: no credit)');
-  ok(room.heli.riders.length === 0 && room.heli.state === 'landed', 'and the empty machine goes home');
+  ok(room.heli.riders.length === 0 && room.heli.state === 'returning', 'and the empty machine heads home');
 }
 /* v1.0o: THE BOARDING RACE. A state update with the OLD position lands right
    after the server seated the rider (the client had already sent it). The
@@ -140,8 +154,9 @@ Srv.board(room, r2); Srv.board(room, r3);
 Srv.tick(room); T0 += H.boardSec * 1000 + 100; Srv.tick(room);
 ok(room.heli.state === 'flying' && room.heli.riders.length === 2, 'two riders take off together');
 const tOff2 = room.heli.t0;
+const P2 = Srv.pathFor(room.heli.seed);   /* the route this flight actually rolled */
 T0 += (H.climbSec + 10) * 1000;
-[r2, r3].forEach(q => { const p = CFG.heliPoseAt(H, P, (T0 - tOff2) / 1000); q.pos = [p.x, p.y + H.cabinFloor + half, p.z]; });
+[r2, r3].forEach(q => { const p = CFG.heliPoseAt(H, P2, (T0 - tOff2) / 1000); q.pos = [p.x, p.y + H.cabinFloor + half, p.z]; });
 Srv.tick(room);
 killed = [];
 let res = null, hits = 0;
@@ -195,9 +210,43 @@ console.log('--- the client, in the order the game really runs ---');
   ok(r.goneActive === false, 'when the server says gone, the machine is gone (the board counts down)');
 }
 
+console.log('--- Q lands it, Z flies it again, it goes after unload ---');
+{
+  const room2 = { code: 'Q', state: 'playing', settings: { map: 'urban', mode: 'ffa' }, players: new Map() };
+  Srv.start(room2); room2.heli.seed = 12345;
+  const pilot = mk('P1', H.pad[0] + 3, half + H.padY, H.pad[1]); room2.players.set('P1', pilot);
+  const bp = Srv.board(room2, pilot); pilot.pos = bp.seat.slice();
+  T0 += H.boardSec * 1000 + 100; Srv.tick(room2);
+  ok(room2.heli.state === 'flying', 'boarded and airborne');
+  // fly a while, staying seated
+  const Pq = Srv.pathFor(room2.heli.seed);
+  for (let k = 0; k < 8; k++) { T0 += 5000; const p = CFG.heliPoseAt(H, Pq, (T0 - room2.heli.t0) / 1000); pilot.pos = [p.x, p.y + H.cabinFloor + half, p.z]; Srv.tick(room2); }
+  ok(room2.heli.state === 'flying' && pilot.alive, '40 s later still flying with the pilot aboard — no auto-landing');
+  // Q: land
+  const lr = Srv.land(room2, pilot);
+  ok(lr.ok && room2.heli.state === 'returning', 'Q turns it for the pad (returning)');
+  // fly the return home
+  let guard = 0;
+  while (room2.heli.state === 'returning' && guard++ < 200) { T0 += 300; const rp = CFG.heliReturnPose(H, room2.heli.from, (T0 - room2.heli.t0) / 1000); pilot.pos = [rp.x, rp.y + H.cabinFloor + half, rp.z]; Srv.tick(room2); }
+  ok(room2.heli.state === 'landed' && pilot.alive, 'it lands at the pad with the pilot alive');
+  // Z aboard the landed machine: fly again
+  const rl = Srv.board(room2, pilot);
+  ok(rl.ok && rl.relaunch, 'Z aboard the landed machine arms another lift-off (not a step-off)');
+  T0 += H.boardSec * 1000 + 100; Srv.tick(room2);
+  ok(room2.heli.state === 'flying' && room2.heli.riders.indexOf('P1') >= 0, 'and it flies again with the same pilot');
+  // land once more, step off, and let it leave
+  Srv.land(room2, pilot); guard = 0;
+  while (room2.heli.state === 'returning' && guard++ < 200) { T0 += 300; const rp = CFG.heliReturnPose(H, room2.heli.from, (T0 - room2.heli.t0) / 1000); pilot.pos = [rp.x, rp.y + H.cabinFloor + half, rp.z]; Srv.tick(room2); }
+  ok(room2.heli.state === 'landed', 'landed again');
+  pilot.pos = [H.pad[0] + 30, half, H.pad[1]]; Srv.tick(room2);       // pilot walks away
+  T0 += (H.unloadSec + 1) * 1000; Srv.tick(room2);
+  ok(room2.heli.state === 'gone' && room2.heli.respawnAt >= T0 + H.respawnSec * 1000 - 1500, 'nobody re-boards: it leaves, next one in ' + H.respawnSec + ' s');
+}
+
 console.log('--- the wiring ---');
 const srv = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-ok(/Heli\.tick\(room\)/.test(srv) && /Heli\.reset\(room\)/.test(srv) && /heli: heliSnap/.test(srv) && /socket\.on\('hitHeli'/.test(srv) && /socket\.on\('boardHeli'/.test(srv), 'server ticks, resets, ships, takes hits and boards');
+ok(/Heli\.tick\(room\)/.test(srv) && /Heli\.reset\(room\)/.test(srv) && /heli: heliSnap/.test(srv) && /socket\.on\('hitHeli'/.test(srv) && /socket\.on\('boardHeli'/.test(srv) && /socket\.on\('heliLand'/.test(srv), 'server ticks, resets, ships, takes hits, boards and lands');
+
 const heliC = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/heli.js'), 'utf8');
 ok(/NEXT HELICOPTER IN/.test(heliC) && /PRESS Z TO BOARD|press Z to board/i.test(heliC) && /function buildSign/.test(heliC), 'the pad has a board with the live countdown and the Z prompt');
 
@@ -207,6 +256,7 @@ ok(/src\/environment\/heli\.js/.test(html) && /id="heli-hud"/.test(html), 'the c
 const game = fs.readFileSync(path.join(__dirname, '..', 'public/src/core/game.js'), 'utf8');
 ok(/function platformProbe/.test(game) && /Heli\.floorAt\(pos, halfY\)/.test(game) && /Heli\.bail\(\)/.test(game), 'the controller gets the cabin floor and Space bails');
 ok(/Heli\.canBoard\(\)\) \{ Heli\.board\(\)/.test(game), 'Z near the machine boards it before anything else');
+ok(/KeyQ.*Heli\.landRequest\(\)/.test(game), 'Q aboard the flying helicopter brings it down');
 const wsys = fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/system.js'), 'utf8');
 ok(/Heli\.rayHit\(o, d, reach\)/.test(wsys) && /Net\.hitHeli\(current/.test(wsys), 'the hitscan tests the fuselage first and reports the weapon');
 const outer = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/districts-outer.js'), 'utf8');

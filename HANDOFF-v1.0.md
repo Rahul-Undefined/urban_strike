@@ -1,3 +1,82 @@
+# v1.0.4 (build 18) — THE AUDIT: A SECOND TRAIN, JOINED RAILS, DRESS COLOURS (2026-09-15)
+
+Tagged `v1.0r`. Rahul asked for an audit of the whole codebase against the
+newest systems, and five changes. What the audit found is in the handoff
+(§1r); what changed:
+
+**The rails were drawn wrong, not the physics.** Each rail piece was a 5.2 m
+box angled along the START tangent of its sample, so round every curve the
+pieces splayed and gapped — "broken at the corners". Each piece is now a CHORD
+between two points on the path, angled along the chord, with finer chords on
+curves; consecutive pieces meet end to end. The trains ride the mathematics,
+which was always continuous; the drawing now matches it.
+
+**A second train, right to left.** Track 2 is the INNER lane of the ring
+boulevard (±99.4), run counter-clockwise — westbound along the north side, the
+opposite hand to the first — with four stops of its own and an olive/red
+livery. Its speed (7.8362 m/s) makes its lap equal the first train's to half a
+millisecond, so the phase between them is constant, and that phase (40 s) was
+chosen from a 52-second window in which a 2D OBB test every 0.1 s of a lap
+shows no car of one train ever overlapping a car of the other, with 20 s of
+margin either side — their one crossing is the first train's S-bend across
+the north inner lane. Both loops are swept against every static collider.
+Both trains kill what they hit and what jumps off. To clear the inner lane:
+the three halts were REMOVED (that lane is track 2 now; every stop still
+boards from the road by the coach step boards, as the original design did),
+the stadium pavilion's west wall moved in 1.4 m, the practice nets 2.5 m east,
+one container 2 m in, the ring-district signs to ±96.6, and the sign placer
+now refuses the boulevard on Urban.
+
+**Dress colours for the host.** A colour picker on each team header in the
+lobby (beside the rename), and one picker with a Reset in the rules panel for
+modes without sides. The server validates a hex, merges it into
+`settings.dressColors`, and recolours everyone at once; avatars, name tags,
+radar dots and the scoreboard all read the same colour. Proved live: set,
+worn by every player, junk refused, reset restores the palette.
+
+**Checked, unchanged:** the helicopter (73-assertion gate: route over the map
+and through the pad, endless cruise, Q return, seats, fall net, shoot-down,
+respawn) and shooting from the cabin (live hit path); the M map shows both
+trains, the helicopter and the zone; Urban Zone squads use the Last Stand squad
+shape the mini-bar and end table already render.
+
+Budgets: triangles 136k → 144k (the second track, itemized); fingerprints
+re-recorded. `verify-train` 56/0 with the two-train proof. Board: 48 gates,
+45 green, the same three documented reds. Live: `test.js` 335/0.
+
+# v1.0.3 (build 17) — THE HELICOPTER FLIES FREE (2026-09-14)
+
+Tagged `v1.0q`. Rahul's five, on a machine that now behaves like a real one:
+
+**1 + 2. It stays up until a rider lands it.** No more one-round-and-down. The
+flight is an ENDLESS loop; a rider aboard presses **Q** and the machine turns
+for the pad from wherever it is, descends, and lands. While it sits landed, a
+rider aboard who presses **Z** lifts it off AGAIN (with a fresh route); a landed
+machine nobody re-boards leaves after 8 s, and the next one arrives 3 minutes
+later — the respawn clock starts when it leaves, not when it took off.
+
+**3. It flies everywhere, not on a fixed path.** Every flight rolls a seed on
+the server; `heliRoute(seed)` builds a wandering loop of ~18 random waypoints
+across the whole city (no hairpins, never off the map, always over its own
+pad), the same on every client. 400 rolls give 350+ distinct routes — no two
+matches fly the same.
+
+**4. Shooting from the air hits the ground.** Confirmed live: a rider firing
+an AK from the cabin at 91 m took a ground player from 100 to 78 — the ordinary
+hit path, no special case, because the shooter is a normal player with a normal
+gun; only the floor under them moves.
+
+**5. And the fall bug is dead for good.** The fall net now measures the rider
+against the machine's OWN RECENT PATH (a one-second trail), not a single
+instant — so a rider lagging along a curving route is always near a point the
+machine actually occupied. Only a jump (Space) or being far from the whole
+trail for two ticks ends a ride. Proved with a live flight past the old
+52-second limit, then Q home, then re-launch, then leave — zero phantom deaths.
+
+`verify-heli` 73/0; the suite's helicopter phase flies the rolled route with
+700 ms of lag and lands with Q. Board: 48 gates, 45 green, the same three
+documented reds. Live: `test.js` 331/0.
+
 # v1.0.2 (build 16) — NOBODY FALLS WITHOUT A REASON (2026-09-14)
 
 Tagged `v1.0p`. Rahul: "onboarded, but after going to a height the player is
