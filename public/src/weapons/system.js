@@ -596,10 +596,18 @@ var Weapons = (function () {
       var d = rayDir(spread, new THREE.Vector3());
       var hit = castRay(o, d, reach);
       /* v1.0l: the helicopter is a target. If the ray meets its fuselage before
-         anything else, the round stops there and the server is told. */
-      if (typeof Heli !== 'undefined' && Heli.active && Heli.active()) {
+         anything else, the round stops there and the server is told.
+         v1.0s (Rahul: "from the helicopter the opponent can't be killed, and
+         vice versa"): two holes in this test ate every such shot. A RIDER's
+         ray starts INSIDE the hull box, and a box test from inside returns the
+         exit point — so the rider's own hull swallowed their rounds. And the
+         exemption for a player hit checked a field (`remote`) that player hits
+         never carried, so a ground shot at the rider through the open door
+         "hit the hull" in front of them. Now: nobody aboard tests the hull,
+         and a PLAYER hit always beats the hull. */
+      if (typeof Heli !== 'undefined' && Heli.active && Heli.active() && !(Heli.isRiding && Heli.isRiding())) {
         var hh = Heli.rayHit(o, d, reach);
-        if (hh && (!hit || hh.t < hit.t) && !(hit && hit.remote)) {
+        if (hh && (!hit || hh.t < hit.t) && !(hit && hit.type === 'player')) {
           var hEnd = hh.point;
           FX.tracer(mz, hEnd, w.trc); FX.impact(hEnd, d.clone().negate());
           Net.hitHeli(current, function (res) {

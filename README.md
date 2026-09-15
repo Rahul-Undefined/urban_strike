@@ -8,6 +8,9 @@ doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
 every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
 count toward the next strike; Shift while scoped holds your breath.
 
+**v1.0.5 — SHOOT FROM THE HELICOPTER, AND AT IT.** Riders' rounds no longer
+stop at their own hull; a ground shot at a rider through the open door lands.
+
 **v1.0.4 — A SECOND TRAIN.** Two trains on the ring, opposite hands, provably
 never touching; rails that meet round the corners; the host picks dress colours.
 

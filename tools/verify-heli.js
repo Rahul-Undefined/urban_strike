@@ -205,6 +205,26 @@ console.log('--- the client, in the order the game really runs ---');
     return { act: act, pose: pose, near: near, boarded: boarded, far: far, goneActive: goneActive };
   })()`, cx);
   ok(r.act === true && r.pose && Math.abs(r.pose.x - H.pad[0]) < 0.01, 'the machine is on the pad after the map rebuild that follows matchStart');
+  /* v1.0s: the hull must never swallow a shot between a rider and the ground */
+  const rr = vm.runInContext(`(function(){
+    Heli.set({ state: 'flying', t0: Date.now() - 20000, hp: 900, riders: ['me'], seed: 12345 }); Heli.update(0.016);
+    var p = Heli.pose();
+    // a rider at the seat aims down at a target 40 m ahead on the ground
+    var seat = new THREE.Vector3(p.x, p.y + CFG.HELI.cabinFloor + 1.6, p.z);
+    var tgt = new THREE.Vector3(p.x + Math.cos(p.yaw) * 40, 1.0, p.z + Math.sin(p.yaw) * 40);
+    var dir = tgt.clone().sub(seat).normalize();
+    var fromInside = Heli.rayHit(seat, dir, 400);
+    // a ground shooter aims up at the seat through the open side
+    var g = new THREE.Vector3(p.x - Math.sin(p.yaw) * 30, 1.6, p.z + Math.cos(p.yaw) * 30);
+    var up = seat.clone().sub(g).normalize();
+    var fromGround = Heli.rayHit(g, up, 400);
+    return { fromInside: fromInside, fromGroundHitsHull: !!fromGround, hullT: fromGround ? fromGround.t : null, dist: g.distanceTo(seat) };
+  })()`, cx);
+  ok(rr.fromInside === null, 'a rider\'s ray from inside the cabin meets no hull (the box test is skipped from inside)');
+  ok(rr.fromGroundHitsHull === true && rr.hullT < rr.dist, 'a ground shooter\'s ray does meet the hull before the seat (' + (rr.hullT || 0).toFixed(1) + ' m of ' + rr.dist.toFixed(1) + ')...');
+  const wsys2 = fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/system.js'), 'utf8');
+  ok(/!\(Heli\.isRiding && Heli\.isRiding\(\)\)/.test(wsys2) && /!\(hit && hit\.type === 'player'\)/.test(wsys2), '...but the hitscan lets a PLAYER hit beat the hull, and never tests the hull for a shooter aboard');
+  ok(!/hit\.remote/.test(wsys2), 'the dead `hit.remote` exemption is gone');
   ok(r.near === true && r.boarded === true, 'near the pad the client offers boarding and Z boards');
   ok(r.far === false, '30 m away it does not');
   ok(r.goneActive === false, 'when the server says gone, the machine is gone (the board counts down)');

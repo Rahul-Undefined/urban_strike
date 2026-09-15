@@ -1,3 +1,27 @@
+# v1.0.5 (build 19) — THE HULL THAT ATE THE BULLETS (2026-09-15)
+
+Tagged `v1.0s`. Rahul: "the opponent can't be killed from the helicopter, even
+when the bullets are shot correctly — and vice versa."
+
+**Two holes in one test.** The hitscan asks the helicopter's hull box whether
+the ray meets it before anything else. (1) A RIDER's ray starts INSIDE that
+box, and a box test from inside returns the exit point — so every round a
+rider fired "hit the hull" a metre in front of the muzzle and stopped there;
+the server then refused it ("you are aboard") and the ground player felt
+nothing. (2) The exemption meant to let a player hit beat the hull checked a
+field (`remote`) that player hits never carried, so a ground shot at a rider
+through the open door also "hit the hull" first. Both directions dead, exactly
+as reported; the server-side hit path was fine all along (the live probe that
+scored 100 → 78 fed it directly).
+
+**The fix.** Nobody aboard tests the hull; a PLAYER hit always beats the hull;
+the hull test ignores an origin inside the box; and the box is tested against
+this frame's pose, not the last rendered one. Proved with the real client
+modules: a rider's ray from the seat meets no hull, a ground shooter's ray
+meets the hull in front of the seat but the hitscan lets the player hit win.
+
+`verify-heli` 77/0; client gates green; live `test.js` 335/0.
+
 # v1.0.4 (build 18) — THE AUDIT: A SECOND TRAIN, JOINED RAILS, DRESS COLOURS (2026-09-15)
 
 Tagged `v1.0r`. Rahul asked for an audit of the whole codebase against the

@@ -274,8 +274,10 @@ var Heli = (function () {
   var _inv = new THREE.Matrix4(), _o = new THREE.Vector3(), _d = new THREE.Vector3(), _box = new THREE.Box3(new THREE.Vector3(-7.2, 0, -1.6), new THREE.Vector3(3.8, 3.6, 1.6)), _ray = new THREE.Ray(), _hit = new THREE.Vector3();
   function rayHit(origin, dir, maxDist) {
     if (!active() || !group || !pose) return null;
+    group.updateMatrixWorld(true);                                    // v1.0s: this frame's pose, not the last rendered one
     _inv.copy(group.matrixWorld).invert();
     _o.copy(origin).applyMatrix4(_inv); _d.copy(dir).transformDirection(_inv);
+    if (_box.containsPoint(_o)) return null;                        // v1.0s: from inside the cabin there is no hull to hit
     _ray.set(_o, _d);
     if (!_ray.intersectBox(_box, _hit)) return null;
     var t = _hit.distanceTo(_o);
