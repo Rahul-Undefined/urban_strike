@@ -76,6 +76,8 @@ var Heli = (function () {
     [0, Math.PI / 2].forEach(function (a) { var b = new THREE.Mesh(new THREE.BoxGeometry(12.6, 0.06, 0.42), bladeM); b.rotation.y = a; rotor.add(b); });
     var disc = new THREE.Mesh(new THREE.CylinderGeometry(6.3, 6.3, 0.02, 32), new THREE.MeshBasicMaterial({ color: 0x14181c, transparent: true, opacity: 0.12 })); rotor.add(disc);
     tailRotor = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.0, 0.28), bladeM); tailRotor.position.set(-7.05, 2.9, 0.1); fuselage.add(tailRotor);
+    /* v1.0v: everything that does not spin becomes a few meshes */
+    if (World.mergeGroup) World.mergeGroup(fuselage, function (o) { var p = o; while (p) { if (p === rotor || p === tailRotor) return true; p = p.parent; } return false; });
     return g;
   }
 
@@ -152,6 +154,7 @@ var Heli = (function () {
   function hpUpdate(d) { if (state) { state.hp = d.hp; if (typeof UI !== 'undefined' && UI.setHeliHud) UI.setHeliHud({ hp: d.hp, max: d.max, state: state.state }); } }
   function active() { return !!(cfg && state && state.state !== 'gone'); }
   function inAir() { return !!(state && (state.state === 'flying' || state.state === 'returning')); }
+  function isRiderId(id) { return !!(state && state.riders && inAir() && state.riders.indexOf(id) >= 0); }   /* v1.0v */
   function isRiding() { return !!(state && state.riders && typeof Net !== 'undefined' && state.riders.indexOf(Net.getMyId()) >= 0 && inAir()); }
 
   function computePose() {
@@ -308,6 +311,6 @@ var Heli = (function () {
 
   function clear() { pending = null; set(null); }   /* v1.0n: leaving the match forgets the machine */
   return { init: init, dispose: dispose, set: set, clear: clear, hpUpdate: hpUpdate, update: update, floorAt: floorAt, bail: bail, rayHit: rayHit,
-    canBoard: canBoard, board: board, onSeat: onSeat, landRequest: landRequest, seatFor: seatFor,
+    canBoard: canBoard, board: board, onSeat: onSeat, landRequest: landRequest, seatFor: seatFor, isRiderId: isRiderId,
     active: active, isRiding: isRiding, pose: function () { return pose; }, state: function () { return state; } };
 })();

@@ -207,6 +207,13 @@ ok(/gunName: null/.test(netSrc) && /Avatars\.setRemoteGun\(r, 0\)/.test(netSrc),
   scan(gsrc, 'gameplay');
   scan(usrc, 'ui');
 
+  /* v1.0v: Q is three things on purpose, each fenced by state the line itself
+     tests — aboard the flying helicopter it LANDS (keydown), a tap on the
+     ground drops an attachment (keyup within 220 ms), a hold leans. The
+     `qDownAt` stamp on keydown is bookkeeping for the tap, not an action. */
+  for (const k of Object.keys(claims)) {
+    if (k.endsWith(':KeyQ')) claims[k] = claims[k].filter(a => a !== 'now' && a !== 'gameplay');
+  }
   const collisions = Object.keys(claims).filter(k => new Set(claims[k]).size > 1);
   ok(collisions.length === 0,
     'no key is claimed by two different actions on the same event (game.js + ui.js)' +

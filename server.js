@@ -631,6 +631,7 @@ function startMatch(room) {
   pushLobby(room);
   const zoneSched = Zone.start(room);   /* v1.0j: null unless the mode is Urban Zone */
   const heliSnap = Heli.start(room);    /* v1.0l: null unless the map is Urban */
+  Loot.placeStrikeKey(room);            /* v1.0v: one Strike Key somewhere on Urban */
   io.to(room.code).emit('matchStart', {
     settings: room.settings,
     startedAt: room.startedAt,
@@ -1291,7 +1292,13 @@ io.on('connection', (socket) => {
     if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
     const p = room.players.get(socket.id);
     if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
-    ack(Mines.emp(room, p));
+    /* v1.0v: the EMP also fells an airborne helicopter within reach — with or
+       without enemy mines to disable */
+    const hr = Heli.emp(room, p);
+    const mr = Mines.emp(room, p);
+    if (hr.ok && !mr.ok) { p.emps = Math.max(0, (p.emps | 0) - 1); return ack({ ok: true, left: p.emps, cleared: 0, heli: hr.n }); }
+    if (hr.ok) mr.heli = hr.n;
+    ack(mr);
   });
   /* ===== v1.0l - SHOOTING THE HELICOPTER ===== the client claims a hit with a
      weapon id; the server checks reach and aboard-ness and applies the class
@@ -1306,6 +1313,20 @@ io.on('connection', (socket) => {
     if (!w) return ack({ ok: false, err: 'Unknown weapon' });
     if (!fireRateOk(p, w)) return ack({ ok: false, err: 'Too fast' });
     ack(Heli.hit(room, p, w));
+  });
+  /* ===== v1.0v - A BLAST DESTROYS ENEMY MINES ===== the thrower reports where
+     their frag or rocket went off; the server clears enemy mines in the radius */
+  socket.on('blast', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || room.state !== 'playing') return ack({ ok: false });
+    const p = room.players.get(socket.id);
+    if (!p || !d || !Array.isArray(d.p) || d.p.length !== 3) return ack({ ok: false });
+    const w = d.w === 'rocket' ? CFG.WEAPONS.rocket : CFG.THROWS.frag;
+    const radius = Math.min(12, (w && (w.radius || w.fxRadius || w.killRadius)) || 6);
+    const pos = d.p.map(Number);
+    if (pos.some(v => !isFinite(v)) || Math.hypot(pos[0] - p.pos[0], pos[2] - p.pos[2]) > 160) return ack({ ok: false });
+    ack(Mines.blast(room, p, pos, radius));
   });
   /* ===== v1.0q - LANDING THE HELICOPTER (a rider presses Q) ===== */
   socket.on('heliLand', (d, cb) => {

@@ -1017,6 +1017,59 @@ var World = (function () {
      a different defect with a different right answer, so those are counted and
      reported rather than silently demolished. Read the count in
      tools/verify-climb.js; do not widen this rule to make a number go green. */
+  /* ===== v1.0v - MERGE A MOVING GROUP =====
+     The two trains (8 cars x ~60 boxes) and the helicopter (~80) were ~560
+     draw calls every frame, because dynamic meshes never go through
+     StaticMerge — that is the single biggest constant cost added since v1.0,
+     and the frame drops Rahul saw. mergeGroup(g, skip) bakes every mesh
+     child (except those `skip` returns true for) into one mesh PER MATERIAL,
+     in the group's own frame, so the group still moves as one and a car costs
+     ~9 draws instead of ~60. Geometries are BoxGeometry/CylinderGeometry
+     (indexed) — made non-indexed and concatenated. */
+  function mergeGroup(g, skip) {
+    if (!g) return 0;
+    var byMat = new Map(), take = [];
+    g.updateMatrixWorld(true);
+    var inv = new THREE.Matrix4().copy(g.matrixWorld).invert();
+    g.traverse(function (o) {
+      if (!o.isMesh || o === g) return;
+      if (skip && skip(o)) return;
+      if (Array.isArray(o.material)) return;
+      take.push(o);
+    });
+    take.forEach(function (o) {
+      var geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      var m = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+      geo.applyMatrix4(m);
+      var key = o.material.uuid;
+      if (!byMat.has(key)) byMat.set(key, { mat: o.material, list: [], cast: o.castShadow, recv: o.receiveShadow });
+      byMat.get(key).list.push(geo);
+    });
+    var made = 0;
+    byMat.forEach(function (b) {
+      var vTot = 0, hasUv = true;
+      b.list.forEach(function (geo) { vTot += geo.attributes.position.count; if (!geo.attributes.uv) hasUv = false; });
+      var pos = new Float32Array(vTot * 3), nor = new Float32Array(vTot * 3), uv = hasUv ? new Float32Array(vTot * 2) : null, off = 0;
+      b.list.forEach(function (geo) {
+        var n = geo.attributes.position.count;
+        pos.set(geo.attributes.position.array, off * 3);
+        if (geo.attributes.normal) nor.set(geo.attributes.normal.array, off * 3);
+        if (uv && geo.attributes.uv) uv.set(geo.attributes.uv.array, off * 2);
+        off += n; geo.dispose();
+      });
+      var merged = new THREE.BufferGeometry();
+      merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      merged.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      if (uv) merged.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      var mesh = new THREE.Mesh(merged, b.mat);
+      mesh.castShadow = b.cast; mesh.receiveShadow = b.recv;
+      mesh.frustumCulled = true;
+      g.add(mesh); made++;
+    });
+    take.forEach(function (o) { if (o.parent) o.parent.remove(o); if (o.geometry) o.geometry.dispose(); });
+    return made;
+  }
+
   /* ===== v1.0e - THE TRAIN PATH (shared by the rails and the train) =====
      A closed polyline with filleted corners, parametrised by arc length.
      trainPath(cfg) returns { length, at(s) -> {x, z, yaw, k} } where s wraps.
@@ -1307,6 +1360,7 @@ var World = (function () {
     _stairwells: function () { return stairwells(); },
     _liftLintels: function () { return liftLintels(); },                       /* v1.0e */
     trainPath: trainPath,                                                        /* v1.0e: rails and train share it */
+    mergeGroup: mergeGroup,                                                      /* v1.0v: moving groups become a few draws */
     _lintelStats: function (dbg) { lintelDebug = !!dbg; return { n: lintelsLifted, report: lintelReport }; },
     _internals: function () {
       return { box: box, seg: seg, cyl: cyl, stairFlight: stairFlight, crater: crater, M: M, rnd: rnd, addCollider: addCollider, emissive: emissiveMat, canvasTex: canvasTex, sceneRef: function () { return scene; } };

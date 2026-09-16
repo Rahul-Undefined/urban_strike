@@ -8,6 +8,11 @@ doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
 every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
 count toward the next strike; Shift while scoped holds your breath.
 
+**v1.0.8 — PROTECTED RIDERS, THE STRIKE KEY.** Helicopter riders can't be shot;
+only an RPG or an EMP downs the machine (and them). Blasts destroy enemy mines.
+One Strike Key hides on Urban each match — find it, press N, every hostile dies.
+Tap Q to drop an attachment. Trains and the helicopter merged to a few draws.
+
 **v1.0.7 — RESPAWNS IN THE ZONE.** Urban Zone respawns (inside the circle);
 helicopter riders sit in the cabin behind the rails and can only be hit through
 the open door band; no boarding popups; untaken loot expires so late matches

@@ -247,7 +247,7 @@ console.log('--- the client, in the order the game really runs ---');
   ok(/Heli\.seatFor\(id, seatTmp\)/.test(fs.readFileSync(path.join(__dirname, '..', 'public/src/networking/net.js'), 'utf8')), 'remote riders are drawn at their seats, not at the lagging snapshot');
   ok(rr.fromGroundHitsHull === true && rr.hullT < rr.dist, 'a ground shooter\'s ray does meet the hull before the seat (' + (rr.hullT || 0).toFixed(1) + ' m of ' + rr.dist.toFixed(1) + ')...');
   const wsys2 = fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/system.js'), 'utf8');
-  ok(/!\(Heli\.isRiding && Heli\.isRiding\(\)\)/.test(wsys2) && /!\(hit && hit\.type === 'player' && hh\.opening\)/.test(wsys2), '...but the hitscan lets a PLAYER hit through an opening beat the hull, and never tests the hull for a shooter aboard');
+  ok(/!\(Heli\.isRiding && Heli\.isRiding\(\)\)/.test(wsys2) && /hit\.type === 'player' && hh\.opening && !riderTarget/.test(wsys2), '...but the hitscan lets a PLAYER hit through an opening beat the hull (a rider excepted — v1.0v), and never tests the hull for a shooter aboard');
   ok(!/hit\.remote/.test(wsys2), 'the dead `hit.remote` exemption is gone');
   ok(r.near === true && r.boarded === true, 'near the pad the client offers boarding and Z boards');
   ok(r.far === false, '30 m away it does not');

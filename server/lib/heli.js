@@ -253,15 +253,32 @@ module.exports = function initHeli(ctx) {
     }
     h.hp = Math.max(0, h.hp - dmg); h.lastHitBy = shooter.id; h.lastHitAt = now();
     io.to(room.code).emit('heliHp', { hp: h.hp, max: CFG.HELI.hp, by: shooter.id });
-    if (h.hp <= 0) {
-      let n = 0;
-      for (const id of h.riders) { const q = room.players.get(id); if (q && q.alive && !q.out) { applyDamage(room, q, 999, shooter.id, 'helidown', false, true); n++; } }
-      io.to(room.code).emit('heliBoom', { x: pose.x, y: pose.y, z: pose.z, by: shooter.id, byName: shooter.name, n });
-      leave(room, now() + CFG.HELI.respawnSec * 1000);
-      return { ok: true, dmg, hp: 0, destroyed: true, n };
-    }
+    if (h.hp <= 0) { const n = destroy(room, shooter); return { ok: true, dmg, hp: 0, destroyed: true, n }; }
     return { ok: true, dmg, hp: h.hp };
   }
+  /* the machine goes down: every rider dies, credited to `by`; a fireball; gone until the respawn */
+  function destroy(room, by) {
+    const h = room.heli, pose = poseNow(room) || { x: CFG.HELI.pad[0], y: CFG.HELI.padY, z: CFG.HELI.pad[1] };
+    let n = 0;
+    for (const id of h.riders) { const q = room.players.get(id); if (q && q.alive && !q.out) { applyDamage(room, q, 999, by.id, 'helidown', false, true); n++; } }
+    h.hp = 0;
+    io.to(room.code).emit('heliBoom', { x: pose.x, y: pose.y, z: pose.z, by: by.id, byName: by.name, n });
+    leave(room, now() + CFG.HELI.respawnSec * 1000);
+    return n;
+  }
+  /* v1.0v: an EMP within reach fells an airborne machine outright */
+  function emp(room, p) {
+    if (!has(room) || !p) return { ok: false };
+    const h = room.heli;
+    if (h.state !== 'flying' && h.state !== 'returning') return { ok: false, err: 'Not airborne' };
+    if (h.riders.indexOf(p.id) >= 0) return { ok: false, err: 'You are aboard' };
+    const pose = poseNow(room);
+    if (!pose) return { ok: false };
+    const d = Math.hypot(pose.x - p.pos[0], pose.z - p.pos[2]);
+    if (d > (CFG.HELI.empRange || 80)) return { ok: false, err: 'Helicopter out of EMP range (' + Math.round(d) + ' m)' };
+    const n = destroy(room, p);
+    return { ok: true, n };
+  }
   function reset(room) { room.heli = null; }
-  return { start, tick, hit, board, bail, land, snapshot, reset, poseNow, inCabin, fallen, pathFor };
+  return { start, tick, hit, board, bail, land, snapshot, reset, poseNow, inCabin, fallen, pathFor, destroy, emp };
 };

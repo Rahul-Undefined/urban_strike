@@ -175,7 +175,11 @@ module.exports = function initNukeModule(ctx) {
   /* A strike request. The client sends NOTHING but the request; where it lands
      is decided here. */
   function requestStrike(room, p, x, z) {
-    if (!isSmallMap(room)) return;
+    /* v1.0v: THE STRIKE KEY. One appears somewhere on Urban each match (loot.js
+       placeStrikeKey); whoever holds it is ARMED regardless of streak or map,
+       and their one strike reaches every hostile on the map. */
+    const byKey = !!(p && p.strikeKey);
+    if (!isSmallMap(room) && !byKey) return;
     if (!p || !p.nukeArmed || !p.alive || p.out) return;
     if (room.state !== 'playing') return;
     /* v10.15: coordinates from the client are ignored entirely. The server
@@ -198,15 +202,17 @@ module.exports = function initNukeModule(ctx) {
     z = Math.max(-B, Math.min(B, z));
 
     p.nukeArmed = false;                    // spent before anything can throw
+    const R = byKey ? 1e6 : RADIUS;         // v1.0v: the key's strike is map-wide
+    if (byKey) { p.strikeKey = false; io.to(room.code).emit('toast', { msg: p.name + ' turned the STRIKE KEY' }); }
     const endsAt = now() + DURATION * 1000;
     room.nukes = room.nukes || [];
     room.nukes.push({
-      x, z, r: RADIUS, by: p.id, team: p.team || null,
+      x, z, r: R, by: p.id, team: p.team || null,
       endsAt, nextTick: now(), byName: p.name
     });
     io.to(room.code).emit('nukeIncoming', {
-      x, z, r: RADIUS, duration: DURATION, by: p.id, byName: p.name,
-      team: p.team || null, covered: aim ? aim.covered : 0
+      x, z, r: byKey ? RADIUS : RADIUS, duration: DURATION, by: p.id, byName: p.name,
+      team: p.team || null, covered: aim ? aim.covered : 0, key: byKey
     });
   }
 

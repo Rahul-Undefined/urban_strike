@@ -325,6 +325,7 @@ var Game = (function () {
       if (e.code === 'Space' && window.Heli && Heli.isRiding && Heli.isRiding()) Heli.bail();
       /* v1.0q: Q aboard the flying helicopter brings it down (a lean is pointless up there) */
       if (e.code === 'KeyQ' && window.Heli && Heli.isRiding && Heli.isRiding()) { Heli.landRequest(); e.preventDefault(); return; }
+      if (e.code === 'KeyQ') qDownAt = performance.now();   /* v1.0v: a TAP drops an attachment (see keyup); a HOLD leans */
       if (e.code === 'KeyN' && UI.nukeToggleAim && UI.nukeToggleAim()) { e.preventDefault(); return; }
       /* v1.0b: on a big map N is the ROCKET. The two rewards refuse each other's
          maps on the server, so only one of these lines can ever consume N. */
@@ -446,6 +447,8 @@ var Game = (function () {
     document.addEventListener('keyup', function (e) {
       if (e.code === 'Tab') { UI.showScoreboard(false); return; }
       if (e.code === 'KeyZ') cancelStrikeHold();   // v15.0 (fix 10): released early = no strike
+      if (e.code === 'KeyQ' && qDownAt && performance.now() - qDownAt < 220 && playing && !(window.Heli && Heli.isRiding && Heli.isRiding())) { qDownAt = 0; if (Weapons.dropAttachment) Weapons.dropAttachment(); }   /* v1.0v */
+      if (e.code === 'KeyQ') qDownAt = 0;
       if (e.code === 'KeyG') { Weapons.releaseCook(); return; }
       if (e.code === 'KeyY' && pingWheel) { pingWheel = false; UI.setPingWheel(false); sendPing('enemy'); return; }
       var map2 = {
@@ -483,6 +486,7 @@ var Game = (function () {
 
   /* v1.0l: one moving-floor probe for the controller — the train's, then the
      helicopter's. Whichever has the player answers. */
+  var qDownAt = 0;   /* v1.0v: when Q went down, for tap-vs-hold */
   function platformProbe(pos, halfY) {
     var r = (window.Train && Train.isActive()) ? Train.floorAt(pos, halfY) : null;
     if (r) r.src = 'train';

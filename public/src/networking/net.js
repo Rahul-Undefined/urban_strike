@@ -1210,6 +1210,7 @@ var Net = (function () {
     boardHeli: function (cb) { if (socket) socket.emit('boardHeli', {}, cb); },       /* v1.0m */
     heliBail: function (cb) { if (socket) socket.emit('heliBail', {}, cb); },         /* v1.0p */
     heliLand: function (cb) { if (socket) socket.emit('heliLand', {}, cb); },         /* v1.0q */
+    blast: function (d, cb) { if (socket) socket.emit('blast', d, cb); },              /* v1.0v */
     plantBomb: function (p, cb) { if (socket) socket.emit('plantBomb', { p: p }, cb); },
     dropItem: function (d, cb) { if (socket) socket.emit('dropItem', d, cb); },
     callStrike: function (cb) { if (socket) socket.emit('callStrike', {}, cb); },

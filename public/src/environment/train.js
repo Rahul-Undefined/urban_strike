@@ -138,6 +138,7 @@ function makeTrain(cfgIn, sceneIn) {
     var layout = CFG.trainCars(cfg);
     for (var i = 0; i < layout.length; i++) {
       var g = i === 0 ? buildLoco() : buildCoach(i);
+      if (World.mergeGroup) World.mergeGroup(g);   /* v1.0v: ~60 boxes -> ~9 draws per car */
       cars.push({ g: g, L: layout[i].L, off: layout[i].off, coach: layout[i].coach, x: 0, z: 0, yaw: 0, vx: 0, vz: 0, px: 0, pz: 0, pyaw: 0, moving: false });
       group.add(g);
     }

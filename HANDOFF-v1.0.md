@@ -1,3 +1,46 @@
+# v1.0.8 (build 22) — PROTECTED RIDERS, EMP, BLAST-VS-MINES, THE STRIKE KEY, Q, AND THE LAG (2026-09-16)
+
+Tagged `v1.0v`. Rahul's six:
+
+**1. The helicopter protects its riders.** A listed rider of an airborne
+machine takes NO damage from anything — guns, grenades, rockets aimed at the
+body, fire, mines — except the machine's own end, a fall, and the zone bleed.
+Riders shoot the ground freely. The machine itself still goes down only to
+the RPG-L (three hits)… **and now to the EMP**: a charge used within 80 m of an
+airborne machine fells it outright — every rider dies, credited to the EMP
+user — with or without enemy mines to disable (the charge is spent either
+way). The client reads a shot at a rider as a shot at the hull: a spark, no
+hitmarker, no false hope.
+
+**2. Blasts destroy enemy mines.** A frag or rocket detonation destroys ENEMY
+mines inside its blast radius; your own and your team's survive. Every mode.
+The thrower's client reports where the blast went off; the server decides
+whose mines were in it.
+
+**3. The Strike Key — the random one-shot airstrike.** Rahul: "a key, random,
+only once, Urban only; whichever team finds it kills every opponent." One
+STRIKE KEY is placed at match start at a random hidden/signature loot point on
+Urban (never in a crate, never respawns). Whoever picks it up is armed at
+once — "STRIKE KEY · press N — every hostile on the map" — and their one press
+runs the existing strike with a map-wide radius, killing every hostile alive.
+The room is told who found it and who turned it. The streak nuke stays small-
+map only. (It was never wired on Urban before: the strike was gated to arenas.)
+
+**4. Q drops an attachment.** A TAP of Q drops one fitted attachment onto the
+floor as a pickup — the sight first, then the magazine, then the muzzle — for
+anyone to take with Z; a HELD Q still leans; Q aboard the flying helicopter
+still lands it.
+
+**5. The lag, drilled.** The two trains (8 cars × ~60 boxes) and the
+helicopter (~80 parts) were ~560 draw calls every frame — dynamic meshes never
+went through the static merger. `World.mergeGroup` now bakes each car and the
+fuselage into one mesh per material: 56 meshes for eight cars where there were
+~500; the rotors keep spinning. Together with build 21's loot expiry and DOM
+throttling this removes the largest constant costs added since v1.0.
+
+`verify-protect` 21/0 (new), `verify-heli` 86/0, `verify-nuke` 61/0. Board: 49
+gates, 46 green, the same three documented reds. Live: `test.js` 329/0.
+
 # v1.0.7 (build 21) — RESPAWNS IN THE ZONE, SEATED RIDERS, QUIET BOARDING, LIGHTER LATE GAME (2026-09-16)
 
 Tagged `v1.0u`. Rahul's four:

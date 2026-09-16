@@ -114,5 +114,31 @@ module.exports = function initMinesModule(ctx) {
     return { ok: true, left: p.emps, cleared: gone.length };
   }
 
-  return { reset, place, tick, clear, refillFor, emp };
+  /* v1.0v (Rahul: "if I shoot a grenade on a mine, the mine is destroyed if
+     it is the enemy's; otherwise it survives — every mode"): a frag or rocket
+     detonation reported by its thrower destroys ENEMY mines within its blast
+     radius; own and team mines survive. */
+  function blast(room, p, pos, radius) {
+    if (!p || !pos || !(radius > 0)) return { ok: false };
+    const teams = modeInfo(room).teams;
+    const mines = room.mines || [];
+    const gone = [], byOwner = {};
+    const r2 = radius * radius;
+    for (let i = mines.length - 1; i >= 0; i--) {
+      const m = mines[i];
+      if (m.owner === p.id) continue;
+      if (teams && m.team && m.team === p.team) continue;
+      const dx = m.x - pos[0], dy = (m.y || 0) - pos[1], dz = m.z - pos[2];
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      mines.splice(i, 1);
+      gone.push({ id: m.id, x: m.x, y: m.y, z: m.z });
+      byOwner[m.owner] = (byOwner[m.owner] | 0) + 1;
+    }
+    if (gone.length) {
+      io.to(room.code).emit("empBlast", { by: p.id, x: pos[0], y: pos[1], z: pos[2], mines: gone, blast: true });
+      for (const oid in byOwner) { const q = room.players.get(oid); if (q && q.connected !== false) io.to(oid).emit("toast", { msg: "A blast destroyed " + byOwner[oid] + " of your mine" + (byOwner[oid] === 1 ? "" : "s") }); }
+    }
+    return { ok: true, cleared: gone.length };
+  }
+  return { reset, place, tick, clear, refillFor, emp, blast };
 };

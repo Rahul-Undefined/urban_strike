@@ -92,6 +92,17 @@ function expireDrops(room, io, now) {
     if (pk.expireAt && pk.active && t >= pk.expireAt) { room.pickups.splice(i, 1); io.to(room.code).emit('pickup', { id: pk.id, by: null, expired: true, gone: true }); }
   }
 }
+/* v1.0v: one Strike Key on Urban, at a random loot point, as its own pickup */
+function placeStrikeKey(room, now, mapData) {
+  if ((room.settings.map || 'urban') !== 'urban' || !CFG.LOOT_ITEMS.strike_key) return null;
+  const pts = (mapData(room).LOOT_POINTS || []).filter(pt => pt[3] === 'h' || pt[3] === 's');   // a hidden or a signature spot: worth the hunt
+  const pool = pts.length ? pts : (mapData(room).LOOT_POINTS || []);
+  if (!pool.length) return null;
+  const pt = pool[Math.floor(Math.random() * pool.length)];
+  const pk = { id: room.nextLootId++, t: 'strike_key', pos: [pt[0] + 0.6, (pt[1] || 0) + 0.55, pt[2] + 0.6], cls: 'g', active: true, respawnAt: 0, noRespawn: true };
+  room.pickups.push(pk);
+  return pk;
+}
 function pickupList(room) {
   return room.pickups.map(pk => {
     const o = { id: pk.id, t: pk.t, p: pk.pos, active: pk.active };
@@ -150,6 +161,13 @@ function tryCollect(room, p) {
         if ((p.mines | 0) >= CFG.GEAR.mine.maxCarry) continue;
         p.mines = Math.min(CFG.GEAR.mine.maxCarry, (p.mines | 0) + it.n);
         grant = { t: 'gear', g: 'mine', n: p.mines };
+      } else if (it.g === 'strikeKey') {
+        /* v1.0v: arms the holder (nuke.js reads p.strikeKey) — one per match */
+        if (p.strikeKey) continue;
+        p.strikeKey = true; p.nukeArmed = true;
+        grant = { t: 'gear', g: 'strikeKey', n: 1 };
+        io.to(p.id).emit('nukeReady', { radius: 1e6, duration: 5, streak: p.streak | 0, key: true });
+        io.to(room.code).emit('toast', { msg: p.name + ' found the STRIKE KEY' });
       } else if (it.g === 'emp') {
         /* v15.0 (fix 1): a carried count, like drones — per match, never
            refilled by dying. Left on the floor when the player is full. */
@@ -279,5 +297,5 @@ function dropCrate(room) {
 // ---------- match lifecycle ----------
 
   return { initPickups, pickupList, tryCollect, respawnPickups,
-    scheduleAirdrop, clearAirdrop, dropCrate , expireDrops: (room) => expireDrops(room, io, now) };
+    scheduleAirdrop, clearAirdrop, dropCrate , expireDrops: (room) => expireDrops(room, io, now), placeStrikeKey: (room) => placeStrikeKey(room, now, mapData) };
 };

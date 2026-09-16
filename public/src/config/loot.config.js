@@ -138,6 +138,10 @@
        mines, so a scarce-but-findable supply is what keeps minefields an
        investment rather than a guarantee. */
     emp:        { kind: 'gear', g: 'emp', n: 1, rar: 'l', label: 'EMP Charge' },
+    /* v1.0v: THE STRIKE KEY — one per Urban match, at a random loot point, never
+       in a crate, never respawns. Whoever holds it presses N once: every
+       hostile on the map dies. */
+    strike_key: { kind: 'gear', g: 'strikeKey', n: 1, rar: 'l', label: 'Strike Key', drop: 0, noPool: true },
     /* ^ legendary, not rare: at rare the first live roll put FIFTEEN charges on
        Urban's floor (Phase 18 printed the count), and each one wipes every enemy
        mine on the map. At legendary it is ~4 a match beside the shield — a find,

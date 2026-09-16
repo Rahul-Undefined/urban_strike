@@ -917,10 +917,10 @@ var UI = (function () {
   var nukeArmed = false;
   function nukeEl() { return document.getElementById('nuke-banner'); }
 
-  function nukeReady() {
+  function nukeReady(d) {
     nukeArmed = true;
     var e = nukeEl(); if (e) e.classList.add('armed');
-    toast('NUKE ACTIVATED \u00b7 press N to select a target');
+    toast(d && d.key ? 'STRIKE KEY \u00b7 press N \u2014 every hostile on the map' : 'NUKE ACTIVATED \u00b7 press N to select a target');   /* v1.0v */
   }
   /* Called on death, on spending it, and on match end. Also closes the target
      map if it is open — being killed while aiming must take the map away as

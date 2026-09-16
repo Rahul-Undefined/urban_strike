@@ -49,7 +49,22 @@ function weaponServerDamage(weapon, part, pellets, dist) {
   return dmg;
 }
 
+/* ===== v1.0v - THE HELICOPTER PROTECTS ITS RIDERS =====
+   Rahul: "the player in the heli can't be killed until the helicopter is put
+   down; from any gun the player will not be killed." A listed rider of an
+   airborne machine takes no damage from anything except the machine's own
+   end (helidown), a fall (helifall) and the zone's bleed. Guns, grenades,
+   rockets aimed at the body, fire, mines: nothing. Down the machine (RPG or
+   EMP) and the riders die with it. */
+const RIDER_PASS = { helidown: 1, helifall: 1, zone: 1 };
+function riderShielded(room, victim, weapon) {
+  const h = room && room.heli;
+  if (!h || !h.riders || h.riders.indexOf(victim.id) < 0) return false;
+  if (h.state !== 'flying' && h.state !== 'returning') return false;
+  return !RIDER_PASS[weapon];
+}
 function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank) {
+  if (riderShielded(room, victim, weapon)) return;   /* v1.0v */
   if (!victim.alive) return;
   const attacker = room.players.get(attackerId);
   const teams = modeInfo(room).teams;

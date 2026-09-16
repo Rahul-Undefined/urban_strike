@@ -360,6 +360,24 @@ var Weapons = (function () {
     refreshHud();
     return true;
   }
+  /* v1.0v (Rahul: "a Q button for the gun which throws the scope and mags the
+     player doesn't want; pick up again with Z"): a TAP of Q drops one fitted
+     attachment — sight first, then the magazine, then the muzzle — onto the
+     floor as a pickup anybody can take with Z. A HELD Q still leans. */
+  function dropAttachment() {
+    if (!PlayerCtl.alive) return false;
+    var slot = atts.sight ? 'sight' : atts.mag ? 'mag' : atts.muzzle ? 'muzzle' : null;
+    if (!slot) { UI.toast('Nothing fitted to drop'); return false; }
+    var aid = atts[slot];
+    atts[slot] = null;
+    Net.dropItem({ a: aid }, function (res) {
+      UI.toast(((CFG.ATTACH && CFG.ATTACH[aid] && CFG.ATTACH[aid].label) || aid) + ((res && res.ok && res.floor) ? ' dropped \u00b7 Z to pick up' : ' removed'));
+    });
+    UI.setAttachments(atts);
+    setWeapon(current, true);      // re-dress the viewmodel without it
+    refreshHud();
+    return true;
+  }
   function dropSight() {
     if (!PlayerCtl.alive) return false;
     var sid = atts.sight;
@@ -611,7 +629,10 @@ var Weapons = (function () {
            enter through an open side (between the hip rail and the roof); one
            that would arrive through the floor, roof, nose or tail meets the
            hull instead. Tough, not impossible: the door band is the shot. */
-        if (hh && (!hit || hh.t < hit.t) && !(hit && hit.type === 'player' && hh.opening)) {
+        /* v1.0v: a rider is untouchable while the machine flies — a shot at them
+           is a shot at the hull, whatever door it comes through */
+        var riderTarget = hit && hit.type === 'player' && Heli.isRiderId && Heli.isRiderId(hit.id);
+        if (hh && (!hit || hh.t < hit.t || riderTarget) && !(hit && hit.type === 'player' && hh.opening && !riderTarget)) {
           var hEnd = hh.point;
           FX.tracer(mz, hEnd, w.trc); FX.impact(hEnd, d.clone().negate());
           /* v1.0t: a gun round stops on the hull with a spark and does NOTHING — the
@@ -870,6 +891,8 @@ var Weapons = (function () {
     if (p.type === 'frag' || p.kind === 'rocket') {
       var spec = p.kind === 'rocket' ? { dmg: CFG.WEAPONS.rocket.dmg, radius: CFG.WEAPONS.rocket.radius } : CFG.THROWS.frag;
       FX.explosion(pos, spec.fxRadius || spec.radius);   // v1.0b: a 50 m frag draws a 9 m fireball
+      /* v1.0v: my blast destroys enemy mines in its radius — the server decides whose */
+      if (p.mine && Net.blast) Net.blast({ p: [pos.x, pos.y, pos.z], w: p.kind === 'rocket' ? 'rocket' : 'frag' });
       AudioSys.explosion(pos.distanceTo(camera.position) < 3 ? null : pos, true);
       if (p.mine) explosionDamage(pos, spec.radius, spec.dmg, p.kind === 'rocket' ? 'rocket' : 'frag');
       selfExplosionFeedback(pos, spec.fxRadius || spec.radius);
@@ -1307,7 +1330,7 @@ var Weapons = (function () {
     plantBomb: plantBomb,
     c4Count: function () { return c4Count; },
     setC4: function (n) { c4Count = Math.max(0, n | 0); owned.c4 = c4Count > 0; if (owned.c4) ammo.c4 = ammo.c4 || { mag: 0, reserve: 0 }; },
-    dropCurrent: dropCurrent, dropSight: dropSight,
+    dropCurrent: dropCurrent, dropSight: dropSight, dropAttachment: dropAttachment,   /* v1.0v */
     hasRemote: function () { return hasRemote; },
     setRemote: function (v) { hasRemote = !!v; if (UI.setRemoteHud) UI.setRemoteHud(hasRemote); },
     callStrike: callStrike,
