@@ -247,7 +247,10 @@
        THAT down, so the HUD and the server's gate agree on every map.
        v1.0h (Rahul): "capped at max 15 seconds, gradually increased to 15" —
        the 30 s ceiling read as unlimited. 5 -> 8 -> 10 -> 12 -> 15 and stays. */
-    respawnLadder: [[3, 5], [6, 8], [9, 10], [12, 12], [Infinity, 15]],
+    /* v1.0w (Rahul): "delayed respawning should be removed — 5 seconds per
+       death." The ladder is one rung; the plumbing stays so it can come back
+       by config alone. */
+    respawnLadder: [[Infinity, 5]],
     defaultMode: 'ffa',
     pickupRadius: 1.25,
     /* v10.15: 2.5 s is the default and it is wrong on a small map.

@@ -320,8 +320,8 @@
       var bz = s * (HZ - 5);
       box(0, 0.45, bz, 3.6, 0.90, 0.9, M.wood);
       box(0, 0.95, bz, 3.4, 0.10, 0.8, M.cargoWood, NCAST);
-      box(-6, 0.35, bz, 1.2, 0.70, 1.2, M.railGreen);
-      box(6, 0.35, bz, 1.2, 0.70, 1.2, M.railGreen);
+      box(-6, 0.50, bz, 1.2, 1.00, 1.2, M.railGreen);   /* v1.0w: +0.3 */
+      box(6, 0.50, bz, 1.2, 1.00, 1.2, M.railGreen);
       for (var d = 0; d < 3; d++) {
         cyl(s * 19.5 + d * 0.9, 0.44, bz, 0.30, 0.88, d % 2 ? M.rust : M.hazard);
       }
@@ -356,11 +356,15 @@
         /* Alternating barrier and crate pair, set off the wall so there is a
            gap to move behind rather than a sealed edge. */
         if (i % 2 === 0) {
-          box(s * (HX - 3.4), 0.55, bz, 0.6, 1.10, 3.2, M.plaster);
-          box(s * (HX - 3.4), 1.16, bz, 0.7, 0.12, 3.3, M.roadPaintY, NBOTH);
+          /* v1.0w (Rahul: "the walls in the kill mode should be a little higher —
+             the head is easily located"): 1.10 -> 1.50. A crouched operator is
+             hidden behind it; a standing one shows head and shoulders, not the
+             whole upper body. */
+          box(s * (HX - 3.4), 0.75, bz, 0.6, 1.50, 3.2, M.plaster);
+          box(s * (HX - 3.4), 1.56, bz, 0.7, 0.12, 3.3, M.roadPaintY, NBOTH);
         } else {
-          box(s * (HX - 3.0), 0.45, bz - 0.9, 1.5, 0.90, 1.3, M.cargoWood);
-          box(s * (HX - 3.0), 0.35, bz + 0.9, 1.3, 0.70, 1.2, M.palletWood);
+          box(s * (HX - 3.0), 0.60, bz - 0.9, 1.5, 1.20, 1.3, M.cargoWood);     /* v1.0w: +0.3 */
+          box(s * (HX - 3.0), 0.50, bz + 0.9, 1.3, 1.00, 1.2, M.palletWood);    /* v1.0w: +0.3 */
         }
       });
       /* Corner clusters — the four spots a lane map always forgets. */
@@ -368,7 +372,7 @@
         var cx = s * (HX - 6), cz = sz * (HZ - 8);
         cyl(cx, 0.44, cz, 0.30, 0.88, M.rust);
         cyl(cx + 0.8, 0.44, cz + 0.7, 0.30, 0.88, M.hazard);
-        box(cx - 1.0, 0.40, cz + 0.6, 1.4, 0.80, 1.2, M.cargoWood);
+        box(cx - 1.0, 0.55, cz + 0.6, 1.4, 1.10, 1.2, M.cargoWood);   /* v1.0w: +0.3 */
       });
     });
     /* Two mid-floor islands where the plan leaves the widest open runs. */

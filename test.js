@@ -628,12 +628,9 @@ function phase19() {
   /* --- v1.0d: the arena redeploy ladder --- */
   {
     const r = d => CFG.respawnDelayFor('killhouse', d);
-    ok([1, 3].every(d => r(d) === 5) && [4, 6].every(d => r(d) === 8) && [7, 9].every(d => r(d) === 10),
-      'arena ladder: deaths 1-3 wait 5 s, 4-6 wait 8 s, 7-9 wait 10 s');
-    ok(r(10) === 12 && r(12) === 12 && r(13) === 15 && r(20) === 15 && r(60) === 15,
-      'and climbs to a 15 s CEILING at the 13th death and never past it (v1.0h) [' + [10, 12, 13, 20, 60].map(r).join(',') + ']');
-    ok(CFG.MATCH.respawnLadder[CFG.MATCH.respawnLadder.length - 1][1] === 15, 'the ladder\'s last rung is 15 s');
-    ok(CFG.respawnDelayFor('riverside', 20) === 15 && CFG.respawnDelayFor('bazaar', 5) === 8, 'medium and small maps both climb, to the same cap');
+    ok([1, 3, 4, 10, 13, 20, 60].every(d => r(d) === 5), 'v1.0w: the arena redeploy is a flat 5 s at every death — the ladder is one rung [' + [1, 4, 13, 60].map(r).join(',') + ']');
+    ok(CFG.MATCH.respawnLadder.length === 1 && CFG.MATCH.respawnLadder[0][1] === 5, 'the ladder is [[Infinity, 5]]');
+    ok(CFG.respawnDelayFor('riverside', 20) === 5 && CFG.respawnDelayFor('bazaar', 5) === 5, 'medium and small maps alike');
     ok(CFG.respawnDelayFor('urban', 20) === CFG.MATCH.respawnDelay && CFG.respawnDelayFor('metro', 20) === CFG.MATCH.respawnDelay,
       'Urban and Metro keep the flat ' + CFG.MATCH.respawnDelay + ' s at any death count');
     const combat = require('fs').readFileSync('./server/lib/combat.js', 'utf8');

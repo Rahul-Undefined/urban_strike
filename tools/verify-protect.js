@@ -79,6 +79,16 @@ console.log('--- the Strike Key ---');
   ok(/it\.g === 'strikeKey'/.test(lootSrc) && /p\.strikeKey = true; p\.nukeArmed = true;/.test(lootSrc) && /emit\('nukeReady', \{ radius: 1e6/.test(lootSrc), 'picking it up arms the holder and tells them (press N)');
 }
 
+console.log('--- a train death scores for the opposition (v1.0w) ---');
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'server/lib/combat.js'), 'utf8');
+  ok(/if \(weapon === 'train' && teams && victim\.team\)/.test(src) && /sides\.length === 2\) credit = sides\[0\] === victim\.team \? sides\[1\] : sides\[0\]/.test(src), 'two sides: the other side gets the point');
+  ok(/victim\.lastHitByTeam && victim\.lastHitByTeam !== victim\.team && now\(\) - \(victim\.lastHitAt \|\| 0\) < 15000/.test(src), 'squads: the side that last hurt the victim within 15 s, else nobody');
+  ok(/victim\.lastHitByTeam = attacker\.team/.test(src), 'every hit remembers the attacker\'s side');
+  ok(/if \(attacker && attackerId !== victim\.id\) \{/.test(src), 'individual modes: a death and no kill, as before');
+  ok(CFG.respawnDelayFor('killhouse', 60) === 5 && CFG.MATCH.respawnLadder.length === 1, 'the redeploy is a flat 5 s everywhere (v1.0w)');
+}
+
 console.log('--- the lag: moving groups merged ---');
 {
   const w = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/world.js'), 'utf8');

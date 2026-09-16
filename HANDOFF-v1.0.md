@@ -1,3 +1,23 @@
+# v1.0.9 (build 23) — THE TRAIN SCORES, TALLER COVER, FLAT REDEPLOY (2026-09-16)
+
+Tagged `v1.0w`. Rahul's three:
+
+**A train death scores for the opposition** in team and squad modes, nothing
+in individual modes. Two sides: the other side gets the point. Squads (three or
+more sides): the side that last hurt the victim within 15 s — a squad that
+never touched them earned nothing. The room hears "COBALT +1 · X was run over
+by the train". Individual modes: a death, no kill, as before.
+
+**Killhouse cover is taller.** The head was too easy to find. Barriers
+1.10 → 1.50 m (a crouched operator is hidden; a standing one shows head and
+shoulders), every crate +0.3 m. Counts unchanged; fingerprints re-recorded.
+
+**The redeploy ladder is gone.** Five seconds per death on every map — the
+ladder is one rung, so it can return by config alone.
+
+`verify-protect` 26/0; the suite's ladder assertions pin the flat 5 s. Live
+`test.js` 328/0; fingerprint/geometry gates green.
+
 # v1.0.8 (build 22) — PROTECTED RIDERS, EMP, BLAST-VS-MINES, THE STRIKE KEY, Q, AND THE LAG (2026-09-16)
 
 Tagged `v1.0v`. Rahul's six:

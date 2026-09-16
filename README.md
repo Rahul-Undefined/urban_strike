@@ -54,8 +54,7 @@ green is safe on the M map.
 rear wall and the terrace block opened; the stadium is green again (the old
 Ship Harbour was built through it — gone, a Training Ground stands there) and
 a storey taller; the M map works on every arena; the Bazaar court is a market;
-small/medium maps redeploy on an escalating ladder (5 s → 15 s cap by the 13th
-death); **Bot Mode removed completely**.
+every map redeploys in a flat 5 s; **Bot Mode removed completely**.
 
 **v1.0 build 3 — HD.** Quality tiers with an AUTO scaler: ULTRA renders at
 native resolution with 4K shadows and climbs/drops with your machine; pin a
