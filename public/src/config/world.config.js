@@ -107,16 +107,20 @@
        map shows danger red and safe green. Take ideas from PUBG."
        One life (the Last Stand rules do the elimination and the win), Urban
        only (`mapLock`), the clock's fixed 15 minutes shaped by ZONE below. */
-    zone: { label: 'Urban Zone \u00b7 Solo', vlabel: 'Solo \u00b7 every operator for themselves',
-            cat: 'zone', teams: false, teamCount: 0, maxPlayers: 15, lives: 1, zone: true, mapLock: 'urban', fullMapContacts: false },
+    /* v1.0u (Rahul: "not one-kill eliminated — keep unlimited respawn, the
+       circle still shrinks"): the zone modes RESPAWN like FFA/Squads; the
+       circle is the pressure, kills are the score, the clock ends it. Respawns
+       land inside the circle (server pickSpawn asks the zone). */
+    zone: { label: 'Urban Zone \u00b7 Solo', vlabel: 'Solo \u00b7 respawns \u00b7 the circle closes',
+            cat: 'zone', teams: false, teamCount: 0, maxPlayers: 15, zone: true, mapLock: 'urban', fullMapContacts: false },
     /* v1.0l (Rahul: "Urban Zone should have the option to join as a team as
        well — solo or as a team, rest of the gameplay the same"): squad
        variants, the Last Stand squad shapes with the circle. One life each;
        a squad wins when it is the last side breathing. */
-    zsq2: { label: 'Urban Zone \u00b7 Duos 7 \u00d7 2', vlabel: '7 squads of 2',
-            cat: 'zone', teams: true, squads: true, teamCount: 7, squadSize: 2, maxPlayers: 14, lives: 1, zone: true, mapLock: 'urban', fullMapContacts: false },
-    zsq3: { label: 'Urban Zone \u00b7 Squads 5 \u00d7 3', vlabel: '5 squads of 3',
-            cat: 'zone', teams: true, squads: true, teamCount: 5, squadSize: 3, maxPlayers: 15, lives: 1, zone: true, mapLock: 'urban', fullMapContacts: false }
+    zsq2: { label: 'Urban Zone \u00b7 Duos 7 \u00d7 2', vlabel: '7 squads of 2 \u00b7 respawns',
+            cat: 'zone', teams: true, squads: true, teamCount: 7, squadSize: 2, maxPlayers: 14, zone: true, mapLock: 'urban', fullMapContacts: false },
+    zsq3: { label: 'Urban Zone \u00b7 Squads 5 \u00d7 3', vlabel: '5 squads of 3 \u00b7 respawns',
+            cat: 'zone', teams: true, squads: true, teamCount: 5, squadSize: 3, maxPlayers: 15, zone: true, mapLock: 'urban', fullMapContacts: false }
   };
 
   /* ===== v1.0j - THE ZONE SCHEDULE =====
@@ -133,7 +137,7 @@
   var ZONE = {
     fullMinutes: 2, shrinkPhases: 10, holdSec: 30, phaseSec: 60,
     r0: 175, rFinal: 42, finalCenterMax: 70, boundPad: 2,
-    dmgPct: 10, tickSec: 1, wallHeight: 60
+    dmgPct: 10, tickSec: 1, wallHeight: 40   /* v1.0u: 60 -> 40, less transparent overdraw in the small final circle */
   };
   function zoneCircleAt(sched, tSec) {
     var C = sched.circles, F = sched.fullSec, P = sched.phaseSec, H = sched.holdSec;
@@ -201,7 +205,7 @@
     { id: 'last',   label: 'Last Stand',
       blurb: 'One life. No respawn. No clock. Last one breathing wins.' },
     { id: 'zone',   label: 'Urban Zone',
-      blurb: 'The circle closes minute by minute. Outside it you bleed. One life. Urban only.' }
+      blurb: 'The circle closes minute by minute. Outside it you bleed. Respawns inside it. Urban only.' }
   ];
   /* v10.9: `hidden` takes a mode out of the PICKER without taking it out of
      the table. Deleting a mode id breaks every gate that reads MODES, the
@@ -402,9 +406,15 @@
        straight between its neighbours so the loop passes over it. */
     fillet: 28, routeN: 18, legMin: 55, legMax: 150, routeBound: 92,
     boardSec: 3, climbSec: 5, landSec: 6, unloadSec: 8, respawnSec: 180, creditSec: 10,   /* v1.0m: every 3 minutes (Rahul) */
+    /* v1.0t (Rahul: "the helicopter can't be destroyed by any gun — only an
+       RPG, or everyone downs it the moment it is airborne; the people inside
+       can still be shot"): the hull takes ROCKET damage only. Three direct
+       RPG-L hits (300 each on 900) bring it down; the launcher is legendary
+       crate loot with one round loaded and two spare, so a kill costs a crate
+       and every shot. Every other class is zero. */
     hp: 900,
-    dmgClass: { auto: 1.0, burst: 1.0, semi: 0.75, smg: 0.55, shotgun: 0.35, bolt: 0.30, pistol: 0.25, melee: 0, bow: 0, drone: 0, emp: 0, c4: 0, flame: 0.3 },
-    rocketDmg: 150
+    dmgClass: { auto: 0, burst: 0, semi: 0, smg: 0, shotgun: 0, bolt: 0, pistol: 0, melee: 0, bow: 0, drone: 0, emp: 0, c4: 0, flame: 0 },
+    rocketDmg: 300
   };
   /* a small deterministic PRNG (mulberry32) so server and clients roll the
      same route from the same seed */

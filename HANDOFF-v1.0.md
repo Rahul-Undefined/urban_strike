@@ -1,3 +1,71 @@
+# v1.0.7 (build 21) — RESPAWNS IN THE ZONE, SEATED RIDERS, QUIET BOARDING, LIGHTER LATE GAME (2026-09-16)
+
+Tagged `v1.0u`. Rahul's four:
+
+**1. Urban Zone respawns.** One-life elimination is gone from all three zone
+modes (Solo, Duos, Squads): you respawn like FFA/Squads, kills are the score,
+the clock ends it — and the circle still closes minute by minute, the pressure
+PUBG puts on a lobby. Respawns land INSIDE the circle: `pickSpawn` asks the zone
+for the candidates that will be safe, else the two nearest the centre. The
+"N ALIVE" count leaves the banner in respawn modes.
+
+**2. Riders sit in the cabin, and the hull covers them.** Others saw a rider
+"hanging" behind the machine and picked them off — a rider's snapshot trails
+the machine by the network delay. A LISTED rider is now DRAWN at their seat in
+the machine's current pose (the same eight seats the server assigns), inside,
+behind the rails. And the hull covers them: a shot reaches a rider only if it
+enters through the open door band (between the hip rail and the roof); one
+that would arrive through the floor, roof, nose or tail meets the hull. Tough,
+not impossible — the door band is the shot; a shooter level with the machine
+has it, one below does not.
+
+**3. No boarding popups.** Nobody else's boarding, lift-off or landing raises a
+toast any more; the boarder's own confirmations are gone too. The sign at the
+pad and the HUD bar carry the state ("LIFT-OFF IN 3", "Q lands · jumping is
+fatal" as a quiet HUD line).
+
+**4. The late-match lag.** What grows across a 15-minute match is untaken
+loot: every airdrop leaves five or six unmerged item meshes with name-tag
+sprites, and by the last minutes of a busy match dozens of them sat about — a
+few hundred draw calls that were not there at the start. Untaken crate items
+and floor drops now expire after 150 s (no burst, they just go). Also: the
+zone banner's DOM writes are throttled to 4 Hz and the red edge writes only on
+change (they wrote every frame); the zone wall is 64 segments and 40 m tall
+(was 96 and 60 — a transparent wall around a 42 m final circle is a lot of
+fill). The AUTO quality tier already steps down on sustained drops.
+
+`verify-zone` 44/0 (respawn modes, spawn filter), `verify-heli` 86/0 (door
+band vs floor, seats, no popups). Client gates green. Live `test.js` 329/0
+(six fewer assertions than before: the per-mode elimination checks no longer
+apply to the zone modes, by design).
+
+# v1.0.6 (build 20) — ONLY A ROCKET BRINGS IT DOWN (2026-09-15)
+
+Tagged `v1.0t`. Rahul: "the helicopter can't be destroyed by any gun — only an
+RPG, with a proper launcher in the drop loot, otherwise everyone downs it the
+moment it is airborne. The people inside can still be shot, but the hull only
+by a rocket."
+
+**The hull.** Every gun class is zero now. The RPG-L — the launcher that was
+already legendary AIRDROP loot (the exotic pool: one round loaded, two spare,
+3.6 s reload) — does 300 to the hull: three direct hits on 900 bring it down,
+so a kill costs a crate and every round in it. A gun round still stops on the
+fuselage with a spark, but no round trip is made and nothing is deducted.
+
+**The rocket meets the hull.** A flying RPG-L round that reaches the fuselage
+detonates there and reports the hit; the server's guard against a spoofed claim
+is the launcher's own cycle (a hull hit per shooter no oftener than 1.8 s — the
+server never tracked loadouts, and now does not have to). A rider's own rocket
+never tests the hull it stands in.
+
+**The riders** are as shootable as before — any gun, through the open sides —
+which is the counterplay: pick the pilot off, not the machine.
+
+`verify-heli` 79/0 (every non-rocket weapon zero; three rockets down the machine
+with both riders; a second rocket claim inside the cycle refused; the launcher
+in the exotic pool). Client gates green (bandwidth 448 KB, itemized); live
+`test.js` 335/0.
+
 # v1.0.5 (build 19) — THE HULL THAT ATE THE BULLETS (2026-09-15)
 
 Tagged `v1.0s`. Rahul: "the opponent can't be killed from the helicopter, even

@@ -41,13 +41,12 @@ console.log('--- the route wanders and the flight is endless ---');
   ok(maxDy < 1.2, 'the climb is smooth (' + maxDy.toFixed(2) + ' m/0.1 s)');
 }
 
-console.log('--- damage by class ---');
+console.log('--- damage: rockets only (v1.0t) ---');
 const dmg = w => CFG.heliDamageFor(H, CFG.WEAPONS, w);
-ok(dmg('ak47') >= 45 && Math.ceil(H.hp / dmg('ak47')) >= 15, 'an AK needs ' + Math.ceil(H.hp / dmg('ak47')) + ' hits — a magazine and a half, not five rounds');
-ok(dmg('awm') < dmg('ak47') && Math.ceil(H.hp / dmg('awm')) >= 25, 'a sniper round does less than a rifle round (' + dmg('awm') + ' vs ' + dmg('ak47') + '): ' + Math.ceil(H.hp / dmg('awm')) + ' hits');
-ok(dmg('rocket') === H.rocketDmg && Math.ceil(H.hp / dmg('rocket')) >= 5, 'a rocket does ' + dmg('rocket') + ': ' + Math.ceil(H.hp / dmg('rocket')) + ' to bring it down');
-ok(dmg('knife') === 0 && dmg('drone') === 0 && dmg('emp') === 0, 'knives, drones and the EMP do nothing to it');
-ok(Object.keys(CFG.WEAPONS).every(w => dmg(w) * 5 < H.hp), 'no weapon in the game downs it in five hits');
+ok(Object.keys(CFG.WEAPONS).filter(w => CFG.WEAPONS[w].type !== 'rocket').every(w => dmg(w) === 0), 'no gun, knife, bow, drone, EMP or C4 does anything to the hull');
+ok(dmg('rocket') === H.rocketDmg && H.rocketDmg === 300 && Math.ceil(H.hp / dmg('rocket')) === 3, 'the RPG-L does 300: three direct hits bring it down');
+ok(CFG.LOOT_ITEMS.wpn_rocket && CFG.LOOT_ITEMS.wpn_rocket.rar === 'l' && (CFG.AIRDROP.exoticPool || []).indexOf('wpn_rocket') >= 0, 'the launcher is legendary crate loot (the airdrop exotic pool)');
+ok(CFG.WEAPONS.rocket.mag === 1 && CFG.WEAPONS.rocket.reserve === 2, 'one round loaded, two spare: a kill costs the crate and every shot');
 
 console.log('--- the machine, on the server ---');
 let T0 = 5000000, killed = [], emitted = [];
@@ -91,10 +90,14 @@ ok(room.heli.state === 'flying' && room.heli.riders.length === 1 && rider.alive,
   ok(rider.alive && room.heli.riders.length === 1, 'a rider trailing 2.6 m behind and 0.6 m below the seat (network lag) stays aboard'); ride(rider); }
 // a shot from the ground
 const shooter = mk('S', 0, half, 0); room.players.set('S', shooter);
-const r1 = Srv.hit(room, shooter, 'ak47');
-ok(r1.ok && r1.dmg === dmg('ak47') && room.heli.hp === H.hp - dmg('ak47'), 'a rifle hit takes class damage off the hull');
+const r0 = Srv.hit(room, shooter, 'ak47');
+ok(r0.ok && r0.dmg === 0 && room.heli.hp === H.hp, 'a rifle hit does nothing to the hull');
+const r1 = Srv.hit(room, shooter, 'rocket');
+ok(r1.ok && r1.dmg === 300 && room.heli.hp === H.hp - 300, 'a rocket takes 300 off the hull');
+ok(!Srv.hit(room, shooter, 'rocket').ok, 'a second rocket claim inside the launcher\'s cycle is refused');
+T0 += 2000;
 ok(emitted.some(e => e.ev === 'heliHp'), 'and the room is told the health');
-ok(!Srv.hit(room, rider, 'ak47').ok, 'a rider cannot shoot the machine he is in');
+ok(!Srv.hit(room, rider, 'rocket').ok, 'a rider cannot rocket the machine he is in');
 const far = mk('F', 400, half, 400); room.players.set('F', far);
 ok(!Srv.hit(room, far, 'ak47').ok, 'a shot from 400 m away is refused');
 /* v1.0p/q: position disagreement is NOT a fall. A rider trailing the machine
@@ -160,8 +163,8 @@ T0 += (H.climbSec + 10) * 1000;
 Srv.tick(room);
 killed = [];
 let res = null, hits = 0;
-while (room.heli.state === 'flying' && hits < 200) { res = Srv.hit(room, shooter, 'ak47'); hits++; }
-ok(res && res.destroyed && res.n === 2, 'enough rifle hits bring it down with both riders [' + hits + ' hits]');
+while (room.heli.state === 'flying' && hits < 20) { T0 += 2000; res = Srv.hit(room, shooter, 'rocket'); hits++; }
+ok(res && res.destroyed && res.n === 2 && hits === 3, 'three rockets bring it down with both riders [' + hits + ' hits]');
 ok(killed.length === 2 && killed.every(k => k.w === 'helidown' && k.by === 'S'), 'both riders die, credited to the shooter, tagged helidown');
 ok(room.heli.state === 'gone' && emitted.some(e => e.ev === 'heliBoom'), 'the machine is gone and the room saw it burn');
 ok(room.heli.respawnAt >= T0 + H.respawnSec * 1000 - 1 && H.respawnSec === 180, 'it comes back ' + H.respawnSec + ' s later — every three minutes');
@@ -221,9 +224,30 @@ console.log('--- the client, in the order the game really runs ---');
     return { fromInside: fromInside, fromGroundHitsHull: !!fromGround, hullT: fromGround ? fromGround.t : null, dist: g.distanceTo(seat) };
   })()`, cx);
   ok(rr.fromInside === null, 'a rider\'s ray from inside the cabin meets no hull (the box test is skipped from inside)');
+  /* v1.0u: the hull covers the riders except through the open door band */
+  const rd = vm.runInContext(`(function(){
+    var p = Heli.pose(), cs = Math.cos(p.yaw), sn = Math.sin(p.yaw);
+    var seat = new THREE.Vector3(p.x, p.y + CFG.HELI.cabinFloor + 1.6, p.z);
+    // from the side, at rail-to-roof height: enters through the door band
+    var side = new THREE.Vector3(p.x - sn * 30, seat.y + 1.0, p.z + cs * 30);
+    var a = Heli.rayHit(side, seat.clone().sub(side).normalize(), 400);
+    // from straight below: enters through the floor
+    var below = new THREE.Vector3(p.x, p.y - 25, p.z);
+    var b = Heli.rayHit(below, seat.clone().sub(below).normalize(), 400);
+    // the seat lookup for a listed rider
+    Heli.set({ state: 'flying', t0: Date.now() - 20000, hp: 900, riders: ['A', 'B'], seed: 12345 }); Heli.update(0.016);
+    var sA = Heli.seatFor('A'), sB = Heli.seatFor('B'), sZ = Heli.seatFor('nobody');
+    var p2 = Heli.pose();
+    return { sideOpening: a ? a.opening : null, belowOpening: b ? b.opening : null, seats: sA && sB && !sZ, seatDist: sA ? Math.hypot(sA.x - p2.x, sA.z - p2.z) : null, seatY: sA ? sA.y - p2.y : null, apart: sA && sB ? sA.distanceTo(sB) : null };
+  })()`, cx);
+  ok(rd.sideOpening === true, 'a shot from the side at rail-to-roof height enters through the open door band — the rider can be hit');
+  ok(rd.belowOpening === false, 'a shot from below meets the floor — blocked (tough, not impossible)');
+  ok(rd.seats && rd.seatDist < 1.2 && Math.abs(rd.seatY - CFG.HELI.cabinFloor) < 1e-6 && rd.apart > 1.5, 'listed riders are placed at cabin seats (inside, at floor height, apart); an unlisted player has none');
+  ok(/hh\.opening/.test(fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/system.js'), 'utf8')), 'the hitscan lets a player hit through the hull only via an opening');
+  ok(/Heli\.seatFor\(id, seatTmp\)/.test(fs.readFileSync(path.join(__dirname, '..', 'public/src/networking/net.js'), 'utf8')), 'remote riders are drawn at their seats, not at the lagging snapshot');
   ok(rr.fromGroundHitsHull === true && rr.hullT < rr.dist, 'a ground shooter\'s ray does meet the hull before the seat (' + (rr.hullT || 0).toFixed(1) + ' m of ' + rr.dist.toFixed(1) + ')...');
   const wsys2 = fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/system.js'), 'utf8');
-  ok(/!\(Heli\.isRiding && Heli\.isRiding\(\)\)/.test(wsys2) && /!\(hit && hit\.type === 'player'\)/.test(wsys2), '...but the hitscan lets a PLAYER hit beat the hull, and never tests the hull for a shooter aboard');
+  ok(/!\(Heli\.isRiding && Heli\.isRiding\(\)\)/.test(wsys2) && /!\(hit && hit\.type === 'player' && hh\.opening\)/.test(wsys2), '...but the hitscan lets a PLAYER hit through an opening beat the hull, and never tests the hull for a shooter aboard');
   ok(!/hit\.remote/.test(wsys2), 'the dead `hit.remote` exemption is gone');
   ok(r.near === true && r.boarded === true, 'near the pad the client offers boarding and Z boards');
   ok(r.far === false, '30 m away it does not');
@@ -277,8 +301,12 @@ const game = fs.readFileSync(path.join(__dirname, '..', 'public/src/core/game.js
 ok(/function platformProbe/.test(game) && /Heli\.floorAt\(pos, halfY\)/.test(game) && /Heli\.bail\(\)/.test(game), 'the controller gets the cabin floor and Space bails');
 ok(/Heli\.canBoard\(\)\) \{ Heli\.board\(\)/.test(game), 'Z near the machine boards it before anything else');
 ok(/KeyQ.*Heli\.landRequest\(\)/.test(game), 'Q aboard the flying helicopter brings it down');
+const heliSrvSrc = fs.readFileSync(path.join(__dirname, '..', 'server/lib/heli.js'), 'utf8');
+ok(!/toast[^\n]*is airborne \\u00b7/.test(heliSrvSrc) && !/bringing the helicopter down/.test(heliSrvSrc) && !/Z to fly again/.test(heliSrvSrc), 'no room-wide popups for boarding, lift-off or landing (v1.0u)');
+ok(!/boarded the helicopter/.test(fs.readFileSync(path.join(__dirname, '..', 'public/src/networking/net.js'), 'utf8')), 'the boarding notice is state only, never a toast');
 const wsys = fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/system.js'), 'utf8');
-ok(/Heli\.rayHit\(o, d, reach\)/.test(wsys) && /Net\.hitHeli\(current/.test(wsys), 'the hitscan tests the fuselage first and reports the weapon');
+ok(/Heli\.rayHit\(o, d, reach\)/.test(wsys) && !/Net\.hitHeli\(current/.test(wsys), 'a gun round stops on the fuselage with a spark and reports nothing (v1.0t)');
+ok(/Heli\.rayHit\(p\.pos, dir, step \+ 0\.6\)/.test(wsys) && /Net\.hitHeli\('rocket'/.test(wsys), 'a flying rocket that meets the fuselage detonates there and reports the rocket');
 const outer = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/districts-outer.js'), 'utf8');
 ok(/CFG\.HELI\.pad/.test(outer), 'the pad is built from the same config');
 /* v1.0o: the hints and the death screen name the right machine */

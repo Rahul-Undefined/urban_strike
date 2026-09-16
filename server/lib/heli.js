@@ -156,7 +156,6 @@ module.exports = function initHeli(ctx) {
     h.from = { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw };
     h.state = 'returning'; h.t0 = now();
     broadcast(room);
-    io.to(room.code).emit('toast', { msg: p.name + ' is bringing the helicopter down' });
     return { ok: true };
   }
 
@@ -181,7 +180,6 @@ module.exports = function initHeli(ctx) {
         h.state = 'flying'; h.t0 = t; h.boardSince = 0; h.flightStart = t; h.emptySince = 0; h.from = null; h.trail = []; h.outCount = {};
         h.seed = 1 + Math.floor(Math.random() * 2147483000); pathFor(h.seed);
         broadcast(room);
-        io.to(room.code).emit('toast', { msg: 'The helicopter is airborne \u00b7 ' + h.riders.length + ' aboard \u00b7 a rider presses Q to land' });
         return;
       }
       if (!h.riders.length) h.boardSince = 0;
@@ -199,7 +197,7 @@ module.exports = function initHeli(ctx) {
         for (const id of h.riders) { const q = room.players.get(id); if (!q || !q.alive || q.out) continue; if (!fallen(room, pose, q)) { h.outCount[id] = 0; still.push(id); continue; } h.outCount[id] = (h.outCount[id] || 0) + 1; if (h.outCount[id] < 2) { still.push(id); continue; } fall(room, q, 'lost'); }
         if (still.length !== h.riders.length) { h.riders = still; broadcast(room); }
       }
-      if (pose.phase === 'down') { h.state = 'landed'; h.t0 = t; h.emptySince = 0; h.from = null; broadcast(room); io.to(room.code).emit('toast', { msg: 'The helicopter has landed \u00b7 Z to fly again, ' + CFG.HELI.unloadSec + ' s before it leaves' }); }
+      if (pose.phase === 'down') { h.state = 'landed'; h.t0 = t; h.emptySince = 0; h.from = null; broadcast(room); }
       return;
     }
     if (h.state === 'flying') {
@@ -244,7 +242,15 @@ module.exports = function initHeli(ctx) {
     if (Math.sqrt(dx * dx + dy * dy + dz * dz) > 320) return { ok: false, err: 'Out of range' };
     if (h.riders.indexOf(shooter.id) >= 0) return { ok: false, err: 'You are aboard' };
     const dmg = CFG.heliDamageFor(CFG.HELI, CFG.WEAPONS, w);
-    if (dmg <= 0) return { ok: true, dmg: 0, hp: h.hp };
+    if (dmg <= 0) return { ok: true, dmg: 0, hp: h.hp, err: 'Only a rocket hurts the hull' };   /* v1.0t: every gun is zero */
+    /* v1.0t: the server does not track loadouts (it never did), so the guard
+       against a spoofed rocket claim is the launcher's own cycle: one round
+       loaded, a 3.6 s reload — a hull hit per shooter no oftener than 1.8 s. */
+    if (CFG.WEAPONS[w].type === 'rocket') {
+      const tNow = now();
+      if (shooter.lastHeliRocketAt && tNow - shooter.lastHeliRocketAt < 1800) return { ok: false, err: 'Too fast' };
+      shooter.lastHeliRocketAt = tNow;
+    }
     h.hp = Math.max(0, h.hp - dmg); h.lastHitBy = shooter.id; h.lastHitAt = now();
     io.to(room.code).emit('heliHp', { hp: h.hp, max: CFG.HELI.hp, by: shooter.id });
     if (h.hp <= 0) {

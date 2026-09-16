@@ -491,10 +491,14 @@ var FX = (function () {
 
   /* v1.0j: the zone's red edge — a persistent vignette while outside. */
   var zoneEdgeEl = null;
+  var zoneEdgeLast = -1;
   function zoneEdge(strength) {
     if (!zoneEdgeEl) zoneEdgeEl = document.getElementById('zone-edge');
     if (!zoneEdgeEl) return;
-    zoneEdgeEl.style.opacity = String(Math.max(0, Math.min(1, strength)));
+    var v = Math.round(Math.max(0, Math.min(1, strength)) * 20) / 20;   /* v1.0u: write the style only when it changes */
+    if (v === zoneEdgeLast) return;
+    zoneEdgeLast = v;
+    zoneEdgeEl.style.opacity = String(v);
   }
   function damageFlash(strength) {
     if (!vignetteEl) return;

@@ -12,6 +12,7 @@
    red and the circle green (minimap.js). */
 var Zone = (function () {
   var sched = null, scene = null, wall = null, nextRing = null, cur = null, wasOut = false, lastNotice = 0;
+  var lastBannerAt = 0, lastUrgent = null;
   var WALL_MAT = null, RING_MAT = null;
 
   function matchTime() {
@@ -27,7 +28,7 @@ var Zone = (function () {
     var Z = CFG.ZONE || { wallHeight: 60 };
     if (!WALL_MAT) WALL_MAT = new THREE.MeshBasicMaterial({ color: 0xff3a2a, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
     if (!RING_MAT) RING_MAT = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
-    wall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, Z.wallHeight || 60, 96, 1, true), WALL_MAT);
+    wall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, Z.wallHeight || 60, 64, 1, true), WALL_MAT);   /* v1.0u: 96 -> 64 segments */
     wall.position.y = (Z.wallHeight || 60) / 2 - 1;
     wall.frustumCulled = false;
     scene.add(wall);
@@ -79,8 +80,12 @@ var Zone = (function () {
       else if (cur.next) banner = 'NEXT CIRCLE IN ' + fmt(cur.holdLeft) + ' \u00b7 ' + Math.ceil(cur.r - d) + ' m inside';
       else banner = 'FINAL CIRCLE \u00b7 ' + Math.ceil(cur.r - d) + ' m inside';
     }
-    if (typeof UI !== 'undefined' && UI.aliveCount) { var na = UI.aliveCount(); if (na > 0) banner += ' \u00b7 ' + na + ' ALIVE'; }
-    if (typeof UI !== 'undefined' && UI.setZoneBanner) UI.setZoneBanner(banner, urgent);
+    /* v1.0u: DOM writes are throttled — the banner text every 250 ms, the count only
+       when the mode has lives to count (respawn modes show none) */
+    var mm = (typeof CFG !== 'undefined' && CFG.MODES && Net.getMatch) ? CFG.MODES[Net.getMatch().mode] : null;
+    if (mm && mm.lives === 1 && typeof UI !== 'undefined' && UI.aliveCount) { var na = UI.aliveCount(); if (na > 0) banner += ' \u00b7 ' + na + ' ALIVE'; }
+    var nowB = performance.now();
+    if (typeof UI !== 'undefined' && UI.setZoneBanner && (nowB - lastBannerAt > 250 || urgent !== lastUrgent)) { UI.setZoneBanner(banner, urgent); lastBannerAt = nowB; lastUrgent = urgent; }
     if (out !== wasOut && typeof UI !== 'undefined' && UI.toast) {
       UI.toast(out ? 'You are outside the zone \u2014 10% health a second' : 'Back inside the zone', out);
       wasOut = out;

@@ -8,6 +8,14 @@ doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
 every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
 count toward the next strike; Shift while scoped holds your breath.
 
+**v1.0.7 — RESPAWNS IN THE ZONE.** Urban Zone respawns (inside the circle);
+helicopter riders sit in the cabin behind the rails and can only be hit through
+the open door band; no boarding popups; untaken loot expires so late matches
+stay smooth.
+
+**v1.0.6 — ONLY A ROCKET.** Guns no longer scratch the helicopter's hull; three
+RPG-L hits (legendary airdrop loot) bring it down. The riders are still fair game.
+
 **v1.0.5 — SHOOT FROM THE HELICOPTER, AND AT IT.** Riders' rounds no longer
 stop at their own hull; a ground shot at a rider through the open door lands.
 

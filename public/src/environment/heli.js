@@ -208,9 +208,9 @@ var Heli = (function () {
     if (!canBoard() || typeof Net === 'undefined' || !Net.boardHeli) return false;
     Net.boardHeli(function (res) {
       if (!res || !res.ok) { if (res && res.err && typeof UI !== 'undefined') UI.toast(res.err, true); return; }
-      if (res.relaunch) { if (typeof UI !== 'undefined') UI.toast('Lifting off again in ' + cfg.boardSec + ' s'); return; }   // v1.0q: already seated, flying again
+      if (res.relaunch) return;   // v1.0q/u: already seated, flying again — the HUD counts it down
       if (res.seat) onSeat({ pos: res.seat, aboard: true, liftIn: cfg.boardSec });   // v1.0o: sit down NOW, before the next state update goes out
-      if (res.aboard && typeof UI !== 'undefined') UI.toast('Aboard the helicopter \u00b7 lifting off in ' + cfg.boardSec + ' s \u00b7 Z again to step off');
+      /* v1.0u: no popup on boarding — the prompt already read "Z — BOARD"; the HUD shows LIFT-OFF IN */
     });
     return true;
   }
@@ -230,7 +230,7 @@ var Heli = (function () {
   function riderHud() {
     if (typeof PlayerCtl === 'undefined' || typeof UI === 'undefined') return;
     var aboard = !!PlayerCtl.onPlatform && PlayerCtl.platformSrc === 'heli' && isRiding();
-    if (aboard && !wasAboard && UI.toast && performance.now() - boardToastAt > 4000) { UI.toast('AIRBORNE \u2014 move freely inside; Q brings it down at the pad; jumping is fatal', true); boardToastAt = performance.now(); }
+    if (aboard && !wasAboard && UI.setHeliHint) UI.setHeliHint('Q lands \u00b7 jumping is fatal'); else if (!aboard && wasAboard && UI.setHeliHint) UI.setHeliHint('');   /* v1.0u: a quiet HUD line, not a popup */
     wasAboard = aboard;
   }
   function rotorSound() {
@@ -270,6 +270,27 @@ var Heli = (function () {
     return false;
   }
 
+  /* ---------- where a listed rider IS (v1.0u) ----------
+     A remote rider's snapshot trails the machine by the network delay, so
+     others saw them "hanging" behind the cabin and picked them off. A LISTED
+     rider is drawn at their seat in the machine's current pose — the same
+     seats the server assigned — so they sit inside, behind the rails. */
+  var SEATS = [[-0.9, -0.6], [0.9, -0.6], [-0.9, 0.6], [0.9, 0.6], [-0.3, -0.6], [0.3, -0.6], [-0.3, 0.6], [0.3, 0.6]];
+  function seatFor(id, out) {
+    if (!active() || !pose || !state || !state.riders) return null;
+    if (state.state !== 'flying' && state.state !== 'returning') return null;
+    var idx = state.riders.indexOf(id);
+    if (idx < 0) return null;
+    var sd = SEATS[idx % SEATS.length], cs = Math.cos(pose.yaw), sn = Math.sin(pose.yaw);
+    out = out || new THREE.Vector3();
+    out.set(pose.x + sd[0] * cs - sd[1] * sn, pose.y + cfg.cabinFloor, pose.z + sd[0] * sn + sd[1] * cs);
+    return out;
+  }
+  /* is a hull-local point inside an OPEN side (between the hip rail and the roof, on a side face)? */
+  function isOpening(local) {
+    return Math.abs(local.z) > CAB_HZ - 0.15 && local.y > 1.42 && local.y < 2.58 && local.x > -1.85 && local.x < 1.95;
+  }
+
   /* ---------- shooting it ---------- */
   var _inv = new THREE.Matrix4(), _o = new THREE.Vector3(), _d = new THREE.Vector3(), _box = new THREE.Box3(new THREE.Vector3(-7.2, 0, -1.6), new THREE.Vector3(3.8, 3.6, 1.6)), _ray = new THREE.Ray(), _hit = new THREE.Vector3();
   function rayHit(origin, dir, maxDist) {
@@ -282,11 +303,11 @@ var Heli = (function () {
     if (!_ray.intersectBox(_box, _hit)) return null;
     var t = _hit.distanceTo(_o);
     if (t > maxDist) return null;
-    return { t: t, point: _hit.clone().applyMatrix4(group.matrixWorld) };
+    return { t: t, point: _hit.clone().applyMatrix4(group.matrixWorld), local: _hit.clone(), opening: isOpening(_hit) };
   }
 
   function clear() { pending = null; set(null); }   /* v1.0n: leaving the match forgets the machine */
   return { init: init, dispose: dispose, set: set, clear: clear, hpUpdate: hpUpdate, update: update, floorAt: floorAt, bail: bail, rayHit: rayHit,
-    canBoard: canBoard, board: board, onSeat: onSeat, landRequest: landRequest,
+    canBoard: canBoard, board: board, onSeat: onSeat, landRequest: landRequest, seatFor: seatFor,
     active: active, isRiding: isRiding, pose: function () { return pose; }, state: function () { return state; } };
 })();

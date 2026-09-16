@@ -250,7 +250,7 @@ var Pickups = (function () {
     var pos = e.grp.position;
     var it = CFG.LOOT_ITEMS[e.t] || {};
     AudioSys.pickupSnd(it.kind === 'heal' ? 'health' : 'armor', pos);
-    FX.pickupBurst(pos.clone(), rarityColorOf(e.t));
+    if (!d.expired) FX.pickupBurst(pos.clone(), rarityColorOf(e.t));   /* v1.0u: an expiring item just goes; no burst */
     if (mine && (it.kind === 'heal' || it.kind === 'armor') && it.label) UI.toast(it.label);
     /* v10.9: an airdrop item never comes back, so hiding it keeps a mesh and
        its buffers alive for the rest of the match. The server says which ones

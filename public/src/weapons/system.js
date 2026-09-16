@@ -607,13 +607,16 @@ var Weapons = (function () {
          and a PLAYER hit always beats the hull. */
       if (typeof Heli !== 'undefined' && Heli.active && Heli.active() && !(Heli.isRiding && Heli.isRiding())) {
         var hh = Heli.rayHit(o, d, reach);
-        if (hh && (!hit || hh.t < hit.t) && !(hit && hit.type === 'player')) {
+        /* v1.0u: the hull COVERS the riders. A shot that reaches a rider must
+           enter through an open side (between the hip rail and the roof); one
+           that would arrive through the floor, roof, nose or tail meets the
+           hull instead. Tough, not impossible: the door band is the shot. */
+        if (hh && (!hit || hh.t < hit.t) && !(hit && hit.type === 'player' && hh.opening)) {
           var hEnd = hh.point;
           FX.tracer(mz, hEnd, w.trc); FX.impact(hEnd, d.clone().negate());
-          Net.hitHeli(current, function (res) {
-            if (res && res.ok && res.dmg > 0) UI.hitmarker(false);
-            if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard');
-          });
+          /* v1.0t: a gun round stops on the hull with a spark and does NOTHING — the
+             server's class table is zero for every gun; only the RPG (a projectile,
+             see updateProjectiles) damages the machine. No round trip for a spark. */
           continue;
         }
       }
@@ -959,8 +962,17 @@ var Weapons = (function () {
           if (hitPlayer || !r.alive) return;
           if (r.renderPos.distanceTo(p.pos) < 0.85) hitPlayer = true;
         });
-        if (wh || hitPlayer || p.life > 6) {
-          if (wh) p.pos.copy(wh.point).addScaledVector(dir, -0.05);
+        /* v1.0t: the ONE thing that hurts the helicopter's hull. A rocket that
+           meets the fuselage this step detonates there and tells the server
+           (hitHeli with the rocket's own id: class damage 300). A rider's own
+           rocket never tests the hull it is standing in. */
+        var hitHeli = false;
+        if (p.mine && typeof Heli !== 'undefined' && Heli.active && Heli.active() && !(Heli.isRiding && Heli.isRiding())) {
+          var hhR = Heli.rayHit(p.pos, dir, step + 0.6);
+          if (hhR) { hitHeli = true; p.pos.copy(hhR.point).addScaledVector(dir, -0.3); Net.hitHeli('rocket', function (res) { if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard'); else if (res && res.ok) UI.hitmarker(false); }); }
+        }
+        if (wh || hitPlayer || hitHeli || p.life > 6) {
+          if (wh && !hitHeli) p.pos.copy(wh.point).addScaledVector(dir, -0.05);
           detonate(p); scene.remove(p.mesh); projectiles.splice(i, 1);
         } else {
           p.pos.addScaledVector(dir, step);

@@ -1029,8 +1029,10 @@ var UI = (function () {
     e.classList.add('on');
     var f = document.getElementById('heli-fill'), t = document.getElementById('heli-txt');
     if (f) f.style.width = Math.round(100 * Math.max(0, h.hp) / Math.max(1, h.max)) + '%';
-    if (t) t.textContent = (h.state === 'flying' ? 'HELICOPTER AIRBORNE' : h.state === 'returning' ? 'HELICOPTER RETURNING' : h.state === 'landed' ? 'HELICOPTER LANDED' : 'HELICOPTER ON THE PAD') + ' \u00b7 ' + Math.max(0, h.hp | 0);
+    if (t) t.textContent = (h.state === 'flying' ? 'HELICOPTER AIRBORNE' : h.state === 'returning' ? 'HELICOPTER RETURNING' : h.state === 'landed' ? 'HELICOPTER LANDED' : 'HELICOPTER ON THE PAD') + ' \u00b7 ' + Math.max(0, h.hp | 0) + (heliHint ? ' \u00b7 ' + heliHint : '');
   }
+  var heliHint = '';
+  function setHeliHint(txt) { heliHint = txt || ''; }   /* v1.0u: the rider's one-line reminder lives in the HUD bar */
   /* v1.0j: the zone banner under the timer */
   function setZoneBanner(text, urgent) {
     var e = document.getElementById('zone-banner');
@@ -1471,6 +1473,7 @@ var UI = (function () {
     setBreath: setBreath,                   /* v1.0e */
     setZoneBanner: setZoneBanner,           /* v1.0j */
     setHeliHud: setHeliHud,                 /* v1.0l */
+    setHeliHint: setHeliHint,               /* v1.0u */
     aliveCount: function () {               /* v1.0k: operators still in it (Urban Zone's "N ALIVE") */
       if (!lastLobby || !lastLobby.players) return 0;
       return lastLobby.players.filter(function (p) { return !p.out && p.connected !== false; }).length;

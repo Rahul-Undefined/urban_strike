@@ -446,6 +446,7 @@ function pickSpawn(room, forP) {
   const all = mapData(room).SPAWNS.map((s, i) => ({ s, i }));
   let candidates = all.filter(c => !teams || c.s[3] === forP.team || c.s[3] === 'n');
   if (!candidates.length) candidates = all;
+  if (room.zone) candidates = Zone.spawnFilter(room, candidates);   /* v1.0u: inside the circle */
   const alive = [...room.players.values()].filter(p => p.alive && p.id !== forP.id);
   const enemies = alive.filter(p => !teams || p.team !== forP.team);
   const friends = alive.filter(p => teams && p.team === forP.team);
@@ -701,6 +702,7 @@ function startSnapshots(room) {
     Nuke.tick(room);                         // v10.10 killhouse killstreak
     Hazards.tick(room);                      // v1.0b fire zones + C4 fuses
     Zone.tick(room);                         // v1.0j the circle
+    Loot.expireDrops(room);                  // v1.0u untaken crate loot expires
     Heli.tick(room);                         // v1.0l the helicopter
     regenTick(room);
     if (++room.snapN % 60 === 0) pushLobby(room); // live K/D/assists/damage refresh (~4 s)
@@ -1413,7 +1415,7 @@ io.on('connection', (socket) => {
     p.lastDrop = now();
     const a = (p.yaw || 0), fx = Math.sin(a), fz = -Math.cos(a);
     const pk = { id: room.nextLootId++, t: key, pos: [p.pos[0] + fx * 0.9, p.pos[1] + 0.55, p.pos[2] + fz * 0.9],
-      cls: 'g', active: true, respawnAt: 0, noRespawn: true };
+      cls: 'g', active: true, respawnAt: 0, noRespawn: true, expireAt: now() + (CFG.AIRDROP.itemTtlSec || 150) * 1000 };   /* v1.0u */
     room.pickups.push(pk);
     io.to(room.code).emit('lootAdd', { items: [{ id: pk.id, t: pk.t, p: pk.pos, active: true }] });
     ack({ ok: true, floor: 1 });

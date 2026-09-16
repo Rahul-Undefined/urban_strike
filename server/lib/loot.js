@@ -83,6 +83,15 @@ function plantRemote(room) {
     pos: [pt[0] + Math.cos(a) * 0.6, pt[1] - 0.25, pt[2] + Math.sin(a) * 0.6],
     cls: 's', active: true, respawnAt: 0, noRespawn: true, hidden: 1 });
 }
+/* v1.0u: remove one-off pickups past their expiry; tell the room */
+function expireDrops(room, io, now) {
+  if (!room.pickups) return;
+  const t = now();
+  for (let i = room.pickups.length - 1; i >= 0; i--) {
+    const pk = room.pickups[i];
+    if (pk.expireAt && pk.active && t >= pk.expireAt) { room.pickups.splice(i, 1); io.to(room.code).emit('pickup', { id: pk.id, by: null, expired: true, gone: true }); }
+  }
+}
 function pickupList(room) {
   return room.pickups.map(pk => {
     const o = { id: pk.id, t: pk.t, p: pk.pos, active: pk.active };
@@ -260,6 +269,9 @@ function dropCrate(room) {
       room.pickups.push(pk);
       return { id: pk.id, t: pk.t, p: pk.pos, active: true };
     });
+    /* v1.0u: crate loot nobody takes expires (see expireDrops) — by the last minutes
+       of a match the untaken crate items were dozens of unmerged meshes. */
+    for (const it of items) { const pk = room.pickups.find(k => k.id === it.id); if (pk) pk.expireAt = now() + (CFG.AIRDROP.itemTtlSec || 150) * 1000; }
     io.to(room.code).emit('lootAdd', { items, x: pt[0], z: pt[1] });
   }, CFG.AIRDROP.fallSec * 1000);
 }
@@ -267,5 +279,5 @@ function dropCrate(room) {
 // ---------- match lifecycle ----------
 
   return { initPickups, pickupList, tryCollect, respawnPickups,
-    scheduleAirdrop, clearAirdrop, dropCrate };
+    scheduleAirdrop, clearAirdrop, dropCrate , expireDrops: (room) => expireDrops(room, io, now) };
 };

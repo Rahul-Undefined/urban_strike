@@ -176,7 +176,10 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
 /* ===== v1.0q — 440 -> 444 KB. THE WANDERING FLIGHT + Q-LANDING, STATED PLAINLY =====
    Measured 441 gzipped: the seeded route generator and endless/return poses in
    world.config.js, the client route-from-seed and Q-landing in heli.js. ~2 KB gz. */
-const GZ_BUDGET_KB = 444;
+/* ===== v1.0t — 444 -> 448 KB. Builds 18-20 stated plainly: the second train
+   (train.js factory), dress colours (ui.js pickers), the rocket-on-hull path
+   and its comments. ~3 KB gz over three builds. */
+const GZ_BUDGET_KB = 448;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

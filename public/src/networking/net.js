@@ -11,6 +11,7 @@ var Net = (function () {
   var roster = [];    // lobby payload players (names/colors/scores)
   var ping = 0;
   var match = { killTarget: 15, minutes: 10, mode: 'ffa', startedAt: 0, serverOffset: 0 };
+  var seatTmp = new THREE.Vector3();   /* v1.0u: scratch for a rider's seat */
   /* v9.8: the delta baseline. snapCache holds the last known state per wire
      slot; slotToId maps a slot back to the player id everything else uses. */
   var snapCache = {}, slotToId = {};
@@ -544,10 +545,9 @@ var Net = (function () {
     s.on('heliState', function (d) { if (typeof Heli !== 'undefined') Heli.set(d); });
     s.on('heliHp', function (d) { if (typeof Heli !== 'undefined') Heli.hpUpdate(d); });
     s.on('heliNotice', function (d) {
-      if (d && d.kind === 'boarding') {
-        UI.toast((d.name ? d.name + ' boarded the helicopter \u00b7 ' : 'Helicopter boarding \u00b7 ') + 'lifting off in ' + d.in + ' s');
-        if (typeof Heli !== 'undefined' && Heli.state && Heli.state()) Heli.state().liftIn = d.in;
-      }
+      /* v1.0u: no popup for anyone else's boarding — the sign at the pad and the
+         HUD carry the count; only the lift-off timer state is taken */
+      if (d && d.kind === 'boarding' && typeof Heli !== 'undefined' && Heli.state && Heli.state()) Heli.state().liftIn = d.in;
     });
     s.on('heliSeat', function (d) { if (typeof Heli !== 'undefined') Heli.onSeat(d); });   /* v1.0m: the server seats us */
     s.on('heliBoom', function (d) {
@@ -1024,6 +1024,8 @@ var Net = (function () {
         a.p[1] + (b.p[1] - a.p[1]) * f,
         a.p[2] + (b.p[2] - a.p[2]) * f
       );
+      /* v1.0u: a helicopter rider is drawn in their seat, not where the lagging snapshot has them */
+      if (typeof Heli !== 'undefined' && Heli.seatFor) { var seatV = Heli.seatFor(id, seatTmp); if (seatV) r.renderPos.set(seatV.x, seatV.y + CFG.PLAYER.standH / 2, seatV.z); }
       var dry = b.ry - a.ry;
       if (dry > Math.PI) dry -= Math.PI * 2;
       if (dry < -Math.PI) dry += Math.PI * 2;

@@ -80,7 +80,16 @@ module.exports = function initZone(ctx) {
     if (found.length) return found;
     return [[Math.round(c.cx * 10) / 10, Math.round(c.cz * 10) / 10]];
   }
+  /* v1.0u: respawns land INSIDE the circle — the spawn candidates that will be
+     safe now; if none, the ones nearest the centre. */
+  function spawnFilter(room, candidates) {
+    if (!room.zone || !room.startedAt || !candidates || !candidates.length) return candidates;
+    const c = CFG.zoneCircleAt(room.zone.sched, (now() - room.startedAt) / 1000 + 2);
+    const inside = candidates.filter(k => CFG.zoneInside({ cx: c.cx, cz: c.cz, r: Math.max(3, c.r - 4) }, k.s[0], k.s[1]));
+    if (inside.length) return inside;
+    return candidates.slice().sort((a, b) => Math.hypot(a.s[0] - c.cx, a.s[1] - c.cz) - Math.hypot(b.s[0] - c.cx, b.s[1] - c.cz)).slice(0, 2);
+  }
   function reset(room) { room.zone = null; }
 
-  return { isZoneRoom, start, tick, cratePoints, circleNow, reset };
+  return { isZoneRoom, start, tick, cratePoints, circleNow, reset, spawnFilter };
 };

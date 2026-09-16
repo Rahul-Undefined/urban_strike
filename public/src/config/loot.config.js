@@ -355,6 +355,7 @@
 
   var AIRDROP = {
     periodSec: 150, fallSec: 4,
+    itemTtlSec: 150,   /* v1.0u: an untaken crate item vanishes after this — late-match draw calls */
     points: [[0, -30], [-20, 8], [24, 40], [-40, -6], [0, -48], [46, 26],
       [-37, -86], [87.7, -18], [0, 86], [-88, 10],
       /* v15.0 (fix 4): the ring boulevard — open asphalt, nothing overhead. */

@@ -11,18 +11,18 @@ function ok(c, m) { console.log('  ' + (c ? 'PASS' : 'FAIL') + '  ' + m); c ? pa
 
 console.log('--- the mode ---');
 const M = CFG.MODES.zone;
-ok(!!M && M.zone === true && M.lives === 1 && M.teams === false, 'Urban Zone exists: solo, one life');
+ok(!!M && M.zone === true && !M.lives && M.teams === false, 'Urban Zone exists: solo, unlimited respawns (v1.0u)');
 ok(M.mapLock === 'urban', 'and is locked to Urban');
 ok(CFG.MODE_CATS.some(c => c.id === 'zone') && CFG.modesInCat('zone').indexOf('zone') >= 0, 'the picker has an Urban Zone category with the mode in it');
 ok(CFG.MODE_CATS.map(c => c.id).slice(0, 4).join(',') === 'ffa,team,squads,last', 'the four human categories still lead');
 ok(CFG.GEAR.zone && CFG.GEAR.zone.label, 'the kill feed has a name for it');
 /* v1.0l: squads */
-ok(CFG.MODES.zsq2 && CFG.MODES.zsq2.zone && CFG.MODES.zsq2.teams && CFG.MODES.zsq2.squads && CFG.MODES.zsq2.lives === 1 && CFG.MODES.zsq2.mapLock === 'urban',
-  'Urban Zone Duos: squads of 2, one life, the circle, Urban');
+ok(CFG.MODES.zsq2 && CFG.MODES.zsq2.zone && CFG.MODES.zsq2.teams && CFG.MODES.zsq2.squads && !CFG.MODES.zsq2.lives && CFG.MODES.zsq2.mapLock === 'urban',
+  'Urban Zone Duos: squads of 2, respawns, the circle, Urban');
 ok(CFG.MODES.zsq3 && CFG.MODES.zsq3.zone && CFG.MODES.zsq3.teamCount === 5 && CFG.MODES.zsq3.squadSize === 3 && CFG.MODES.zsq3.maxPlayers === 15,
   'Urban Zone Squads: five squads of three');
 ok(CFG.modesInCat('zone').length === 3, 'the Urban Zone category offers Solo, Duos and Squads [' + CFG.modesInCat('zone').join(',') + ']');
-ok(CFG.activeTeams('zsq3').length === 5 && CFG.livesFor('zsq3') === 1, 'the team and life helpers read the squad variant like Last Stand squads');
+ok(CFG.activeTeams('zsq3').length === 5 && !CFG.isElimination('zsq3'), 'the team helpers read the squad variant; nobody is eliminated');
 
 console.log('--- the schedule ---');
 const Z = CFG.ZONE;
@@ -89,6 +89,18 @@ T0 += 1000; ZoneSrv.tick(room);
 ok(!outside.alive && killed.length === 1 && killed[0].w === 'zone', 'the tenth second kills, tagged zone');
 const nz = { code: 'N', state: 'playing', settings: { mode: 'ffa', map: 'urban' }, players: new Map(), startedAt: T0 - 800000 };
 ok(ZoneSrv.start(nz) === null && !nz.zone, 'a non-zone room gets no schedule');
+
+console.log('--- respawns land inside the circle (v1.0u) ---');
+{
+  const cands = CFG.SPAWNS ? null : null;
+  const fake = [{ s: [fc.cx, fc.cz, 0, 'n'] }, { s: [fc.cx + fc.r + 30, fc.cz, 0, 'n'] }, { s: [fc.cx - 5, fc.cz + 5, 0, 'n'] }];
+  const inside = ZoneSrv.spawnFilter(room, fake);
+  ok(inside.length === 2 && inside.every(k => Math.hypot(k.s[0] - fc.cx, k.s[1] - fc.cz) <= fc.r), 'spawn candidates outside the circle are dropped [' + inside.length + ' of 3 kept]');
+  const farOnly = ZoneSrv.spawnFilter(room, [{ s: [fc.cx + 200, fc.cz, 0, 'n'] }, { s: [fc.cx + 90, fc.cz, 0, 'n'] }, { s: [fc.cx + 150, fc.cz, 0, 'n'] }]);
+  ok(farOnly.length === 2 && farOnly[0].s[0] === fc.cx + 90, 'with none inside, the two nearest the centre are used');
+  const srvSrc = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  ok(/if \(room\.zone\) candidates = Zone\.spawnFilter\(room, candidates\)/.test(srvSrc), 'pickSpawn asks the zone');
+}
 
 console.log('--- the crates ---');
 const pts = CFG.AIRDROP.points;
