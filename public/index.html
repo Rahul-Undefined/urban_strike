@@ -47,7 +47,13 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
 #heli-hud{position:fixed;right:26px;top:230px;width:190px;display:none;z-index:43;font-size:10px;letter-spacing:.14em;color:#dfe7f2;text-shadow:0 2px 3px #000}
 #heli-hud.on{display:block}
 #heli-hud .bar{height:6px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.25);margin-top:3px}
-#heli-fill{height:100%;background:linear-gradient(90deg,#7f9448,#d6913f)}
+#heli-hud .hrow{margin-bottom:6px}
+#heli-hud .fill{height:100%;background:linear-gradient(90deg,#7f9448,#d6913f)}
+/* v1.0x: the rider's hull bar, left, above the health bar */
+#heli-rider{position:fixed;left:26px;bottom:118px;width:260px;display:none;z-index:43;font-size:11px;letter-spacing:.14em;color:#dfe7f2;text-shadow:0 2px 3px #000}
+#heli-rider.on{display:block}
+#heli-rider .bar{height:10px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.3);margin-top:4px}
+#heli-rider-fill{height:100%;background:linear-gradient(90deg,#d6913f,#ff6b5a)}
 /* v1.0m: the boarding prompt, centre-low like an interact hint */
 #heli-prompt{position:fixed;left:50%;top:60%;transform:translateX(-50%);display:none;z-index:43;font-size:13px;letter-spacing:.16em;
   color:#7ef0ff;text-shadow:0 2px 4px #000;padding:5px 14px;border:1px solid rgba(126,240,255,.5);background:rgba(10,14,20,.6);border-radius:3px}
@@ -317,7 +323,8 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
   <div id="visor-pip">RECON VISOR</div>
   <div id="breath-bar" class="hidden"><div id="breath-fill"></div></div>
   <div id="zone-edge"></div>
-  <div id="heli-hud"><div id="heli-txt">HELICOPTER</div><div class="bar"><div id="heli-fill"></div></div></div>
+  <div id="heli-hud"></div>
+  <div id="heli-rider"><div id="heli-rider-txt">HULL</div><div class="bar"><div id="heli-rider-fill"></div></div></div>
   <div id="heli-prompt"></div>
   <div id="zone-banner"></div>
   <div id="remote-pip">STRIKE REMOTE &middot; HOLD <b>Z</b> TO CALL THE HELICOPTER</div>

@@ -635,9 +635,12 @@ var Weapons = (function () {
         if (hh && (!hit || hh.t < hit.t || riderTarget) && !(hit && hit.type === 'player' && hh.opening && !riderTarget)) {
           var hEnd = hh.point;
           FX.tracer(mz, hEnd, w.trc); FX.impact(hEnd, d.clone().negate());
-          /* v1.0t: a gun round stops on the hull with a spark and does NOTHING — the
-             server's class table is zero for every gun; only the RPG (a projectile,
-             see updateProjectiles) damages the machine. No round trip for a spark. */
+          /* v1.0x: guns CHIP the hull again — the server's per-weapon table (AKM 15,
+             M4 12, snipers 20, shotguns 0). A hitmarker only when something came off. */
+          Net.hitHeli(current, hh.idx, function (res) {
+            if (res && res.ok && res.dmg > 0) UI.hitmarker(false);
+            if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard');
+          });
           continue;
         }
       }
@@ -684,7 +687,11 @@ var Weapons = (function () {
     var E2 = eff(current);
     var d = rayDir(Input.aim ? E2.ads : E2.spread, new THREE.Vector3());
     var v = d.multiplyScalar(w.projSpeed);
-    spawnRocket(o, v, true);
+    /* v1.0x: the SEEKER locks the nearest airborne machine in range at launch;
+       the round steers at it (updateProjectiles). No machine: a plain rocket. */
+    var lock = (w.homing && typeof Heli !== 'undefined' && Heli.lockTarget) ? Heli.lockTarget(o, w.lockRange || 320) : null;
+    var pr = spawnRocket(o, v, true);
+    if (pr && w.homing) { pr.kind = 'seeker'; if (lock) { pr.lockIdx = lock.idx; UI.toast('LOCKED \u00b7 helicopter ' + (lock.idx === 0 ? 'A' : 'B') + ' \u00b7 ' + Math.round(lock.dist) + ' m'); } }
     Net.sendProj({ type: 'rocket', o: [o.x, o.y, o.z], v: [v.x, v.y, v.z] });
     FX.muzzle(o, true);
     FX.shake(0.25);
@@ -846,7 +853,9 @@ var Weapons = (function () {
     tip.position.z = -0.28; g.add(tip);
     g.position.copy(o); g.lookAt(o.clone().add(v));
     scene.add(g);
-    projectiles.push({ kind: 'rocket', pos: o.clone(), vel: v.clone(), mesh: g, mine: mine, life: 0 });
+    var pr = { kind: 'rocket', pos: o.clone(), vel: v.clone(), mesh: g, mine: mine, life: 0 };
+    projectiles.push(pr);
+    return pr;
   }
 
   function resolveGrenade(p, dt) {
@@ -888,13 +897,13 @@ var Weapons = (function () {
   function detonate(p) {
     if (p.type === 'molotov') { igniteFire(p); return; }
     var pos = p.pos;
-    if (p.type === 'frag' || p.kind === 'rocket') {
-      var spec = p.kind === 'rocket' ? { dmg: CFG.WEAPONS.rocket.dmg, radius: CFG.WEAPONS.rocket.radius } : CFG.THROWS.frag;
+    if (p.type === 'frag' || p.kind === 'rocket' || p.kind === 'seeker') {
+      var spec = p.kind === 'seeker' ? { dmg: CFG.WEAPONS.seeker.dmg, radius: CFG.WEAPONS.seeker.radius } : p.kind === 'rocket' ? { dmg: CFG.WEAPONS.rocket.dmg, radius: CFG.WEAPONS.rocket.radius } : CFG.THROWS.frag;
       FX.explosion(pos, spec.fxRadius || spec.radius);   // v1.0b: a 50 m frag draws a 9 m fireball
       /* v1.0v: my blast destroys enemy mines in its radius — the server decides whose */
-      if (p.mine && Net.blast) Net.blast({ p: [pos.x, pos.y, pos.z], w: p.kind === 'rocket' ? 'rocket' : 'frag' });
+      if (p.mine && Net.blast) Net.blast({ p: [pos.x, pos.y, pos.z], w: (p.kind === 'seeker' || p.kind === 'rocket') ? 'rocket' : 'frag' });
       AudioSys.explosion(pos.distanceTo(camera.position) < 3 ? null : pos, true);
-      if (p.mine) explosionDamage(pos, spec.radius, spec.dmg, p.kind === 'rocket' ? 'rocket' : 'frag');
+      if (p.mine) explosionDamage(pos, spec.radius, spec.dmg, (p.kind === 'seeker' ? 'seeker' : p.kind === 'rocket' ? 'rocket' : 'frag'));
       selfExplosionFeedback(pos, spec.fxRadius || spec.radius);
     } else if (p.type === 'smoke') {
       FX.smokeCloud(pos, CFG.THROWS.smoke.dur);
@@ -977,6 +986,12 @@ var Weapons = (function () {
         if (p.fuse <= 0) { detonate(p); scene.remove(p.mesh); projectiles.splice(i, 1); }
       } else { // rocket
         p.life += dt;
+        /* v1.0x: the SEEKER steers at the machine it locked on launch — the
+           machine's CURRENT pose, so a turn does not shake it */
+        if (p.kind === 'seeker' && p.lockIdx !== undefined && typeof Heli !== 'undefined') {
+          var mL = Heli.machines()[p.lockIdx], pL = mL && mL.pose();
+          if (pL) { var want = tmpV.set(pL.x - p.pos.x, pL.y + 1.6 - p.pos.y, pL.z - p.pos.z).normalize(); var spd = p.vel.length(); p.vel.lerp(want.multiplyScalar(spd), Math.min(1, dt * 6)).setLength(spd); }
+        }
         var step = p.vel.length() * dt;
         var dir = tmpV.copy(p.vel).normalize();
         var wh = World.rayHit(p.pos, dir, step + 0.15);
@@ -992,7 +1007,7 @@ var Weapons = (function () {
         var hitHeli = false;
         if (p.mine && typeof Heli !== 'undefined' && Heli.active && Heli.active() && !(Heli.isRiding && Heli.isRiding())) {
           var hhR = Heli.rayHit(p.pos, dir, step + 0.6);
-          if (hhR) { hitHeli = true; p.pos.copy(hhR.point).addScaledVector(dir, -0.3); Net.hitHeli('rocket', function (res) { if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard'); else if (res && res.ok) UI.hitmarker(false); }); }
+          if (hhR) { hitHeli = true; p.pos.copy(hhR.point).addScaledVector(dir, -0.3); Net.hitHeli(p.kind === 'seeker' ? 'seeker' : 'rocket', hhR.idx, function (res) { if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard'); else if (res && res.ok) UI.hitmarker(false); }); }
         }
         if (wh || hitPlayer || hitHeli || p.life > 6) {
           if (wh && !hitHeli) p.pos.copy(wh.point).addScaledVector(dir, -0.05);

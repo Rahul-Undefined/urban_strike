@@ -405,6 +405,16 @@ var WeaponModels = (function () {
       part(g, 0, -0.10, -0.12, 0.10, 0.04, 0.10, dark);               // pack
       return g;
     })();
+    /* v1.0x: the SEEKER-9 — the launcher's silhouette with a boxy lock unit on
+       top and an amber lens, so the hand knows which tube it holds. */
+    models.seeker = (function () {
+      var g = models.rocket.clone();
+      var box = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.07, 0.16), new THREE.MeshLambertMaterial({ color: 0x2c3138 }));
+      box.position.set(0, 0.11, -0.05); g.add(box);
+      var lens = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.02, 10), new THREE.MeshBasicMaterial({ color: 0xffb347 }));
+      lens.rotation.x = Math.PI / 2; lens.position.set(0, 0.11, -0.14); g.add(lens);
+      return g;
+    })();
 
     // Registry invariant: EVERY weapon in CFG.WEAPON_ORDER must have a
     // viewmodel. Any future config addition gets a generic rifle instead of

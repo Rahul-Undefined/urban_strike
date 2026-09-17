@@ -41,10 +41,13 @@ console.log('--- the route wanders and the flight is endless ---');
   ok(maxDy < 1.2, 'the climb is smooth (' + maxDy.toFixed(2) + ' m/0.1 s)');
 }
 
-console.log('--- damage: rockets only (v1.0t) ---');
+console.log('--- damage: the v1.0x table ---');
 const dmg = w => CFG.heliDamageFor(H, CFG.WEAPONS, w);
-ok(Object.keys(CFG.WEAPONS).filter(w => CFG.WEAPONS[w].type !== 'rocket').every(w => dmg(w) === 0), 'no gun, knife, bow, drone, EMP or C4 does anything to the hull');
-ok(dmg('rocket') === H.rocketDmg && H.rocketDmg === 300 && Math.ceil(H.hp / dmg('rocket')) === 3, 'the RPG-L does 300: three direct hits bring it down');
+ok(H.hp === 5000, 'the hull has 5000 points');
+ok(dmg('akm') === 15 && dmg('m4a1') === 12 && dmg('awm') === 20 && dmg('sniper') === 20 && dmg('shotgun') === 0 && dmg('aa12') === 0, 'AKM 15, M4 12, snipers 20, shotguns 0 — per shot');
+ok(dmg('knife') === 0 && dmg('bow') === 0 && dmg('drone') === 0 && dmg('emp') === 0 && dmg('c4') === 0, 'knives, bows, drones, EMP and C4 do nothing to the hull');
+ok(dmg('rocket') === 2500 && dmg('seeker') === 2500 && Math.ceil(H.hp / dmg('rocket')) === 2, 'the RPG-L and the SEEKER each take half the hull: two and it is down');
+ok(Math.ceil(H.hp / dmg('akm')) >= 300, 'an AKM alone needs ' + Math.ceil(H.hp / dmg('akm')) + ' rounds — a squad can wear it down, one rifle cannot swat it');
 ok(CFG.LOOT_ITEMS.wpn_rocket && CFG.LOOT_ITEMS.wpn_rocket.rar === 'l' && (CFG.AIRDROP.exoticPool || []).indexOf('wpn_rocket') >= 0, 'the launcher is legendary crate loot (the airdrop exotic pool)');
 ok(CFG.WEAPONS.rocket.mag === 1 && CFG.WEAPONS.rocket.reserve === 2, 'one round loaded, two spare: a kill costs the crate and every shot');
 
@@ -90,10 +93,10 @@ ok(room.heli.state === 'flying' && room.heli.riders.length === 1 && rider.alive,
   ok(rider.alive && room.heli.riders.length === 1, 'a rider trailing 2.6 m behind and 0.6 m below the seat (network lag) stays aboard'); ride(rider); }
 // a shot from the ground
 const shooter = mk('S', 0, half, 0); room.players.set('S', shooter);
-const r0 = Srv.hit(room, shooter, 'ak47');
-ok(r0.ok && r0.dmg === 0 && room.heli.hp === H.hp, 'a rifle hit does nothing to the hull');
+const r0 = Srv.hit(room, shooter, 'akm');
+ok(r0.ok && r0.dmg === 15 && room.heli.hp === H.hp - 15, 'an AKM round chips 15 off the hull');
 const r1 = Srv.hit(room, shooter, 'rocket');
-ok(r1.ok && r1.dmg === 300 && room.heli.hp === H.hp - 300, 'a rocket takes 300 off the hull');
+ok(r1.ok && r1.dmg === 2500 && room.heli.hp === H.hp - 15 - 2500, 'a rocket takes 2500 off the hull');
 ok(!Srv.hit(room, shooter, 'rocket').ok, 'a second rocket claim inside the launcher\'s cycle is refused');
 T0 += 2000;
 ok(emitted.some(e => e.ev === 'heliHp'), 'and the room is told the health');
@@ -164,7 +167,7 @@ Srv.tick(room);
 killed = [];
 let res = null, hits = 0;
 while (room.heli.state === 'flying' && hits < 20) { T0 += 2000; res = Srv.hit(room, shooter, 'rocket'); hits++; }
-ok(res && res.destroyed && res.n === 2 && hits === 3, 'three rockets bring it down with both riders [' + hits + ' hits]');
+ok(res && res.destroyed && res.n === 2 && hits === 2, 'two rockets bring it down with both riders [' + hits + ' hits]');
 ok(killed.length === 2 && killed.every(k => k.w === 'helidown' && k.by === 'S'), 'both riders die, credited to the shooter, tagged helidown');
 ok(room.heli.state === 'gone' && emitted.some(e => e.ev === 'heliBoom'), 'the machine is gone and the room saw it burn');
 ok(room.heli.respawnAt >= T0 + H.respawnSec * 1000 - 1 && H.respawnSec === 180, 'it comes back ' + H.respawnSec + ' s later — every three minutes');
@@ -192,9 +195,9 @@ console.log('--- the client, in the order the game really runs ---');
   ['public/src/environment/train.js', 'public/src/environment/heli.js', 'public/src/player/controller.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), cx, { filename: f }));
   const r = vm.runInContext(`(function(){
     var sc = new THREE.Scene(); World.reset(); World.buildMap(sc, 'urban');
-    Net = { getMatch: function(){ return { startedAt: 1000, serverOffset: 0 }; }, getMyId: function(){ return 'me'; }, boardHeli: function(cb){ cb({ ok: true, aboard: true }); } };
+    Net = { getMatch: function(){ return { startedAt: 1000, serverOffset: 0 }; }, getMyId: function(){ return 'me'; }, boardHeli: function(idx, cb){ (typeof idx === 'function' ? idx : cb)({ ok: true, aboard: true }); } };
     UI = { toast: function(){}, setHeliHud: function(){}, announce: function(){} }; AudioSys = {};
-    Heli.set({ state: 'pad', t0: Date.now(), hp: 900, riders: [], respawnAt: 0 });   // matchStart.heli, applied by net.js first
+    Heli.set({ idx: 0, state: 'pad', t0: Date.now(), hp: 5000, riders: [], respawnAt: 0 });   // matchStart.heli, applied by net.js first
     Heli.init(sc, 'urban');                                                          // Game.onMatchStart -> buildWorld -> Heli.init
     Heli.init(sc, 'urban');                                                          // a watchdog rebuild does it again
     Heli.update(0.016);
@@ -203,14 +206,14 @@ console.log('--- the client, in the order the game really runs ---');
     Heli.update(0.016);
     var near = Heli.canBoard(), boarded = Heli.board();
     var far = (function(){ PlayerCtl.spawnAt([CFG.HELI.pad[0] + 30, 1, CFG.HELI.pad[1]], 0); Heli.update(0.016); return Heli.canBoard(); })();
-    Heli.set({ state: 'gone', t0: Date.now(), hp: 0, riders: [], respawnAt: Date.now() + 100000 }); Heli.update(0.016);
+    Heli.set({ idx: 0, state: 'gone', t0: Date.now(), hp: 0, riders: [], respawnAt: Date.now() + 100000 }); Heli.update(0.016);
     var goneActive = Heli.active();
     return { act: act, pose: pose, near: near, boarded: boarded, far: far, goneActive: goneActive };
   })()`, cx);
   ok(r.act === true && r.pose && Math.abs(r.pose.x - H.pad[0]) < 0.01, 'the machine is on the pad after the map rebuild that follows matchStart');
   /* v1.0s: the hull must never swallow a shot between a rider and the ground */
   const rr = vm.runInContext(`(function(){
-    Heli.set({ state: 'flying', t0: Date.now() - 20000, hp: 900, riders: ['me'], seed: 12345 }); Heli.update(0.016);
+    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 5000, riders: ['me'], seed: 12345 }); Heli.update(0.016);
     var p = Heli.pose();
     // a rider at the seat aims down at a target 40 m ahead on the ground
     var seat = new THREE.Vector3(p.x, p.y + CFG.HELI.cabinFloor + 1.6, p.z);
@@ -235,7 +238,7 @@ console.log('--- the client, in the order the game really runs ---');
     var below = new THREE.Vector3(p.x, p.y - 25, p.z);
     var b = Heli.rayHit(below, seat.clone().sub(below).normalize(), 400);
     // the seat lookup for a listed rider
-    Heli.set({ state: 'flying', t0: Date.now() - 20000, hp: 900, riders: ['A', 'B'], seed: 12345 }); Heli.update(0.016);
+    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 5000, riders: ['A', 'B'], seed: 12345 }); Heli.update(0.016);
     var sA = Heli.seatFor('A'), sB = Heli.seatFor('B'), sZ = Heli.seatFor('nobody');
     var p2 = Heli.pose();
     return { sideOpening: a ? a.opening : null, belowOpening: b ? b.opening : null, seats: sA && sB && !sZ, seatDist: sA ? Math.hypot(sA.x - p2.x, sA.z - p2.z) : null, seatY: sA ? sA.y - p2.y : null, apart: sA && sB ? sA.distanceTo(sB) : null };
@@ -273,7 +276,9 @@ console.log('--- Q lands it, Z flies it again, it goes after unload ---');
   let guard = 0;
   while (room2.heli.state === 'returning' && guard++ < 200) { T0 += 300; const rp = CFG.heliReturnPose(H, room2.heli.from, (T0 - room2.heli.t0) / 1000); pilot.pos = [rp.x, rp.y + H.cabinFloor + half, rp.z]; Srv.tick(room2); }
   ok(room2.heli.state === 'landed' && pilot.alive, 'it lands at the pad with the pilot alive');
-  // Z aboard the landed machine: fly again
+  ok(room2.heli.refuelUntil > T0 && !Srv.board(room2, pilot).ok, 'v1.0x: it is refuelling — Z is refused until the tank is full');
+  T0 = room2.heli.refuelUntil + 100; Srv.tick(room2);
+  // Z aboard the refuelled machine: fly again
   const rl = Srv.board(room2, pilot);
   ok(rl.ok && rl.relaunch, 'Z aboard the landed machine arms another lift-off (not a step-off)');
   T0 += H.boardSec * 1000 + 100; Srv.tick(room2);
@@ -284,7 +289,47 @@ console.log('--- Q lands it, Z flies it again, it goes after unload ---');
   ok(room2.heli.state === 'landed', 'landed again');
   pilot.pos = [H.pad[0] + 30, half, H.pad[1]]; Srv.tick(room2);       // pilot walks away
   T0 += (H.unloadSec + 1) * 1000; Srv.tick(room2);
-  ok(room2.heli.state === 'gone' && room2.heli.respawnAt >= T0 + H.respawnSec * 1000 - 1500, 'nobody re-boards: it leaves, next one in ' + H.respawnSec + ' s');
+  ok(room2.heli.state === 'landed' && room2.heli.refuelUntil > T0, 'v1.0x: nobody re-boards — the machine STAYS on its pad, refuelling (' + Math.ceil((room2.heli.refuelUntil - T0) / 1000) + ' s left)');
+  pilot.pos = [H.pad[0] + 2, half + H.padY, H.pad[1]];
+  ok(!Srv.board(room2, pilot).ok && /Refuelling/.test(Srv.board(room2, pilot).err || ''), 'boarding during the refuel is refused with the time left');
+}
+
+console.log('--- two machines, fuel, refuel (v1.0x) ---');
+{
+  let killedX = [];
+  const SrvX = require('../server/lib/heli.js')({ io, now: () => T0, applyDamage: (room, v) => { v.alive = false; killedX.push(v.id); }, modeInfo: () => ({ teams: false }), pathFrom: (wp, fillet) => Bots.pathFrom(wp, fillet) });
+  const rx = { code: 'X', state: 'playing', settings: { map: 'urban', mode: 'ffa' }, players: new Map() };
+  SrvX.start(rx);
+  ok(rx.helis.length === 2 && rx.helis[0].state === 'pad' && rx.helis[1].state === 'gone' && !rx.helis[1].respawnAt && rx.heli === rx.helis[0], 'two pads: machine A on pad A, machine B not yet scheduled; room.heli is machine A');
+  ok(Math.hypot(H.pads[1][0] - H.pads[0][0], H.pads[1][1] - H.pads[0][1]) > 30, 'pad B is well clear of pad A (' + Math.hypot(H.pads[1][0] - H.pads[0][0], H.pads[1][1] - H.pads[0][1]).toFixed(0) + ' m)');
+  const pil = mk('PX', H.pads[0][0] + 3, half + H.padY, H.pads[0][1]); rx.players.set('PX', pil);
+  const bx = SrvX.board(rx, pil); pil.pos = bx.seat.slice();
+  T0 += H.boardSec * 1000 + 100; SrvX.tick(rx);
+  ok(rx.helis[0].state === 'flying' && rx.helis[1].respawnAt === T0 + H.secondSpawnSec * 1000, 'the first lift-off books machine B for pad B in ' + H.secondSpawnSec + ' s');
+  const PX = SrvX.pathFor(rx.helis[0].seed, rx.helis[0].pad), cfgA = Object.assign({}, H, { pad: rx.helis[0].pad });
+  const ride = () => { const q = CFG.heliPoseAt(cfgA, PX, (T0 - rx.helis[0].t0) / 1000); pil.pos = [q.x, q.y + H.cabinFloor + half, q.z]; };
+  T0 += H.secondSpawnSec * 1000 + 100; ride(); SrvX.tick(rx);
+  ok(rx.helis[1].state === 'pad', 'two minutes later machine B sits on pad B for the other side');
+  let steps = 0; while (rx.helis[0].state === 'flying' && steps++ < 200) { T0 += 5000; ride(); SrvX.tick(rx); }
+  const flew = (T0 - rx.helis[0].flightStart) / 1000;
+  ok(rx.helis[0].state === 'returning' && flew >= H.fuelSec && flew < H.fuelSec + 6, 'after ' + H.fuelSec + ' s of fuel the machine turns for home on its own [' + flew.toFixed(0) + ' s]');
+  let g2 = 0; while (rx.helis[0].state === 'returning' && g2++ < 300) { T0 += 300; const rp = CFG.heliReturnPose(cfgA, rx.helis[0].from, (T0 - rx.helis[0].t0) / 1000); pil.pos = [rp.x, rp.y + H.cabinFloor + half, rp.z]; SrvX.tick(rx); }
+  ok(rx.helis[0].state === 'landed' && pil.alive && rx.helis[0].refuelUntil - T0 > H.refuelSec * 1000 - 500, 'it lands with the pilot alive and starts a ' + H.refuelSec + ' s refuel');
+  ok(!SrvX.board(rx, pil).ok, 'it cannot lift during the refuel');
+  T0 = rx.helis[0].refuelUntil + 50; SrvX.tick(rx);
+  const rb = SrvX.board(rx, pil);
+  ok(rb.ok && rb.relaunch, 'refuelled, Z aboard lifts it again');
+  T0 += H.boardSec * 1000 + 100; SrvX.tick(rx);
+  ok(rx.helis[0].state === 'flying', 'and it is airborne again for another tank');
+  // machine B can be flown by someone else, independently, and its hit is its own
+  const other = mk('OX', H.pads[1][0] + 3, half + H.padY, H.pads[1][1]); rx.players.set('OX', other);
+  const bb = SrvX.board(rx, other, 1);
+  ok(bb.ok && bb.idx === 1, 'a player at pad B boards machine B');
+  other.pos = bb.seat.slice(); T0 += H.boardSec * 1000 + 100; SrvX.tick(rx);
+  ok(rx.helis[1].state === 'flying' && rx.helis[0].state === 'flying', 'both machines fly at once');
+  const gnd = mk('G', 0, half, 0); rx.players.set('G', gnd);
+  const h1 = SrvX.hit(rx, gnd, 'rocket', 1);
+  ok(h1.ok && h1.idx === 1 && rx.helis[1].hp === H.hp - 2500 && rx.helis[0].hp === H.hp, 'a rocket named at machine B takes half of B, none of A');
 }
 
 console.log('--- the wiring ---');
@@ -305,8 +350,9 @@ const heliSrvSrc = fs.readFileSync(path.join(__dirname, '..', 'server/lib/heli.j
 ok(!/toast[^\n]*is airborne \\u00b7/.test(heliSrvSrc) && !/bringing the helicopter down/.test(heliSrvSrc) && !/Z to fly again/.test(heliSrvSrc), 'no room-wide popups for boarding, lift-off or landing (v1.0u)');
 ok(!/boarded the helicopter/.test(fs.readFileSync(path.join(__dirname, '..', 'public/src/networking/net.js'), 'utf8')), 'the boarding notice is state only, never a toast');
 const wsys = fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/system.js'), 'utf8');
-ok(/Heli\.rayHit\(o, d, reach\)/.test(wsys) && !/Net\.hitHeli\(current/.test(wsys), 'a gun round stops on the fuselage with a spark and reports nothing (v1.0t)');
-ok(/Heli\.rayHit\(p\.pos, dir, step \+ 0\.6\)/.test(wsys) && /Net\.hitHeli\('rocket'/.test(wsys), 'a flying rocket that meets the fuselage detonates there and reports the rocket');
+ok(/Heli\.rayHit\(o, d, reach\)/.test(wsys) && /Net\.hitHeli\(current, hh\.idx/.test(wsys), 'a gun round that meets the fuselage reports its weapon and machine (v1.0x: guns chip the hull)');
+ok(/Heli\.rayHit\(p\.pos, dir, step \+ 0\.6\)/.test(wsys) && /Net\.hitHeli\(p\.kind === 'seeker' \? 'seeker' : 'rocket', hhR\.idx/.test(wsys), 'a flying rocket or seeker that meets the fuselage detonates there and reports itself');
+ok(/Heli\.lockTarget\(o, w\.lockRange/.test(wsys) && /p\.kind === 'seeker' && p\.lockIdx !== undefined/.test(wsys), 'the SEEKER locks the nearest airborne machine at launch and steers at its current pose');
 const outer = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/districts-outer.js'), 'utf8');
 ok(/CFG\.HELI\.pad/.test(outer), 'the pad is built from the same config');
 /* v1.0o: the hints and the death screen name the right machine */

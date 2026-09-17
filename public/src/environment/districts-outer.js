@@ -1943,8 +1943,8 @@ World._buildPart6 = function (T) {
      Open ground by the airport (measured 9 m clear). A raised disc at CFG.HELI
      padY, an H, edge lights, a windsock. The helicopter itself is heli.js's;
      it sits here between flights. */
-  if (CFG.HELI && CFG.HELI.pad) {
-    var HP = CFG.HELI.pad, HY = CFG.HELI.padY || 0.3;
+  (CFG.HELI ? (CFG.HELI.pads || [CFG.HELI.pad]) : []).forEach(function (HP) {   /* v1.0x: a disc per pad (A and B) */
+    var HY = CFG.HELI.padY || 0.3;
     cyl(HP[0], HY / 2, HP[1], 6.2, HY, M.concrete);
     cyl(HP[0], HY + 0.01, HP[1], 5.6, 0.02, M.roadPaintY, NBOTH);
     cyl(HP[0], HY + 0.02, HP[1], 5.0, 0.02, M.concrete, NBOTH);
@@ -1953,7 +1953,7 @@ World._buildPart6 = function (T) {
     box(HP[0], HY + 0.035, HP[1], 2.2, 0.03, 0.45, M.roadPaintY, NBOTH);
     for (var hl = 0; hl < 8; hl++) { var ha = hl / 8 * Math.PI * 2; box(HP[0] + Math.cos(ha) * 5.9, HY + 0.12, HP[1] + Math.sin(ha) * 5.9, 0.25, 0.24, 0.25, M.amberGlow, NBOTH); }
     box(HP[0] + 7.4, 1.0, HP[1] - 6.8, 0.2, 2.0, 0.2, M.metal);              // a marker post at the pad edge
-  }
+  });
 
   /* ---- THE FOUR TOWERS, one per side, cab facing the map ---------------- */
   World._towerAt(T, -4, -118.6, false);    // NORTH  x -4..4,   z -118.6..-106.6  (escape east)

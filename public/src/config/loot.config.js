@@ -54,6 +54,7 @@
        as the bolt-action you can actually find on the ground. */
     wpn_kar98:  { kind: 'weapon', w: 'kar98', rar: 'r' },
     wpn_rocket: { kind: 'weapon', w: 'rocket', rar: 'l' },
+    wpn_seeker: { kind: 'weapon', w: 'seeker', rar: 'l', drop: 0 },   /* v1.0x: crate-only, rarer than the RPG-L */
     wpn_scarh: { kind: 'weapon', w: 'scarh', rar: 'c' },
     wpn_mk14:  { kind: 'weapon', w: 'mk14', rar: 'r' },
     wpn_p90:   { kind: 'weapon', w: 'p90', rar: 'c' },
@@ -393,7 +394,7 @@
        actually reachable from a crate. Twice in two versions is a pattern:
        marking an item drop-only and adding it to a pool are two separate edits
        and the gate is the only thing joining them. */
-    exoticPool: ['drone', 'drone', 'helm_3', 'wpn_rocket', 'molotov', 'medkit', 'att_x8', 'visor',
+    exoticPool: ['drone', 'drone', 'helm_3', 'wpn_rocket', 'molotov', 'medkit', 'att_x8', 'visor', 'wpn_seeker',
       'emp', 'shield', 'c4']   /* v15.0/v1.0b: shield and c4 are bigOnly and are filtered out of arena crates in loot.js */
   };
 

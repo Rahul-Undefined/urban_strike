@@ -1022,14 +1022,32 @@ var UI = (function () {
     if (f) f.style.height = Math.round(frac * 100) + '%';
   }
   /* v1.0l: the helicopter's health, shown while one exists */
-  function setHeliHud(h) {
+  /* v1.0x: two machines — the top-right bar keeps a line per machine; the
+     machine I RIDE also fills the big hull bar on the LEFT beside my health,
+     so I can judge when to press Q. */
+  var heliRows = {};
+  function setHeliHud(h, idx) {
     var e = document.getElementById('heli-hud');
     if (!e) return;
-    if (!h) { e.classList.remove('on'); return; }
+    idx = idx || (h && h.idx) || 0;
+    if (!h) { delete heliRows[idx]; } else heliRows[idx] = h;
+    var keys = Object.keys(heliRows);
+    if (!keys.length) { e.classList.remove('on'); setRiderHull(null); return; }
     e.classList.add('on');
-    var f = document.getElementById('heli-fill'), t = document.getElementById('heli-txt');
-    if (f) f.style.width = Math.round(100 * Math.max(0, h.hp) / Math.max(1, h.max)) + '%';
-    if (t) t.textContent = (h.state === 'flying' ? 'HELICOPTER AIRBORNE' : h.state === 'returning' ? 'HELICOPTER RETURNING' : h.state === 'landed' ? 'HELICOPTER LANDED' : 'HELICOPTER ON THE PAD') + ' \u00b7 ' + Math.max(0, h.hp | 0) + (heliHint ? ' \u00b7 ' + heliHint : '');
+    var lines = keys.map(function (k) { var m = heliRows[k]; var pct = Math.round(100 * Math.max(0, m.hp) / Math.max(1, m.max));
+      return '<div class="hrow"><span>HELI ' + (k === '0' ? 'A' : 'B') + ' \u00b7 ' + (m.state === 'flying' ? 'AIRBORNE' : m.state === 'returning' ? 'RETURNING' : m.state === 'landed' ? 'READY' : 'ON PAD') + ' \u00b7 ' + Math.max(0, m.hp | 0) + '</span><div class="bar"><div class="fill" style="width:' + pct + '%"></div></div></div>'; });
+    e.innerHTML = lines.join('');
+    var mine = null; keys.forEach(function (k) { if (heliRows[k].riding) mine = heliRows[k]; });
+    setRiderHull(mine);
+  }
+  function setRiderHull(m) {
+    var e = document.getElementById('heli-rider');
+    if (!e) return;
+    if (!m) { e.classList.remove('on'); return; }
+    e.classList.add('on');
+    var f = document.getElementById('heli-rider-fill'), t = document.getElementById('heli-rider-txt');
+    if (f) f.style.width = Math.round(100 * Math.max(0, m.hp) / Math.max(1, m.max)) + '%';
+    if (t) t.textContent = 'HULL ' + Math.max(0, m.hp | 0) + ' / ' + m.max + (heliHint ? ' \u00b7 ' + heliHint : '');
   }
   var heliHint = '';
   function setHeliHint(txt) { heliHint = txt || ''; }   /* v1.0u: the rider's one-line reminder lives in the HUD bar */

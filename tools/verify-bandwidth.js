@@ -179,7 +179,10 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
 /* ===== v1.0t — 444 -> 448 KB. Builds 18-20 stated plainly: the second train
    (train.js factory), dress colours (ui.js pickers), the rocket-on-hull path
    and its comments. ~3 KB gz over three builds. */
-const GZ_BUDGET_KB = 448;
+/* ===== v1.0x — 448 -> 454 KB. Stated plainly: the helicopter as a two-machine
+   factory with fuel and refuel, the SEEKER launcher and its viewmodel, the
+   rider's hull bar. ~2 KB gz. */
+const GZ_BUDGET_KB = 454;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

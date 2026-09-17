@@ -81,6 +81,10 @@
     shotgun: { key: 5, shellReload: true, label: 'M870', type: 'semi', dmg: 8.9, pellets: 9, rpm: 75, mag: 6, reserve: 30, reload: 3.4, spread: 0.075, ads: 0.05, range: 9, head: 1.4, legs: 0.8, speed: 0.96, recoil: 0.05, drift: 0.2, adsFov: 58, trc: 0xffa050, snd: { body: { f0: 700, f1: 140, dur: 0.22, vol: 0.95 }, crack: { f: 900, dur: 0.06, vol: 0.4 }, boom: { f0: 130, f1: 55, dur: 0.3, vol: 0.5 } } },
     pistol:  { key: 6, label: 'P92', type: 'semi', dmg: 30, rpm: 380, mag: 12, reserve: 60, reload: 1.2, spread: 0.011, ads: 0.004, range: 28, head: 1.67, legs: 0.72, speed: 1.0, recoil: 0.0075, drift: 0.3, adsFov: 52, trc: 0xffd9a0 },
     rocket:  { label: 'RPG-L',    type: 'rocket',key: 9, ex: 1, dmg: 120, radius: 6.5, rpm: 30, mag: 1, reserve: 2, reload: 3.6, spread: 0.008, ads: 0.004, recoil: 0.120, drift: 0.2, range: 300, speed: 0.85, adsFov: 58, projSpeed: 30 },
+    /* v1.0x: THE SEEKER — an auto-lock launcher. Fired with a helicopter airborne
+       within `lockRange`, the round finds it on its own and takes half the hull;
+       with no machine in reach it flies like a rocket. Rarer than the RPG-L. */
+    seeker:  { label: 'SEEKER-9', type: 'rocket',key: 9, ex: 1, dmg: 100, radius: 5.5, rpm: 20, mag: 1, reserve: 1, reload: 4.2, spread: 0.010, ads: 0.005, recoil: 0.140, drift: 0.2, range: 320, speed: 0.80, adsFov: 58, projSpeed: 34, homing: 1, lockRange: 320, vm: 'rocket' },
     knife:   { key: 8, label: 'KA-BAR', type: 'melee', dmg: 55, rpm: 110, mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 2.4, head: 1.4, legs: 1.0, speed: 1.08, recoil: 0, drift: 0, adsFov: 60 },
     // Exclusive loot weapons (key 9) — found on the map / in airdrops only.
     scarh:   { key: 9, ex: 1, mark: 1, label: 'SCAR-H', type: 'auto', dmg: 50, rpm: 560, mag: 25, reserve: 100, reload: 2.4, spread: 0.015, ads: 0.005, range: 50, head: 1.6, legs: 0.72, speed: 0.92, recoil: 0.013, drift: 0.5, adsFov: 48, trc: 0xffcf80 },
@@ -264,7 +268,9 @@
        release, so a client and its server are always the same version). */
     'emp',      // v15.0 — the EMP charge slot
     'flamer',   // v1.0b — the flamethrower
-    'c4'];      // v1.0b — the C4 sticky charge slot
+    'c4',       // v1.0b — the C4 sticky charge slot
+    'seeker'    // v1.0x — the auto-lock launcher (appended AFTER c4, never inserted)
+];
 
   var THROWS = {
     /* v8.17: throwables are now lethal at the centre by definition. Rahul:

@@ -15,7 +15,11 @@
    hit inside the fuselage box closer than anything else is reported to the
    server as hitHeli with the weapon id. The HUD shows its health to everyone
    in the match while it exists. */
-var Heli = (function () {
+/* v1.0x: ONE FACTORY, TWO MACHINES. makeHeli(idx) is the machine that used
+   to be the whole module — its own pad, sign, mesh, state and route. Heli
+   (below) holds one per CFG.HELI.pads entry and answers every old call by
+   picking the machine that matters: the one I ride, the nearest, or all. */
+function makeHeli(IDX) {
   var scene = null, cfg = null, path = null, group = null, rotor = null, tailRotor = null, fuselage = null;
   var state = null, pose = null, prevPose = null, lastYaw = 0, roll = 0, pitch = 0;
   var bailUntil = 0, wasAboard = false, boardToastAt = 0, rotorSoundAt = 0;
@@ -113,9 +117,10 @@ var Heli = (function () {
     var t = performance.now(); if (t - signAt < 250) return; signAt = t;
     var text, sub, col;
     if (state.state === 'gone') { text = 'NEXT HELICOPTER IN'; sub = fmt((state.respawnAt - serverNow()) / 1000); col = '#ff9a4a'; }
-    else if (state.state === 'flying') { text = 'HELICOPTER AIRBORNE'; sub = 'a rider presses Q to bring it down'; col = '#7ef0ff'; }
+    else if (state.state === 'flying') { text = 'HELICOPTER AIRBORNE'; sub = 'fuel ' + fmt(Math.max(0, (cfg.fuelSec || 180) - (serverNow() - (state.fuelStart || state.t0)) / 1000)) + ' \u00b7 Q lands'; col = '#7ef0ff'; }
+    else if ((state.state === 'landed' || state.state === 'pad') && state.refuelUntil && serverNow() < state.refuelUntil) { text = 'REFUELLING'; sub = 'ready in ' + fmt((state.refuelUntil - serverNow()) / 1000); col = '#ff9a4a'; }
     else if (state.state === 'returning') { text = 'HELICOPTER RETURNING'; sub = pose && pose.left !== undefined ? 'landing in ' + fmt(pose.left) : 'coming back to the pad'; col = '#7ef0ff'; }
-    else if (state.state === 'landed') { text = 'HELICOPTER LANDED'; sub = 'Z to fly again \u00b7 leaves in ' + fmt(cfg.unloadSec - (serverNow() - state.t0) / 1000); col = '#7ef0ff'; }
+    else if (state.state === 'landed') { text = 'HELICOPTER READY'; sub = 'Z to fly again'; col = '#7ef0ff'; }
     else if (state.liftIn > 0) { text = 'LIFT-OFF IN ' + Math.ceil(state.liftIn); sub = 'press Z to board'; col = '#7ef0ff'; }
     else { text = 'HELICOPTER READY'; sub = 'walk up \u00b7 press Z to board'; col = '#7ef0ff'; }
     var key = text + '|' + sub; if (key === signText) return; signText = key;
@@ -126,7 +131,7 @@ var Heli = (function () {
   function init(sc, map) {
     dispose();
     scene = sc;
-    cfg = (map === 'urban' && CFG.HELI) ? CFG.HELI : null;
+    cfg = (map === 'urban' && CFG.HELI) ? Object.assign({}, CFG.HELI, { pad: (CFG.HELI.pads && CFG.HELI.pads[IDX]) || CFG.HELI.pad }) : null;
     if (!cfg) return false;
     path = null; pathSeed = null;                              // v1.0q: built per flight from the server's seed
     group = build();
@@ -143,15 +148,16 @@ var Heli = (function () {
     setPrompt(false);
     if (typeof UI !== 'undefined' && UI.setHeliHud) UI.setHeliHud(null);
   }
-  function set(st) {
+  function set(stIn) {
+    var st = stIn && stIn.all ? (stIn.all[IDX] || null) : (stIn && (stIn.idx === undefined ? (IDX === 0 ? stIn : null) : (stIn.idx === IDX ? stIn : null)));
     pending = st || null;
     var prevState = state ? state.state : null;
     state = st || null;
     if (state && prevState !== state.state) state.liftIn = 0;
     if (group) group.visible = !!(state && state.state !== 'gone');
-    if (typeof UI !== 'undefined' && UI.setHeliHud) UI.setHeliHud(state && state.state !== 'gone' ? { hp: state.hp, max: cfg ? cfg.hp : 900, state: state.state } : null);
+    if (typeof UI !== 'undefined' && UI.setHeliHud) UI.setHeliHud(state && state.state !== 'gone' ? { hp: state.hp, max: cfg ? cfg.hp : 5000, state: state.state, idx: IDX, riding: isRiding(), fuelStart: state.fuelStart || 0 } : null, IDX);
   }
-  function hpUpdate(d) { if (state) { state.hp = d.hp; if (typeof UI !== 'undefined' && UI.setHeliHud) UI.setHeliHud({ hp: d.hp, max: d.max, state: state.state }); } }
+  function hpUpdate(d) { if (!state || (d.idx !== undefined && d.idx !== IDX)) return; state.hp = d.hp; if (typeof UI !== 'undefined' && UI.setHeliHud) UI.setHeliHud({ hp: d.hp, max: d.max, state: state.state, idx: IDX }); }
   function active() { return !!(cfg && state && state.state !== 'gone'); }
   function inAir() { return !!(state && (state.state === 'flying' || state.state === 'returning')); }
   function isRiderId(id) { return !!(state && state.riders && inAir() && state.riders.indexOf(id) >= 0); }   /* v1.0v */
@@ -209,7 +215,7 @@ var Heli = (function () {
   function canBoard() { return nearForBoarding(); }
   function board() {
     if (!canBoard() || typeof Net === 'undefined' || !Net.boardHeli) return false;
-    Net.boardHeli(function (res) {
+    Net.boardHeli(IDX, function (res) {
       if (!res || !res.ok) { if (res && res.err && typeof UI !== 'undefined') UI.toast(res.err, true); return; }
       if (res.relaunch) return;   // v1.0q/u: already seated, flying again — the HUD counts it down
       if (res.seat) onSeat({ pos: res.seat, aboard: true, liftIn: cfg.boardSec });   // v1.0o: sit down NOW, before the next state update goes out
@@ -310,7 +316,39 @@ var Heli = (function () {
   }
 
   function clear() { pending = null; set(null); }   /* v1.0n: leaving the match forgets the machine */
-  return { init: init, dispose: dispose, set: set, clear: clear, hpUpdate: hpUpdate, update: update, floorAt: floorAt, bail: bail, rayHit: rayHit,
-    canBoard: canBoard, board: board, onSeat: onSeat, landRequest: landRequest, seatFor: seatFor, isRiderId: isRiderId,
+  return { idx: IDX, init: init, dispose: dispose, set: set, clear: clear, hpUpdate: hpUpdate, update: update, floorAt: floorAt, bail: bail, rayHit: rayHit,
+    canBoard: canBoard, board: board, onSeat: onSeat, landRequest: landRequest, seatFor: seatFor, isRiderId: isRiderId, nearForBoarding: nearForBoarding,
     active: active, isRiding: isRiding, pose: function () { return pose; }, state: function () { return state; } };
+}
+
+var Heli = (function () {
+  var list = [], lastSnap = null;   /* v1.0x: the aggregate keeps the server's last word across rebuilds (the per-machine `pending` cannot, before init) */
+  function each(fn) { for (var i = 0; i < list.length; i++) fn(list[i], i); }
+  function riding() { for (var i = 0; i < list.length; i++) if (list[i].isRiding()) return list[i]; return null; }
+  function nearest() { for (var i = 0; i < list.length; i++) if (list[i].nearForBoarding()) return list[i]; return null; }
+  return {
+    init: function (sc, map) { each(function (m) { m.dispose(); }); list = []; var n = (map === 'urban' && CFG.HELI) ? ((CFG.HELI.pads && CFG.HELI.pads.length) || 1) : 0; for (var i = 0; i < n; i++) { var m = makeHeli(i); m.init(sc, map); list.push(m); } if (lastSnap) each(function (m) { m.set(lastSnap); }); return n > 0; },
+    dispose: function () { each(function (m) { m.dispose(); }); list = []; },
+    set: function (st) { lastSnap = st || null; each(function (m) { m.set(st); }); },
+    clear: function () { lastSnap = null; each(function (m) { m.clear(); }); },
+    hpUpdate: function (d) { each(function (m) { m.hpUpdate(d); }); },
+    update: function (dt) { each(function (m) { m.update(dt); }); },
+    floorAt: function (pos, halfY) { for (var i = 0; i < list.length; i++) { var r = list[i].floorAt(pos, halfY); if (r) return r; } return null; },
+    bail: function () { var m = riding(); return m ? m.bail() : false; },
+    landRequest: function () { var m = riding(); return m ? m.landRequest() : false; },
+    canBoard: function () { var m = riding(); if (m) return true; return !!nearest(); },
+    board: function () { var m = riding() || nearest(); return m ? m.board() : false; },
+    onSeat: function (d) { var m = (d && d.idx !== undefined && list[d.idx]) ? list[d.idx] : list[0]; if (m) m.onSeat(d); },
+    seatFor: function (id, out) { for (var i = 0; i < list.length; i++) { var v = list[i].seatFor(id, out); if (v) return v; } return null; },
+    isRiderId: function (id) { for (var i = 0; i < list.length; i++) if (list[i].isRiderId(id)) return true; return false; },
+    /* the nearest hull along the ray, with its machine's index */
+    rayHit: function (o, d, maxDist) { var best = null; for (var i = 0; i < list.length; i++) { var h = list[i].rayHit(o, d, maxDist); if (h && (!best || h.t < best.t)) { best = h; best.idx = i; } } return best; },
+    active: function () { for (var i = 0; i < list.length; i++) if (list[i].active()) return true; return false; },
+    isRiding: function () { return !!riding(); },
+    pose: function () { var m = riding() || list[0]; return m ? m.pose() : null; },
+    state: function () { var m = riding() || list[0]; return m ? m.state() : null; },
+    machines: function () { return list; },
+    /* v1.0x: the airborne machine nearest a point, for the SEEKER's lock */
+    lockTarget: function (from, range) { var best = null, bd = range || 320; for (var i = 0; i < list.length; i++) { var st = list[i].state(), p = list[i].pose(); if (!st || !p || (st.state !== 'flying' && st.state !== 'returning') || list[i].isRiding()) continue; var d = Math.sqrt((p.x - from.x) * (p.x - from.x) + (p.y - from.y) * (p.y - from.y) + (p.z - from.z) * (p.z - from.z)); if (d < bd) { bd = d; best = { idx: i, pose: p, dist: d }; } } return best; }
+  };
 })();

@@ -1206,8 +1206,8 @@ var Net = (function () {
     useEmp: function (cb) { if (socket) socket.emit('useEmp', {}, cb); },
     /* v1.0b */
     launchRocket: function (cb) { if (socket) socket.emit('launchRocket', {}, cb); },
-    hitHeli: function (w, cb) { if (socket) socket.emit('hitHeli', { w: w }, cb); },   /* v1.0l */
-    boardHeli: function (cb) { if (socket) socket.emit('boardHeli', {}, cb); },       /* v1.0m */
+    hitHeli: function (w, idx, cb) { if (typeof idx === 'function') { cb = idx; idx = undefined; } if (socket) socket.emit('hitHeli', { w: w, idx: idx }, cb); },   /* v1.0l/x */
+    boardHeli: function (idx, cb) { if (typeof idx === 'function') { cb = idx; idx = undefined; } if (socket) socket.emit('boardHeli', { idx: idx }, cb); },       /* v1.0m/x */
     heliBail: function (cb) { if (socket) socket.emit('heliBail', {}, cb); },         /* v1.0p */
     heliLand: function (cb) { if (socket) socket.emit('heliLand', {}, cb); },         /* v1.0q */
     blast: function (d, cb) { if (socket) socket.emit('blast', d, cb); },              /* v1.0v */

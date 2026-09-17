@@ -58,10 +58,13 @@ function weaponServerDamage(weapon, part, pellets, dist) {
    EMP) and the riders die with it. */
 const RIDER_PASS = { helidown: 1, helifall: 1, zone: 1 };
 function riderShielded(room, victim, weapon) {
-  const h = room && room.heli;
-  if (!h || !h.riders || h.riders.indexOf(victim.id) < 0) return false;
-  if (h.state !== 'flying' && h.state !== 'returning') return false;
-  return !RIDER_PASS[weapon];
+  const list = (room && room.helis) || (room && room.heli ? [room.heli] : []);
+  for (const h of list) {
+    if (!h || !h.riders || h.riders.indexOf(victim.id) < 0) continue;
+    if (h.state !== 'flying' && h.state !== 'returning') continue;
+    return !RIDER_PASS[weapon];
+  }
+  return false;
 }
 function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank) {
   if (riderShielded(room, victim, weapon)) return;   /* v1.0v */

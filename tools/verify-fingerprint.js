@@ -208,7 +208,8 @@ const BASELINE = {
      train's rails and finer chords on curves (+5.4k tris), the stadium pavilion
      narrowed, practice nets/container/signs moved off the lanes. draws 99,
      casters 62 unchanged. minimap 250 -> 247 (the halt platforms). */
-  urban: { colliders: 4456, draws: 99, tris: 139720, casters: 62, lights: 7, bound: 120, colSig: -813453232, meshSig: -1040616970 },
+  /* v1.0x: a second helipad disc (pad B by the airport terminal): +2 colliders, +264 tris. */
+  urban: { colliders: 4458, draws: 99, tris: 139984, casters: 62, lights: 7, bound: 120, colSig: -1481102938, meshSig: -1040616970 },
   /* v10.10: rural moved on purpose. The three river-bridge stair pairs climbed
      AWAY from the deck and finished 2.1 m short of it, so all six were
      unclimbable (verify-climb, "reached 0.05m"). Turned around and extended

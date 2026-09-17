@@ -125,7 +125,8 @@ const BASELINE = {
   /* v1.0i: ring signs moved off the train lane (see verify-fingerprint). */
   /* v1.0l: halts + helipad (see verify-fingerprint). */
   /* v1.0r: second track, halts removed (see verify-fingerprint). */
-  urban: {"colliders":4456,"sum":1991875396,"draws":99,"tris":139720,"casters":62,"lights":7,"minimap":247,"bound":120},
+  /* v1.0x: pad B. */
+  urban: {"colliders":4458,"sum":2410257096,"draws":99,"tris":139984,"casters":62,"lights":7,"minimap":247,"bound":120},
   urbanData: {"loot":430,"spawns":60,"airdrops":14},   /* v1.0e: +1 — the station roof point split into third-floor + roof */
   urbanLifts: "84.2:-25.5:1.6:0.25/3.25/6.25 | -76.2:-81.9:1.6:0.25/3.25/6.25"
 };

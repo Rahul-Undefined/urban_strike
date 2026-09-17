@@ -1312,7 +1312,7 @@ io.on('connection', (socket) => {
     const w = d && CFG.WEAPONS[d.w] ? d.w : null;
     if (!w) return ack({ ok: false, err: 'Unknown weapon' });
     if (!fireRateOk(p, w)) return ack({ ok: false, err: 'Too fast' });
-    ack(Heli.hit(room, p, w));
+    ack(Heli.hit(room, p, w, d && typeof d.idx === 'number' ? d.idx : undefined));   /* v1.0x: which machine */
   });
   /* ===== v1.0v - A BLAST DESTROYS ENEMY MINES ===== the thrower reports where
      their frag or rocket went off; the server clears enemy mines in the radius */
@@ -1353,7 +1353,7 @@ io.on('connection', (socket) => {
     if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
     const p = room.players.get(socket.id);
     if (!p) return ack({ ok: false, err: 'Not in the room' });
-    ack(Heli.board(room, p));
+    ack(Heli.board(room, p, d && typeof d.idx === 'number' ? d.idx : undefined));
   });
   /* ===== v15.0 - THE STRIKE REMOTE (fix 10) =====
      Big maps only, one per match, held by whoever found it. The caller sends

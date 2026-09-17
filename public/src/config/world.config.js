@@ -398,6 +398,12 @@
      whoever hit the helicopter last within `creditSec`. */
   var HELI = {
     pad: [-73, -68], padY: 0.3, cabinFloor: 0.6, alt: 32, speed: 14, returnSpeed: 16,
+    /* v1.0x (Rahul): TWO machines. Pad A is the original; pad B (open ground by
+       the airport terminal, 9 m clear) gets a second machine `secondSpawnSec`
+       after the first takes off, so the other side has one too. FUEL: a
+       flight lasts `fuelSec` and then the machine returns on its own ("petrol
+       over"); on the pad it refuels for `refuelSec` before it can lift again. */
+    pads: [[-73, -68], [-31, -66]], secondSpawnSec: 120, fuelSec: 180, refuelSec: 60,
     /* v1.0q (Rahul: "not a fixed path like the train — it should fly
        everywhere"): every flight rolls a SEED on the server; heliRoute(seed)
        turns it into a wandering loop of `routeN` random waypoints over the map
@@ -412,9 +418,15 @@
        RPG-L hits (300 each on 900) bring it down; the launcher is legendary
        crate loot with one round loaded and two spare, so a kill costs a crate
        and every shot. Every other class is zero. */
-    hp: 900,
-    dmgClass: { auto: 0, burst: 0, semi: 0, smg: 0, shotgun: 0, bolt: 0, pistol: 0, melee: 0, bow: 0, drone: 0, emp: 0, c4: 0, flame: 0 },
-    rocketDmg: 300
+    /* v1.0x (Rahul): 5000 hull points. Guns chip it — AKM 15 a round, M4-class
+       12, snipers 20, shotguns nothing — so a squad can wear it down but not
+       swat it; the RPG-L takes HALF the hull per hit (two and it is down), and
+       the SEEKER (auto-lock launcher, rarer loot) the same half in one shot.
+       `dmgWeapon` overrides `dmgType`; `rocketPct` is the fraction of max. */
+    hp: 5000,
+    dmgType: { auto: 12, semi: 12, bolt: 20, shotgun: 0, melee: 0, bow: 0, drone: 0, emp: 0, c4: 0, rocket: 0 },
+    dmgWeapon: { akm: 15, ak47: 15, scarh: 15, m249: 15, m4a1: 12, aug: 12, famas: 12, uzi: 8, p90: 8, ump9: 8, mp5: 8, vector: 8, pistol: 5, shotgun: 0, aa12: 0, flamer: 6, mk14: 20, garand: 20, sniper: 20, kar98: 20, awm: 20, k98w: 20 },
+    rocketPct: 0.5, rocketDmg: 2500
   };
   /* a small deterministic PRNG (mulberry32) so server and clients roll the
      same route from the same seed */
@@ -477,10 +489,10 @@
   function heliDamageFor(cfg, weapons, w) {
     var def = weapons[w];
     if (!def) return 0;
-    if (def.type === 'rocket') return cfg.rocketDmg;
-    var k = cfg.dmgClass[def.type];
-    if (k === undefined) k = 0.5;
-    return Math.round((def.dmg || 0) * k);
+    if (def.type === 'rocket') return Math.round(cfg.hp * (cfg.rocketPct || 0.5));
+    if (cfg.dmgWeapon && cfg.dmgWeapon[w] !== undefined) return cfg.dmgWeapon[w];
+    var k = cfg.dmgType ? cfg.dmgType[def.type] : undefined;
+    return k === undefined ? 0 : k;
   }
 
   /* ===== v1.0r - THE SECOND TRAIN =====

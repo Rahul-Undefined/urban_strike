@@ -1,3 +1,43 @@
+# v1.0.10 (build 24) — TWO MACHINES, FUEL, A 5000-POINT HULL, THE SEEKER (2026-09-17)
+
+Tagged `v1.0x`. Rahul's five (the sixth line was blank):
+
+**1. A 5000-point hull, chipped by guns, halved by launchers.** AKM 15 a
+round, M4-class 12, snipers 20, shotguns nothing (SMGs 8, pistols 5, the
+flamer 6); the RPG-L takes HALF the hull per hit — two and it is down. Riders
+see the hull on a big bar at the LEFT beside their health ("HULL 3120 / 5000
+· Q lands · jumping is fatal"); everyone sees a line per machine top-right.
+An AKM alone needs 334 rounds: a squad can wear it down, one rifle cannot
+swat it.
+
+**2. The SEEKER-9.** An auto-lock launcher, rarer than the RPG-L (crate-only,
+one entry in the exotic pool, one round loaded and one spare). Fired with a
+machine airborne within 320 m it locks the nearest one at launch ("LOCKED ·
+helicopter A · 140 m") and the round steers at the machine's CURRENT pose —
+half the hull in one hit. With nothing in reach it flies like a rocket. The
+RPG-L stays the manual shot.
+
+**3. Riders are safe until the machine dies** — unchanged from build 22; when
+the hull hits zero, everyone aboard dies with it.
+
+**4. Fuel.** A flight lasts 3 minutes; then the machine turns for its pad on
+its own ("out of fuel — returning"), lands, and refuels for 1 minute before it
+can lift again (the sign reads REFUELLING · ready in 0:42; Z is refused with
+the time left). A landed machine never leaves the map on its own any more; it
+only goes when shot down, and a new one comes 3 minutes after that.
+
+**5. Two machines.** Pad B, on open ground by the airport terminal (9 m
+clear), gets a second machine 2 minutes after the first lifts off, so the
+other side has one too. Each machine has its own pad, sign, route seed,
+riders, hull and fuel; Z boards the nearest one; a rocket, seeker or gun round
+names the machine it met; the EMP fells every airborne machine within 80 m.
+The client is a per-machine factory under one `Heli`, like the trains.
+
+`verify-heli` 104/0 (the damage table, two machines, second-pad scheduling,
+fuel auto-return, refuel gate, per-machine hits), `verify-protect` 26/0,
+`verify-armoury` 219/0 (the SEEKER has its own viewmodel). Board: 49 gates, 46
+green, the same three documented reds. Live: `test.js` 328/0.
+
 # v1.0.9 (build 23) — THE TRAIN SCORES, TALLER COVER, FLAT REDEPLOY (2026-09-16)
 
 Tagged `v1.0w`. Rahul's three:

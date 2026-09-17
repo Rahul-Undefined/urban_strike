@@ -8,6 +8,11 @@ doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
 every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
 count toward the next strike; Shift while scoped holds your breath.
 
+**v1.0.10 — TWO HELICOPTERS, FUEL, A 5000-POINT HULL, THE SEEKER.** Guns chip
+the hull (AKM 15, M4 12, snipers 20, shotguns 0); the RPG-L and the auto-lock
+SEEKER-9 each take half. Three minutes of fuel, one minute to refuel. A second
+machine arrives on pad B two minutes after the first lifts off.
+
 **v1.0.8 — PROTECTED RIDERS, THE STRIKE KEY.** Helicopter riders can't be shot;
 only an RPG or an EMP downs the machine (and them). Blasts destroy enemy mines.
 One Strike Key hides on Urban each match — find it, press N, every hostile dies.
