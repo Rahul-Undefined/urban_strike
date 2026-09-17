@@ -238,17 +238,21 @@ module.exports = function initHeli(ctx) {
     const dx = pose.x - shooter.pos[0], dy = pose.y - shooter.pos[1], dz = pose.z - shooter.pos[2];
     if (Math.sqrt(dx * dx + dy * dy + dz * dz) > 340) return { ok: false, err: 'Out of range' };
     if (h.riders.indexOf(shooter.id) >= 0) return { ok: false, err: 'You are aboard' };
-    const dmg = CFG.heliDamageFor(CFG.HELI, CFG.WEAPONS, w);
+    let dmg = CFG.heliDamageFor(CFG.HELI, CFG.WEAPONS, w);
     if (dmg <= 0) return { ok: true, dmg: 0, hp: h.hp, idx: h.idx };
+    /* v1.0y: AIR TO AIR — the shooter rides another airborne machine: 2x */
+    const mine = machineOf(room, shooter.id);
+    const airToAir = !!(mine && mine !== h && (mine.state === 'flying' || mine.state === 'returning') && (h.state === 'flying' || h.state === 'returning'));
+    if (airToAir) dmg = Math.round(dmg * (CFG.HELI.airToAirMult || 2));
     if (CFG.WEAPONS[w].type === 'rocket') {
       const tNow = now();
       if (shooter.lastHeliRocketAt && tNow - shooter.lastHeliRocketAt < 1800) return { ok: false, err: 'Too fast' };
       shooter.lastHeliRocketAt = tNow;
     }
     h.hp = Math.max(0, h.hp - dmg); h.lastHitBy = shooter.id; h.lastHitAt = now();
-    io.to(room.code).emit('heliHp', { hp: h.hp, max: CFG.HELI.hp, by: shooter.id, idx: h.idx });
-    if (h.hp <= 0) { const n = destroy(room, h, shooter); return { ok: true, dmg, hp: 0, destroyed: true, n, idx: h.idx }; }
-    return { ok: true, dmg, hp: h.hp, idx: h.idx };
+    io.to(room.code).emit('heliHp', { hp: h.hp, max: CFG.HELI.hp, by: shooter.id, idx: h.idx, a2a: airToAir });
+    if (h.hp <= 0) { const n = destroy(room, h, shooter); return { ok: true, dmg, hp: 0, destroyed: true, n, idx: h.idx, a2a: airToAir }; }
+    return { ok: true, dmg, hp: h.hp, idx: h.idx, a2a: airToAir };
   }
   function destroy(room, h, by) {
     const pose = poseOf(room, h) || { x: h.pad[0], y: CFG.HELI.padY, z: h.pad[1] };

@@ -342,7 +342,9 @@ var Heli = (function () {
     seatFor: function (id, out) { for (var i = 0; i < list.length; i++) { var v = list[i].seatFor(id, out); if (v) return v; } return null; },
     isRiderId: function (id) { for (var i = 0; i < list.length; i++) if (list[i].isRiderId(id)) return true; return false; },
     /* the nearest hull along the ray, with its machine's index */
-    rayHit: function (o, d, maxDist) { var best = null; for (var i = 0; i < list.length; i++) { var h = list[i].rayHit(o, d, maxDist); if (h && (!best || h.t < best.t)) { best = h; best.idx = i; } } return best; },
+    /* the nearest hull along the ray — never the machine I ride (v1.0y: so a
+       rider's rounds reach the OTHER machine, at 2x on the server) */
+    rayHit: function (o, d, maxDist) { var best = null; for (var i = 0; i < list.length; i++) { if (list[i].isRiding()) continue; var h = list[i].rayHit(o, d, maxDist); if (h && (!best || h.t < best.t)) { best = h; best.idx = i; } } return best; },
     active: function () { for (var i = 0; i < list.length; i++) if (list[i].active()) return true; return false; },
     isRiding: function () { return !!riding(); },
     pose: function () { var m = riding() || list[0]; return m ? m.pose() : null; },

@@ -623,7 +623,9 @@ var Weapons = (function () {
          never carried, so a ground shot at the rider through the open door
          "hit the hull" in front of them. Now: nobody aboard tests the hull,
          and a PLAYER hit always beats the hull. */
-      if (typeof Heli !== 'undefined' && Heli.active && Heli.active() && !(Heli.isRiding && Heli.isRiding())) {
+      /* v1.0y: a rider's rounds DO test the hull — of the other machine; Heli.rayHit
+         excludes the one they stand in */
+      if (typeof Heli !== 'undefined' && Heli.active && Heli.active()) {
         var hh = Heli.rayHit(o, d, reach);
         /* v1.0u: the hull COVERS the riders. A shot that reaches a rider must
            enter through an open side (between the hip rail and the roof); one
@@ -638,7 +640,7 @@ var Weapons = (function () {
           /* v1.0x: guns CHIP the hull again — the server's per-weapon table (AKM 15,
              M4 12, snipers 20, shotguns 0). A hitmarker only when something came off. */
           Net.hitHeli(current, hh.idx, function (res) {
-            if (res && res.ok && res.dmg > 0) UI.hitmarker(false);
+            if (res && res.ok && res.dmg > 0) UI.hitmarker(res.a2a);          // v1.0y: the heavy marker for air-to-air
             if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard');
           });
           continue;
@@ -1005,7 +1007,7 @@ var Weapons = (function () {
            (hitHeli with the rocket's own id: class damage 300). A rider's own
            rocket never tests the hull it is standing in. */
         var hitHeli = false;
-        if (p.mine && typeof Heli !== 'undefined' && Heli.active && Heli.active() && !(Heli.isRiding && Heli.isRiding())) {
+        if (p.mine && typeof Heli !== 'undefined' && Heli.active && Heli.active()) {   /* v1.0y: own machine excluded inside rayHit */
           var hhR = Heli.rayHit(p.pos, dir, step + 0.6);
           if (hhR) { hitHeli = true; p.pos.copy(hhR.point).addScaledVector(dir, -0.3); Net.hitHeli(p.kind === 'seeker' ? 'seeker' : 'rocket', hhR.idx, function (res) { if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard'); else if (res && res.ok) UI.hitmarker(false); }); }
         }

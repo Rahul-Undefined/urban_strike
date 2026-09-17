@@ -220,7 +220,9 @@ console.log('--- the client, in the order the game really runs ---');
     var tgt = new THREE.Vector3(p.x + Math.cos(p.yaw) * 40, 1.0, p.z + Math.sin(p.yaw) * 40);
     var dir = tgt.clone().sub(seat).normalize();
     var fromInside = Heli.rayHit(seat, dir, 400);
-    // a ground shooter aims up at the seat through the open side
+    // a ground shooter aims up at the seat through the open side — someone ELSE rides (v1.0y: my own hull is never tested)
+    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 5000, riders: ['other'], seed: 12345 }); Heli.update(0.016); p = Heli.pose();
+    seat = new THREE.Vector3(p.x, p.y + CFG.HELI.cabinFloor + 1.6, p.z);
     var g = new THREE.Vector3(p.x - Math.sin(p.yaw) * 30, 1.6, p.z + Math.cos(p.yaw) * 30);
     var up = seat.clone().sub(g).normalize();
     var fromGround = Heli.rayHit(g, up, 400);
@@ -229,6 +231,7 @@ console.log('--- the client, in the order the game really runs ---');
   ok(rr.fromInside === null, 'a rider\'s ray from inside the cabin meets no hull (the box test is skipped from inside)');
   /* v1.0u: the hull covers the riders except through the open door band */
   const rd = vm.runInContext(`(function(){
+    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 5000, riders: ['other'], seed: 12345 }); Heli.update(0.016);
     var p = Heli.pose(), cs = Math.cos(p.yaw), sn = Math.sin(p.yaw);
     var seat = new THREE.Vector3(p.x, p.y + CFG.HELI.cabinFloor + 1.6, p.z);
     // from the side, at rail-to-roof height: enters through the door band
@@ -250,7 +253,7 @@ console.log('--- the client, in the order the game really runs ---');
   ok(/Heli\.seatFor\(id, seatTmp\)/.test(fs.readFileSync(path.join(__dirname, '..', 'public/src/networking/net.js'), 'utf8')), 'remote riders are drawn at their seats, not at the lagging snapshot');
   ok(rr.fromGroundHitsHull === true && rr.hullT < rr.dist, 'a ground shooter\'s ray does meet the hull before the seat (' + (rr.hullT || 0).toFixed(1) + ' m of ' + rr.dist.toFixed(1) + ')...');
   const wsys2 = fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/system.js'), 'utf8');
-  ok(/!\(Heli\.isRiding && Heli\.isRiding\(\)\)/.test(wsys2) && /hit\.type === 'player' && hh\.opening && !riderTarget/.test(wsys2), '...but the hitscan lets a PLAYER hit through an opening beat the hull (a rider excepted — v1.0v), and never tests the hull for a shooter aboard');
+  ok(/hit\.type === 'player' && hh\.opening && !riderTarget/.test(wsys2), '...but the hitscan lets a PLAYER hit through an opening beat the hull (a rider excepted — v1.0v); the rider\'s own hull is excluded inside Heli.rayHit (v1.0y)');
   ok(!/hit\.remote/.test(wsys2), 'the dead `hit.remote` exemption is gone');
   ok(r.near === true && r.boarded === true, 'near the pad the client offers boarding and Z boards');
   ok(r.far === false, '30 m away it does not');
@@ -330,6 +333,16 @@ console.log('--- two machines, fuel, refuel (v1.0x) ---');
   const gnd = mk('G', 0, half, 0); rx.players.set('G', gnd);
   const h1 = SrvX.hit(rx, gnd, 'rocket', 1);
   ok(h1.ok && h1.idx === 1 && rx.helis[1].hp === H.hp - 2500 && rx.helis[0].hp === H.hp, 'a rocket named at machine B takes half of B, none of A');
+  /* v1.0y: AIR TO AIR — the pilot of A shoots B: 2x */
+  const before = rx.helis[1].hp;
+  const a2a = SrvX.hit(rx, pil, 'akm', 1);
+  ok(a2a.ok && a2a.a2a === true && a2a.dmg === 30 && rx.helis[1].hp === before - 30, 'the pilot of A hitting B with an AKM does 30 — twice the 15 from the ground');
+  ok(!SrvX.hit(rx, pil, 'akm', 0).ok, 'and still cannot hit the machine he rides');
+  const g2x = SrvX.hit(rx, gnd, 'akm', 1);
+  ok(g2x.ok && !g2x.a2a && g2x.dmg === 15, 'a ground shooter stays at 1x');
+  const heliCl2 = fs.readFileSync(path.join(__dirname, '..', 'public/src/environment/heli.js'), 'utf8');
+  ok(/if \(list\[i\]\.isRiding\(\)\) continue; var h = list\[i\]\.rayHit/.test(heliCl2), 'the client ray test skips only the machine I ride, so my rounds reach the other one');
+  ok(!/Heli\.active\(\) && !\(Heli\.isRiding && Heli\.isRiding\(\)\)/.test(fs.readFileSync(path.join(__dirname, '..', 'public/src/weapons/system.js'), 'utf8')), 'the hitscan no longer refuses to test hulls for a rider');
 }
 
 console.log('--- the wiring ---');

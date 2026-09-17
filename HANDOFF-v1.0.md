@@ -1,3 +1,20 @@
+# v1.0.11 (build 25) — AIR TO AIR AT 2x (2026-09-17)
+
+Tagged `v1.0y`. Rahul: "helicopter-to-helicopter fights — when a rider of one
+machine shoots the other, its hull falls at 2x speed."
+
+A shooter aboard an airborne machine firing at ANOTHER airborne machine does
+double hull damage: an AKM round 30 instead of 15, snipers 40, and a rocket
+or seeker from the air is a one-shot (2 x 50%). Ground shooters stay at 1x.
+Riders still cannot hurt the machine they stand in — the client's ray test
+now skips only THAT machine, so a rider's rounds reach the other one; the
+server applies the multiplier when the shooter rides a different airborne
+machine. The heavy hitmarker marks an air-to-air hit.
+
+`verify-heli` 109/0 (30 from the air vs 15 from the ground, own machine still
+untouchable, the ray test skips only the ridden machine). Client gates green;
+live `test.js` 328/0.
+
 # v1.0.10 (build 24) — TWO MACHINES, FUEL, A 5000-POINT HULL, THE SEEKER (2026-09-17)
 
 Tagged `v1.0x`. Rahul's five (the sixth line was blank):

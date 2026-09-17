@@ -426,7 +426,12 @@
     hp: 5000,
     dmgType: { auto: 12, semi: 12, bolt: 20, shotgun: 0, melee: 0, bow: 0, drone: 0, emp: 0, c4: 0, rocket: 0 },
     dmgWeapon: { akm: 15, ak47: 15, scarh: 15, m249: 15, m4a1: 12, aug: 12, famas: 12, uzi: 8, p90: 8, ump9: 8, mp5: 8, vector: 8, pistol: 5, shotgun: 0, aa12: 0, flamer: 6, mk14: 20, garand: 20, sniper: 20, kar98: 20, awm: 20, k98w: 20 },
-    rocketPct: 0.5, rocketDmg: 2500
+    rocketPct: 0.5, rocketDmg: 2500,
+    /* v1.0y (Rahul): helicopter-to-helicopter — a shooter aboard one airborne
+       machine firing at another makes the target's hull fall at 2x speed.
+       Applies to every weapon, launchers included (a rocket from the air is a
+       one-shot). */
+    airToAirMult: 2
   };
   /* a small deterministic PRNG (mulberry32) so server and clients roll the
      same route from the same seed */
