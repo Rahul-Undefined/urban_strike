@@ -36,17 +36,22 @@ var Minimap = (function () {
      ring and the airdrop clamp use, so the minimap cannot disagree with where
      the world actually ends. */
   var WORLD = 100;
+  /* v1.1: the drawn extent can be ASYMMETRIC (Urban's Western Reach). WX0/WZ0
+     are the world coords of the bake's top-left; WW/WH its size in metres.
+     Every mapping below goes through these, not WORLD. */
+  var WX0 = -100, WZ0 = -100, WW = 200, WH = 200;
   function applyMapExtent() {
     var m = (typeof World !== 'undefined' && World.builtMap) || 'urban';
     var b = (CFG.MAPS[m] && CFG.MAPS[m].bound) || 100;
-    var wasWorld = WORLD, wasScale = SCALE;
-    WORLD = b;
+    var ex = (CFG.MAPS[m] && CFG.MAPS[m].ext) || { x0: -b, x1: b, z0: -b, z1: b };
+    var wasWorld = WORLD, wasScale = SCALE, wasX0 = WX0;
+    WORLD = b; WX0 = ex.x0; WZ0 = ex.z0; WW = ex.x1 - ex.x0; WH = ex.z1 - ex.z0;
     /* 3.0 px/m at 100 m is the look everything was tuned against. Hold the
        offscreen canvas near that pixel budget rather than the scale, so a
        32 m map gets a much closer radar and a 150 m map does not mint a
        450 px-per-side bake for no benefit. */
     SCALE = Math.max(2.0, Math.min(7.0, 300 / b));
-    if (WORLD !== wasWorld || SCALE !== wasScale) invalidate();
+    if (WORLD !== wasWorld || SCALE !== wasScale || WX0 !== wasX0) invalidate();
     return WORLD;
   }
   var lastDraw = 0;
@@ -68,9 +73,9 @@ var Minimap = (function () {
        the call anywhere else leaves one of those three baking at the previous
        map's scale. */
     applyMapExtent();
-    var px = Math.ceil(WORLD * 2 * SCALE);
+    var px = Math.ceil(WW * SCALE), pz = Math.ceil(WH * SCALE);
     off = document.createElement('canvas');
-    off.width = px; off.height = px;
+    off.width = px; off.height = pz;
     var g = off.getContext('2d');
     g.fillStyle = 'rgba(18,22,28,0.92)';
     g.fillRect(0, 0, px, px);
@@ -79,8 +84,8 @@ var Minimap = (function () {
        through the middle of the Killhouse and the arenas that have no roads. */
     if (World.builtMap === 'urban' || !World.builtMap) {
       g.fillStyle = 'rgba(52,58,66,0.9)';
-      g.fillRect((WORLD - 7) * SCALE, 0, 14 * SCALE, px);
-      g.fillRect(0, (WORLD - 7) * SCALE, px, 14 * SCALE);
+      g.fillRect((0 - WX0 - 7) * SCALE, 0, 14 * SCALE, pz);
+      g.fillRect(0, (0 - WZ0 - 7) * SCALE, px, 14 * SCALE);
     }
     /* Structures, drawn in TWO WEIGHTS. Buildings and long walls carry the
        strong tone; containers, vehicles and small structures sit back in a
@@ -93,14 +98,14 @@ var Minimap = (function () {
     for (i = 0; i < shapes.length; i++) {
       s = shapes[i]; w = s[2] - s[0]; h = s[3] - s[1];
       if (w * h >= 24) continue;
-      g.fillRect((s[0] + WORLD) * SCALE, (s[1] + WORLD) * SCALE,
+      g.fillRect((s[0] - WX0) * SCALE, (s[1] - WZ0) * SCALE,
         Math.max(1.0, w * SCALE), Math.max(1.0, h * SCALE));
     }
     g.fillStyle = 'rgba(138,150,164,0.97)';
     for (i = 0; i < shapes.length; i++) {
       s = shapes[i]; w = s[2] - s[0]; h = s[3] - s[1];
       if (w * h < 24) continue;
-      g.fillRect((s[0] + WORLD) * SCALE, (s[1] + WORLD) * SCALE,
+      g.fillRect((s[0] - WX0) * SCALE, (s[1] - WZ0) * SCALE,
         Math.max(1.5, w * SCALE), Math.max(1.5, h * SCALE));
     }
   }
@@ -136,7 +141,7 @@ var Minimap = (function () {
     // rotated world layer (player-up)
     ctx.translate(cx, cy);
     ctx.rotate(-yaw);
-    ctx.drawImage(off, (-px - WORLD) * SCALE, (-pz - WORLD) * SCALE);
+    ctx.drawImage(off, (-px - (-WX0)) * SCALE, (-pz - (-WZ0)) * SCALE);
 
     /* v1.0j: the zone on the radar — red outside the circle, the edge in green,
        in the same rotated frame as the world layer. */
@@ -366,10 +371,10 @@ var Minimap = (function () {
 
   function screenToWorld(clientX, clientY) {
     var r = fullCv.getBoundingClientRect();
-    var W = r.width, S = W / (WORLD * 2);
-    var x = (clientX - r.left) / S - WORLD;
-    var z = (clientY - r.top) / S - WORLD;
-    if (Math.abs(x) > WORLD || Math.abs(z) > WORLD) return null;
+    var W = r.width, S = W / Math.max(WW, WH), ox = (W - WW * S) / 2, oz = (W - WH * S) / 2;
+    var x = (clientX - r.left - ox) / S + WX0;
+    var z = (clientY - r.top - oz) / S + WZ0;
+    if (x < WX0 || x > WX0 + WW || z < WZ0 || z > WZ0 + WH) return null;
     return { x: x, z: z };
   }
 
@@ -383,10 +388,10 @@ var Minimap = (function () {
     var modeCfg = CFG.MODES[(Net.getMatch() || {}).mode];
     if (!modeCfg || !modeCfg.teams) return;          // no sides, no shared marker
     var r = fullCv.getBoundingClientRect();
-    var W = r.width, S = W / (WORLD * 2);
-    var x = (clientX - r.left) / S - WORLD;
-    var z = (clientY - r.top) / S - WORLD;
-    if (Math.abs(x) > WORLD || Math.abs(z) > WORLD) return;
+    var W = r.width, S = W / Math.max(WW, WH), ox = (W - WW * S) / 2, oz = (W - WH * S) / 2;
+    var x = (clientX - r.left - ox) / S + WX0;
+    var z = (clientY - r.top - oz) / S + WZ0;
+    if (x < WX0 || x > WX0 + WW || z < WZ0 || z > WZ0 + WH) return;
     Net.mark(x, z);
     /* Shown immediately rather than waiting for the round trip.
        ===== v13.0 (item 7) - THE 'self' KEY WAS A LIE =====
@@ -442,16 +447,16 @@ var Minimap = (function () {
     var W = Math.min(window.innerWidth, window.innerHeight) * 0.86;
     fullCv.width = W; fullCv.height = W;
     fullCtx = fullCtx || fullCv.getContext('2d');
-    var g = fullCtx, S = W / (WORLD * 2);          // screen px per metre
+    var g = fullCtx, S = W / Math.max(WW, WH), OX = (W - WW * S) / 2, OZ = (W - WH * S) / 2;   // screen px per metre; the shorter axis centred (v1.1)
     g.clearRect(0, 0, W, W);
     g.save();
     g.globalAlpha = 0.97;
-    g.drawImage(off, 0, 0, W, W);                  // north-up, whole world
+    g.drawImage(off, OX, OZ, WW * S, WH * S);      // north-up, whole world — the extent's own aspect, centred (v1.1)
     g.restore();
 
     var mapNow = (World.builtMap || 'urban');
-    function sx(x) { return (x + WORLD) * S; }
-    function sz(z) { return (z + WORLD) * S; }
+    function sx(x) { return OX + (x - WX0) * S; }
+    function sz(z) { return OZ + (z - WZ0) * S; }
     /* v1.0j: URBAN ZONE on the M map — everything outside the circle red,
        the circle itself green-edged, the next circle as a white ring during
        the hold. Read from the same schedule the wall and the server use. */
@@ -471,12 +476,17 @@ var Minimap = (function () {
       g.restore();
     }
     /* v1.0l: THE HELICOPTER on the M map — a small cross where it is (airborne or on the pad). */
-    if (typeof Heli !== 'undefined' && Heli.active() && Heli.pose()) {
-      var hp = Heli.pose();
-      g.save(); g.translate(sx(hp.x), sz(hp.z)); g.rotate(hp.yaw);
-      g.fillStyle = 'rgba(255,240,160,0.95)';
-      g.fillRect(-6 * S, -0.9 * S, 12 * S, 1.8 * S); g.fillRect(-0.9 * S, -6 * S, 1.8 * S, 12 * S);
-      g.restore();
+    if (typeof Heli !== 'undefined' && Heli.active()) {
+      /* v1.0z: every machine (A and B), each where its own state puts it */
+      var machs = Heli.machines ? Heli.machines() : [];
+      for (var mi = 0; mi < machs.length; mi++) {
+        var ms = machs[mi].state(), hp = machs[mi].pose();
+        if (!ms || ms.state === 'gone' || !hp) continue;
+        g.save(); g.translate(sx(hp.x), sz(hp.z)); g.rotate(hp.yaw);
+        g.fillStyle = mi === 0 ? 'rgba(255,240,160,0.95)' : 'rgba(160,240,255,0.95)';
+        g.fillRect(-6 * S, -0.9 * S, 12 * S, 1.8 * S); g.fillRect(-0.9 * S, -6 * S, 1.8 * S, 12 * S);
+        g.restore();
+      }
     }
     /* v1.0e: THE TRAIN on the M map — each car as a small rotated bar in the
        loot-gold tone, drawn from the deterministic pose every client shares.

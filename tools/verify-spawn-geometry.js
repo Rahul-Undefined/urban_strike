@@ -48,7 +48,8 @@ Object.keys(CFG.MAPS).filter(m => CFG.MAPS[m].ready !== false).forEach(mapId => 
   const inWall = [], noGround = [], oob = [];
   spawns.forEach((s, i) => {
     const x = s[0], z = s[1];
-    if (Math.abs(x) > bound || Math.abs(z) > bound) { oob.push(i); return; }
+    const exS = (CFG.MAPS[mapId] && CFG.MAPS[mapId].ext) || { x0: -bound, x1: bound, z0: -bound, z1: bound };   /* v1.1: asymmetric extent */
+    if (x < exS.x0 || x > exS.x1 || z < exS.z0 || z > exS.z1) { oob.push(i); return; }
     const g = Bots.groundAt(cols, x, z, 3.0, R);
     if (g === null || g === undefined || g < -0.5) { noGround.push(i + '@' + x + ',' + z); return; }
     if (Bots.bodyBlocked(cols, x, g + 0.03, z, R, H, CFG.MOVE.step + 0.03)) inWall.push(i + '@' + x + ',' + z);
@@ -81,8 +82,10 @@ console.log('--- the SERVER RESOLVER serves each map its OWN tables (v14.0) ---'
     ok(!!(t && t.SPAWNS && t.SPAWNS.length && t.LOOT_POINTS && t.LOOT_POINTS.length),
       k + ': exports its own SPAWNS and LOOT_POINTS for the resolver to find');
     if (!t || !t.SPAWNS) continue;
-    const sOut = t.SPAWNS.filter(q => Math.abs(q[0]) > bound + 2 || Math.abs(q[2]) > bound + 2).length;
-    const lOut = (t.LOOT_POINTS || []).filter(q => Math.abs(q[0]) > bound + 2 || Math.abs(q[2]) > bound + 2).length;
+    const exK = (CFG.MAPS[k] && CFG.MAPS[k].ext) || { x0: -bound, x1: bound, z0: -bound, z1: bound };   /* v1.1 */
+    const outEx = (x, z) => x < exK.x0 - 2 || x > exK.x1 + 2 || z < exK.z0 - 2 || z > exK.z1 + 2;
+    const sOut = t.SPAWNS.filter(q => outEx(q[0], q[1])).length;
+    const lOut = (t.LOOT_POINTS || []).filter(q => outEx(q[0], q[2])).length;
     ok(sOut === 0 && lOut === 0,
       k + ': every spawn and loot point fits inside its own bound of ' + bound +
       (sOut + lOut ? ' [' + sOut + ' spawns, ' + lOut + ' loot outside]' : ''));

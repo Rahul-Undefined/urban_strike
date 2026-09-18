@@ -65,8 +65,11 @@ ok(S.radius < CFG.THROWS.frag.radius,
 const weakest = Math.min.apply(null, CFG.WEAPON_ORDER
   .filter(w => CFG.WEAPONS[w].type !== 'melee' && !CFG.WEAPONS[w].radius && !CFG.WEAPONS[w].gear)
   .map(w => CFG.WEAPONS[w].dmg * (CFG.WEAPONS[w].pellets || 1)));
-ok(S.hp <= weakest * 2,
-  'the weakest weapon downs a drone in two hits [drone ' + S.hp + ' hp, weakest shot ' + weakest + ']');
+/* v1.0z (Rahul: "shooting it down thoda competitive karo"): 45 -> 110 hp. The
+   old rule — two hits from the weakest gun — is exactly the tap-kill he asked
+   to lose. The new bar: a full magazine of the weakest gun still downs it. */
+ok(S.hp > weakest * 2 && S.hp <= weakest * 4,
+  'a drone takes three or four hits from the weakest gun — a burst, not a tap, and not a chore [drone ' + S.hp + ' hp, weakest shot ' + weakest + ']');
 ok(S.lockSec > 0, 'there is a lock phase, which is when the warning lands');
 ok(S.armSec > 0, 'it cannot be shot down before it clears the launcher');
 ok(S.maxLifeSec > 0 && S.maxLifeSec < 60, 'it never loiters forever [' + S.maxLifeSec + 's]');

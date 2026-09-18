@@ -1,3 +1,96 @@
+# v1.1.0 (build 27) — THE WESTERN REACH (2026-09-18)
+
+Tagged `v1.1`. Rahul: "make the map bigger from the stadium side — one side
+only, the other three the same; one train travels the extended map; name the
+districts; the towers on all four sides two floors higher; update the maps."
+
+**The map grows west.** Beyond the old west wall, a 60 m strip the full width
+of the map (x −180…−120). The extent is ASYMMETRIC now (`MAPS.urban.ext`):
+the north, south and east sides stand where they were; every symmetric system
+(zone circles, helicopter routes) still reads the 120 m core. Three named
+districts, north to south, with their own signboards:
+- **WEST DOCKS** — two warehouses, a low shed, a crane gantry over the dock,
+  container rows and a stacked second.
+- **HARBOUR MARKET** — two market halls round a square, the exchange, three
+  covered stalls, a fountain kerb.
+- **MILL ROW** — a row of three mill houses, the mill and its 14 m chimney, a
+  walled yard with a gate.
+Every block has a doorway, windows on three faces and an outside stair to its
+roof; 23 loot points (roofs only where the stair reaches them), six spawns,
+two lamp-lit streets that cross the West Barracks' fence through two new
+gates, and the ring boulevard's north and south sides run on to a NEW west
+boulevard at x −170. The west wall stands at −180; the ground reaches under it.
+
+**The second train travels the Reach.** Its west straight is the new
+boulevard's centre (−170); the loop grew to 922.7 m and its speed (10.7592) was
+retuned so its lap still equals the first train's to the millisecond, with a
+phase (34 s) proved collision-free by the OBB scan across a 42 s window —
+including its two new crossings of the first train's west straight. Rails are
+laid from the same config; a stop sits on the new straight; the barracks'
+corner vehicles and fence end were moved off both extended straights.
+
+**The towers are two floors higher** — five storeys, the cab at 21 m (was
+12.6), on all four sides; the builder is parametric (the medium maps' control
+towers stay three storeys). Cab loot points moved up.
+
+**The maps.** The M map draws the true 300 × 240 shape, centred; the radar and
+pointer mapping follow the same extent; both trains, both helicopters and the
+zone still draw where they are.
+
+Gates: `verify-train` 56/0 (both loops swept, the crossings proved),
+`verify-map` 2552/0 (extent-aware bounds), `verify-collision`,
+`verify-spawn-geometry`, `verify-fingerprint` re-recorded (+702 colliders,
++18.9k tris, draws and casters unchanged). Budgets raised and itemized:
+triangles 144k → 168k, embedded pairs 133 → 185 and coplanar pairs 110 → 150
+(both for the Reach's vehicles, stairs and floors — an audit item), bandwidth
+454 → 460 KB. Board: 49 gates, 46 green, the same three documented reds.
+Live: `test.js` 331/0.
+
+# v1.0.12 (build 26) — RAHUL'S TEN (2026-09-18)
+
+Tagged `v1.0z`.
+
+1. **Hull 4000** (launchers still take half: 2000).
+2. **Trains faster** — 8 → 10 m/s; the second train retuned to keep an equal
+   lap (117.8 s both) and a 45 s collision-free phase window (offset 33 s);
+   both loops re-proved by the OBB scan.
+3. **M map shows both helicopters** (A gold, B ice-blue), each where its own
+   state puts it.
+4. **Grenades 2 → 5.**
+5. **The drone**: 45 → 110 hp (a burst, not a tap), climb 14 → 17, hunt 15.5
+   → 19, dive 26 → 32, the lock before the dive 0.9 → 0.6 s. Shooting it down
+   is a contest; the kill comes sooner.
+6. **Airdrops every 100 s (was 150) and exclusive-only**: helm_3 and medkit
+   are out of the exotic pool — a crate now holds drones, launchers, the
+   SEEKER, the EMP, the shield, C4, the 8x, the visor, molotovs.
+7. **Sixteen unreachable Urban loot points removed** — on container stacks, the
+   airport terminal roof, and other tops with no stair within reach (found by
+   checking every elevated point against the map's stair tops; 430 → 414).
+8. **The "died behind the wall" shot.** The server accepted a victim position
+   up to **1.2 s** old within **4 m** — a whole stride behind cover. Now 250 ms
+   and 2.5 m, AND a line-of-sight check: a hitscan round must have a clear
+   segment through the map's static geometry from the shooter's eye (any of
+   their positions in the last 250 ms, so a fast peek still counts) to the
+   claimed victim position. Blasts, flame and the knife are exempt.
+9. **Fuel 3 → 2 minutes.**
+10. **Late-match lag, another pass.** Every bullet impact created five fresh
+    BoxGeometries and, worse, DISPOSED the shared spark material each time —
+    which forces the shader program to be rebuilt on the next impact, dozens
+    of times a second in a fight. Sparks share one geometry now and never
+    dispose their material. Late matches are the busiest; this is where it
+    showed. (Client structures — decals, feed rows, snapshot buffers, pickups,
+    fire zones — were audited again and all bounded.)
+
+`verify-heli` 109/0, `verify-train` 56/0, `verify-armoury` 219/0,
+`verify-drone` 31/0 (its rule is now "three or four hits from the weakest gun"),
+fingerprints and the Urban loot count (414) re-baselined. Board: 49 gates, 46
+green, the same three documented reds. Live: `test.js` 331/0 — including a
+new line-of-sight phase: two rounds from behind the map's own geometry land
+nothing, the same round from the open lands. The suite's other phases spawn
+their two players anywhere and fire, so the live server has a TEST SEAM: with
+`US_TEST=1` the wall check is off unless a room asks for it (`los: true`); in
+production the env is unset and the check is always on.
+
 # v1.0.11 (build 25) — AIR TO AIR AT 2x (2026-09-17)
 
 Tagged `v1.0y`. Rahul: "helicopter-to-helicopter fights — when a rider of one

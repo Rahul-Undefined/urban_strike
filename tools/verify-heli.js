@@ -43,11 +43,11 @@ console.log('--- the route wanders and the flight is endless ---');
 
 console.log('--- damage: the v1.0x table ---');
 const dmg = w => CFG.heliDamageFor(H, CFG.WEAPONS, w);
-ok(H.hp === 5000, 'the hull has 5000 points');
+ok(H.hp === 4000, 'the hull has 4000 points (v1.0z)');
 ok(dmg('akm') === 15 && dmg('m4a1') === 12 && dmg('awm') === 20 && dmg('sniper') === 20 && dmg('shotgun') === 0 && dmg('aa12') === 0, 'AKM 15, M4 12, snipers 20, shotguns 0 — per shot');
 ok(dmg('knife') === 0 && dmg('bow') === 0 && dmg('drone') === 0 && dmg('emp') === 0 && dmg('c4') === 0, 'knives, bows, drones, EMP and C4 do nothing to the hull');
-ok(dmg('rocket') === 2500 && dmg('seeker') === 2500 && Math.ceil(H.hp / dmg('rocket')) === 2, 'the RPG-L and the SEEKER each take half the hull: two and it is down');
-ok(Math.ceil(H.hp / dmg('akm')) >= 300, 'an AKM alone needs ' + Math.ceil(H.hp / dmg('akm')) + ' rounds — a squad can wear it down, one rifle cannot swat it');
+ok(dmg('rocket') === 2000 && dmg('seeker') === 2000 && Math.ceil(H.hp / dmg('rocket')) === 2, 'the RPG-L and the SEEKER each take half the hull: two and it is down');
+ok(Math.ceil(H.hp / dmg('akm')) >= 250, 'an AKM alone needs ' + Math.ceil(H.hp / dmg('akm')) + ' rounds — a squad can wear it down, one rifle cannot swat it');
 ok(CFG.LOOT_ITEMS.wpn_rocket && CFG.LOOT_ITEMS.wpn_rocket.rar === 'l' && (CFG.AIRDROP.exoticPool || []).indexOf('wpn_rocket') >= 0, 'the launcher is legendary crate loot (the airdrop exotic pool)');
 ok(CFG.WEAPONS.rocket.mag === 1 && CFG.WEAPONS.rocket.reserve === 2, 'one round loaded, two spare: a kill costs the crate and every shot');
 
@@ -96,7 +96,7 @@ const shooter = mk('S', 0, half, 0); room.players.set('S', shooter);
 const r0 = Srv.hit(room, shooter, 'akm');
 ok(r0.ok && r0.dmg === 15 && room.heli.hp === H.hp - 15, 'an AKM round chips 15 off the hull');
 const r1 = Srv.hit(room, shooter, 'rocket');
-ok(r1.ok && r1.dmg === 2500 && room.heli.hp === H.hp - 15 - 2500, 'a rocket takes 2500 off the hull');
+ok(r1.ok && r1.dmg === 2000 && room.heli.hp === H.hp - 15 - 2000, 'a rocket takes 2000 off the hull');
 ok(!Srv.hit(room, shooter, 'rocket').ok, 'a second rocket claim inside the launcher\'s cycle is refused');
 T0 += 2000;
 ok(emitted.some(e => e.ev === 'heliHp'), 'and the room is told the health');
@@ -197,7 +197,7 @@ console.log('--- the client, in the order the game really runs ---');
     var sc = new THREE.Scene(); World.reset(); World.buildMap(sc, 'urban');
     Net = { getMatch: function(){ return { startedAt: 1000, serverOffset: 0 }; }, getMyId: function(){ return 'me'; }, boardHeli: function(idx, cb){ (typeof idx === 'function' ? idx : cb)({ ok: true, aboard: true }); } };
     UI = { toast: function(){}, setHeliHud: function(){}, announce: function(){} }; AudioSys = {};
-    Heli.set({ idx: 0, state: 'pad', t0: Date.now(), hp: 5000, riders: [], respawnAt: 0 });   // matchStart.heli, applied by net.js first
+    Heli.set({ idx: 0, state: 'pad', t0: Date.now(), hp: 4000, riders: [], respawnAt: 0 });   // matchStart.heli, applied by net.js first
     Heli.init(sc, 'urban');                                                          // Game.onMatchStart -> buildWorld -> Heli.init
     Heli.init(sc, 'urban');                                                          // a watchdog rebuild does it again
     Heli.update(0.016);
@@ -213,7 +213,7 @@ console.log('--- the client, in the order the game really runs ---');
   ok(r.act === true && r.pose && Math.abs(r.pose.x - H.pad[0]) < 0.01, 'the machine is on the pad after the map rebuild that follows matchStart');
   /* v1.0s: the hull must never swallow a shot between a rider and the ground */
   const rr = vm.runInContext(`(function(){
-    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 5000, riders: ['me'], seed: 12345 }); Heli.update(0.016);
+    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 4000, riders: ['me'], seed: 12345 }); Heli.update(0.016);
     var p = Heli.pose();
     // a rider at the seat aims down at a target 40 m ahead on the ground
     var seat = new THREE.Vector3(p.x, p.y + CFG.HELI.cabinFloor + 1.6, p.z);
@@ -221,7 +221,7 @@ console.log('--- the client, in the order the game really runs ---');
     var dir = tgt.clone().sub(seat).normalize();
     var fromInside = Heli.rayHit(seat, dir, 400);
     // a ground shooter aims up at the seat through the open side — someone ELSE rides (v1.0y: my own hull is never tested)
-    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 5000, riders: ['other'], seed: 12345 }); Heli.update(0.016); p = Heli.pose();
+    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 4000, riders: ['other'], seed: 12345 }); Heli.update(0.016); p = Heli.pose();
     seat = new THREE.Vector3(p.x, p.y + CFG.HELI.cabinFloor + 1.6, p.z);
     var g = new THREE.Vector3(p.x - Math.sin(p.yaw) * 30, 1.6, p.z + Math.cos(p.yaw) * 30);
     var up = seat.clone().sub(g).normalize();
@@ -231,7 +231,7 @@ console.log('--- the client, in the order the game really runs ---');
   ok(rr.fromInside === null, 'a rider\'s ray from inside the cabin meets no hull (the box test is skipped from inside)');
   /* v1.0u: the hull covers the riders except through the open door band */
   const rd = vm.runInContext(`(function(){
-    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 5000, riders: ['other'], seed: 12345 }); Heli.update(0.016);
+    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 4000, riders: ['other'], seed: 12345 }); Heli.update(0.016);
     var p = Heli.pose(), cs = Math.cos(p.yaw), sn = Math.sin(p.yaw);
     var seat = new THREE.Vector3(p.x, p.y + CFG.HELI.cabinFloor + 1.6, p.z);
     // from the side, at rail-to-roof height: enters through the door band
@@ -241,7 +241,7 @@ console.log('--- the client, in the order the game really runs ---');
     var below = new THREE.Vector3(p.x, p.y - 25, p.z);
     var b = Heli.rayHit(below, seat.clone().sub(below).normalize(), 400);
     // the seat lookup for a listed rider
-    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 5000, riders: ['A', 'B'], seed: 12345 }); Heli.update(0.016);
+    Heli.set({ idx: 0, state: 'flying', t0: Date.now() - 20000, hp: 4000, riders: ['A', 'B'], seed: 12345 }); Heli.update(0.016);
     var sA = Heli.seatFor('A'), sB = Heli.seatFor('B'), sZ = Heli.seatFor('nobody');
     var p2 = Heli.pose();
     return { sideOpening: a ? a.opening : null, belowOpening: b ? b.opening : null, seats: sA && sB && !sZ, seatDist: sA ? Math.hypot(sA.x - p2.x, sA.z - p2.z) : null, seatY: sA ? sA.y - p2.y : null, apart: sA && sB ? sA.distanceTo(sB) : null };
@@ -332,7 +332,7 @@ console.log('--- two machines, fuel, refuel (v1.0x) ---');
   ok(rx.helis[1].state === 'flying' && rx.helis[0].state === 'flying', 'both machines fly at once');
   const gnd = mk('G', 0, half, 0); rx.players.set('G', gnd);
   const h1 = SrvX.hit(rx, gnd, 'rocket', 1);
-  ok(h1.ok && h1.idx === 1 && rx.helis[1].hp === H.hp - 2500 && rx.helis[0].hp === H.hp, 'a rocket named at machine B takes half of B, none of A');
+  ok(h1.ok && h1.idx === 1 && rx.helis[1].hp === H.hp - 2000 && rx.helis[0].hp === H.hp, 'a rocket named at machine B takes half of B, none of A');
   /* v1.0y: AIR TO AIR — the pilot of A shoots B: 2x */
   const before = rx.helis[1].hp;
   const a2a = SrvX.hit(rx, pil, 'akm', 1);

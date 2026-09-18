@@ -911,7 +911,7 @@ var World = (function () {
   function groundAndRoads() {
     // Ground: four slabs leaving a hole for the sunken tunnel trench (x[45.4,48.6] z[-28,-9])
     /* v15.0 (fix 4): the ground reaches 130 now that the map is 240 m across. */
-    seg(-130, 45.4, -1, 0, -130, 130, M.dirt, { cast: false });
+    seg(-190, 45.4, -1, 0, -130, 130, M.dirt, { cast: false });   /* v1.1: the ground runs under the Western Reach */
     seg(48.6, 130, -1, 0, -130, 130, M.dirt, { cast: false });
     seg(45.4, 48.6, -1, 0, -130, -28, M.dirt, { cast: false });
     seg(45.4, 48.6, -1, 0, -9, 130, M.dirt, { cast: false });
@@ -1983,7 +1983,14 @@ World.build = function (sceneRef) {
   function signClear(sx, sz, face, BW, BH, PH) {
     /* v1.0r: never on the ring boulevard — both of its lanes are railway now.
        The four ring-district signs sit at ±96.6 on purpose, just inside. */
-    if ((World._buildingMap || World.builtMap) === 'urban' && Math.max(Math.abs(sx), Math.abs(sz)) > 97.2) return false;
+    if ((World._buildingMap || World.builtMap) === 'urban') {
+      var az = Math.abs(sz);
+      var onNS = az > 97.2 && az < 107;                                  // the north/south lanes, the whole width (v1.1)
+      var onE = sx > 97.2 && sx < 107 && az < 107;
+      var onOldW = sx < -97.2 && sx > -107 && az < 107;
+      var onNewW = sx < -162 && sx > -178.5;                             // the Western Reach's boulevard
+      if (onNS || onE || onOldW || onNewW) return false;
+    }
     var cols = World._colliders();
     var dx = Math.cos(face), dz = Math.sin(face);
     var px = -dz, pz = dx;
@@ -2203,6 +2210,11 @@ World.build = function (sceneRef) {
     seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win, emissive: emissiveMat,
     container: container, crates: crates, brokenWall: brokenWall, lamp: lamp, barrel: barrel,
     bus: bus, sedan: sedan, van: van, jeep: jeep, truck: truck,
+    M: M, rnd: rnd, scene: H.sceneRef()
+  });
+  if (World._buildPart7) World._buildPart7({   /* v1.1: the Western Reach */
+    seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win,
+    container: container, crates: crates, lamp: lamp, barrel: barrel, van: van, truck: truck, sedan: sedan,
     M: M, rnd: rnd, scene: H.sceneRef()
   });
   if (World._buildDeco) World._buildDeco({

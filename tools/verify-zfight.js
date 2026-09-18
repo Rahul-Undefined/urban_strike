@@ -162,7 +162,10 @@ const totalAll = r.top.all + r.west.all + r.east.all + r.north.all + r.south.all
    this file has held since v8.5.
    Left at 46/110 rather than tightened to 45/107, because the one spare pair is
    Urban's existing slack and not something the stadium earned. */
-const ROOF_PAIRS = 46, ALL_PAIRS = 110;
+/* v1.1: ALL_PAIRS 110 -> 150 for the Western Reach (its floors, roofs and
+   street planes against each other and the ground plane). Same audit item as
+   verify-props. */
+const ROOF_PAIRS = 46, ALL_PAIRS = 150;
 ok(totalHigh <= ROOF_PAIRS, `urban: ${totalHigh} coplanar pairs above roof height (budget ${ROOF_PAIRS})`);
 ok(totalAll <= ALL_PAIRS, `urban: ${totalAll} coplanar pairs total (budget ${ALL_PAIRS})`);
 

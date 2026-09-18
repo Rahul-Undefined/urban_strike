@@ -182,7 +182,10 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
 /* ===== v1.0x — 448 -> 454 KB. Stated plainly: the helicopter as a two-machine
    factory with fuel and refuel, the SEEKER launcher and its viewmodel, the
    rider's hull bar. ~2 KB gz. */
-const GZ_BUDGET_KB = 454;
+/* ===== v1.1 — 454 -> 460 KB. THE WESTERN REACH, STATED PLAINLY: three new
+   districts in districts-outer.js, the asymmetric extent in minimap.js, the
+   parametric tower. ~1 KB gz. */
+const GZ_BUDGET_KB = 460;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

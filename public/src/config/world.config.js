@@ -253,7 +253,13 @@
   var MAPS = {
     /* v15.0 (fix 4): 100 -> 120. The outer ring (districts-outer.js _buildPart6)
        adds four districts and four control towers around the old perimeter. */
-    urban: { label: 'Urban', ready: true, bound: 120 },
+    /* v1.1 (Rahul: "make the map bigger from the stadium side, one side only"):
+       `ext` is the true playable extent — the west runs to -180 (the WESTERN
+       REACH: three new districts and the second train's new west boulevard);
+       the other three sides stay at 120. `bound` (120) remains the core square
+       every symmetric system reads (zone circles, helicopter routes, spawns
+       in the core). */
+    urban: { label: 'Urban', ready: true, bound: 120, ext: { x0: -180, x1: 120, z0: -120, z1: 120 } },
     /* v15.0 (fix 14): RURAL REMOVED. Rahul: "it is of no use now, remove it
        completely." Builder, config table, script tags, harness lists and gate
        budgets all deleted in the same commit — the entry is not hidden, it is
@@ -361,7 +367,7 @@
          step boards apart; the stadium pavilion's west wall moved in for the
          second train's inner track. */
       waypoints: [[-103.2, -103.2], [-6, -103.2], [9, -88], [103.2, -88], [103.2, 103.2], [-103.2, 103.2]],
-      fillet: 8, speed: 8.0, dwellSec: 3, brakeM: 24, accelM: 30,
+      fillet: 8, speed: 10.0, dwellSec: 3, brakeM: 28, accelM: 36,   /* v1.0z: 8 -> 10 m/s (Rahul: "thoda badha do"); longer brake/accel to match */
       /* v1.0l (Rahul: "stop at multiple locations, a small station on all four
          sides"): the HEAD stops `offset` metres past the start of the straight
          after waypoint `at`. Sector 7 Central (north), then a small platform on
@@ -403,7 +409,7 @@
        after the first takes off, so the other side has one too. FUEL: a
        flight lasts `fuelSec` and then the machine returns on its own ("petrol
        over"); on the pad it refuels for `refuelSec` before it can lift again. */
-    pads: [[-73, -68], [-31, -66]], secondSpawnSec: 120, fuelSec: 180, refuelSec: 60,
+    pads: [[-73, -68], [-31, -66]], secondSpawnSec: 120, fuelSec: 120, refuelSec: 60,   /* v1.0z: 2 minutes of fuel (Rahul) */
     /* v1.0q (Rahul: "not a fixed path like the train — it should fly
        everywhere"): every flight rolls a SEED on the server; heliRoute(seed)
        turns it into a wandering loop of `routeN` random waypoints over the map
@@ -423,10 +429,10 @@
        swat it; the RPG-L takes HALF the hull per hit (two and it is down), and
        the SEEKER (auto-lock launcher, rarer loot) the same half in one shot.
        `dmgWeapon` overrides `dmgType`; `rocketPct` is the fraction of max. */
-    hp: 5000,
+    hp: 4000,   /* v1.0z: 5000 -> 4000 (Rahul) — launchers still take half (2000) */
     dmgType: { auto: 12, semi: 12, bolt: 20, shotgun: 0, melee: 0, bow: 0, drone: 0, emp: 0, c4: 0, rocket: 0 },
     dmgWeapon: { akm: 15, ak47: 15, scarh: 15, m249: 15, m4a1: 12, aug: 12, famas: 12, uzi: 8, p90: 8, ump9: 8, mp5: 8, vector: 8, pistol: 5, shotgun: 0, aa12: 0, flamer: 6, mk14: 20, garand: 20, sniper: 20, kar98: 20, awm: 20, k98w: 20 },
-    rocketPct: 0.5, rocketDmg: 2500,
+    rocketPct: 0.5, rocketDmg: 2000,
     /* v1.0y (Rahul): helicopter-to-helicopter — a shooter aboard one airborne
        machine firing at another makes the target's hull fall at 2x speed.
        Applies to every weapon, launchers included (a rocket from the air is a
@@ -512,14 +518,21 @@
      provably never a collision — see verify-train. */
   var TRAIN2 = {
     urban: {
-      waypoints: [[-99.4, -99.4], [-99.4, 99.4], [99.4, 99.4], [99.4, -99.4]],
-      /* speed 7.8362 makes lap 2 exactly lap 1 (139.29 s) so the phase between
+      /* v1.1: the west straight runs the NEW west boulevard at -170, through
+         the Western Reach; the north and south straights stretch to meet it. */
+      waypoints: [[-170, -99.4], [-170, 99.4], [99.4, 99.4], [99.4, -99.4]],
+      /* speed 9.425 makes lap 2 exactly lap 1 (117.83 s) so the phase between
          the trains is constant; tOffset 40 sits in the middle of a 52 s window
          in which no car of one ever overlaps a car of the other (2D OBB, every
          0.1 s of a lap — verify-train). Change either train and re-tune both. */
-      fillet: 8, speed: 7.8362, dwellSec: 3, brakeM: 24, accelM: 30,
+      /* v1.1: the west straight now runs the Western Reach (922.7 m loop); speed
+         10.7592 keeps the lap equal to train 1's (117.83 s) and tOffset 34 sits
+         in a 42 s window with zero OBB overlaps — including the two new
+         crossings of train 1's west straight. Retune BOTH numbers if either
+         train's route changes (/tmp/tune.js pattern; verify-train enforces). */
+      fillet: 8, speed: 10.7592, dwellSec: 3, brakeM: 24, accelM: 30,
       stops: [{ at: 0, offset: 134 }, { at: 1, offset: 134 }, { at: 2, offset: 134 }, { at: 3, offset: 60 }],
-      tOffset: 40,
+      tOffset: 34,
       floor: 1.05, roof: 3.75, cars: 4, livery: 'olive'
     }
   };

@@ -85,6 +85,7 @@ function makeRoom(hostSocket, name, settings) {
       /* v14.0: a botOnly map is refused to any mode that is not botmode —
          the exclusivity is enforced in BOTH directions (bm modes are dragged
          TO blacksite by mapLock below; everything else is kept OFF it here). */
+      los: process.env.US_TEST === '1' && settings && settings.los === true,   /* v1.0z test seam: honoured only under US_TEST */
       map: (CFG.MODES[mode] && CFG.MODES[mode].mapLock) ? CFG.MODES[mode].mapLock   /* v1.0j: Urban Zone is Urban */
         : (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false) ? settings.map : 'urban',
       killTarget: clampOpt(settings && settings.killTarget, CFG.MATCH.killOptions, CFG.MATCH.defaultKills),

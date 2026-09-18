@@ -155,7 +155,10 @@
     [-58, -112, -2.66, "n"], [26, -112, 2.91, "n"], [50, -112, 2.72, "n"], [-97, -112, -2.43, "n"],   // north yards
     [-88, 110, -0.67, "n"], [-64, 107, -0.54, "n"], [86, 110, 0.66, "n"], [98, 110, 0.73, "n"],      // southfield
     [110, -79, 2.19, "n"], [110, -43, 1.94, "n"], [110, 26, 1.34, "n"], [110, 98, 0.84, "n"],        // east market
-    [-112, -88, -2.24, "n"], [-112, -76, -2.17, "n"], [-112, 50, -1.15, "n"], [-112, 86, -0.92, "n"] // west barracks
+    [-112, -88, -2.24, "n"], [-112, -76, -2.17, "n"], [-112, 50, -1.15, "n"], [-112, 86, -0.92, "n"], // west barracks
+    /* v1.1: THE WESTERN REACH — six spawns on its streets and squares, both sides */
+    [-146, -34, Math.PI * 0.5, 'n'], [-146, 34, -Math.PI * 0.5, 'n'], [-170, -80, Math.PI, 'n'],
+    [-170, 80, 0, 'n'], [-152, -2, Math.PI * 0.5, 'n'], [-150, 3, -Math.PI * 0.5, 'n'],
   ];
 
   /* ---------------- DYNAMIC LOOT ---------------- */
@@ -190,7 +193,12 @@
        mistakes are not the same size. */
     interpMax: 320,
     interpUp: 120, interpDown: 18,
-    hitTolerance: 4.0, historyMs: 1200,
+    /* v1.0z (Rahul: "shot as he stepped behind the wall, still died"): the
+       server used to accept a victim position up to 1.2 s old within 4 m — a
+       whole stride behind cover. 250 ms is a real network delay; 2.5 m a real
+       stride. Plus a line-of-sight check (server.js 'hit'): the round must
+       reach the claimed position through the map. */
+    hitTolerance: 2.5, historyMs: 250,
     detectMs: 3500        // ms an unsuppressed shot pings the minimap
   };
 

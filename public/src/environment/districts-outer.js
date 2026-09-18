@@ -1749,9 +1749,14 @@ World._buildPart5 = function (T) {
    whole thing in x so a tower on the west side of the map can face inward
    with its escape toward the wall. Numbers are the South Terminal tower's,
    translated — not re-derived. */
-World._towerAt = function (T, X0, Z0, mir) {
+World._towerAt = function (T, X0, Z0, mir, floors) {
   var seg = T.seg, cyl = T.cyl, stairFlight = T.stairFlight, M = T.M;
-  var TT = 0.3, DECKS = [0, 4.2, 8.4, 12.6];
+  /* v1.1 (Rahul: "the towers on all four sides should be two floors higher so
+     it is easy to shoot"): five storeys, cab at 21 m. Every height below
+     derives from DECKS and CAB, so the two extra floors are two numbers. */
+  var NF = floors || 5, DECKS = [], TT = 0.3;
+  for (var f = 0; f <= NF; f++) DECKS.push(f * 4.2);
+  var CAB = DECKS[NF];
   function TX(lx) { return X0 + (mir ? (8 - lx) : lx); }
   function S(lx0, lx1, y0, y1, lz0, lz1, mat, o) {
     var a = TX(lx0), b = TX(lx1);
@@ -1773,7 +1778,7 @@ World._towerAt = function (T, X0, Z0, mir) {
     if (v1 < y1) S(lx0, lx1, v1, y1, u0, u1, M.concrete);
   }
   var i;
-  for (i = 0; i < 3; i++) {
+  for (i = 0; i < NF; i++) {
     var y = DECKS[i], top = DECKS[i + 1];
     wallZ(0, TT, y, top, 2.0, 3.4, y + 1.4, y + 2.7);            // south face, window
     wallZ(12 - TT, 12, y, top, 5.0, 6.4, y + 1.4, y + 2.7);      // north face, window
@@ -1789,7 +1794,7 @@ World._towerAt = function (T, X0, Z0, mir) {
        and trims it back to the run edge (measured: 7.06). A plate under 1 m2
        is below the cutter's threshold, so it survives, and it is exactly what
        a real stairwell has at the nosing. Metal, like the treads it serves. */
-    if (i < 2) S(1.2, 2.6, top - 0.25, top, 6.45, 7.1, M.metal);
+    if (i < NF - 1) S(1.2, 2.6, top - 0.25, top, 6.45, 7.1, M.metal);
   }
   for (i = 0; i < 3; i++) {
     var by = DECKS[i], rise = DECKS[i + 1] - by, sh = rise / 11;
@@ -1803,19 +1808,19 @@ World._towerAt = function (T, X0, Z0, mir) {
        flight arrives on the landing it was built to arrive on. */
     S(0.4, 3.6, DECKS[i + 1] - 0.22, DECKS[i + 1], 1.4, 3.4, M.metal);
   }
-  S(-0.6, 8.6, 12.6, 12.85, -0.6, 12.6, M.concrete);              // overhanging cab deck
-  S(-0.6, 8.6, 12.85, 13.9, -0.6, -0.35, M.shopGlass);
-  S(-0.6, 8.6, 12.85, 13.9, 12.35, 12.6, M.shopGlass);
-  S(-0.6, -0.35, 12.85, 13.9, -0.6, 12.6, M.shopGlass);
-  S(8.35, 8.6, 12.85, 13.9, -0.6, 12.6, M.shopGlass);
-  S(-0.6, 8.6, 15.6, 15.9, -0.6, 12.6, M.roof);                  // cab roof, 16 m
+  S(-0.6, 8.6, CAB, CAB + 0.25, -0.6, 12.6, M.concrete);              // overhanging cab deck
+  S(-0.6, 8.6, CAB + 0.25, CAB + 1.3, -0.6, -0.35, M.shopGlass);
+  S(-0.6, 8.6, CAB + 0.25, CAB + 1.3, 12.35, 12.6, M.shopGlass);
+  S(-0.6, -0.35, CAB + 0.25, CAB + 1.3, -0.6, 12.6, M.shopGlass);
+  S(8.35, 8.6, CAB + 0.25, CAB + 1.3, -0.6, 12.6, M.shopGlass);
+  S(-0.6, 8.6, CAB + 3.0, CAB + 3.3, -0.6, 12.6, M.roof);                  // cab roof
   [[-0.4, -0.4], [8.4, -0.4], [-0.4, 12.4], [8.4, 12.4]].forEach(function (c) {
-    cyl(TX(c[0]), 14.2, Z0 + c[1], 0.12, 2.7, M.trim);
+    cyl(TX(c[0]), CAB + 1.6, Z0 + c[1], 0.12, 2.7, M.trim);
   });
   /* External fire escape on the east face: switchback, two lanes, landings
      beyond each flight, stringers on. */
   var W = 1.4, RUN = 0.36, LANE = 1.9, PAD = 2.0;
-  for (i = 0; i < 3; i++) {
+  for (i = 0; i < NF; i++) {
     var from = i === 0 ? 0 : DECKS[i], to = DECKS[i + 1];
     var h = to - from, st = Math.ceil(h / 0.34), rs = h / st, len = st * RUN;
     var odd = (i % 2) === 1, lx = 9.4 + (odd ? LANE : 0);
@@ -1856,9 +1861,10 @@ World._buildPart6 = function (T) {
   segx(-106.6, -106, 0, 0.13, -106, 106, M.sidewalk, NCAST);
   segx(106, 106.6, 0, 0.13, -106, 106, M.sidewalk, NCAST);
   // the new perimeter
-  segx(-120.9, 120.9, 0, 3.2, -120.9, -120, M.concrete);
-  segx(-120.9, 120.9, 0, 3.2, 120, 120.9, M.concrete);
-  segx(-120.9, -120, 0, 3.2, -120, 120, M.concrete);
+  /* v1.1: the west wall stands at -180 now; the north and south walls reach it */
+  segx(-180.9, 120.9, 0, 3.2, -120.9, -120, M.concrete);
+  segx(-180.9, 120.9, 0, 3.2, 120, 120.9, M.concrete);
+  segx(-180.9, -180, 0, 3.2, -120, 120, M.concrete);
   segx(120, 120.9, 0, 3.2, -120, 120, M.concrete);
   // boulevard lamps every 24 m, arms toward the road
   // north run skips the two freight sheds (x -46..-10, 40..76) so no lamp arm pokes into a roof
@@ -2129,9 +2135,12 @@ World._buildPart6 = function (T) {
     }
     hut(-90, -66, -78); hut(30, 54, 42);
     // compound fence: chain-link posts and a low wall at the boulevard side, one gate
-    segx(-107.0, -106.6, 0, 1.4, -96, -20, M.concrete);
-    segx(-107.0, -106.6, 0, 1.4, 24, 100, M.concrete);
-    for (var pz = -96; pz <= 100; pz += 6) { if (pz > -20 && pz < 24) continue; box(-106.8, 1.4, pz, 0.12, 2.8, 0.12, M.metal, NCAST); }
+    /* v1.1: two 6 m gates where the Western Reach's streets cross (z -34, 34) */
+    segx(-107.0, -106.6, 0, 1.4, -96, -37, M.concrete);
+    segx(-107.0, -106.6, 0, 1.4, -31, -20, M.concrete);
+    segx(-107.0, -106.6, 0, 1.4, 24, 31, M.concrete);
+    segx(-107.0, -106.6, 0, 1.4, 37, 96, M.concrete);   /* v1.1: stops short of the south straight */
+    for (var pz = -96; pz <= 96; pz += 6) { if (pz > -20 && pz < 24) continue; box(-106.8, 1.4, pz, 0.12, 2.8, 0.12, M.metal, NCAST); }
     // the gate: two posts and a guard post with a window
     cyl(-106.8, 1.9, -20, 0.2, 3.8, M.concrete); cyl(-106.8, 1.9, 24, 0.2, 3.8, M.concrete);
     segx(-112, -108, 0, 2.6, -14, -13.7, M.plaster); segx(-112, -108, 0, 2.6, -9.3, -9, M.plaster);
@@ -2143,7 +2152,7 @@ World._buildPart6 = function (T) {
     segx(-118, -108, 0.03, 0.05, -56, 0, M.concrete, NBOTH);
     segx(-118, -108, 0.05, 0.065, -28.2, -27.8, M.roadPaintY, NBOTH);
     // vehicles: jeeps by the huts, a truck at the north end, a bus at the south
-    jeep(-112, -62, 0.4); jeep(-112, 60, -0.4); truck(-113, -102, 0); bus(-113, 92, Math.PI / 2);
+    jeep(-112, -62, 0.4); jeep(-112, 60, -0.4); truck(-113, -110, 0); bus(-113, 88, Math.PI / 2);   /* v1.1: off the second train's extended straights */
     // ammo dump: crates and drums in a ring
     crates(-116, 12); crates(-116, 16); barrel(-113, 14, true); barrel(-112.2, 15.1, false);
     // watchtower stub (a raised guard deck on four legs, ladder-height crate step)
@@ -2163,8 +2172,8 @@ World._buildPart6 = function (T) {
   cyl(113, 9.5, -113, 3.6, 3.0, M.contGray, NC); cyl(113, 11.2, -113, 3.7, 0.4, M.rust, NBOTH);
   cyl(112, 1.6, -100, 1.6, 3.2, M.contGray); cyl(116.5, 1.6, -100, 1.6, 3.2, M.contGray);
   // NW: scrap heap — a broken bus and container ends
-  bus(-113, -112, 0.35); crates(-110, -100); barrel(-116, -102, true); barrel(-115.1, -101.2, true);
-  container(-112, -104, true, M.contGray, true);
+  bus(-113, -112, 0.35); crates(-110, -108); barrel(-116, -109, true); barrel(-115.1, -108.2, true);   /* v1.1: north of the second train's straight */
+  container(-112, -110.5, true, M.contGray, true);
   // SE: bus depot bays
   bus(112, 112, Math.PI / 2); bus(116, 112, Math.PI / 2);
   segx(108, 118, 0.03, 0.05, 108, 118, M.concrete, NBOTH);
@@ -2174,4 +2183,106 @@ World._buildPart6 = function (T) {
   box(-117, 1.8, 113, 0.16, 3.6, 0.16, M.metal, NCAST); box(-109, 1.8, 113, 0.16, 3.6, 0.16, M.metal, NCAST);
   box(-117, 3.4, 113, 0.08, 1.0, 1.6, M.white, NBOTH); box(-109, 3.4, 113, 0.08, 1.0, 1.6, M.white, NBOTH);
   segx(-118, -108, 0, 1.0, 107.6, 108.0, M.brick);
+};
+
+
+/* ===== v1.1 - THE WESTERN REACH =====
+   Rahul: "make the map bigger from the stadium side, one side only; one train
+   travels the extended map; name the districts; update the maps."
+   A 60 m strip beyond the old west wall (x -180..-120), the width of the map.
+   The ring boulevard's north and south sides run on to a NEW west boulevard
+   at x -174..-166 (the second train's west straight is its centre, -170);
+   between the old wall line and the new boulevard sit three districts,
+   north to south:
+     WEST DOCKS     z -96..-38  warehouses, a crane gantry, container rows
+     HARBOUR MARKET z -30..30   two market halls round a square, stalls
+     MILL ROW       z 38..96    a row of mill houses and the chimney
+   Two east-west streets at z -34 and 34 join the old boulevard (through the
+   West Barracks' fence, which gets two gates) to the new one. */
+World._buildPart7 = function (T) {
+  var seg = T.seg, box = T.box, cyl = T.cyl, M = T.M, rnd = T.rnd, facade = T.facade, win = T.win, stairFlight = T.stairFlight;
+  var container = T.container, crates = T.crates, lamp = T.lamp, barrel = T.barrel, van = T.van, truck = T.truck;
+  var NC = { collide: false }, NCAST = { cast: false }, NBOTH = { cast: false, collide: false };
+  function segx(xa, xb, y0, y1, za, zb, mat, o) { seg(Math.min(xa, xb), Math.max(xa, xb), y0, y1, Math.min(za, zb), Math.max(za, zb), mat, o); }
+  /* a plain two-storey block with a doorway on one face and a flat roof */
+  function block(x0, x1, z0, z1, floors, mat, doorFace) {
+    var H = 3.3 * floors, TT = 0.3;
+    seg(x0, x1, H, H + 0.3, z0, z1, M.roof);                                   // roof slab
+    seg(x0, x1, 0.02, 0.15, z0, z1, M.concrete);                                // floor (0.02: off the ground plane, no z-fight)
+    /* three walls as facades with a window; the door face is built from its
+       own pieces below (never both — a wall inside a wall is an embedded pair) */
+    if (doorFace !== 'n') facade('z', z0, z0 + TT, x0, x1, 0, H, mat, [win((x0 + x1) / 2, 1.3, 2.2, 1.4)]);
+    if (doorFace !== 's') facade('z', z1 - TT, z1, x0, x1, 0, H, mat, [win((x0 + x1) / 2, 1.3, 2.2, 1.4)]);
+    if (doorFace !== 'w') facade('x', x0, x0 + TT, z0, z1, 0, H, mat, [win((z0 + z1) / 2, 1.3, 2.2, 1.4)]);
+    if (doorFace !== 'e') facade('x', x1 - TT, x1, z0, z1, 0, H, mat, [win((z0 + z1) / 2, 1.3, 2.2, 1.4)]);
+    /* the doorway: a 2.6 m gap cut as two wall pieces on the door face */
+    var cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    if (doorFace === 'e') { seg(x1 - TT, x1, 0, 2.7, z0 + TT, cz - 1.3, mat); seg(x1 - TT, x1, 0, 2.7, cz + 1.3, z1 - TT, mat); seg(x1 - TT, x1, 2.7, H, z0, z1, mat); }
+    if (doorFace === 'w') { seg(x0, x0 + TT, 0, 2.7, z0 + TT, cz - 1.3, mat); seg(x0, x0 + TT, 0, 2.7, cz + 1.3, z1 - TT, mat); seg(x0, x0 + TT, 2.7, H, z0, z1, mat); }
+    if (doorFace === 'n') { seg(x0 + TT, cx - 1.3, 0, 2.7, z0, z0 + TT, mat); seg(cx + 1.3, x1 - TT, 0, 2.7, z0, z0 + TT, mat); seg(x0, x1, 2.7, H, z0, z0 + TT, mat); }
+    if (doorFace === 's') { seg(x0 + TT, cx - 1.3, 0, 2.7, z1 - TT, z1, mat); seg(cx + 1.3, x1 - TT, 0, 2.7, z1 - TT, z1, mat); seg(x0, x1, 2.7, H, z1 - TT, z1, mat); }
+    /* an outside stair to the roof: along the north wall, outside it, climbing
+       east; a short landing bridges the last step onto the roof slab */
+    var steps = Math.ceil(H / 0.30), run = 0.34;
+    stairFlight(x0 + 0.3, 0, z0 - 1.9, 1, 0, steps, H / steps, run, 1.6, M.concrete);
+    seg(x0 + 0.3 + steps * run, x0 + 0.3 + steps * run + 1.6, H, H + 0.3, z0 - 2.7, z0 + 0.4, M.concrete);
+  }
+
+  /* ---- boulevard extension (asphalt is non-colliding) ---- */
+  segx(-178, -106, 0.005, 0.02, -106, -98, M.asphalt, NBOTH);
+  segx(-178, -106, 0.005, 0.02, 98, 106, M.asphalt, NBOTH);
+  segx(-174, -166, 0.005, 0.02, -106, 106, M.asphalt, NBOTH);
+  segx(-166, -122, 0.005, 0.02, -38, -30, M.asphalt, NBOTH);                  // street north
+  segx(-166, -122, 0.005, 0.02, 30, 38, M.asphalt, NBOTH);                    // street south
+  segx(-122, -106, 0.005, 0.02, -38, -30, M.asphalt, NBOTH);                  // through the barracks line
+  segx(-122, -106, 0.005, 0.02, 30, 38, M.asphalt, NBOTH);
+  for (var d = -100; d < 100; d += 6) segx(-170.2, -169.8, 0.03, 0.045, d, d + 3, M.roadPaint, NBOTH);
+  segx(-178.6, -178, 0, 0.13, -106.6, 106.6, M.sidewalk, NCAST);                // outer kerb, west
+  segx(-178.6, -106, 0, 0.13, -106.6, -106, M.sidewalk, NCAST);
+  segx(-178.6, -106, 0, 0.13, 106, 106.6, M.sidewalk, NCAST);
+  [-90, -50, 50, 90].forEach(function (z) { lamp(-165.4, z, 'w'); lamp(-174.6, z, 'e'); });
+
+  /* ---- WEST DOCKS (z -96..-38) ---- */
+  block(-162, -146, -94, -76, 2, M.facadeOlive, 'e');                           // warehouse A
+  block(-142, -126, -94, -80, 2, M.steelBlue, 'w');                             // warehouse B
+  block(-162, -148, -68, -46, 1, M.contRed, 's');                               // low shed
+  var CB = [M.contRed, M.contBlue, M.contGreen || M.contBlue, M.contRed];
+  [[-140, -66], [-134, -66], [-128, -66], [-140, -58], [-134, -58]].forEach(function (c, i) {
+    container(c[0], c[1], i % 2 === 1, CB[i % CB.length], false);
+  });
+  box(-131, 3.9, -58, 6.0, 2.6, 2.44, M.contBlue);                              // stacked second
+  /* crane gantry: two legs and a beam across the dock */
+  seg(-160.5, -159.5, 0, 9, -44, -43, M.metal); seg(-124.5, -123.5, 0, 9, -44, -43, M.metal);
+  seg(-161, -123, 9, 9.6, -44.2, -42.8, M.metal, NCAST);
+  crates(-150, -44); barrel(-156, -48, true); barrel(-155, -47, false);
+  truck(-134, -48, Math.PI / 2);
+
+  /* ---- HARBOUR MARKET (z -30..30) ---- */
+  block(-164, -148, -26, -6, 2, M.cream, 'e');                                  // hall north
+  block(-164, -148, 6, 26, 2, M.cream, 'e');                                    // hall south
+  block(-136, -124, -12, 12, 1, M.cream, 'w');                                  // the exchange
+  /* the square: stalls, a fountain kerb, benches */
+  [[-146, -14], [-146, 14], [-142, 0]].forEach(function (c, i) {
+    box(c[0], 1.05, c[1], 2.4, 0.1, 1.6, M.wood); box(c[0], 0.45, c[1], 2.2, 0.9, 1.4, M.wood);
+    box(c[0], 2.2, c[1], 2.8, 0.08, 2.0, i % 2 ? M.contRed : M.contBlue, NC);
+    box(c[0] - 1.2, 1.4, c[1], 0.08, 1.6, 0.08, M.metal); box(c[0] + 1.2, 1.4, c[1], 0.08, 1.6, 0.08, M.metal);
+  });
+  cyl(-142, 0.3, -6, 2.2, 0.6, M.concrete); cyl(-142, 0.9, -6, 0.5, 1.2, M.concrete);
+  van(-158, 0, 0); crates(-128, 20);
+
+  /* ---- MILL ROW (z 38..96) ---- */
+  [[-164, -152], [-150, -138], [-136, -124]].forEach(function (r, i) { block(r[0], r[1], 44, 58, 2, i % 2 ? M.facadeIndigo : M.plaster, 'n'); });
+  block(-162, -136, 68, 92, 2, M.facadeOlive, 'n');                             // the mill
+  cyl(-131, 7, 80, 1.4, 14, M.contRed);                                        // the chimney
+  cyl(-131, 14.2, 80, 1.6, 0.4, M.dark);
+  seg(-166, -146, 0, 1.1, 61.5, 61.8, M.plaster);                               // the yard wall between row and mill...
+  seg(-142, -124, 0, 1.1, 61.5, 61.8, M.plaster);                               // ...with a 4 m gate at x -146..-142
+  crates(-158, 64); barrel(-127, 64, true); lamp(-145, 40, 's');
+
+  /* ---- gates through the West Barracks fence, on the two streets ---- */
+  /* the fence stands at x -107..-106.6; the streets cross it at z -34 and 34 —
+     a 6 m break each, marked by two posts */
+  [[-34], [34]].forEach(function (g) {
+    cyl(-106.8, 1.2, g[0] - 3.2, 0.12, 2.4, M.metal); cyl(-106.8, 1.2, g[0] + 3.2, 0.12, 2.4, M.metal);
+  });
 };

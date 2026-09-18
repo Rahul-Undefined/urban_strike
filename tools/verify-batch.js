@@ -114,7 +114,11 @@ const CAST_BUDGET = { urban: 62, metro: 22 };
    a second 782 m loop of chord-laid rails and sleepers (~4.6k tris, one
    material pair each — draws unchanged) plus finer chords on both loops'
    curves. Four thousand spare, as every raise before it. */
-const TRI_BUDGET = { urban: 144000, metro: 26000 };
+/* v1.1: 144k -> 168k. THE WESTERN REACH AND THE TALLER TOWERS, STATED PLAINLY:
+   three new districts (nine blocks, a crane, containers, a mill and chimney,
+   market stalls), the boulevard extension with rails, and four towers that
+   are five storeys instead of three. Measured after build; headroom kept. */
+const TRI_BUDGET = { urban: 168000, metro: 26000 };
 /* v9.0: rural 200 -> 215. Hollow Ridge is 1.9x the area of the old map and
    its cover is drystone walls, which the minimap draws as shapes. Measured at
    210. Urban's 320 is untouched. */

@@ -1558,8 +1558,10 @@ io.on('connection', (socket) => {
        The budget is deliberately loose (3x sprint + slack): its job is to
        stop cross-map blinks, not to litigate lag. */
     const nx = num(s.p[0]), ny = num(s.p[1]), nz = num(s.p[2]);
-    const B2 = ((CFG.MAPS[room.settings.map || 'urban'] || {}).bound || 100) + 15;
-    if (Math.abs(nx) > B2 || Math.abs(nz) > B2 || ny < -12 || ny > 140) return;
+    const MC = CFG.MAPS[room.settings.map || 'urban'] || {};
+    const B2 = (MC.bound || 100) + 15;
+    const EX = MC.ext || { x0: -B2, x1: B2, z0: -B2, z1: B2 };   /* v1.1: an asymmetric extent when the map has one */
+    if (nx < Math.min(-B2, EX.x0 - 15) || nx > Math.max(B2, EX.x1 + 15) || nz < Math.min(-B2, EX.z0 - 15) || nz > Math.max(B2, EX.z1 + 15) || ny < -12 || ny > 140) return;
     const tSt = now();
     if (p.justSpawned) { p.justSpawned = false; }
     else if (p.lastStAt) {
@@ -1631,6 +1633,29 @@ io.on('connection', (socket) => {
     if (!explosive && d.victim === socket.id) return;
     if (!explosive && !fireRateOk(shooter, d.w)) return;
     if (!positionPlausible(victim, d.vp)) return;
+    /* v1.0z: LINE OF SIGHT. A hitscan round (not a blast) must have a clear
+       segment from the shooter's eye to the claimed victim position through
+       the map's static geometry. A victim who has stepped behind a wall —
+       fully — cannot be tagged from a stale glimpse. Head height on both ends
+       so a wall you can see over still lets the shot through. */
+    if (d.w !== 'frag' && d.w !== 'rocket' && d.w !== 'seeker' && d.w !== 'flamer' && d.w !== 'knife') {
+      /* TEST SEAM (v1.0z): the live suite spawns its two players anywhere on the
+         map and fires; with the wall check on, most of its shots would be
+         refused by geometry that has nothing to do with the rule under test.
+         When the server runs with US_TEST=1 the check is OFF unless a room asks
+         for it (`settings.los: true`); in production the env is unset, the check
+         is always on and the setting is ignored. */
+      if (process.env.US_TEST === '1' && room.settings.los !== true) { /* skip */ } else {
+      const cols = Bots.buildColliders(room.settings.map || 'urban');
+      const tgtY = d.vp[1] + (d.part === 'head' ? CFG.PLAYER.standH * 0.40 : 0);
+      /* the shooter's own position lags too: accept if ANY of their positions in
+         the last 250 ms had the line — a fast peek is not a wallhack */
+      const eyes = [shooter.pos].concat((shooter.history || []).slice(-4).map(h => h.pos));
+      let clear = !cols.length;
+      for (const e of eyes) { if (!Bots.segmentBlocked(cols, e[0], e[1] + CFG.PLAYER.standH * 0.30, e[2], d.vp[0], tgtY, d.vp[2])) { clear = true; break; } }
+      if (!clear) return;                                        // no line of sight: the round hit the wall
+      }
+    }
 
     let dmg, pointBlank = false;
     if (d.w === 'frag') {

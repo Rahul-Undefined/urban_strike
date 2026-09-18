@@ -164,7 +164,7 @@
                            piece of cover on the long lane.
          QUAY FURNITURE  — two dockside cranes, willow trees along the banks,
                            sandbag flood walls in runs along both quays. */
-    World._towerAt(T, 36, -43, false);                         // x 36..44, z -43..-31, escape east
+    World._towerAt(T, 36, -43, false, 3);                         // x 36..44, z -43..-31, escape east
     (function mill() {
       var x0 = -30, x1 = -14, z0 = 28, z1 = 40, H = 5.2, TW = 0.3;
       K.segx(x0, x1, 0, H, z0, z0 + TW, M.brick);                            // north wall, solid
@@ -293,7 +293,7 @@
          THE FIRE STATION   — an enterable two-bay station on the east apron.
          FUEL FARM          — three tanks with a bund wall in the north-west.
          A RADAR MAST and windsocks for the skyline. */
-    World._towerAt(T, 14, 35, false);                          // x 14..22, z 35..47, escape east
+    World._towerAt(T, 14, 35, false, 3);                          // x 14..22, z 35..47, escape east
     (function airliner() {
       var cx = -10, cz = 16;                                    // fuselage centre, along x
       K.box(cx, 2.4, cz, 36, 4.0, 4.0, M.paperWhite);           // fuselage

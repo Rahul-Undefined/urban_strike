@@ -32,9 +32,14 @@ var FX = (function () {
     add(m, 0.09, function (e, t) { e.mesh.material.opacity = 0.9 * (1 - t); });
   }
 
+  /* v1.0z: one spark geometry for every spark ever — five fresh BoxGeometries
+     per bullet impact was hundreds of GPU buffer creations a second in a
+     busy fight, and their disposal churned the same. Shared geometry is
+     flagged so the cleanup below leaves it alone. */
+  var sparkGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
   function impact(point) {
     for (var i = 0; i < 5; i++) {
-      var m = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), sparkMat);
+      var m = new THREE.Mesh(sparkGeo, sparkMat); m.userData.sharedGeo = true; m.userData.sharedMat = true;
       m.position.copy(point);
       var v = new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3.5, (Math.random() - 0.5) * 4);
       (function (vv) {
@@ -278,8 +283,11 @@ var FX = (function () {
       var t = e.life / e.ttl;
       if (t >= 1) {
         scene.remove(e.mesh);
-        if (e.mesh.geometry) e.mesh.geometry.dispose();
-        if (e.mesh.material && e.mesh.material.dispose) e.mesh.material.dispose();
+        if (e.mesh.geometry && !e.mesh.userData.sharedGeo) e.mesh.geometry.dispose();
+        /* v1.0z: never dispose a SHARED material — disposing sparkMat on every
+           spark forced the shader program to be rebuilt on the next impact,
+           dozens of times a second in a fight */
+        if (e.mesh.material && e.mesh.material.dispose && !e.mesh.userData.sharedMat) e.mesh.material.dispose();
         /* v15.0: a GROUP effect (the helicopter) owns its children's buffers. */
         if (e.mesh.isGroup) e.mesh.traverse(function (o) {
           if (o.geometry) o.geometry.dispose();

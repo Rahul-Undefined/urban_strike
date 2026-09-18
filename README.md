@@ -8,6 +8,17 @@ doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
 every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
 count toward the next strike; Shift while scoped holds your breath.
 
+**v1.1.0 — THE WESTERN REACH.** Urban grows 60 m to the west: WEST DOCKS,
+HARBOUR MARKET and MILL ROW beyond the old wall, the second train's loop running
+through them, five-storey towers on all four sides, and maps that show the new
+shape.
+
+**v1.0.12 — RAHUL'S TEN.** Hull 4000, faster trains, both helicopters on the
+M map, five grenades, a tougher and quicker drone, exclusive-only airdrops every
+100 s, unreachable Urban loot removed, a line-of-sight check so nobody dies
+behind a wall they reached, two minutes of fuel, and spark effects that no
+longer rebuild the shader every impact.
+
 **v1.0.10 — TWO HELICOPTERS, FUEL, A 5000-POINT HULL, THE SEEKER.** Guns chip
 the hull (AKM 15, M4 12, snipers 20, shotguns 0); the RPG-L and the auto-lock
 SEEKER-9 each take half. Three minutes of fuel, one minute to refuel. A second

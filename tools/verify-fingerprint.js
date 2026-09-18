@@ -209,7 +209,10 @@ const BASELINE = {
      narrowed, practice nets/container/signs moved off the lanes. draws 99,
      casters 62 unchanged. minimap 250 -> 247 (the halt platforms). */
   /* v1.0x: a second helipad disc (pad B by the airport terminal): +2 colliders, +264 tris. */
-  urban: { colliders: 4458, draws: 99, tris: 139984, casters: 62, lights: 7, bound: 120, colSig: -1481102938, meshSig: -1040616970 },
+  /* v1.1: THE WESTERN REACH and five-storey towers — +702 colliders, +18.9k tris,
+     draws 99 and casters 62 unchanged (no new material pairs), minimap shapes
+     247 -> 296. */
+  urban: { colliders: 5160, draws: 99, tris: 158912, casters: 62, lights: 7, bound: 120, colSig: 1183024947, meshSig: -916865682 },
   /* v10.10: rural moved on purpose. The three river-bridge stair pairs climbed
      AWAY from the deck and finished 2.1 m short of it, so all six were
      unclimbable (verify-climb, "reached 0.05m"). Turned around and extended

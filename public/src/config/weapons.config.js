@@ -301,7 +301,7 @@
        damage keeps the OLD 7 m falloff (`selfRadius`), or every throw would be
        a suicide. `fxRadius` sizes the fireball; a 50 m sphere is not a visual. */
     frag:  { label: 'Frag',  dmg: 100, radius: 50.0, killRadius: 20.0, outerDmg: 50, selfRadius: 7.0, fxRadius: 9.0,
-             fuse: 2.8, count: 2, throwVel: 16, cook: true, impact: true, flatDamage: true },
+             fuse: 2.8, count: 5, throwVel: 16, cook: true, impact: true, flatDamage: true },   /* v1.0z: 2 -> 5 (Rahul) */
     smoke: { label: 'Smoke', dur: 12, radius: 5.5, fuse: 1.4, count: 1, throwVel: 14 },
     molotov: { label: 'Molotov', dmg: 95, burnDps: 12, burnSec: 5, radius: 4.6, tickSec: 0.45, fuse: 99, count: 3, maxCarry: 6, throwVel: 13, impact: true },
     flash: { label: 'Flash', radius: 15, blind: 3.2, fuse: 1.4, count: 1, throwVel: 16 }
@@ -424,11 +424,11 @@
     drone: {
       label: 'Strike Drone', start: 2, maxCarry: 4,
       dmg: 140, radius: 4.2,         // lethal, but a much tighter circle than a frag
-      hp: 45,                        // any weapon kills it in a short burst
+      hp: 110,                       // v1.0z: 45 -> 110 — a burst, not a tap; shooting it down is a contest (Rahul)
       cruiseY: 26,                   // climbs above rooftops before it hunts
-      climbSpeed: 14, hunt: 15.5, dive: 26,
+      climbSpeed: 17, hunt: 19, dive: 32,   /* v1.0z: quicker in every phase (Rahul) */
       armSec: 1.2,                   // cannot be shot down before it has left your hands
-      lockSec: 0.9,                  // pause on target before the dive, so the warning lands
+      lockSec: 0.6,                  // v1.0z: 0.9 -> 0.6 — the kill comes sooner (Rahul)
       maxLifeSec: 22,                // never loiters forever
       warnRadius: 40                 // how close before the victim's HUD lights up
     }

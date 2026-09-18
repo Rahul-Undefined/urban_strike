@@ -32,6 +32,10 @@
       x0: 106, x1: 120, z0: -106, z1: 106, sign: [96.6, 40, -1.5708], tone: 'dustyPink' },   /* v1.0r */
     { id: 'westbarracks', name: 'WEST BARRACKS',
       x0: -120, x1: -106, z0: -106, z1: 106, sign: [-96.6, -40, 1.5708], tone: 'facadeOlive' },   /* v1.0r */
+    /* v1.1: THE WESTERN REACH — three districts beyond the old west wall */
+    { name: 'WEST DOCKS',     sign: [-144, -40, 3.1416], tone: 'steelBlue' },
+    { name: 'HARBOUR MARKET', sign: [-144, -30, 0], tone: 'cream' },
+    { name: 'MILL ROW',       sign: [-144, 40, 0], tone: 'facadeOlive' },
 
     { id: 'construction', name: 'CONSTRUCTION SITE',
       x0: -20, x1: 20, z0: -70, z1: -52, sign: [0, -51.0, 0], tone: 'rust' },

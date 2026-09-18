@@ -126,8 +126,9 @@ const BASELINE = {
   /* v1.0l: halts + helipad (see verify-fingerprint). */
   /* v1.0r: second track, halts removed (see verify-fingerprint). */
   /* v1.0x: pad B. */
-  urban: {"colliders":4458,"sum":2410257096,"draws":99,"tris":139984,"casters":62,"lights":7,"minimap":247,"bound":120},
-  urbanData: {"loot":430,"spawns":60,"airdrops":14},   /* v1.0e: +1 — the station roof point split into third-floor + roof */
+  /* v1.1: the Western Reach + taller towers (see verify-fingerprint). */
+  urban: {"colliders":5160,"sum":893361222,"draws":99,"tris":158912,"casters":62,"lights":7,"minimap":296,"bound":120},
+  urbanData: {"loot":437,"spawns":66,"airdrops":14},   /* v1.1: +23 loot, +6 spawns in the Western Reach */
   urbanLifts: "84.2:-25.5:1.6:0.25/3.25/6.25 | -76.2:-81.9:1.6:0.25/3.25/6.25"
 };
 // ---------------------------------------------------------------------------

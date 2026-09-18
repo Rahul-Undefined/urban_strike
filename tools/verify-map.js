@@ -147,6 +147,9 @@ function runMap(mapName, data, wallDefault) {
     }
   }
   const WALL = ctx.World.BOUND || wallDefault;
+  /* v1.1: a map may have an ASYMMETRIC extent (Urban's Western Reach) */
+  const EXT = (CFG.MAPS[mapName] && CFG.MAPS[mapName].ext) || { x0: -WALL, x1: WALL, z0: -WALL, z1: WALL };
+  const inExt = (x, z) => x > EXT.x0 && x < EXT.x1 && z > EXT.z0 && z < EXT.z1;
 
   function supportAt(x, y, z) {
     for (const c of cols) {
@@ -172,12 +175,12 @@ function runMap(mapName, data, wallDefault) {
 
   console.log("--- [" + mapName + "] loot points (" + data.LOOT_POINTS.length + ") ---");
   data.LOOT_POINTS.forEach((p, i) => {
-    ok(Math.abs(p[0]) < WALL && Math.abs(p[2]) < WALL, mapName + " loot#" + i + " [" + p + "] inside bounds");
+    ok(inExt(p[0], p[2]), mapName + " loot#" + i + " [" + p + "] inside bounds");
     ok(supportAt(p[0], p[1], p[2]), mapName + " loot#" + i + " [" + p + "] floats (no support at y=" + p[1] + ")");
   });
   console.log("--- [" + mapName + "] spawns (" + data.SPAWNS.length + ") ---");
   data.SPAWNS.forEach((s, i) => {
-    ok(Math.abs(s[0]) < WALL && Math.abs(s[1]) < WALL, mapName + " spawn#" + i + " [" + s[0] + "," + s[1] + "] inside bounds");
+    ok(inExt(s[0], s[1]), mapName + " spawn#" + i + " [" + s[0] + "," + s[1] + "] inside bounds");
     const bad = standingClear(s[0], s[1]);
     ok(!bad, mapName + " spawn#" + i + " [" + s[0] + "," + s[1] + "] " + bad);
   });
