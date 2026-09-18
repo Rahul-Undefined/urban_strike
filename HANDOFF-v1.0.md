@@ -1,3 +1,38 @@
+# v1.1.2 (build 29) — THE WALL CHECK, REVERTED (2026-09-18)
+
+Tagged `v1.1.2`. Rahul: "revert the shooting thing from this morning — bullets
+are hitting the wall; put it back exactly as it was."
+
+Build 26's line-of-sight check on hitscan rounds is gone, and the hit
+tolerances are back to what they were before it: `NET.hitTolerance` 4.0 (was
+2.5), `NET.historyMs` 1200 (was 250). In play the check refused legitimate
+rounds — the shooter's client and the server's collider set disagree by a
+body width at the edge of every wall, and the wall edge is where most kills
+happen — so the cure was worse than the "died behind the wall" it treated.
+Hits are judged as before v1.0z: fire-rate, and the victim's claimed position
+against their recent history. The US_TEST seam that only existed for that
+check is removed too, along with the suite's line-of-sight phase; the suite
+runs against a plain `node server.js` again. Everything else from build 26
+stays. Client gates green; live `test.js` 328/0 (three fewer assertions: the
+line-of-sight phase is gone with the rule).
+
+# v1.1.1 (build 28) — ONE POINT, IN THE FEED (2026-09-18)
+
+Tagged `v1.1.1`. Rahul: "a train kill is giving the opponent 3 points; and no
+popup — show it in the kill feed like every other kill."
+
+**Three points.** Build 23's credit block had been pasted at THREE sites in
+`applyDamage` (a replace that matched every `if (attacker && …)` line), so one
+death was counted three times and toasted three times. One copy remains, in
+the death path; the gate now runs the real `applyDamage` and pins exactly one
+point per train death and no toast.
+
+**In the feed.** No popups for a run-over or a jump any more — the kill feed
+row reads "X was run over by the train · +1 COBALT" (the credited side rides
+the death event as `credit`); individual modes show the row without a credit.
+
+`verify-protect` 31/0; client gates green; live `test.js` 331/0.
+
 # v1.1.0 (build 27) — THE WESTERN REACH (2026-09-18)
 
 Tagged `v1.1`. Rahul: "make the map bigger from the stadium side — one side

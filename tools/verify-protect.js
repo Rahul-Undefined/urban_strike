@@ -87,6 +87,24 @@ console.log('--- a train death scores for the opposition (v1.0w) ---');
   ok(/victim\.lastHitByTeam = attacker\.team/.test(src), 'every hit remembers the attacker\'s side');
   ok(/if \(attacker && attackerId !== victim\.id\) \{/.test(src), 'individual modes: a death and no kill, as before');
   ok(CFG.respawnDelayFor('killhouse', 60) === 5 && CFG.MATCH.respawnLadder.length === 1, 'the redeploy is a flat 5 s everywhere (v1.0w)');
+  /* v1.1.1 (Rahul: "train kills are giving 3 points"): the credit block had been
+     pasted at three sites; ONE death is ONE point, and no popup — the feed row
+     carries "+1 SIDE". Run the real applyDamage. */
+  {
+    const ev = [];
+    const ctx2 = { io: { to: () => ({ emit: (e, d) => ev.push([e, d]) }) }, now: Date.now, modeInfo: (r) => CFG.MODES[r.settings.mode] || {}, lootAdd: () => {}, scheduleRespawn: () => {}, endMatch: () => {}, Nuke: { onKill() {} }, Rooms: { colorFor: () => '#fff' }, pushLobby: () => {}, spawnPlayer: () => {}, Mines: { clear() {} }, Drones: { onOwnerDeath() {} }, Hazards: {} };
+    const Combat = require('../server/lib/combat.js')(ctx2);
+    const rm = { code: 'T', state: 'playing', settings: { mode: 't4', map: 'urban' }, players: new Map(), teamKills: { a: 0, b: 0 }, startedAt: Date.now() - 60000 };
+    const v = { id: 'V', name: 'V', alive: true, hp: 100, team: 'a', pos: [0, 1, 0], kills: 0, deaths: 0, streak: 0, armorLvl: 0, armorDur: 0, shieldHp: 0, lastShotAt: {}, history: [] };
+    rm.players.set('V', v);
+    Combat.applyDamage(rm, v, 999, v.id, 'train', false, true);
+    const death = (ev.find(e => e[0] === 'death') || [])[1];
+    ok(rm.teamKills.b === 1 && rm.teamKills.a === 0, 'one train death is exactly ONE point for the other side [' + JSON.stringify(rm.teamKills) + ']');
+    ok(ev.filter(e => e[0] === 'toast').length === 0, 'and raises no popup');
+    ok(death && death.credit === 'COBALT' && death.weapon === 'train', 'the death event names the credited side for the kill feed [' + (death && death.credit) + ']');
+    ok((fs.readFileSync(path.join(__dirname, '..', 'server/lib/combat.js'), 'utf8').match(/weapon === 'train' && teams && victim\.team/g) || []).length === 1, 'the credit block exists once');
+    ok(!/toast[^\n]*run over by the train|toast[^\n]*jumped from the moving train/.test(fs.readFileSync(path.join(__dirname, '..', 'server/lib/hazards.js'), 'utf8')), 'the train\'s own kill toasts are gone');
+  }
 }
 
 console.log('--- the lag: moving groups merged ---');

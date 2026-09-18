@@ -169,8 +169,8 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     else if (victim.lastHitByTeam && victim.lastHitByTeam !== victim.team && now() - (victim.lastHitAt || 0) < 15000) credit = victim.lastHitByTeam;
     if (credit && room.teamKills && credit in room.teamKills) {
       room.teamKills[credit]++;
-      const tn = (room.settings.teamNames && room.settings.teamNames[credit]) || (CFG.TEAMS[credit] || {}).name || credit;
-      io.to(room.code).emit('toast', { msg: tn + ' +1 \u00b7 ' + victim.name + ' was run over by the train' });
+      /* v1.1.1 (Rahul): no popup — the kill FEED carries the credit instead */
+      victim.trainCredit = (room.settings.teamNames && room.settings.teamNames[credit]) || (CFG.TEAMS[credit] || {}).name || credit;
     }
   }
   if (attacker && attackerId !== victim.id) {
@@ -189,23 +189,6 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     sh: Math.round(victim.shieldHp || 0),   /* v15.0 (fix 5) */
     from: attackerId, fromPos: attacker ? attacker.pos : null
   });
-  /* v1.0w (Rahul: "killed by the train — accidentally or not — gives the
-     opponent points in team and squad modes, nothing in individual"): the
-     victim's side loses a body; the OTHER side scores. Two sides: the other
-     one. More (squads): the side that last hurt the victim within 15 s, else
-     nobody — a squad that never touched them earned nothing. Individual
-     modes: a death, no kill, as before. */
-  if (weapon === 'train' && teams && victim.team) {
-    const sides = CFG.activeTeams(room.settings.mode);
-    let credit = null;
-    if (sides.length === 2) credit = sides[0] === victim.team ? sides[1] : sides[0];
-    else if (victim.lastHitByTeam && victim.lastHitByTeam !== victim.team && now() - (victim.lastHitAt || 0) < 15000) credit = victim.lastHitByTeam;
-    if (credit && room.teamKills && credit in room.teamKills) {
-      room.teamKills[credit]++;
-      const tn = (room.settings.teamNames && room.settings.teamNames[credit]) || (CFG.TEAMS[credit] || {}).name || credit;
-      io.to(room.code).emit('toast', { msg: tn + ' +1 \u00b7 ' + victim.name + ' was run over by the train' });
-    }
-  }
   if (attacker && attackerId !== victim.id) {
     io.to(attackerId).emit('hitConfirm', { dmg: Math.round(dmg), headshot: !!headshot, kill: victim.hp <= 0, v: victim.id });
   }
@@ -315,34 +298,19 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
       victimId: victim.id, victimName: victim.name,
       killerId: attackerId, killerName, killerStreak, assistIds, dist: _dist,
       weapon, headshot: !!headshot, self: attackerId === victim.id,
+      credit: victim.trainCredit || null,   /* v1.1.1: the side a train death scored for */
       respawnSec: victim.out ? 0 : respawnSec,   /* v1.0d: the arena ladder rung, or the flat delay */
       out: !!victim.out, livesLeft: CFG.livesFor(room.settings.mode)
         ? Math.max(0, CFG.livesFor(room.settings.mode) - victim.deaths) : null
     });
+    victim.trainCredit = null;
     pushLobby(room);
 
     /* Elimination is checked BEFORE the kill target, because in Last Stand
        there is no kill target and no clock — being the last one breathing is
        the only way the match can end. */
     if (CFG.isElimination(room.settings.mode) && checkLastStand(room)) return;
-    /* v1.0w (Rahul: "killed by the train — accidentally or not — gives the
-     opponent points in team and squad modes, nothing in individual"): the
-     victim's side loses a body; the OTHER side scores. Two sides: the other
-     one. More (squads): the side that last hurt the victim within 15 s, else
-     nobody — a squad that never touched them earned nothing. Individual
-     modes: a death, no kill, as before. */
-  if (weapon === 'train' && teams && victim.team) {
-    const sides = CFG.activeTeams(room.settings.mode);
-    let credit = null;
-    if (sides.length === 2) credit = sides[0] === victim.team ? sides[1] : sides[0];
-    else if (victim.lastHitByTeam && victim.lastHitByTeam !== victim.team && now() - (victim.lastHitAt || 0) < 15000) credit = victim.lastHitByTeam;
-    if (credit && room.teamKills && credit in room.teamKills) {
-      room.teamKills[credit]++;
-      const tn = (room.settings.teamNames && room.settings.teamNames[credit]) || (CFG.TEAMS[credit] || {}).name || credit;
-      io.to(room.code).emit('toast', { msg: tn + ' +1 \u00b7 ' + victim.name + ' was run over by the train' });
-    }
-  }
-  if (attacker && attackerId !== victim.id) {
+    if (attacker && attackerId !== victim.id) {
       const target = room.settings.killTarget;
       /* v8.30: target 0 means UNLIMITED — never end on kills, let the clock
          decide. Guarding on `> 0` rather than a separate flag keeps the

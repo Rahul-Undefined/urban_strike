@@ -698,53 +698,12 @@ function phase19() {
               ok(!CFG.isElimination('zone') && !CFG.isElimination('zsq3'), 'v1.0u: the zone modes respawn — the circle is the pressure, not elimination');
               ok(startZ.heli && startZ.heli.state === 'pad' && startZ.heli.hp === CFG.HELI.hp, 'v1.0l: an Urban match ships a full-health helicopter on the pad with matchStart [' + JSON.stringify(startZ.heli && { state: startZ.heli.state, hp: startZ.heli.hp }) + ']');
               Az.disconnect(); Bz.disconnect();
-              setTimeout(losPhase, 500);
+              setTimeout(heliPhase, 500);
             };
             waitStart();
           }, 400);
         }, 500);
       });
-    }
-  }
-  /* --- v1.0z: LINE OF SIGHT, live (a room that asks for the check under US_TEST) --- */
-  function losPhase() {
-    const Al = io(URL), Bl = io(URL);
-    const BotsL = require('./server/lib/bots.js')({}), colsL = BotsL.buildColliders('urban'), halfL = CFG.PLAYER.standH / 2;
-    let upl = 0, aPos = null, bPos = null, dmgs = 0, offl = 0, started = false;
-    Bl.on('damaged', () => dmgs++);
-    [Al, Bl].forEach(s2 => s2.on('connect', () => { if (++upl === 2) goL(); }));
-    function goL() {
-      Al.emit('createRoom', { name: 'Eye', settings: { mode: 'ffa', map: 'urban', killTarget: 0, minutes: 15, los: true } }, (res) => {
-        Bl.emit('joinRoom', { name: 'Wall', code: res.code }, () => {});
-        const onSpawn = (d) => { if (d.id === Al.id) aPos = d.pos.slice(); if (d.id === Bl.id) bPos = d.pos.slice(); if (aPos && bPos && !started) { started = true; setTimeout(run, CFG.MATCH.spawnProtect * 1000 + 600); } };
-        Al.on('spawn', onSpawn); Bl.on('spawn', onSpawn);
-        Al.on('matchStart', d => { offl = d.serverNow - Date.now(); });
-        setTimeout(() => { [Al, Bl].forEach(s2 => s2.emit('setReady', { v: true })); setTimeout(() => Al.emit('startMatch'), 300); }, 400);
-      });
-    }
-    function run() {
-      /* B stands where it spawned. Find, 9 m around B, one spot the map's own
-         geometry blocks and one it does not; A (fresh spawn: its first update
-         passes) stands at each in turn and fires. */
-      const eyeY = bPos[1] + CFG.PLAYER.standH * 0.30;
-      let blocked = null, clear = null;
-      for (let a = 0; a < Math.PI * 2 && (!blocked || !clear); a += Math.PI / 18) {
-        const x = bPos[0] + Math.cos(a) * 9, z = bPos[2] + Math.sin(a) * 9;
-        const isB = BotsL.segmentBlocked(colsL, x, eyeY, z, bPos[0], bPos[1], bPos[2]);
-        if (isB && !blocked) blocked = [x, bPos[1], z]; if (!isB && !clear) clear = [x, bPos[1], z];
-      }
-      ok(!!clear, 'a clear firing spot exists 9 m from the victim');
-      const fire = () => Al.emit('hit', { victim: Bl.id, w: 'ak47', part: 'body', pellets: 1, vp: bPos });
-      const st = (p) => Al.emit('st', { p, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0, ping: 20 });
-      if (blocked) {
-        st(blocked); setTimeout(() => { fire(); fire(); setTimeout(() => {
-          ok(dmgs === 0, 'two rounds fired from behind the map\'s own geometry do NOT land [' + dmgs + ' hits]');
-          st(clear); setTimeout(() => { fire(); setTimeout(() => { ok(dmgs === 1, 'the same round from the open lands [' + dmgs + ' hits]'); Al.disconnect(); Bl.disconnect(); setTimeout(heliPhase, 500); }, 400); }, 300);
-        }, 400); }, 300);
-      } else {
-        ok(true, 'no blocked spot within 9 m of this spawn — the clear shot alone is checked');
-        st(clear); setTimeout(() => { fire(); setTimeout(() => { ok(dmgs === 1, 'a round from the open lands [' + dmgs + ' hits]'); Al.disconnect(); Bl.disconnect(); setTimeout(heliPhase, 500); }, 400); }, 300);
-      }
     }
   }
   /* --- v1.0o: THE HELICOPTER, live: Z boards with a stale position in flight, lifts off on time, the rider survives the climb --- */

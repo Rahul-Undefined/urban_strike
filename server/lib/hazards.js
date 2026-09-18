@@ -207,14 +207,13 @@ module.exports = function initHazards(ctx) {
       if (h.v > 2.0 && q.trainAboardAt && t - q.trainAboardAt < 1200 && feet < 0.45) {
         q.trainAboardAt = 0;
         applyDamage(room, q, 999, q.id, 'train', false, true);
-        io.to(room.code).emit('toast', { msg: q.name + ' jumped from the moving train' });
+        /* v1.1.1: no popup — the feed carries it */
         continue;
       }
       if (h.v < 1.0) continue;                                        // a standing train hurts nobody
       if (feet >= FLOOR - 0.25) continue;                             // on a platform deck beside it
       if (!scan(q, 0.2, 0.1)) continue;                               // not under it
-      applyDamage(room, q, 999, q.id, 'train', false, true);
-      io.to(room.code).emit('toast', { msg: q.name + ' was run over by the train' });
+      applyDamage(room, q, 999, q.id, 'train', false, true);   /* v1.1.1: no popup — the feed says it */
     }
   }
 

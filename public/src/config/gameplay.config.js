@@ -198,7 +198,7 @@
        whole stride behind cover. 250 ms is a real network delay; 2.5 m a real
        stride. Plus a line-of-sight check (server.js 'hit'): the round must
        reach the claimed position through the map. */
-    hitTolerance: 2.5, historyMs: 250,
+    hitTolerance: 4.0, historyMs: 1200,   /* v1.1.2: restored to the pre-v1.0z values (the wall check is reverted) */
     detectMs: 3500        // ms an unsuppressed shot pings the minimap
   };
 

@@ -622,7 +622,7 @@ var UI = (function () {
     } else if (d.weapon === 'zone') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">bled out in the zone</span>';   /* v1.0j */
     } else if (d.weapon === 'train') {
-      row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">was run over by the train</span>';   /* v1.0f */
+      row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">was run over by the train</span>' + (d.credit ? ' <span class="fw">\u00b7 +1</span> <b>' + d.credit + '</b>' : '');   /* v1.0f / v1.1.1 */
     } else if (d.self) {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">eliminated themselves</span>';
     } else {
