@@ -1,0 +1,11 @@
+const vm=require('vm'),fs=require('fs');const THREE=require('three');
+const ctx={console,Math,Date,JSON,Object,Array,Number,String,Float32Array,Uint16Array,Uint32Array,Uint8ClampedArray,THREE,performance:{now:()=>Date.now()},document:{createElement:()=>({getContext:()=>null,style:{}}),getElementById:()=>null},navigator:{},setTimeout,setInterval,clearTimeout,clearInterval};
+ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;ctx.AudioSys={pickupSnd(){},planeFlyby(){},crateThud(){}};ctx.FX={pickupBurst(){},smokeCloud(){},fireZonesReset(){},explosion(){}};ctx.UI={toast(){}};ctx.PlayerCtl={pos:{x:0,z:0}};
+vm.createContext(ctx);
+['public/src/config/weapons.config.js','public/src/config/gameplay.config.js','public/src/config/loot.config.js','public/src/config/world.config.js','public/src/config/index.js','public/src/loot/pickups.js'].forEach(f=>vm.runInContext(fs.readFileSync(f,'utf8'),ctx,{filename:f}));
+const sc=new THREE.Scene(); ctx.Pickups.build(sc);
+const list=Object.keys(ctx.CFG.LOOT_ITEMS).map((t,i)=>({id:i,t,p:[i*2,0.55,0],active:true}));
+ctx.Pickups.init(list); let meshes=0; sc.traverse(o=>{if(o.isMesh)meshes++});
+console.log('items',list.length,'meshes',meshes,'(expected 2 per item)');
+ctx.Pickups.airdrop(5,5,Date.now()-1); ctx.Pickups.update(0.016); ctx.Pickups.update(0.016);
+console.log('beacons',ctx.Pickups.getBeacons().length);

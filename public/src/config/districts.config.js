@@ -21,6 +21,38 @@
 
 (function (root) {
   var D = [
+    /* ===== v2.0: THE OUTER CITY — ten districts in the 100 m band outside the
+       old wall line (x -180/120, z +/-120), inside the new one (x -280/220,
+       z +/-220). Listed FIRST: they lie wholly outside every older region, so
+       they cannot steal a match, and a player on the inner avenue reads the
+       new district rather than the old strip behind them. Signs stand on the
+       inner avenue facing the road. Tones reuse existing materials. */
+    { id: 'cannery',    name: 'CANNERY ROW',    x0: -280, x1: -114, z0: -220, z1: -124, sign: [-150, -130, 3.1416], tone: 'cream' },
+    { id: 'northridge', name: 'NORTH RIDGE',    x0: -114, x1: 60,   z0: -220, z1: -124, sign: [-30, -130, 3.1416], tone: 'brick' },
+    { id: 'refinery',   name: 'REFINERY',       x0: 60,   x1: 220,  z0: -220, z1: -124, sign: [110, -130, 3.1416], tone: 'metal' },
+    { id: 'quarry',     name: 'QUARRY',         x0: -280, x1: -114, z0: 124,  z1: 220,  sign: [-150, 130, 0], tone: 'rust' },
+    { id: 'commons',    name: 'SOUTH COMMONS',  x0: -114, x1: 60,   z0: 124,  z1: 220,  sign: [-30, 130, 0], tone: 'sage' },
+    { id: 'southport',  name: 'SOUTHPORT',      x0: 60,   x1: 220,  z0: 124,  z1: 220,  sign: [110, 130, 0], tone: 'steelBlue' },
+    { id: 'gasworks',   name: 'GASWORKS',       x0: 124,  x1: 220,  z0: -124, z1: 0,    sign: [130, -60, -1.5708], tone: 'metal' },
+    { id: 'terraces',   name: 'RIVER TERRACES', x0: 124,  x1: 220,  z0: 0,    z1: 124,  sign: [130, 60, -1.5708], tone: 'plaster' },
+    { id: 'foundry',    name: 'FOUNDRY',        x0: -280, x1: -184, z0: -124, z1: 0,    sign: [-190, -60, 1.5708], tone: 'rust' },
+    { id: 'westfield',  name: 'WESTFIELD',      x0: -280, x1: -184, z0: 0,    z1: 124,  sign: [-190, 60, 1.5708], tone: 'sage' },
+    /* v15.0 (fix 4): the outer ring. Listed first — they are narrow strips
+       outside every old region, so they cannot steal a match, and the tower
+       at the centre of each side belongs to the strip it stands in. */
+    { id: 'northyards', name: 'NORTH YARDS',
+      x0: -120, x1: 120, z0: -120, z1: -106, sign: [20, -96.6, 0], tone: 'contBlue' },       /* v1.0i: inner edge of the boulevard — the outer lane is the train's */
+    { id: 'southfield', name: 'SOUTHFIELD PARK',
+      x0: -120, x1: 120, z0: 106, z1: 120, sign: [-20, 96.6, 3.1416], tone: 'sage' },
+    { id: 'eastmarket', name: 'EAST MARKET',
+      x0: 106, x1: 120, z0: -106, z1: 106, sign: [96.6, 40, -1.5708], tone: 'dustyPink' },   /* v1.0r */
+    { id: 'westbarracks', name: 'WEST BARRACKS',
+      x0: -120, x1: -106, z0: -106, z1: 106, sign: [-96.6, -40, 1.5708], tone: 'facadeOlive' },   /* v1.0r */
+    /* v1.1: THE WESTERN REACH — three districts beyond the old west wall */
+    { id: 'westdocks', name: 'WEST DOCKS',     x0: -180, x1: -120, z0: -120, z1: -34, sign: [-144, -40, 3.1416], tone: 'steelBlue' },
+    { id: 'harbour',   name: 'HARBOUR MARKET', x0: -180, x1: -120, z0: -34,  z1: 34,  sign: [-144, -30, 0], tone: 'cream' },
+    { id: 'millrow',   name: 'MILL ROW',       x0: -180, x1: -120, z0: 34,   z1: 120, sign: [-144, 40, 0], tone: 'facadeOlive' },
+
     { id: 'construction', name: 'CONSTRUCTION SITE',
       x0: -20, x1: 20, z0: -70, z1: -52, sign: [0, -51.0, 0], tone: 'rust' },
 
@@ -105,48 +137,7 @@
      over the Metro flight list in v8.20 and it looked plausible enough to
      miss. Callers now pass the map; anything that is not urban gets an empty
      string and can fall back to the map label. */
-  /* ============ v9.3 — METRO CITY GETS ITS OWN DISTRICTS ==================
-
-     Until now this file held one map's regions and `nameAt` returned an empty
-     string for everything else, which was the right call in v8.20 (better to
-     say nothing than to tell a player standing in Metro that they are in
-     MARKET CROSS). But it meant Metro had no names at all: the DevHUD said
-     nothing, verify-climb and verify-stairs-quality printed bare coordinates,
-     and there was no way to describe a position on the map in words.
-
-     Metro's regions follow the v9.1 edge districts and the v9.3 coloured
-     ground, so the NAME a player reads and the COLOUR under their feet
-     describe the same place. That pairing is the whole point — a name without
-     a visual boundary is trivia, and a colour without a name cannot be spoken
-     aloud in a callout.
-
-     Same ordering rule as Urban: specific before general, first match wins. */
-  var M = [
-    { id: 'm_plaza', name: 'CENTRAL PLAZA',
-      x0: -22, x1: 22, z0: -22, z1: 22, sign: [0, 23.4, 3.1416], tone: 'sidewalk' },
-    { id: 'm_station', name: 'UNION STATION',
-      x0: -26, x1: 26, z0: -86, z1: -22, sign: [0, -21.0, 0], tone: 'metal' },
-    { id: 'm_railyard', name: 'RAIL YARD',
-      x0: -100, x1: 100, z0: -100, z1: -80, sign: [-40, -79.0, 0], tone: 'rust' },
-    { id: 'm_cargo', name: 'CARGO TERMINAL',
-      x0: 80, x1: 100, z0: -80, z1: 80, sign: [79.0, 0, -1.5708], tone: 'contBlue' },
-    { id: 'm_market', name: 'MARKET STREET',
-      x0: -20, x1: 100, z0: 80, z1: 100, sign: [40, 79.0, 3.1416], tone: 'terracotta' },
-    { id: 'm_depot', name: 'BUS DEPOT',
-      x0: -100, x1: -20, z0: 80, z1: 100, sign: [-60, 79.0, 3.1416], tone: 'steelBlue' },
-    { id: 'm_park', name: 'RIVERSIDE PARK',
-      x0: -100, x1: -80, z0: -80, z1: 80, sign: [-79.0, 0, 1.5708], tone: 'ochre' },
-    { id: 'm_site', name: 'SECTOR 7 WORKS',
-      x0: 54, x1: 92, z0: -92, z1: -54, sign: [53.0, -73, 1.5708], tone: 'rust' },
-    { id: 'm_garage', name: 'STACK GARAGE',
-      x0: -96, x1: -58, z0: -24, z1: 20, sign: [-57.0, -2, 1.5708], tone: 'metal' },
-    { id: 'm_mall', name: 'GALLERIA',
-      x0: 54, x1: 96, z0: 8, z1: 50, sign: [53.0, 29, 1.5708], tone: 'steelBlue' },
-    { id: 'm_towers', name: 'FINANCIAL ROW',
-      x0: -58, x1: 58, z0: -58, z1: -22, sign: [-46, -21.0, 0], tone: 'sidewalk' },
-    { id: 'm_resid', name: 'OLD QUARTER',
-      x0: -98, x1: -34, z0: 10, z1: 90, sign: [-33.0, 50, 1.5708], tone: 'terracotta' }
-  ];
+  /* v2.0: Metro City and its district table are gone with the map. */
 
   function atIn(list, x, z) {
     for (var i = 0; i < list.length; i++) {
@@ -165,7 +156,7 @@
     }
     return { d: best, dist: Math.sqrt(bd) };
   }
-  function listFor(map) { return map === 'metro' ? M : (!map || map === 'urban') ? D : null; }
+  function listFor(map) { return (!map || map === 'urban') ? D : null; }
 
   /* Rural is deliberately absent. Hollow Ridge is a valley with landmarks, not
      a grid of districts, and inventing rectangles for it would produce names
@@ -179,7 +170,7 @@
     return n.d ? 'NEAR ' + n.d.name : 'OUTSKIRTS';
   }
 
-  root.DISTRICTS = { list: D, metro: M, listFor: listFor,
+  root.DISTRICTS = { list: D, listFor: listFor,
     at: at, nameAt: nameAt, nearest: nearest, map: 'urban' };
 })(typeof module !== 'undefined' && module.exports ? module.exports : (typeof window !== 'undefined' ? window : this));
 

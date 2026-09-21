@@ -51,12 +51,18 @@
        sniper ignore vests would retire every armour pickup on the map. Head
        shots bypass the vest already (v8.17), so a headshot remains a kill
        against anything but a helmet. */
-    sniper:  { key: 3, label: 'AWM-S', type: 'bolt', dmg: 100, rpm: 42, mag: 5, reserve: 25, reload: 3.2, spread: 0.0015, ads: 0.0004, range: 999, head: 2, legs: 0.8, speed: 0.85, recoil: 0.03, drift: 0.2, adsFov: 16, scope: true, boltTime: 0.85, scopeZoom: [10, 26], sway: 0.0038, trc: 0xcfe8ff },
+    /* ===== v2.0 (Rahul: "sniper shots should be instant and direct kills if
+       not taken the vest or precaution") ===== legs 0.8 -> 1.0 on every scoped
+       rifle: ANY unarmoured hit from a sniper is 100 and a kill; a vest (body)
+       or a helmet (head) is the precaution that lets you live. The round was
+       already hitscan; combat.js additionally treats a scoped-rifle claim as a
+       fresh shot for the fire-rate check so a quick follow-up is never eaten. */
+    sniper:  { key: 3, label: 'AWM-S', type: 'bolt', dmg: 100, rpm: 42, mag: 5, reserve: 25, reload: 3.2, spread: 0.0015, ads: 0.0004, range: 999, head: 2, legs: 1.0, speed: 0.85, recoil: 0.03, drift: 0.2, adsFov: 16, scope: true, boltTime: 0.85, scopeZoom: [10, 26], sway: 0.0038, trc: 0xcfe8ff },
     /* v8.33 KAR98 — the third sniper, on the previously unused key 7. Slower to
        cycle and smaller magazine than the AWM-S, with a wider zoom floor, so it
        trades rate of fire for reach rather than being a straight upgrade. Same
        lethality rules as the others. */
-    kar98:   { key: 7, label: 'Kar98', type: 'bolt', dmg: 100, rpm: 38, mag: 5, reserve: 25, reload: 3.4, spread: 0.0016, ads: 0.00045, range: 999, head: 2, legs: 0.8, speed: 0.87, recoil: 0.032, drift: 0.22, adsFov: 18, scope: true, boltTime: 0.95, scopeZoom: [6, 20], sway: 0.0040, trc: 0xd8e6f2 },
+    kar98:   { key: 7, label: 'Kar98', type: 'bolt', dmg: 100, rpm: 38, mag: 5, reserve: 25, reload: 3.4, spread: 0.0016, ads: 0.00045, range: 999, head: 2, legs: 1.0, speed: 0.87, recoil: 0.032, drift: 0.22, adsFov: 18, scope: true, boltTime: 0.95, scopeZoom: [6, 20], sway: 0.0040, trc: 0xd8e6f2 },
     uzi:     { key: 4, label: 'UZI-9', type: 'auto', dmg: 30, rpm: 950, mag: 32, reserve: 128, reload: 1.9, spread: 0.030, ads: 0.014, range: 22, head: 1.67, legs: 0.72, speed: 1.02, recoil: 0.010, drift: 0.9, adsFov: 55, trc: 0xffc46a, snd: { body: { f0: 2100, f1: 800, dur: 0.05, vol: 0.5 }, crack: { f: 2600, dur: 0.03, vol: 0.3 } } },
     /* ===== v9.3 SHOTGUN — TWO SHOTS, ALWAYS =====
 
@@ -80,7 +86,19 @@
        M870 is the punch. */
     shotgun: { key: 5, shellReload: true, label: 'M870', type: 'semi', dmg: 8.9, pellets: 9, rpm: 75, mag: 6, reserve: 30, reload: 3.4, spread: 0.075, ads: 0.05, range: 9, head: 1.4, legs: 0.8, speed: 0.96, recoil: 0.05, drift: 0.2, adsFov: 58, trc: 0xffa050, snd: { body: { f0: 700, f1: 140, dur: 0.22, vol: 0.95 }, crack: { f: 900, dur: 0.06, vol: 0.4 }, boom: { f0: 130, f1: 55, dur: 0.3, vol: 0.5 } } },
     pistol:  { key: 6, label: 'P92', type: 'semi', dmg: 30, rpm: 380, mag: 12, reserve: 60, reload: 1.2, spread: 0.011, ads: 0.004, range: 28, head: 1.67, legs: 0.72, speed: 1.0, recoil: 0.0075, drift: 0.3, adsFov: 52, trc: 0xffd9a0 },
-    rocket:  { label: 'RPG-L',    type: 'rocket',key: 9, ex: 1, dmg: 120, radius: 6.5, rpm: 30, mag: 1, reserve: 2, reload: 3.6, spread: 0.008, ads: 0.004, recoil: 0.120, drift: 0.2, range: 300, speed: 0.85, adsFov: 58, projSpeed: 30 },
+    /* ===== v2.0 (Rahul): THE RPG-L SEEKS THE HELICOPTER. `homing: 1` with a
+       SHORT `lockRange`: if a machine is within 130 m of the muzzle when the
+       trigger is pulled the round steers at it (weapons/system.js
+       updateProjectiles, the seeker's path); two hits down it (HELI.rocketDmg).
+       With no machine in that radius it flies like a rocket and will not find
+       one — "the heli should be in the radius of the rpg otherwise it wont
+       shoot it down." projSpeed 30 -> 46 so a machine at 22 m/s cannot outrun
+       the round. */
+    rocket:  { label: 'RPG-L',    type: 'rocket',key: 9, ex: 1, dmg: 120, radius: 6.5, rpm: 30, mag: 1, reserve: 2, reload: 3.6, spread: 0.008, ads: 0.004, recoil: 0.120, drift: 0.2, range: 300, speed: 0.85, adsFov: 58, projSpeed: 46, homing: 1, lockRange: 130, lockTurn: 4.5 },
+    /* v1.0x: THE SEEKER — an auto-lock launcher. Fired with a helicopter airborne
+       within `lockRange`, the round finds it on its own and takes half the hull;
+       with no machine in reach it flies like a rocket. Rarer than the RPG-L. */
+    seeker:  { label: 'SEEKER-9', type: 'rocket',key: 9, ex: 1, dmg: 100, radius: 5.5, rpm: 20, mag: 1, reserve: 1, reload: 4.2, spread: 0.010, ads: 0.005, recoil: 0.140, drift: 0.2, range: 320, speed: 0.80, adsFov: 58, projSpeed: 40, homing: 1, lockRange: 320, lockTurn: 3.0, vm: 'rocket' },
     knife:   { key: 8, label: 'KA-BAR', type: 'melee', dmg: 55, rpm: 110, mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 2.4, head: 1.4, legs: 1.0, speed: 1.08, recoil: 0, drift: 0, adsFov: 60 },
     // Exclusive loot weapons (key 9) — found on the map / in airdrops only.
     scarh:   { key: 9, ex: 1, mark: 1, label: 'SCAR-H', type: 'auto', dmg: 50, rpm: 560, mag: 25, reserve: 100, reload: 2.4, spread: 0.015, ads: 0.005, range: 50, head: 1.6, legs: 0.72, speed: 0.92, recoil: 0.013, drift: 0.5, adsFov: 48, trc: 0xffcf80 },
@@ -88,7 +106,7 @@
     p90:     { key: 9, ex: 1, label: 'P90', type: 'auto', dmg: 30, rpm: 900, mag: 50, reserve: 150, reload: 2.4, spread: 0.026, ads: 0.012, range: 26, head: 1.67, legs: 0.72, speed: 1.0, recoil: 0.009, drift: 0.8, adsFov: 54, trc: 0xffd070 },
     m249:    { key: 9, ex: 1, label: 'M249 SAW', type: 'auto', dmg: 50, rpm: 680, mag: 100, reserve: 200, reload: 5.2, spread: 0.024, ads: 0.010, range: 42, head: 1.6, legs: 0.72, speed: 0.84, recoil: 0.014, drift: 1.0, adsFov: 50, trc: 0xffa860, snd: { body: { f0: 1500, f1: 300, dur: 0.11, vol: 0.8 }, crack: { f: 1700, dur: 0.05, vol: 0.35 }, boom: { f0: 170, f1: 90, dur: 0.14, vol: 0.3 } } },
     aa12:    { key: 9, ex: 1, label: 'AA-12', type: 'auto', dmg: 10, pellets: 6, rpm: 300, mag: 20, reserve: 40, reload: 3.1, spread: 0.055, ads: 0.04, range: 13, head: 1.4, legs: 0.8, speed: 0.90, recoil: 0.028, drift: 0.7, adsFov: 56, trc: 0xffa050, snd: { body: { f0: 780, f1: 170, dur: 0.14, vol: 0.85 }, crack: { f: 950, dur: 0.05, vol: 0.35 }, boom: { f0: 140, f1: 60, dur: 0.2, vol: 0.42 } } },
-    awm:     { key: 9, ex: 1, label: 'AWM .338', type: 'bolt', dmg: 110, rpm: 32, mag: 5, reserve: 15, reload: 3.6, spread: 0.001, ads: 0.0003, range: 999, head: 2, legs: 0.8, speed: 0.82, recoil: 0.035, drift: 0.2, adsFov: 14, scope: true, boltTime: 0.95, scopeZoom: [8, 24], sway: 0.0030, trc: 0xbfe0ff },
+    awm:     { key: 9, ex: 1, label: 'AWM .338', type: 'bolt', dmg: 110, rpm: 32, mag: 5, reserve: 15, reload: 3.6, spread: 0.001, ads: 0.0003, range: 999, head: 2, legs: 1.0, speed: 0.82, recoil: 0.035, drift: 0.2, adsFov: 14, scope: true, boltTime: 0.95, scopeZoom: [8, 24], sway: 0.0030, trc: 0xbfe0ff },
 
     /* ===================== v9.3 — THE ARMOURY EXPANSION =====================
 
@@ -217,6 +235,36 @@
     drone:   { key: 9, ex: 1, gear: 1, label: 'Strike Drone', type: 'drone', dmg: 0, rpm: 60,
                mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 0, head: 1, legs: 1,
                speed: 0.94, recoil: 0, drift: 0, adsFov: 62, trc: 0xffb020 },
+    /* ===== v15.0 - THE EMP CHARGE (fix 1) =====
+       Rahul: "Add an EMP which destroys all the enemy/opponents' mines in the
+       game, not the player's mine, available in loot; when looted it needs to
+       be clicked with the mouse using left click, same as the drone."
+       Same shape as the drone slot, for the same reason: scroll cycling, the
+       key-9 exclusives cycle, the HUD label, the viewmodel registry and the
+       `wp` field all come free. `gear: 1` keeps it out of the damage classes —
+       it fires nothing; what it does lives in server/lib/mines.js emp(). */
+    emp:     { key: 9, ex: 1, gear: 1, label: 'EMP Charge', type: 'emp', dmg: 0, rpm: 60,
+               mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 0, head: 1, legs: 1,
+               speed: 0.96, recoil: 0, drift: 0, adsFov: 62, trc: 0x51d0e8 },
+    /* ===== v1.0b - THE FLAMETHROWER (Rahul: "a gun available in loot in the
+       buildings which shoots fire; when it hits an opponent they are burnt and
+       20 m of radius is under fire, instant kill for 10 seconds") =====
+       A full-auto hitscan gun with a HARD 22 m reach (`flame: 1` makes
+       fireHitscan cast to `range`, not 400 m). The damage number here is what
+       the kill feed and bots use; a human hit is resolved in server.js 'hit':
+       the victim burns (guaranteed kill) and server/lib/fire.js opens a zone.
+       Big maps only, interior points only — LOOT_ITEMS.wpn_flamer. */
+    flamer:  { key: 9, ex: 1, label: 'Flamethrower', type: 'auto', flame: 1, dmg: 40, rpm: 420,
+               mag: 60, reserve: 120, reload: 3.2, spread: 2.2, ads: 1.6, range: 22, head: 1, legs: 1,
+               speed: 0.90, recoil: 0.10, drift: 0.05, adsFov: 62, trc: 0xff7a1a },
+    /* ===== v1.0b - C4 STICKY CHARGE (Rahul: "a bomb from the drop; stick it
+       on a building, in 5 seconds it blasts and every player inside dies") ===
+       Gear slot like the EMP: select, aim at a wall within reach, click. What
+       "inside the building" means is decided on the server (server/lib/bomb.js:
+       under a roof within the blast reach). Big maps, crate-only. */
+    c4:      { key: 9, ex: 1, gear: 1, label: 'C4 Charge', type: 'c4', dmg: 0, rpm: 60,
+               mag: 0, reserve: 0, reload: 0, spread: 0, ads: 0, range: 0, head: 1, legs: 1,
+               speed: 0.95, recoil: 0, drift: 0, adsFov: 62, trc: 0xffb020 },
     bow:     { key: 9, ex: 1, mark: 1, label: 'Recurve Bow', type: 'bow', dmg: 90, rpm: 40, mag: 1, reserve: 29, reload: 1.4, spread: 0.004, ads: 0.0012, range: 999, head: 1.9, legs: 0.6, speed: 0.97, recoil: 0.02, drift: 0.2, adsFov: 38, bullet: true, bulletSpeed: 88, bulletDrop: 9.0, quiet: 1, trc: 0xd8c89a },
   };
 
@@ -227,7 +275,16 @@
     'scarh', 'mk14', 'p90', 'm249', 'awm', 'aa12',
     // v9.3 armoury expansion — appended, never inserted
     'aug', 'famas', 'akm', 'k98w', 'garand', 'ump9', 'mp5', 'vector', 'bow',
-    'drone'];   // v9.5 — a carried slot, not a firearm
+    'drone',    // v9.5 — a carried slot, not a firearm
+    /* v15.0: appended, never inserted. The bot-mode pool is folded on AFTER
+       this list by config/index.js, so within one build every index is stable;
+       there is no cross-build wire (index.html cache-busts every asset per
+       release, so a client and its server are always the same version). */
+    'emp',      // v15.0 — the EMP charge slot
+    'flamer',   // v1.0b — the flamethrower
+    'c4',       // v1.0b — the C4 sticky charge slot
+    'seeker'    // v1.0x — the auto-lock launcher (appended AFTER c4, never inserted)
+];
 
   var THROWS = {
     /* v8.17: throwables are now lethal at the centre by definition. Rahul:
@@ -248,7 +305,17 @@
     /* v9.4: impact-detonated and FLAT across the radius. See the two notes in
        weapons/system.js for why. `fuse` stays as the cook timer and as the
        fallback for a grenade that never touches anything. */
-    frag:  { label: 'Frag',  dmg: 100, radius: 7.0, fuse: 2.8, count: 2, throwVel: 16, cook: true, impact: true, flatDamage: true },
+    /* ===== v1.0b - THE FRAG IS A WEAPON OF AREA DENIAL NOW =====
+       Rahul: "frag needs to be powerful: destroy enemies within 50 m — up to
+       20 m instant kill, 20-50 m 50% health down."
+       `killRadius` / `outerDmg` are the two bands (weapons/system.js
+       explosionDamage for humans, bots.js resolveNades for machines — same
+       numbers, same rule). A wall between the blast and the player still cuts
+       damage to a quarter: cover is the counter, distance no longer is. Self
+       damage keeps the OLD 7 m falloff (`selfRadius`), or every throw would be
+       a suicide. `fxRadius` sizes the fireball; a 50 m sphere is not a visual. */
+    frag:  { label: 'Frag',  dmg: 100, radius: 50.0, killRadius: 20.0, outerDmg: 50, selfRadius: 7.0, fxRadius: 9.0,
+             fuse: 2.8, count: 5, throwVel: 16, cook: true, impact: true, flatDamage: true },   /* v1.0z: 2 -> 5 (Rahul) */
     smoke: { label: 'Smoke', dur: 12, radius: 5.5, fuse: 1.4, count: 1, throwVel: 14 },
     molotov: { label: 'Molotov', dmg: 95, burnDps: 12, burnSec: 5, radius: 4.6, tickSec: 0.45, fuse: 99, count: 3, maxCarry: 6, throwVel: 13, impact: true },
     flash: { label: 'Flash', radius: 15, blind: 3.2, fuse: 1.4, count: 1, throwVel: 16 }
@@ -256,7 +323,72 @@
 
   // Deployable gear (mines and drones are fully server-authoritative)
   var GEAR = {
-    mine: { label: 'AP Mine', start: 5, maxCarry: 8, dmg: 250, radius: 3.2, trigger: 1.0, armSec: 1.0 },
+    mine: { label: 'AP Mine', start: 5, maxCarry: 8, dmg: 250, radius: 3.2, trigger: 1.0, armSec: 1.0,
+      /* ===== v15.0 - SMALL MAPS RATION THE MINES (fix 8) =====
+         Rahul: "In small maps, maximum mines a player can use is 20 mines —
+         5 mines per life up to 4 times. Not applied to big maps."
+         `lifetimeSmall` is the per-MATCH ceiling on mines GRANTED to one
+         player by respawn refills on a smallMap; each refill hands out
+         min(start, remaining). Loot pickups (AP Mines x2) are not rationed —
+         they are a place you had to walk to. 0/absent = unlimited (big maps). */
+      lifetimeSmall: 20 },
+    /* ===== v15.0 - RECON VISOR SHOWS THE ENEMY, NOT YOUR OWN SQUAD (fix 2) =====
+       Rahul: the visor "shows both enemy and teams location, it should only
+       show [the other] team's locations." The through-wall box was one red
+       material on EVERY remote, so a team-mate three walls away lit up in the
+       hostile colour — indistinguishable from a target. Team-mates are already
+       tracked through walls by their always-visible tags and the minimap; the
+       visor's whole value is the side you cannot otherwise see. `showAllies`
+       is the one-word reversal if the reading was wrong. */
+    visor: { label: 'Recon Visor', showAllies: false },
+    /* v15.0 (fix 1): the EMP. `maxCarry` bounds the slot; a charge is spent
+       only when it clears at least one enemy mine — an EMP fired at an empty
+       minefield is refused and kept, the same courtesy the drone shows a room
+       with no targets. Map-wide by request ("destroys ALL the enemy mines"). */
+    emp: { label: 'EMP Charge', start: 0, maxCarry: 3 },
+    /* ===== v15.0 - THE BALLISTIC SHIELD (fix 5) =====
+       Rahul: "Add a loot as shield; when taken it has its own health, when
+       down the player's life will be reduced. Good protection, good health,
+       but destroyed when hit by a sniper. Only in big maps."
+       hp is soaked BEFORE armour in combat.applyDamage. `sniperBreaks`: one
+       scoped-rifle round shatters it and half that round still lands — a
+       shield is cover against rifles, not against the class the map exists
+       to justify. Per life, like the visor. bigOnly keeps it off every arena
+       (small AND medium) at both loot doors (floor roll + crate pool). */
+    shield: { label: 'Ballistic Shield', hp: 260, sniperBreaks: true, sniperPass: 0.5 },
+    /* v2.0: the Strike Remote and its Air Strike are GONE with the kill-streak strikes (see §1 of the handoff). */
+    train: { label: 'Train' },   /* v1.0f: the kill-feed tag for being run over */
+    zone: { label: 'The Zone' },  /* v1.0j: the kill-feed tag for bleeding out outside the circle */
+    helidown: { label: 'Helicopter' },   /* v1.0l: shot down with the helicopter */
+    helifall: { label: 'Fell from the helicopter' },
+    /* ===== v1.0e - HOLD BREATH (Rahul: "when scoped, if the player clicks
+       Shift it should slow the shakiness of the scope for a few seconds so
+       the player can mark and shoot properly") =====
+       While scoped, Shift holds the breath: scope sway drops to `steady` of
+       normal for up to `holdSec`, then the lungs empty and sway returns until
+       the meter recovers over `recoverSec`; a fresh hold needs `minToStart` of
+       the meter back. A thin bar beside the reticle shows the meter while
+       scoped (index.html #breath-bar). Client-only — sway is client-only. */
+    breath: { holdSec: 4.0, recoverSec: 5.0, steady: 0.12, minToStart: 0.25 },
+    /* ===== v2.0 - NO KILL-STREAK STRIKES =====
+       Rahul: "remove the rocket function from the game like 7 kills and N pops
+       up, remove those stuff to keep the game authentic." The big-map ROCKET
+       LADDER (v1.0b), the arena NUKE (v10.10), the STRIKE KEY (v1.0v) and the
+       STRIKE REMOTE (v15.0) are all deleted: server/lib/rocket.js, nuke.js, the
+       N key, the banners, the loot entries, the gates. Nothing here is hidden
+       behind a switch. */
+    /* v1.0b: the drone bounty. Shooting a drone down is a KILL on the board and
+       puts a Strike Drone in the shooter's bag (up to drone maxCarry). */
+    droneBounty: { kill: 1, grantDrone: 1 },
+    /* v1.0b: the C4 blast. `reach` is how far "inside the building" extends
+       from the charge; `roofScan` how high above a head a ceiling may be to
+       count as indoors; `open` kills anyone that close, roof or not. */
+    c4: { label: 'C4 Charge', fuseSec: 5, reach: 18, roofScan: 14, open: 4.5, maxCarry: 2, stick: 3.2 },
+    /* v1.0b: the fire zone a flamethrower hit opens. Instant kill for every
+       hostile inside `radius` with line of sight to the fire, for `dur`
+       seconds; the shooter's own side is safe (friendly fire is off everywhere
+       else in this game). One zone per shooter per `cooldown` seconds. */
+    fire: { label: 'Flamethrower', radius: 20, dur: 10, cooldown: 2.0 },
 
     /* ===================== v9.4 — THE STRIKE DRONE =========================
 
@@ -294,11 +426,11 @@
     drone: {
       label: 'Strike Drone', start: 2, maxCarry: 4,
       dmg: 140, radius: 4.2,         // lethal, but a much tighter circle than a frag
-      hp: 45,                        // any weapon kills it in a short burst
+      hp: 110,                       // v1.0z: 45 -> 110 — a burst, not a tap; shooting it down is a contest (Rahul)
       cruiseY: 26,                   // climbs above rooftops before it hunts
-      climbSpeed: 14, hunt: 15.5, dive: 26,
+      climbSpeed: 17, hunt: 19, dive: 32,   /* v1.0z: quicker in every phase (Rahul) */
       armSec: 1.2,                   // cannot be shot down before it has left your hands
-      lockSec: 0.9,                  // pause on target before the dive, so the warning lands
+      lockSec: 0.6,                  // v1.0z: 0.9 -> 0.6 — the kill comes sooner (Rahul)
       maxLifeSec: 22,                // never loiters forever
       warnRadius: 40                 // how close before the victim's HUD lights up
     }

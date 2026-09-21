@@ -90,12 +90,23 @@ var AudioSys = (function () {
     return (dx * dx + dy * dy + dz * dz) > AUD2;
   }
 
+  /* ===== v2.0 - EVERY CHAIN IS TORN DOWN WHEN ITS SOURCE ENDS =====
+     A shot builds three or four chains (body, crack, boom, mech), each with a
+     BiquadFilter, a Gain and — positional — a PannerNode, and every chain
+     was left CONNECTED to master after its source stopped. Whether the
+     browser eventually collects a silent connected node is implementation
+     detail; what is not is that a six-player fight made 200+ new nodes a
+     second and the graph the audio thread walks kept growing until GC caught
+     up, in bursts, on the main thread — a frame hitch every few seconds that
+     got worse the longer the match ran. `out()` now returns the tail node and
+     `finish(src, tail)` disconnects the whole chain in `onended`. VOICES caps
+     how many positional chains are alive at once: past it the quietest new
+     sound (a distant footstep, a far shell) is simply not built. */
+  var live = 0, VOICES = 48;
   function out(node, pos) {
-    if (!pos) { node.connect(master); return; }
-    /* Dropped rather than connected. The source nodes the caller already built
-       are never reached by the graph and are collected; the panner - the
-       expensive part - is never created at all. */
-    if (tooFar(pos)) return;
+    if (!pos) { node.connect(master); return node; }
+    if (tooFar(pos)) return null;
+    if (live >= VOICES) return null;
     try {
       var pan = ctx.createPanner();
       pan.panningModel = 'equalpower';
@@ -104,7 +115,20 @@ var AudioSys = (function () {
       if (pan.positionX) { pan.positionX.value = pos.x; pan.positionY.value = pos.y; pan.positionZ.value = pos.z; }
       else pan.setPosition(pos.x, pos.y, pos.z);
       node.connect(pan); pan.connect(master);
-    } catch (e) { node.connect(master); }
+      live++;
+      return pan;
+    } catch (e) { node.connect(master); return node; }
+  }
+  /* tear a chain down once its source has stopped; `nodes` is every node
+     between the source and the tail, in order */
+  function finish(src, nodes, tail, positional) {
+    src.onended = function () {
+      try { src.disconnect(); } catch (e) {}
+      for (var i = 0; i < nodes.length; i++) { try { nodes[i].disconnect(); } catch (e2) {} }
+      if (tail) { try { tail.disconnect(); } catch (e3) {} }
+      if (positional) live = Math.max(0, live - 1);
+      src.onended = null;
+    };
   }
 
   function updateListener(pos, fwd, up) {
@@ -136,7 +160,10 @@ var AudioSys = (function () {
     var g = ctx.createGain();
     g.gain.setValueAtTime(opts.vol || 0.5, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + (opts.dur || 0.2));
-    src.connect(f); f.connect(g); out(g, pos);
+    src.connect(f); f.connect(g);
+    var tail = out(g, pos);
+    if (tail === null) { try { src.disconnect(); f.disconnect(); g.disconnect(); } catch (e) {} return; }   // too far or too many: never started
+    finish(src, [f, g], tail !== g ? tail : null, !!pos);
     src.start(t); src.stop(t + (opts.dur || 0.2) + 0.05);
   }
   function tone(pos, opts) {
@@ -148,7 +175,10 @@ var AudioSys = (function () {
     var g = ctx.createGain();
     g.gain.setValueAtTime(opts.vol || 0.3, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + (opts.dur || 0.2));
-    o.connect(g); out(g, pos);
+    o.connect(g);
+    var tail = out(g, pos);
+    if (tail === null) { try { o.disconnect(); g.disconnect(); } catch (e) {} return; }
+    finish(o, [g], tail !== g ? tail : null, !!pos);
     o.start(t); o.stop(t + (opts.dur || 0.2) + 0.05);
   }
 
@@ -278,6 +308,56 @@ var AudioSys = (function () {
     if (!ctx) return;
     noiseBurst(null, { ftype: 'bandpass', f0: 220, f1: 90, dur: 2.6, vol: 0.22 });
     tone(null, { type: 'sawtooth', f0: 95, f1: 62, dur: 2.4, vol: 0.1 });
+  }
+  /* v15.0 (fix 1): the EMP — a rising electric sweep, then a low thump. */
+  function empPulse(pos) {
+    if (!ctx) return;
+    tone(pos, { type: 'sawtooth', f0: 180, f1: 2600, dur: 0.35, vol: 0.28 });
+    noiseBurst(pos, { ftype: 'highpass', f0: 3000, dur: 0.25, vol: 0.18 });
+    setTimeout(function () { tone(pos, { type: 'sine', f0: 120, f1: 40, dur: 0.5, vol: 0.5 }); }, 220);
+  }
+  /* v15.0 (fix 10): rotor beat under the plane pass, so a helicopter reads as
+     a helicopter rather than as another airdrop. */
+  /* v2.0: the low-fuel siren — two-tone, four cycles; loud aboard, faint on
+     the ground. Non-positional for the rider (it is in your cabin). */
+  function fuelSiren(aboard) {
+    if (!ctx) return;
+    var vol = aboard ? 0.34 : 0.10;
+    for (var i = 0; i < 4; i++) {
+      (function (k) {
+        setTimeout(function () { tone(null, { type: 'square', f0: 880, f1: 880, dur: 0.28, vol: vol }); }, k * 640);
+        setTimeout(function () { tone(null, { type: 'square', f0: 660, f1: 660, dur: 0.28, vol: vol }); }, k * 640 + 320);
+      })(i);
+    }
+  }
+  function heliBeat(sec) {
+    if (!ctx) return;
+    var n = Math.floor((sec || 5) * 6);
+    for (var i = 0; i < n; i++) {
+      setTimeout(function () { noiseBurst(null, { ftype: 'lowpass', f0: 400, f1: 120, dur: 0.11, vol: 0.20 }); }, i * 165);
+    }
+    tone(null, { type: 'sawtooth', f0: 70, f1: 84, dur: sec || 5, vol: 0.09 });
+  }
+  /* v1.0k: the zone's heartbeat — one low thump per bleed tick, un-positioned. */
+  function zoneTick() {
+    if (!ctx) return;
+    tone(null, { type: 'sine', f0: 62, f1: 48, dur: 0.22, vol: 0.55 });
+    noiseBurst(null, { ftype: 'lowpass', f0: 240, dur: 0.08, vol: 0.10 });
+  }
+  /* v1.0k: the train. rumble(pos, speedFrac) is called every ~0.7 s by the
+     train while it moves — a low positional roll scaled by speed; horn(pos)
+     once when it pulls out of the station. */
+  function trainRumble(pos, speedFrac) {
+    if (!ctx) return;
+    var v = 0.10 + 0.22 * Math.max(0, Math.min(1, speedFrac || 0));
+    noiseBurst(pos, { ftype: 'lowpass', f0: 180, f1: 90, dur: 0.75, vol: v });
+    tone(pos, { type: 'sawtooth', f0: 48, f1: 44, dur: 0.75, vol: v * 0.35 });
+  }
+  function trainHorn(pos) {
+    if (!ctx) return;
+    tone(pos, { type: 'sawtooth', f0: 311, f1: 311, dur: 0.9, vol: 0.42 });
+    tone(pos, { type: 'sawtooth', f0: 370, f1: 370, dur: 0.9, vol: 0.34 });
+    tone(pos, { type: 'square', f0: 155, f1: 155, dur: 0.9, vol: 0.12 });
   }
   function crateThud(pos) {
     tone(pos, { type: 'sine', f0: 110, f1: 34, dur: 0.4, vol: 0.6 });
@@ -504,6 +584,8 @@ var AudioSys = (function () {
     shot: shot, reload: reload, magIn: magIn, bolt: bolt, step: step,
     dryFire: dryFire, shellIn: shellIn, pickupSnd: pickupSnd,
     planeFlyby: planeFlyby, crateThud: crateThud, stinger: stinger, fireCrackle: fireCrackle,
+    empPulse: empPulse, heliBeat: heliBeat, fuelSiren: fuelSiren,   /* v15.0 */
+    zoneTick: zoneTick, trainRumble: trainRumble, trainHorn: trainHorn,   /* v1.0k */
     setIndoors: setIndoors,
     explosion: explosion, impact: impact, flesh: flesh, hitmark: hitmark,
     whoosh: whoosh, bounce: bounce, pinPull: pinPull, flashRing: flashRing,

@@ -1,3 +1,1300 @@
+# v2.0.0 (build 30) — THE OUTER CITY (2026-09-21)
+
+Tagged `v2.0.0`. Rahul's thirteen-point brief, answered in one release: a map
+100 m bigger on every side with ten new districts, one fast train round its
+perimeter, a helicopter that flies high over all of it and crashes when dry,
+no Metro, no kill-streak strikes, a lighter floor with exclusive crates, and
+the late-match lag and avatar jitter fixed at their causes.
+
+## The map (Urban 300 x 240 -> 500 x 440)
+
+`MAPS.urban.ext` is x -280..220, z -220..220. The v15.0/v1.1 wall (x -180/120,
+z +/-120) is gone; where it stood runs the INNER AVENUE. Ten districts fill
+the band to the new wall: CANNERY ROW, NORTH RIDGE, REFINERY (north); QUARRY,
+SOUTH COMMONS, SOUTHPORT (south); GASWORKS, RIVER TERRACES (east); FOUNDRY,
+WESTFIELD (west) — 75 two/three-storey shells from the Western Reach's
+`block()` vocabulary (a doorway, a window per face, an outside stair to a flat
+roof: a place to loot and a place to shoot from), four five-storey towers in
+the corners (sniper perches), sixteen cross streets, four station plazas,
+district signatures (tanks and a pipe rack, a gasometer, a chimney, a quarry
+crusher and terraces, quay cranes and container stacks, a bandstand on a
+green, a pitch with goals, a river with a promenade). Everything is DATA in
+`World.V2` (districts-outer.js) so `tools/_v2points.js` probes the same
+numbers the builder uses. 28 new spawns, 112 new loot points (interiors and
+roofs only), 32 new drop points — every one proven by verify-map (1672/0).
+
+RENDERING: the shadow frustum no longer covers the map. It is a 100 m box
+that FOLLOWS the player (`World.followSun`, called from the camera step),
+snapped to the texel grid — texel 0.049 m, sharper than v1.1's 0.119 on a map
+three times the size. The skyline steps back to r 345-385; the ground runs to
++/-230/290; the fog is unchanged and hides the far wall.
+
+## One fast train, four halts
+
+TRAIN2 (v1.0r) is deleted. `TRAIN.urban` is the PERIMETER BOULEVARD loop
+(x -270/210, z +/-210; 1,776 m) at 30 m/s, brake 75 m / accel 95 m, a 3 s
+dwell at a halt in the middle of each side (NORTH RIDGE, EASTBANK, SOUTH
+COMMONS, WESTFIELD HALT) — 88 s a lap. The halt builder is rewritten in
+track-relative terms from the same config the schedule reads. Two riding
+fixes that only mattered at 30 m/s: the rigid carry is consumed ONCE per
+train pose (a controller frame without a train frame no longer pushes a
+rider by a stale delta), and the stale-pose limit is 9 m (a 250 ms hitch at
+30 m/s moves a coach 7.5 m; a rider not carried through it was a rider on the
+road behind a train that just left). At a halt, someone at deck height who
+walks into the coach wall is pushed back ONTO the deck (`high`), and the
+step-board strip is a wall at deck height so the deck-to-body gap cannot be
+walked into. verify-train 57/0.
+
+## The helicopter: 80 m, everywhere, and a crash
+
+alt 32 -> 80, speed 14 -> 22, the route wanders a BOX (the map's extent inset
+24 m) — `heliRoute` takes a box, not a +/-B square. Fuel is 120 s: at 30 s
+left every client hears the low-fuel siren (`heliFuel`; loud in the cabin, a
+distant two-tone on the ground) and the rider's HUD says Q lands NOW; at zero
+the machine drops (`heliCrashPose`: 3.2 s, a slow roll, black smoke, the
+wreck on the ground), every rider dies (`helidown`, no killer) and the
+machine is gone until its respawn. No auto-return exists any more; the pad
+refuel stays for a machine LANDED with Q. A falling cabin still shields its
+riders from guns. verify-heli 113/0.
+
+## The RPG-L seeks the helicopter
+
+`WEAPONS.rocket` gains `homing: 1, lockRange: 130, lockTurn: 4.5, projSpeed
+46`. If a machine is within 130 m of the muzzle when you fire, the round
+locks and steers at it (the seeker's path in updateProjectiles) — two hits
+and it is down, as before (2000 on 4000). With no machine in that radius the
+round is a plain rocket and the HUD says so. The SEEKER-9 keeps 320 m.
+
+## Snipers: any unarmoured hit is a kill
+
+`legs` 0.8 -> 1.0 on AWM-S, Kar98 and AWM .338: 100 damage anywhere; a vest
+(body) or helmet (head) is the precaution that lets you live. Scoped rifles
+get 0.35 of the rpm interval in the server fire-rate check (was 0.55) so a
+quick follow-up is never eaten.
+
+## No Metro, no strikes
+
+Metro City is deleted — builder (1,300 lines), config table, districts,
+lifts, script tags, harness lists, every gate's map list. Unknown map ids
+already fall to urban in makeRoom. The rocket ladder (v1.0b), the arena nuke
+(v10.10), the Strike Key (v1.0v) and the Strike Remote with its air strike
+(v15.0) are deleted, not disabled: `server/lib/nuke.js`, `rocket.js`,
+`verify-nuke.js`, the `callStrike`/`launchRocket`/`nukeStrike` handlers,
+`heliTimer`, the loot entries and branches, `strikeKills`, the N key and the
+hold-Z, the banners, pip and flash in index.html, the UI/FX/minimap
+functions, the net handlers and emitters. verify-protect asserts the absence.
+
+## The floor and the crates
+
+437 loot points -> 245: every open-field ('g') point removed, interiors
+thinned to one per 9 m, 112 added in the Outer City. The floor rolls heals
+(bandage / health / med kit), ammo, vests L1-L3, helmets H1-H3, the extended
+mag, mines, molotov, EMP and the shield; energy drinks and painkillers are
+retired. EVERY WEAPON is crate-only (`drop: 1`) — you fight with your kit or
+you take a crate. A crate every 60 s (was 100) at one of 46 points across the
+whole map, 5 draws without replacement from `exoticPool` alone (no guaranteed
+filler): weapons twice as often as gear, plus drone, visor, C4, EMP, shield,
+L3/H3, the big sights, suppressor, quickdraw, compensator. The crate box,
+its 60 m beacon and its smoke are DISPOSED 60 s after landing (they used to
+stay as props for the whole match); the items expire with them.
+
+## Why it lagged at twelve minutes, and why avatars jittered
+
+FOUND AND FIXED, each at its cause:
+
+1. THE TICK CLOCK (the jitter). net.js stamped samples as base + n x 66.67 ms
+   and chased drift at 4 ms/s. Node's setInterval re-arms from when the
+   callback RAN, so under stalls the real period is 67-70 ms and the count
+   clock falls behind wall time cumulatively (measured 4.7 ms/s under 30 ms
+   stalls). After minutes the newest sample looked hundreds of ms old, SNAP
+   fired every frame and bodies stepped at 15 Hz. The packet now carries `t`,
+   the server's real clock relative to match start; the client maps it with a
+   45-packet windowed MINIMUM offset (down at once, up at <= 30 ms/s). The
+   tick path stays only for a server that sends no `t`.
+2. LOOT MESHES. 437 items x 3-6 boxes x one material each = ~2,000 meshes and
+   materials, every one bobbing every frame. Now one shared vertex-colour
+   material, one merged geometry PER TYPE, two meshes per item, animation
+   only within 70 m of the player (re-sorted every 250 ms). Mines and drones
+   share geometry too.
+3. AUDIO CHAINS. Every shot built 3-4 filter/gain/panner chains and left them
+   connected to master forever. `finish()` disconnects each chain in
+   `onended`; positional voices are capped at 48.
+4. FX MATERIALS. Tracers, impact puffs and bullet holes allocated a material
+   each; they share three now (scale instead of opacity fades).
+5. CRATE PROPS. See above — nothing accumulates over a match now.
+6. The jitter estimator sorted 90 floats every frame; it is cached at 250 ms.
+
+## Gates
+
+44 offline gates green, 3 documented reds unchanged (verify-access 45/1,
+verify-arch, verify-climb — the last improved 16 -> 7 flights). Rewritten to
+the new contracts: verify-heli (crash, siren, route box), verify-train (one
+loop, four halts, 30 m/s), verify-zone (box), verify-protect (absence of the
+strikes). Re-recorded as a decision, itemised in place: verify-fingerprint
+and verify-untouched (colliders 5160 -> 9283, draws 99 -> 101, tris 158,912
+-> 271,052, minimap 296 -> 583), verify-batch (tris 168k -> 280k, minimap
+320 -> 620). Fixed at the geometry, not the budget: verify-zfight (the block
+floor slab is inset by the wall thickness; the quarry terraces, river and
+pitch no longer cross a street), verify-props (the bandstand deck is a box;
+two plaza buses turned). verify-attach and verify-barrel had crashed since
+v1.0x (`models.rocket.clone` on a stub without clone) — the stubs gained
+`clone`; both green. test.js: the rocket-ladder phase removed, Phase 18's
+remote steps replaced by absence assertions, metro rooms -> riverside.
+
+# v1.1.2 (build 29) — THE WALL CHECK, REVERTED (2026-09-18)
+
+Tagged `v1.1.2`. Rahul: "revert the shooting thing from this morning — bullets
+are hitting the wall; put it back exactly as it was."
+
+Build 26's line-of-sight check on hitscan rounds is gone, and the hit
+tolerances are back to what they were before it: `NET.hitTolerance` 4.0 (was
+2.5), `NET.historyMs` 1200 (was 250). In play the check refused legitimate
+rounds — the shooter's client and the server's collider set disagree by a
+body width at the edge of every wall, and the wall edge is where most kills
+happen — so the cure was worse than the "died behind the wall" it treated.
+Hits are judged as before v1.0z: fire-rate, and the victim's claimed position
+against their recent history. The US_TEST seam that only existed for that
+check is removed too, along with the suite's line-of-sight phase; the suite
+runs against a plain `node server.js` again. Everything else from build 26
+stays. Client gates green; live `test.js` 328/0 (three fewer assertions: the
+line-of-sight phase is gone with the rule).
+
+# v1.1.1 (build 28) — ONE POINT, IN THE FEED (2026-09-18)
+
+Tagged `v1.1.1`. Rahul: "a train kill is giving the opponent 3 points; and no
+popup — show it in the kill feed like every other kill."
+
+**Three points.** Build 23's credit block had been pasted at THREE sites in
+`applyDamage` (a replace that matched every `if (attacker && …)` line), so one
+death was counted three times and toasted three times. One copy remains, in
+the death path; the gate now runs the real `applyDamage` and pins exactly one
+point per train death and no toast.
+
+**In the feed.** No popups for a run-over or a jump any more — the kill feed
+row reads "X was run over by the train · +1 COBALT" (the credited side rides
+the death event as `credit`); individual modes show the row without a credit.
+
+`verify-protect` 31/0; client gates green; live `test.js` 331/0.
+
+# v1.1.0 (build 27) — THE WESTERN REACH (2026-09-18)
+
+Tagged `v1.1`. Rahul: "make the map bigger from the stadium side — one side
+only, the other three the same; one train travels the extended map; name the
+districts; the towers on all four sides two floors higher; update the maps."
+
+**The map grows west.** Beyond the old west wall, a 60 m strip the full width
+of the map (x −180…−120). The extent is ASYMMETRIC now (`MAPS.urban.ext`):
+the north, south and east sides stand where they were; every symmetric system
+(zone circles, helicopter routes) still reads the 120 m core. Three named
+districts, north to south, with their own signboards:
+- **WEST DOCKS** — two warehouses, a low shed, a crane gantry over the dock,
+  container rows and a stacked second.
+- **HARBOUR MARKET** — two market halls round a square, the exchange, three
+  covered stalls, a fountain kerb.
+- **MILL ROW** — a row of three mill houses, the mill and its 14 m chimney, a
+  walled yard with a gate.
+Every block has a doorway, windows on three faces and an outside stair to its
+roof; 23 loot points (roofs only where the stair reaches them), six spawns,
+two lamp-lit streets that cross the West Barracks' fence through two new
+gates, and the ring boulevard's north and south sides run on to a NEW west
+boulevard at x −170. The west wall stands at −180; the ground reaches under it.
+
+**The second train travels the Reach.** Its west straight is the new
+boulevard's centre (−170); the loop grew to 922.7 m and its speed (10.7592) was
+retuned so its lap still equals the first train's to the millisecond, with a
+phase (34 s) proved collision-free by the OBB scan across a 42 s window —
+including its two new crossings of the first train's west straight. Rails are
+laid from the same config; a stop sits on the new straight; the barracks'
+corner vehicles and fence end were moved off both extended straights.
+
+**The towers are two floors higher** — five storeys, the cab at 21 m (was
+12.6), on all four sides; the builder is parametric (the medium maps' control
+towers stay three storeys). Cab loot points moved up.
+
+**The maps.** The M map draws the true 300 × 240 shape, centred; the radar and
+pointer mapping follow the same extent; both trains, both helicopters and the
+zone still draw where they are.
+
+Gates: `verify-train` 56/0 (both loops swept, the crossings proved),
+`verify-map` 2552/0 (extent-aware bounds), `verify-collision`,
+`verify-spawn-geometry`, `verify-fingerprint` re-recorded (+702 colliders,
++18.9k tris, draws and casters unchanged). Budgets raised and itemized:
+triangles 144k → 168k, embedded pairs 133 → 185 and coplanar pairs 110 → 150
+(both for the Reach's vehicles, stairs and floors — an audit item), bandwidth
+454 → 460 KB. Board: 49 gates, 46 green, the same three documented reds.
+Live: `test.js` 331/0.
+
+# v1.0.12 (build 26) — RAHUL'S TEN (2026-09-18)
+
+Tagged `v1.0z`.
+
+1. **Hull 4000** (launchers still take half: 2000).
+2. **Trains faster** — 8 → 10 m/s; the second train retuned to keep an equal
+   lap (117.8 s both) and a 45 s collision-free phase window (offset 33 s);
+   both loops re-proved by the OBB scan.
+3. **M map shows both helicopters** (A gold, B ice-blue), each where its own
+   state puts it.
+4. **Grenades 2 → 5.**
+5. **The drone**: 45 → 110 hp (a burst, not a tap), climb 14 → 17, hunt 15.5
+   → 19, dive 26 → 32, the lock before the dive 0.9 → 0.6 s. Shooting it down
+   is a contest; the kill comes sooner.
+6. **Airdrops every 100 s (was 150) and exclusive-only**: helm_3 and medkit
+   are out of the exotic pool — a crate now holds drones, launchers, the
+   SEEKER, the EMP, the shield, C4, the 8x, the visor, molotovs.
+7. **Sixteen unreachable Urban loot points removed** — on container stacks, the
+   airport terminal roof, and other tops with no stair within reach (found by
+   checking every elevated point against the map's stair tops; 430 → 414).
+8. **The "died behind the wall" shot.** The server accepted a victim position
+   up to **1.2 s** old within **4 m** — a whole stride behind cover. Now 250 ms
+   and 2.5 m, AND a line-of-sight check: a hitscan round must have a clear
+   segment through the map's static geometry from the shooter's eye (any of
+   their positions in the last 250 ms, so a fast peek still counts) to the
+   claimed victim position. Blasts, flame and the knife are exempt.
+9. **Fuel 3 → 2 minutes.**
+10. **Late-match lag, another pass.** Every bullet impact created five fresh
+    BoxGeometries and, worse, DISPOSED the shared spark material each time —
+    which forces the shader program to be rebuilt on the next impact, dozens
+    of times a second in a fight. Sparks share one geometry now and never
+    dispose their material. Late matches are the busiest; this is where it
+    showed. (Client structures — decals, feed rows, snapshot buffers, pickups,
+    fire zones — were audited again and all bounded.)
+
+`verify-heli` 109/0, `verify-train` 56/0, `verify-armoury` 219/0,
+`verify-drone` 31/0 (its rule is now "three or four hits from the weakest gun"),
+fingerprints and the Urban loot count (414) re-baselined. Board: 49 gates, 46
+green, the same three documented reds. Live: `test.js` 331/0 — including a
+new line-of-sight phase: two rounds from behind the map's own geometry land
+nothing, the same round from the open lands. The suite's other phases spawn
+their two players anywhere and fire, so the live server has a TEST SEAM: with
+`US_TEST=1` the wall check is off unless a room asks for it (`los: true`); in
+production the env is unset and the check is always on.
+
+# v1.0.11 (build 25) — AIR TO AIR AT 2x (2026-09-17)
+
+Tagged `v1.0y`. Rahul: "helicopter-to-helicopter fights — when a rider of one
+machine shoots the other, its hull falls at 2x speed."
+
+A shooter aboard an airborne machine firing at ANOTHER airborne machine does
+double hull damage: an AKM round 30 instead of 15, snipers 40, and a rocket
+or seeker from the air is a one-shot (2 x 50%). Ground shooters stay at 1x.
+Riders still cannot hurt the machine they stand in — the client's ray test
+now skips only THAT machine, so a rider's rounds reach the other one; the
+server applies the multiplier when the shooter rides a different airborne
+machine. The heavy hitmarker marks an air-to-air hit.
+
+`verify-heli` 109/0 (30 from the air vs 15 from the ground, own machine still
+untouchable, the ray test skips only the ridden machine). Client gates green;
+live `test.js` 328/0.
+
+# v1.0.10 (build 24) — TWO MACHINES, FUEL, A 5000-POINT HULL, THE SEEKER (2026-09-17)
+
+Tagged `v1.0x`. Rahul's five (the sixth line was blank):
+
+**1. A 5000-point hull, chipped by guns, halved by launchers.** AKM 15 a
+round, M4-class 12, snipers 20, shotguns nothing (SMGs 8, pistols 5, the
+flamer 6); the RPG-L takes HALF the hull per hit — two and it is down. Riders
+see the hull on a big bar at the LEFT beside their health ("HULL 3120 / 5000
+· Q lands · jumping is fatal"); everyone sees a line per machine top-right.
+An AKM alone needs 334 rounds: a squad can wear it down, one rifle cannot
+swat it.
+
+**2. The SEEKER-9.** An auto-lock launcher, rarer than the RPG-L (crate-only,
+one entry in the exotic pool, one round loaded and one spare). Fired with a
+machine airborne within 320 m it locks the nearest one at launch ("LOCKED ·
+helicopter A · 140 m") and the round steers at the machine's CURRENT pose —
+half the hull in one hit. With nothing in reach it flies like a rocket. The
+RPG-L stays the manual shot.
+
+**3. Riders are safe until the machine dies** — unchanged from build 22; when
+the hull hits zero, everyone aboard dies with it.
+
+**4. Fuel.** A flight lasts 3 minutes; then the machine turns for its pad on
+its own ("out of fuel — returning"), lands, and refuels for 1 minute before it
+can lift again (the sign reads REFUELLING · ready in 0:42; Z is refused with
+the time left). A landed machine never leaves the map on its own any more; it
+only goes when shot down, and a new one comes 3 minutes after that.
+
+**5. Two machines.** Pad B, on open ground by the airport terminal (9 m
+clear), gets a second machine 2 minutes after the first lifts off, so the
+other side has one too. Each machine has its own pad, sign, route seed,
+riders, hull and fuel; Z boards the nearest one; a rocket, seeker or gun round
+names the machine it met; the EMP fells every airborne machine within 80 m.
+The client is a per-machine factory under one `Heli`, like the trains.
+
+`verify-heli` 104/0 (the damage table, two machines, second-pad scheduling,
+fuel auto-return, refuel gate, per-machine hits), `verify-protect` 26/0,
+`verify-armoury` 219/0 (the SEEKER has its own viewmodel). Board: 49 gates, 46
+green, the same three documented reds. Live: `test.js` 328/0.
+
+# v1.0.9 (build 23) — THE TRAIN SCORES, TALLER COVER, FLAT REDEPLOY (2026-09-16)
+
+Tagged `v1.0w`. Rahul's three:
+
+**A train death scores for the opposition** in team and squad modes, nothing
+in individual modes. Two sides: the other side gets the point. Squads (three or
+more sides): the side that last hurt the victim within 15 s — a squad that
+never touched them earned nothing. The room hears "COBALT +1 · X was run over
+by the train". Individual modes: a death, no kill, as before.
+
+**Killhouse cover is taller.** The head was too easy to find. Barriers
+1.10 → 1.50 m (a crouched operator is hidden; a standing one shows head and
+shoulders), every crate +0.3 m. Counts unchanged; fingerprints re-recorded.
+
+**The redeploy ladder is gone.** Five seconds per death on every map — the
+ladder is one rung, so it can return by config alone.
+
+`verify-protect` 26/0; the suite's ladder assertions pin the flat 5 s. Live
+`test.js` 328/0; fingerprint/geometry gates green.
+
+# v1.0.8 (build 22) — PROTECTED RIDERS, EMP, BLAST-VS-MINES, THE STRIKE KEY, Q, AND THE LAG (2026-09-16)
+
+Tagged `v1.0v`. Rahul's six:
+
+**1. The helicopter protects its riders.** A listed rider of an airborne
+machine takes NO damage from anything — guns, grenades, rockets aimed at the
+body, fire, mines — except the machine's own end, a fall, and the zone bleed.
+Riders shoot the ground freely. The machine itself still goes down only to
+the RPG-L (three hits)… **and now to the EMP**: a charge used within 80 m of an
+airborne machine fells it outright — every rider dies, credited to the EMP
+user — with or without enemy mines to disable (the charge is spent either
+way). The client reads a shot at a rider as a shot at the hull: a spark, no
+hitmarker, no false hope.
+
+**2. Blasts destroy enemy mines.** A frag or rocket detonation destroys ENEMY
+mines inside its blast radius; your own and your team's survive. Every mode.
+The thrower's client reports where the blast went off; the server decides
+whose mines were in it.
+
+**3. The Strike Key — the random one-shot airstrike.** Rahul: "a key, random,
+only once, Urban only; whichever team finds it kills every opponent." One
+STRIKE KEY is placed at match start at a random hidden/signature loot point on
+Urban (never in a crate, never respawns). Whoever picks it up is armed at
+once — "STRIKE KEY · press N — every hostile on the map" — and their one press
+runs the existing strike with a map-wide radius, killing every hostile alive.
+The room is told who found it and who turned it. The streak nuke stays small-
+map only. (It was never wired on Urban before: the strike was gated to arenas.)
+
+**4. Q drops an attachment.** A TAP of Q drops one fitted attachment onto the
+floor as a pickup — the sight first, then the magazine, then the muzzle — for
+anyone to take with Z; a HELD Q still leans; Q aboard the flying helicopter
+still lands it.
+
+**5. The lag, drilled.** The two trains (8 cars × ~60 boxes) and the
+helicopter (~80 parts) were ~560 draw calls every frame — dynamic meshes never
+went through the static merger. `World.mergeGroup` now bakes each car and the
+fuselage into one mesh per material: 56 meshes for eight cars where there were
+~500; the rotors keep spinning. Together with build 21's loot expiry and DOM
+throttling this removes the largest constant costs added since v1.0.
+
+`verify-protect` 21/0 (new), `verify-heli` 86/0, `verify-nuke` 61/0. Board: 49
+gates, 46 green, the same three documented reds. Live: `test.js` 329/0.
+
+# v1.0.7 (build 21) — RESPAWNS IN THE ZONE, SEATED RIDERS, QUIET BOARDING, LIGHTER LATE GAME (2026-09-16)
+
+Tagged `v1.0u`. Rahul's four:
+
+**1. Urban Zone respawns.** One-life elimination is gone from all three zone
+modes (Solo, Duos, Squads): you respawn like FFA/Squads, kills are the score,
+the clock ends it — and the circle still closes minute by minute, the pressure
+PUBG puts on a lobby. Respawns land INSIDE the circle: `pickSpawn` asks the zone
+for the candidates that will be safe, else the two nearest the centre. The
+"N ALIVE" count leaves the banner in respawn modes.
+
+**2. Riders sit in the cabin, and the hull covers them.** Others saw a rider
+"hanging" behind the machine and picked them off — a rider's snapshot trails
+the machine by the network delay. A LISTED rider is now DRAWN at their seat in
+the machine's current pose (the same eight seats the server assigns), inside,
+behind the rails. And the hull covers them: a shot reaches a rider only if it
+enters through the open door band (between the hip rail and the roof); one
+that would arrive through the floor, roof, nose or tail meets the hull. Tough,
+not impossible — the door band is the shot; a shooter level with the machine
+has it, one below does not.
+
+**3. No boarding popups.** Nobody else's boarding, lift-off or landing raises a
+toast any more; the boarder's own confirmations are gone too. The sign at the
+pad and the HUD bar carry the state ("LIFT-OFF IN 3", "Q lands · jumping is
+fatal" as a quiet HUD line).
+
+**4. The late-match lag.** What grows across a 15-minute match is untaken
+loot: every airdrop leaves five or six unmerged item meshes with name-tag
+sprites, and by the last minutes of a busy match dozens of them sat about — a
+few hundred draw calls that were not there at the start. Untaken crate items
+and floor drops now expire after 150 s (no burst, they just go). Also: the
+zone banner's DOM writes are throttled to 4 Hz and the red edge writes only on
+change (they wrote every frame); the zone wall is 64 segments and 40 m tall
+(was 96 and 60 — a transparent wall around a 42 m final circle is a lot of
+fill). The AUTO quality tier already steps down on sustained drops.
+
+`verify-zone` 44/0 (respawn modes, spawn filter), `verify-heli` 86/0 (door
+band vs floor, seats, no popups). Client gates green. Live `test.js` 329/0
+(six fewer assertions than before: the per-mode elimination checks no longer
+apply to the zone modes, by design).
+
+# v1.0.6 (build 20) — ONLY A ROCKET BRINGS IT DOWN (2026-09-15)
+
+Tagged `v1.0t`. Rahul: "the helicopter can't be destroyed by any gun — only an
+RPG, with a proper launcher in the drop loot, otherwise everyone downs it the
+moment it is airborne. The people inside can still be shot, but the hull only
+by a rocket."
+
+**The hull.** Every gun class is zero now. The RPG-L — the launcher that was
+already legendary AIRDROP loot (the exotic pool: one round loaded, two spare,
+3.6 s reload) — does 300 to the hull: three direct hits on 900 bring it down,
+so a kill costs a crate and every round in it. A gun round still stops on the
+fuselage with a spark, but no round trip is made and nothing is deducted.
+
+**The rocket meets the hull.** A flying RPG-L round that reaches the fuselage
+detonates there and reports the hit; the server's guard against a spoofed claim
+is the launcher's own cycle (a hull hit per shooter no oftener than 1.8 s — the
+server never tracked loadouts, and now does not have to). A rider's own rocket
+never tests the hull it stands in.
+
+**The riders** are as shootable as before — any gun, through the open sides —
+which is the counterplay: pick the pilot off, not the machine.
+
+`verify-heli` 79/0 (every non-rocket weapon zero; three rockets down the machine
+with both riders; a second rocket claim inside the cycle refused; the launcher
+in the exotic pool). Client gates green (bandwidth 448 KB, itemized); live
+`test.js` 335/0.
+
+# v1.0.5 (build 19) — THE HULL THAT ATE THE BULLETS (2026-09-15)
+
+Tagged `v1.0s`. Rahul: "the opponent can't be killed from the helicopter, even
+when the bullets are shot correctly — and vice versa."
+
+**Two holes in one test.** The hitscan asks the helicopter's hull box whether
+the ray meets it before anything else. (1) A RIDER's ray starts INSIDE that
+box, and a box test from inside returns the exit point — so every round a
+rider fired "hit the hull" a metre in front of the muzzle and stopped there;
+the server then refused it ("you are aboard") and the ground player felt
+nothing. (2) The exemption meant to let a player hit beat the hull checked a
+field (`remote`) that player hits never carried, so a ground shot at a rider
+through the open door also "hit the hull" first. Both directions dead, exactly
+as reported; the server-side hit path was fine all along (the live probe that
+scored 100 → 78 fed it directly).
+
+**The fix.** Nobody aboard tests the hull; a PLAYER hit always beats the hull;
+the hull test ignores an origin inside the box; and the box is tested against
+this frame's pose, not the last rendered one. Proved with the real client
+modules: a rider's ray from the seat meets no hull, a ground shooter's ray
+meets the hull in front of the seat but the hitscan lets the player hit win.
+
+`verify-heli` 77/0; client gates green; live `test.js` 335/0.
+
+# v1.0.4 (build 18) — THE AUDIT: A SECOND TRAIN, JOINED RAILS, DRESS COLOURS (2026-09-15)
+
+Tagged `v1.0r`. Rahul asked for an audit of the whole codebase against the
+newest systems, and five changes. What the audit found is in the handoff
+(§1r); what changed:
+
+**The rails were drawn wrong, not the physics.** Each rail piece was a 5.2 m
+box angled along the START tangent of its sample, so round every curve the
+pieces splayed and gapped — "broken at the corners". Each piece is now a CHORD
+between two points on the path, angled along the chord, with finer chords on
+curves; consecutive pieces meet end to end. The trains ride the mathematics,
+which was always continuous; the drawing now matches it.
+
+**A second train, right to left.** Track 2 is the INNER lane of the ring
+boulevard (±99.4), run counter-clockwise — westbound along the north side, the
+opposite hand to the first — with four stops of its own and an olive/red
+livery. Its speed (7.8362 m/s) makes its lap equal the first train's to half a
+millisecond, so the phase between them is constant, and that phase (40 s) was
+chosen from a 52-second window in which a 2D OBB test every 0.1 s of a lap
+shows no car of one train ever overlapping a car of the other, with 20 s of
+margin either side — their one crossing is the first train's S-bend across
+the north inner lane. Both loops are swept against every static collider.
+Both trains kill what they hit and what jumps off. To clear the inner lane:
+the three halts were REMOVED (that lane is track 2 now; every stop still
+boards from the road by the coach step boards, as the original design did),
+the stadium pavilion's west wall moved in 1.4 m, the practice nets 2.5 m east,
+one container 2 m in, the ring-district signs to ±96.6, and the sign placer
+now refuses the boulevard on Urban.
+
+**Dress colours for the host.** A colour picker on each team header in the
+lobby (beside the rename), and one picker with a Reset in the rules panel for
+modes without sides. The server validates a hex, merges it into
+`settings.dressColors`, and recolours everyone at once; avatars, name tags,
+radar dots and the scoreboard all read the same colour. Proved live: set,
+worn by every player, junk refused, reset restores the palette.
+
+**Checked, unchanged:** the helicopter (73-assertion gate: route over the map
+and through the pad, endless cruise, Q return, seats, fall net, shoot-down,
+respawn) and shooting from the cabin (live hit path); the M map shows both
+trains, the helicopter and the zone; Urban Zone squads use the Last Stand squad
+shape the mini-bar and end table already render.
+
+Budgets: triangles 136k → 144k (the second track, itemized); fingerprints
+re-recorded. `verify-train` 56/0 with the two-train proof. Board: 48 gates,
+45 green, the same three documented reds. Live: `test.js` 335/0.
+
+# v1.0.3 (build 17) — THE HELICOPTER FLIES FREE (2026-09-14)
+
+Tagged `v1.0q`. Rahul's five, on a machine that now behaves like a real one:
+
+**1 + 2. It stays up until a rider lands it.** No more one-round-and-down. The
+flight is an ENDLESS loop; a rider aboard presses **Q** and the machine turns
+for the pad from wherever it is, descends, and lands. While it sits landed, a
+rider aboard who presses **Z** lifts it off AGAIN (with a fresh route); a landed
+machine nobody re-boards leaves after 8 s, and the next one arrives 3 minutes
+later — the respawn clock starts when it leaves, not when it took off.
+
+**3. It flies everywhere, not on a fixed path.** Every flight rolls a seed on
+the server; `heliRoute(seed)` builds a wandering loop of ~18 random waypoints
+across the whole city (no hairpins, never off the map, always over its own
+pad), the same on every client. 400 rolls give 350+ distinct routes — no two
+matches fly the same.
+
+**4. Shooting from the air hits the ground.** Confirmed live: a rider firing
+an AK from the cabin at 91 m took a ground player from 100 to 78 — the ordinary
+hit path, no special case, because the shooter is a normal player with a normal
+gun; only the floor under them moves.
+
+**5. And the fall bug is dead for good.** The fall net now measures the rider
+against the machine's OWN RECENT PATH (a one-second trail), not a single
+instant — so a rider lagging along a curving route is always near a point the
+machine actually occupied. Only a jump (Space) or being far from the whole
+trail for two ticks ends a ride. Proved with a live flight past the old
+52-second limit, then Q home, then re-launch, then leave — zero phantom deaths.
+
+`verify-heli` 73/0; the suite's helicopter phase flies the rolled route with
+700 ms of lag and lands with Q. Board: 48 gates, 45 green, the same three
+documented reds. Live: `test.js` 331/0.
+
+# v1.0.2 (build 16) — NOBODY FALLS WITHOUT A REASON (2026-09-14)
+
+Tagged `v1.0p`. Rahul: "onboarded, but after going to a height the player is
+automatically killed — 'fallen from helicopter'. It should work like the
+train: carry the player, let them move inside, never drop them for no reason."
+
+**The cause, finally named.** "Fallen" was still a position test — is the
+rider's reported position near where the server thinks the machine is? —
+with a 3 m / 6.5 m tolerance. A rider's reported position trails the machine
+by the network delay plus the update interval, and the client and the server
+each compute the pose from their own clock; during the climb the machine moves
+12.8 m/s straight up, so a quarter second of lag or skew is three metres of
+"gap". The test fired the moment the machine got high enough to test.
+
+**The fix, in principle.** The only way off a flying helicopter is the rider's
+own jump — so the CLIENT REPORTS THE JUMP (`heliBail`), and that is what kills
+(tagged "fell from the helicopter", credited to whoever hit the machine in the
+last 10 s). The position test survives only as a sanity net for a client that
+stopped riding without saying so, and it is deliberately huge: 12 m below the
+floor or 25 m away, on two consecutive ticks.
+
+**And on the client.** A listed rider is LOCKED to the cabin floor whatever a
+frame did — a 350 ms hitch at 12.8 m/s of climb used to open more gap than the
+snap window and drop the rider through the cabin. Proved with three 350 ms
+hitches through the climb: zero gap, never off the floor.
+
+**Proved end to end**, not with a stub: a live match, Z with the stale update
+race, then every position update 700 ms behind the machine (400 ms lag plus
+300 ms of clock skew) for a WHOLE FLIGHT — airborne on time, aboard at 30 s,
+landed at 52 s with the rider still listed, zero deaths. The suite's
+helicopter phase now runs with that 700 ms handicap. `verify-heli` 65/0.
+Board: 48 gates, 45 green, the same three documented reds. Live: `test.js`
+329/0.
+
+# v1.0.1 (build 15) — THE HELICOPTER, PROPERLY (2026-09-14)
+
+**Version 1.0.1**, and asset URLs now carry a content hash — see the last
+point. Tagged `v1.0o`. Rahul's four errors, each with its cause:
+
+**1. "Onboarded, but the message is about the train."** The train's boarding
+hint fired on ANY moving floor, because the controller only knew "on a
+platform", not whose. The floor result now carries its source; the train hint
+fires on the train's floor only, the helicopter's on the helicopter's.
+
+**2. "Pressed Z, boarded, but the helicopter is not going up."** A race. The
+server seats you and lists you; but your client had already sent a position
+update with the OLD position (3 m outside the cabin) — it lands a moment later,
+overwrites the seat, and the next server tick drops you from the riders
+before your client has even learned where it sits. No riders, no lift-off.
+Fixed twice: a rider is trusted aboard for 2.5 s after boarding whatever
+position arrives (the boarding grace), and the client sits down from the Z
+acknowledgement itself, before its next update goes out. Proved live with the
+stale update deliberately injected.
+
+**3. "Lifted off and the players died."** The same race at lift-off: a rider
+whose reported position was stale read as "fallen" in the first second of the
+climb. The fall test now waits until the flight is 2.5 s old and the machine
+is well up, and "fallen" was already metres-below-or-away, not a tight box.
+
+**4. "Killed by explosives" for train and helicopter deaths.** The death screen
+said "Careful with those explosives" for every self-tagged death — the train,
+the zone, a fall from the helicopter. Each now says what happened: "Run over
+by the train.", "Bled out outside the zone.", "You fell from the helicopter." /
+"Fell from the helicopter after X hit it.", "Shot down with the helicopter by
+X." The kill feed has a line for a shoot-down too.
+
+**The one that made the others worse.** Fourteen builds went out under one
+version string while the game was live. The `?v=` cache key never changed, so
+browsers held old scripts against new ones — a cached game.js talking to a new
+server. That is why "vanished" looked the way it did and why the fixes seemed
+not to land. Asset URLs now carry `version-<sha1 of every client file>`,
+computed at boot: any change to any client file changes every URL on deploy,
+whether or not anyone remembered the version. `/version` still reports the
+plain version.
+
+`verify-heli` 57/0 (the race, the climb grace, the hints, the death texts, the
+stamp); new live phase: Z with a stale update → lift-off on time → alive
+through the climb. Board: 48 gates, 45 green, the same three documented reds.
+Live: `test.js` 329/0.
+
+# v1.0 (build 14) — THE HELICOPTER THAT VANISHED (2026-09-14)
+
+Same release name, same `1.0.0`. Tagged `v1.0n`. Rahul: "helicopter pura
+vanish ho gaya — helipad pe kuch nahi, na helicopter na option."
+
+**What happened.** On matchStart the client applies the payload's `heli` state
+(net.js) and, a moment later, REBUILDS THE MAP (`Game.onMatchStart` →
+`buildWorld` → `Heli.init`). Build 13's `init` disposed the old machine and
+started from a null state — so the state the server had just sent was thrown
+away, the fuselage was built invisible, and with no state there was no prompt
+and no board text. The server had a perfectly good helicopter on the pad the
+whole time; no client would draw it until the next `heliState` event, which
+only comes on a change.
+
+**The fix.** The module keeps the server's last word across init/dispose
+(`pending`) and re-applies it after every rebuild; leaving the match clears it.
+Proved by loading the real client module in the real order — set, then two
+inits, then update — and asserting the machine is on the pad, the prompt
+offers boarding within reach and not at 30 m, and "gone" hides it.
+
+`verify-heli` 51/0. Board: 48 gates, 45 green, the same three documented reds.
+Live: `test.js` 325/0.
+
+# v1.0 (build 13) — BOARD IT WITH Z; THE BOARD AT THE PAD (2026-09-14)
+
+Same release name, same `1.0.0`. Tagged `v1.0m`. Rahul, after flying it:
+"it requires the player to stand in the helipad for the helicopter to come —
+when the user comes near it should say press Z to board; currently the player
+is falling down from the helicopter"; "when there is no helicopter, a signboard
+should show the next one in mm:ss with a live countdown; every 3 minutes."
+
+**Boarding is an act now.** Walk up to the machine on its pad and a prompt
+appears — "Z — BOARD THE HELICOPTER". Z asks the server, which SEATS you (eight
+cabin seats; a server teleport the next state update honours), lists you, and
+starts the 3 s lift-off count from the first boarding; everyone else in the
+match hears who boarded. Z again before lift-off steps you off beside the pad.
+Nobody boards by standing around, and the machine is on the pad from the
+first second of every Urban match.
+
+**Why riders were "falling".** The server judged "aboard" with a tight cabin
+test against the rider's REPORTED position — which trails the machine by a
+network delay, a metre or two at 14 m/s — so a seated rider at the back of the
+cabin read as outside and was killed as a faller. "Fallen" is now what a body
+in free fall does and a seated rider never does: three metres below the floor
+or six and a half metres from the cabin. Proved with a rider 2.6 m behind and
+0.6 m below the seat staying aboard, and one 8 m off and 4 m down dying.
+
+**The board.** A signboard at the pad edge with a live canvas: "NEXT HELICOPTER
+IN 02:31" while it is away (the respawn is **every 3 minutes** now), "LIFT-OFF
+IN 3 · press Z to board" during boarding, "HELICOPTER READY · walk up · press Z"
+when it sits, "AIRBORNE · back in 00:41" while it flies.
+
+`verify-heli` 47/0. Board: 48 gates, 45 green, the same three documented reds.
+Live: `test.js` 325/0.
+
+# v1.0 (build 12) — SQUADS IN THE ZONE, FOUR HALTS, THE HELICOPTER (2026-09-14)
+
+Same release name, same `1.0.0`. Tagged `v1.0l`.
+
+**Urban Zone as a team.** Rahul: "solo or as a team, rest of the gameplay the
+same." Two squad variants beside Solo in the Urban Zone category — Duos
+(7 × 2) and Squads (5 × 3) — the Last Stand squad shapes with the circle: one
+life each, a squad wins when it is the last side breathing. Same schedule,
+same bleed, same drops, same map lock.
+
+**The train stops on all four sides.** Rahul: "stop at multiple locations, a
+small station on each side." The schedule is a chain of legs now (dwell,
+accelerate, cruise, brake) between any number of stops, shared by client and
+server as before; a leg too short for cruise becomes a triangle profile. Four
+stops a lap: Sector 7 Central (north) and three HALTS on the inner lane of the
+boulevard — EAST HALT, SOUTH HALT, WEST HALT — each a 2.7 m platform at coach-
+floor height with three steps at both ends, a shelter on four posts, a bench, a
+name board and a lamp, built from the same config the stops read so platform
+and train cannot disagree. A lap is ~139 s. The two district signs that stood
+where the east and west halts went moved along the lane.
+
+**The helicopter.** Rahul's brief, point by point:
+  - *an area where a helicopter is* — the HELIPAD on open ground by the
+    airport (a raised disc, an H, edge lights), and the machine sits on it:
+    cabin with a floor and hip rails, open sides, glass nose, tail boom and fin,
+    skids, a spinning main rotor and tail rotor, a searchlight;
+  - *someone boards, it starts* — stand in the cabin on the pad for 3 s; it
+    climbs to 32 m, flies a filleted loop over the city at 14 m/s, comes back
+    over the pad, descends, unloads;
+  - *the player can shoot players below* — the cabin floor is a moving floor
+    (the train's contract); you stand, aim and fire as anywhere else;
+  - *real looking, natural physics, players don't fall out on their own* — the
+    fuselage banks into every turn in proportion to how fast the heading
+    changes and noses down out of the climb; the cabin is walled on all four
+    sides while airborne, so nobody falls out by accident: the ONLY way out in
+    the air is to jump (Space), which is a choice;
+  - *not every gun damages it; snipers little, assault rifles well; not five
+    rounds and down; fun to bring down* — 900 hull points, damage by weapon
+    class: assault and full-auto 100% (an AK needs 18 hits — a magazine and a
+    half), semi-auto 75%, snipers 30% (an AWM needs 28), rockets a flat 150
+    (six), knives/drones/EMP nothing; a health bar for everyone while it exists;
+  - *if a player falls out — instant kill, the opponent gets the point, the
+    helicopter comes back to its place* — a rider found outside the cabin in
+    the air is dead, tagged "fell from the helicopter", credited to whoever hit
+    the machine within the last 10 s (else nobody); with nobody left aboard the
+    machine goes home;
+  - *destroyed — instant kill* — at zero hull every rider dies, credited to the
+    shooter, "SHOT DOWN THE HELICOPTER" across the room, a fireball;
+  - *a new one every 5 minutes on the same spot if used* — 300 s after
+    take-off it is back on the pad, full health, empty.
+  Everything about WHERE it is is a function of the server's take-off time
+  (`heliState`), so every client draws the same machine and the server can
+  judge who is aboard, who fell and whether a shot could have reached it.
+  Urban only; every other map is unchanged. The M map shows it as a cross.
+
+Gates: `verify-heli` 39/0 (route over the map and through the pad, smooth
+climb/descent, damage classes and the no-five-round rule across every weapon,
+boarding, mid-flight riding, a fall credited to the shooter, shoot-down with two
+aboard, the 300 s respawn to the second); `verify-train` 53/0 (four stops, one
+per side, each halt spanning its coaches); `verify-zone` 41/0 (squads).
+Fingerprints re-recorded for the halts and the pad. Board: 48 gates, 45 green,
+the same three documented reds. Live: `test.js` 325/0 (an Urban match ships the
+helicopter on the pad with matchStart).
+
+# v1.0 (build 11) — SOUND AND COUNT (2026-09-11)
+
+Same release name, same `1.0.0`. Tagged `v1.0k`. Polish on the two newest
+systems, no gameplay change.
+
+**Urban Zone:** the banner ends with "N ALIVE" (from the roster the lobby
+already pushes) — PUBG's one number that matters; every bleed tick outside the
+circle plays a low heartbeat so you feel the ten seconds count down.
+
+**The train:** a horn when it pulls out of the station and a positional rumble
+every 0.7 s within 60 m while it moves, scaled by speed — you hear it coming
+before you see it, which is the whole point of a train in a shooter.
+
+Gates unchanged: verify-train 43/0, verify-zone 37/0, audio/scope/undeclared
+green. Board: 47 gates, 44 green, the same three documented reds. Live:
+`test.js` 316/0.
+
+# v1.0 (build 10) — URBAN ZONE (2026-09-10)
+
+Same release name, same `1.0.0`. Tagged `v1.0j`. Rahul: "make the map gradually
+smaller as time passes; whoever camps outside the zone loses 10% life a second
+and dies in 10 s; the last minutes are close fights like the small maps; the
+drop always lands in the safe zone; the safe zone is random every match; a
+separate mode so the current gameplay is not hampered — Urban Zone; the train
+runs as usual; the M map shows danger red and safe green. Take ideas from PUBG."
+
+**The mode.** `zone` — Urban Zone — its own category in the picker, solo, ONE
+LIFE (the Last Stand rules do the elimination and the win), locked to Urban
+(`mapLock`: the lobby's map select shows Urban and is disabled; the server
+refuses any other map at create and at updateSettings). The 15-minute clock
+still ends it if two or more are left.
+
+**The circle.** Rolled ONCE at match start on the server (random final centre
+within ±70 m, ten nested phases, radii 175 → 42 m — the last circle is a
+Bazaar-sized arena) and shipped with matchStart and every reconnect; from then
+on server and clients read the same pure function against the same match clock
+— the train's pattern. Timeline: minutes 0-2 the whole map is safe, then "THE
+ZONE IS CLOSING"; minutes 2-12 ten phases, each a 30 s hold with the next
+circle drawn, then a 30 s shrink; minutes 12-15 the final circle stands.
+
+**The bleed.** Every second outside the circle: 10% of max HP straight off the
+HP — no vest, helmet or shield soaks it — dead in ten, tagged `zone`, "bled out
+in the zone", credits nobody. Clients see a red edge, a banner with metres and
+an arrow to safety, and a toast crossing the line either way.
+
+**The drop.** dropCrate asks the zone for the configured points that will be
+inside the circle when the crate lands; a small late circle can miss all
+fourteen, so then the server finds OPEN GROUND inside the circle against the
+map's colliders (nothing standing within 1.6 m up to 8 m) — the crate never
+lands outside the zone, never on a roof, never in a wall.
+
+**What you see.** A tall translucent red wall at the circle, a white dashed
+ring where the next circle will be during the hold, the M map painted red
+outside and green inside (radar too), "NEXT CIRCLE IN 0:24 · 60 m inside" under
+the clock. The train runs exactly as before — riders outside the circle bleed
+like anyone else.
+
+`verify-zone` 37/0 (mode, timeline, 200 rolled schedules all nested and on the
+map with random final centres, the bleed to the second, the crate filter, the
+wiring); live Phase 19 extension: map lock at create and on a host change,
+schedule shipped, one life. Board: 47 gates, 44 green, the same three documented
+reds. Live: `test.js` 316/0, `verify-client` 60/0, `probe-net-degraded` 10/0.
+
+# v1.0 (build 9) — THE WHOLE COMPARTMENT IS A WALL (2026-09-10)
+
+Same release name, same `1.0.0`. Tagged `v1.0i`. Rahul: "the compartment
+walls still put the player outside the train — the player should only get out
+through the door; the whole compartment box should be a wall, in or out." And
+"city sign boards on the tracks need repositioning."
+
+**The leak was the air.** The coach walls held a STANDING rider; a rider who
+jumped was, for the airborne frames, nobody's business, and strafing mid-jump
+carried them through the side. The same gap let a player on the road jump in
+through a wall. Now everything inside the body — standing or airborne — is
+carried and walled: side walls, end walls, and the roof as a CEILING (a jump
+inside the coach stops at the roof instead of poking through it). A rider who
+drifts into the wall thickness is still a rider and is put back; a player on
+the road who reaches the wall from outside is pushed out; the door zones are
+the only way in or out, and the locomotive is all wall.
+
+**The signs.** The four ring-district signs stood at the outer edge of the
+boulevard, which is the train's lane; the boards overhung the coaches by a
+hand. Moved to the inner edge (x/z ±99.6), 1.9 m clear of the train.
+
+`verify-train` 43/0, four counterparts added: two seconds of jumping and
+strafing at the wall keeps the rider inside and the head under the roof, the
+airborne rider still counts as aboard, three seconds of jumping at the coach
+side from the road never gets in. Board: 46 gates, 43 green, the same three
+documented reds (fingerprints re-recorded for the sign move). Live: `test.js`
+304/0, `verify-client` 58/0, `probe-net-degraded` 10/0.
+
+# v1.0 (build 8) — THE REDEPLOY LADDER TOPS OUT AT 15 s (2026-09-10)
+
+Same release name, same `1.0.0`. Tagged `v1.0h`. Rahul: "in the small and
+medium maps the redeployment timer needs to be capped at max 15 seconds,
+gradually increased to 15 — currently it is unlimited."
+
+`MATCH.respawnLadder` is now deaths 1-3 → 5 s, 4-6 → 8 s, 7-9 → 10 s,
+10-12 → 12 s, 13+ → 15 s and stays there. Same plumbing (server computes the
+rung at the kill, ships it in the death payload, the client counts that
+down); only the numbers moved. Urban and Metro keep the flat 5 s. The suite's
+ladder assertions now pin the 15 s ceiling. Live: `test.js` 304/0,
+`verify-client` 58/0.
+
+# v1.0 (build 7) — NOBODY GETS OFF A MOVING TRAIN (2026-09-10)
+
+Same release name, same `1.0.0`. Tagged `v1.0g`. Rahul: "if a player gets down
+from the moving train, 100% kill."
+
+Server rule, in `hazards.js tickTrain` beside the run-over rule: a player seen
+aboard (floor, step or roof — generous margins, because a snapshot lags a rider
+by up to a metre at speed) within the last 1.2 s, while the train does more
+than 2 m/s, who is now at GROUND level, has jumped — dead, tagged `train`, feed
+"jumped from the moving train", credits nobody. Stepping onto the platform
+deck (1.05 m) is not ground level, so the station is safe even while the train
+is still creeping in; the dwell is the way off. The roof rider the footbridge
+sweeps off dies by the same rule. A fresh life clears the aboard memory. The
+client toasts the rule once per boarding.
+
+`verify-train` 39/0: the jumper dies, the rider who stayed and the bystander who
+was never aboard live, the step-off at the stop is safe, the platform-height
+step-off is not a jump. Board: 46 gates, 43 green, the same three documented
+reds. Live: `test.js` 303/0, `verify-client` 58/0, `probe-net-degraded` 10/0.
+
+# v1.0 (build 6) — THE TRAIN HOLDS ITS PASSENGERS (2026-09-10)
+
+Same release name, same `1.0.0`. Tagged `v1.0f` in code. Rahul, after riding
+it: "player on the train falls off when the train is turning"; "any player hit
+by the train is a 100% kill"; "the train should be like a wall — can't go in
+except through the door."
+
+**1. Riders stay seated through the corners.** Build 5 carried a rider with the
+car's VELOCITY. A velocity has no rotation in it, so on every curve the coach
+turned under the rider, the rider slid across the floor, and at a door zone
+slid out. The carry is RIGID now: each frame the rider's seat is measured in the
+car's previous pose and placed in its new pose — translation and rotation —
+so a corner moves the rider exactly as it moves the seat. The coach also has
+END walls now, not just sides. When the previous pose is stale (a stalled tab,
+a clock jump) the current pose is used and nobody is flung. Proved through a
+full 90-degree corner at 8 m/s, 360 frames, zero frames off, zero drift.
+
+**2. Hit by the train = dead.** The SERVER places the train exactly where every
+client draws it — the same path (through the geometry harness) and the same
+schedule functions, now shared in `world.config.js` (`trainSchedule`,
+`trainHeadAt`, `trainCars`) — and every tick asks whether anyone alive stands
+inside a car's body at ground level while the train moves. Riders (floor, step,
+roof) and platform bystanders are outside that test. The death is tagged
+`train`, credits nobody, and the feed reads "was run over by the train".
+
+**3. The train is a wall except at the doors.** A player not aboard who is
+inside a car's body is pushed out to the nearest face every frame, so a
+standing train cannot be walked through; the coaches' door zones are the only
+way in (walk in from the platform or the road: step, then floor). The
+locomotive is all wall.
+
+`verify-train` 33/0: corner ride, wall block, door boarding, server kill of a
+bystander, no kill for a rider or a bystander beside the track, no kill from a
+standing train. Board: 46 gates, 43 green, the same three documented reds.
+Live: `test.js` 303/0, `verify-client` 58/0, `probe-net-degraded` 10/0.
+
+# v1.0 (build 5) — THE TRAIN (2026-09-10)
+
+Same release name, same `1.0.0`. Tagged `v1.0e` in code. The M map draws the
+train's cars as gold bars from the same deterministic pose every client shares.
+
+**1. The tall operator.** Rendered rig 1.36 → 1.62 (~2.28 m), 5% broader.
+Hit geometry follows the visible body — and fixing that exposed a gap: the
+body box was centred on the capsule, so a crouched torso's top fell outside
+it once the rig grew (1 of 11 rays missed in verify-hitbox); it now spans the
+rendered body from the boots up. The movement capsule is UNTOUCHED, so no
+route, stair or corridor changed. For "doors high enough": `World._liftLintels`
+runs at build on every map and raises each doorway header it can PROVE is over
+an opening — wall-thick, air beneath, a floor 1.9-2.55 m below, jambs or a
+long facade band, never a sign board — to 2.65 m; thin facade header strips
+that would be left as slivers are removed so the opening runs to the band
+above. Urban 67, Riverside 11, Airfield 10, Sunset Row 8, Substation 4,
+Bazaar 2; Metro's doors were already 3.2 m.
+
+**2. Strike kills don't feed the next strike.** A nuke's or a rocket's victims
+are kills — kills++, streak++, the announcements — but `combat.js` counts them
+as `strikeKills` too, and the nuke (arenas) and the rocket ladder (big maps)
+read `streak − strikeKills`. Five own kills → nuke → four nuke kills → still
+five MORE own kills for the next one. verify-nuke has the exact scenario.
+
+**3. Hold breath.** Scoped + Shift cuts scope sway to 12% for up to 4 s; the
+meter (a thin bar beside the reticle, labelled SHIFT) refills over 5 s and a
+fresh hold needs a quarter of it back. Client-only, like the sway.
+
+**4. THE TRAIN.** `src/environment/train.js` + `CFG.TRAIN.urban`.
+- THE LINE: an 800 m loop on the ring boulevard (x/z ±103, the old wall
+  line) with a detour through SECTOR 7 CENTRAL — an S-bend off the north side
+  onto Track 2 (the freight road beside the island platform), east along the
+  platforms and under the footbridge, out to the east side. Rails and
+  sleepers are laid along the same path by the ring builder, so track and
+  train cannot disagree. The random cover scatter now stays 3.6 m off the
+  centreline; two island-platform lamps that stood IN Track 2 moved onto the
+  platform; two boulevard containers on the west straight are gone.
+- THE SCHEDULE: deterministic in match time. Leaves the station 3 s after
+  the match starts, accelerates over 30 m to 8 m/s, brakes over 24 m into the
+  station, dwells 3 s, goes again — a 110 s cycle every client and the server
+  compute from the same clock the HUD timer already trusts. Zero traffic.
+- THE TRAIN: a locomotive (cab, windscreen, side windows, hood, louvres,
+  tanks, headlights, stack, buffer beam) and three coaches (underframe,
+  bogies with wheels, floor at platform height, window bands between pillars,
+  open doors at both ends of both sides with boarding steps, end walls, roof,
+  seats down both sides). Built from the map's materials with
+  matrixAutoUpdate ON — the one flag that keeps a mesh out of the static merge.
+- RIDING IT: the controller now accepts a MOVING FLOOR. Every frame the train
+  offers the coach floor, its boarding step or its roof when the player is
+  over one; the controller snaps a standing player to it, carries them with
+  the car's velocity and holds them inside the coach walls except at the
+  doors. Board at the station (platform and floor are both 1.05 m) or jump
+  aboard from the road; step out of a door to leave. Shoot from the doors,
+  the windows or the roof. The static resolver still wins every argument
+  first — the lifts' reason for staying teleports is respected.
+- STATION: the hall is a floor higher (F3 at 8.25 where the roof was, new
+  roof at 11.55, flights alternating lanes, clock gable and stairhead moved
+  up); verify-access has the new route.
+- HONEST LIMITS: coach walls are not colliders, so bullets pass through them
+  (bodies do not, for the rider). A remote rider is drawn ~0.2 s behind their
+  true seat while moving. The footbridge clears the roof by 0.6 m: a roof
+  rider goes under it prone or is swept off. No minimap marker yet.
+- `tools/verify-train.js` (new, 23 assertions): loop closes, corners are real
+  curves, the head stops beside the platform, the schedule dwells/runs/brakes
+  back to the same stop, the whole four-car envelope swept along the loop
+  meets NO static collider, the footbridge clears the roof, and the rider is
+  carried, held in, free at the doors and on the roof, and a player beside
+  the train on the road is left alone.
+
+## Gates
+
+verify-train 23/0 (new), verify-hitbox 32/0, verify-nuke 61/0, verify-access
+45/1 (the documented north block A), fingerprints/untouched re-recorded with
+reasons. Triangle budget: urban 133.1k of 136k (the rails are ~5.5k). gzip
+budget 420 → 426 KB itemized. Board at ship: 46 gates, 43 green, the same
+three documented reds. Live: `test.js` 303/0, `verify-client` 58/0,
+`probe-net-degraded` 10/0.
+
+# v1.0 (build 4) — FROM RAHUL'S EIGHT SCREENSHOTS (2026-09-10)
+
+Same release name, same `1.0.0`. Tagged `v1.0d` in code.
+
+**1. Bus.** The roof slab floated 64 cm above the window band on every bus on
+the map. Body 0.55-1.75, glass 1.75-2.35, roof 2.35-2.47, body-colour end caps.
+
+**2. The Colony's long wall.** 86 m of 2.2 m concrete along z 95.4 — a wall
+between the Colony and what is now the ring boulevard. Gone; four waist-high
+5 m stubs keep the strip from being a firing range.
+
+**3 + 4. The stadium was never grey, and the orange wall was a ship.** The
+Ship Harbour (v4-era) had been built through the stadium three times before;
+this was the fourth: its 0.6 m quay deck lay OVER the whole outfield, burying
+the 310 turf tiles that were always there, and its 38 m rust hull was the
+featureless wall in the Training Ground screenshot. verify-pitch counted
+colliders over 1 m and a 0.6 m slab slipped under. Deck, hull, quay stair,
+superstructure, aft deck, crane and water removed; a real TRAINING GROUND
+stands there — turf, a five-a-side pitch with goals, a two-storey clubhouse on
+the ground (interior, switchback, roof over the bowl), benches, hurdles, nets.
+The stadium is green.
+
+**5. Old Town's long wall.** The 26 m west terrace read as one blank brick
+wall from the back lane and cut the lane off from the street. The middle
+house is a paved passage now, with a garden wall and bin stores in the gap.
+
+**6. Stadium a floor higher.** Tiers 1.10 → 2.00 m each; the bowl stands 6 m.
+
+**7. The M map on small and medium maps.** The static-shape filter dropped
+every thin wall (a 0.3 × 8 m partition is 2.4 m², under the 3.5 m² floor
+tuned for Urban's buildings), so the arenas baked as a handful of rectangles
+on a black square — with Urban's road cross drawn through the middle. Arenas
+now keep wall-shaped and elevated-deck colliders (the map id is exposed
+DURING the build; `builtMap` was only set after), and the road cross is
+Urban's alone. Killhouse went from ~5 shapes to 27.
+
+**8. Bazaar court.** The caravanserai was a well and two benches in a 44 × 8 m
+yard. It is a market now: four stalls, two carts, pallets, drums, two screens
+that cut the sightline into three rooms, cloth lines.
+
+**10. Bot Mode removed. Completely.** Rahul asked in v10.9; v10.9 hid it behind
+a switch and v14.0 built a second product on the retained engine. Removed now:
+the modes (`bots`, `co1-co10`, `bm_solo/team/battle`), the `BOTS_ENABLED`
+switch and every predicate, the Blacksite map and builder,
+`botmode.config.js`, `server/lib/botmode.js`, the bm_ weapons, viewmodels and
+loot entries, the welcome-rail door and panel, the lobby brief text, the loot
+pool walls, all server wiring (spawn, tick, timers, settings), test phases
+11/12/14/17, `verify-bots`, `verify-botmode`, `prof-bots`. `server/lib/bots.js`
+is a 360-line GEOMETRY HARNESS (colliders, LOS, stairs) that ~30 gates and the
+Intel/hazard checks require by path; its header says what it is and that no
+bot goes back in. The handoff carries the same sentence so it does not come
+back a third time. 13 multiplayer modes and 9 maps remain.
+
+**11. Arena redeploy ladder.** On small and medium maps the wait climbs with
+your death count: deaths 1-3 → 5 s, 4-6 → 8 s, 7-9 → 10 s, 10-12 → 13 s,
+13-15 → 17 s, 16-19 → 22 s, 20+ → 30 s (`MATCH.respawnLadder`). Every mode.
+Urban and Metro keep the flat 5 s. The server computes the rung at the kill
+and ships it in the death payload; the client counts down that number, so the
+HUD and the server's gate cannot disagree. Reconnects keep the rung.
+
+**9.** The colour pass stays as it is.
+
+## Gates
+
+Fingerprints/untouched re-recorded for urban and bazaar with the reasons in
+the files. `verify-pitch` 9/0, `verify-access` route rewritten for the
+clubhouse, `verify-devhud` repointed at its flight, `verify-collision`/`map`/
+`spawn-geometry`/`zfight`/`props`/`batch`/`cover`/`flow`/`stairs-quality`
+green. Board: 45 gates, 42 green, the same three documented reds. Live:
+`test.js` 302/0 (the 15 bot-phase assertions are gone; ladder and removal
+assertions added), `verify-client` 58/0, `probe-net-degraded` 10/0.
+
+# v1.0 (build 3) — HIGH DEFINITION, AND LOWER WHEN IT LAGS (2026-09-10)
+
+Rahul: "update the game quality to high definition and if it lags to low
+definition, depending on laptop and user preferences; overall enhance the
+quality to 1080p so it looks realistic." Tagged `v1.0c` in code.
+
+**Five quality tiers** (`src/core/quality.js`): ULTRA draws at the display's
+native pixel ratio (up to 2x — the 1080p ask; a 1.5x-scaled laptop was
+rendering at 1.5 of its pixels before, a 2x one at 1.75) with a **4096 shadow
+map** (0.06 m texels across the 244 m Urban frustum instead of 0.12) and
+8x texture anisotropy (the ground stops smearing at grazing angles). HIGH is
+exactly what the game shipped at (1.75 / 2048) plus the anisotropy; MEDIUM
+1.25; LOW 1.0 with a 1024 map; POTATO 0.75 with shadows off.
+
+**AUTO, the default, and deliberately slow.** v10.5 shipped a runtime scaler
+and v10.6 reverted it: re-setting the pixel ratio reallocates the whole
+drawing buffer, and a scaler oscillating around its threshold did that every
+900 ms — a hitch of its own making. So AUTO starts at HIGH (nobody's first
+frame is worse than before), measures 3 s windows only in a match with the
+pointer locked, steps DOWN under 42 fps at most once per 6 s, steps UP only
+after 12 s of 57+ fps, at most once per 20 s, never within 30 s of a step down
+— and never back to a tier it had to leave in this session. The tier it
+settles on is remembered, so the next launch starts there and gets one fresh
+climb. Every rule is proved in `tools/verify-quality.js` (30 assertions, the
+oscillation case included).
+
+**The preference.** QUALITY select in the pause panel: AUTO or a pinned tier;
+a pinned tier is never touched by the scaler. The "Dynamic shadows" checkbox
+stays as the manual shadow override.
+
+**Not touched, on purpose:** output encoding and tone mapping. Every
+hex-coloured material in world.js was authored against three r128's linear
+output; an sRGB/ACES pipeline would re-grade every wall on the map without a
+browser to look at the result. That is a separate, seen pass.
+
+Gates: verify-quality 30/0 (new), scope/undeclared/menu/endscreen/bindings/
+lighting green, bandwidth 416 -> 420 KB itemized. Board at ship: 47 gates,
+44 green, the same three documented reds. Live: `test.js` 317/0,
+`verify-client` 66/0, `probe-net-degraded` 10/0.
+
+# v1.0 (build 2) — THE ARSENAL (2026-09-09)
+
+Same release name, same `1.0.0` (it has not been deployed, so no browser holds
+a stale copy). Six more of Rahul's items, all tagged `v1.0b` in code.
+
+**Drop keys — every map, every mode.** `K` throws away the gun in your hands,
+`L` the sight on it. The loadout was always client-side (the server validates
+shots by weapon id, not ownership), so the server's job is the FLOOR: when a
+loot item exists for what you dropped, it appears at your feet as a one-off
+pickup anyone may take — through the same `lootAdd` path an airdrop uses. A
+base gun with no loot entry simply leaves your hands. 800 ms rate limit.
+
+**Rocket ladder — big maps, N.** `server/lib/rocket.js`, the mirror image of
+the arena nuke: streak 5 arms the first rocket, then 7, then 10, then every
+5; death resets the rung with the streak. Press N: a uniformly random living
+hostile takes a guaranteed kill where they stand, INSTANTLY, and anyone
+hostile within 6 m takes 60. Refused-and-kept when nobody hostile is alive.
+Both rewards refuse each other's maps, so N means one thing anywhere.
+
+**Drone bounty.** Shooting down a HOSTILE drone is a kill on the board (team
+score and kill target included) and puts a Strike Drone in the shooter's bag.
+Downing your own side's drive earns nothing.
+
+**Frag, two bands.** Within 20 m a clear blast is a guaranteed kill; out to
+50 m it is 50 hp; a wall between the blast and the player cuts either to a
+quarter — cover is the counter now, distance is not. Self-damage keeps the
+old 7 m falloff (a 50 m suicide radius is a grenade nobody throws). Bots use
+the identical rule, with server line of sight. The fireball draws at 9 m.
+
+**C4 sticky charge — crate-only, big maps.** A gear slot like the EMP: select,
+face a wall within 3.2 m, click. Five seconds later every hostile UNDER A ROOF
+within 18 m of the charge dies (and anyone within 4.5 m, roof or not). There
+is no "building" object in this engine, so "inside" is what makes a building a
+building — a ceiling — decided on the server against the real colliders
+(`server/lib/hazards.js`). Rooftops, streets and the house two doors down
+live.
+
+**Flamethrower — legendary floor loot, big maps, interior points only.** A new
+`cls` field on loot items rolls it on 'h' points alone. Hard 22 m reach (the
+stream ends there; no 400 m ray behind it). A hit BURNS: the victim is a
+guaranteed kill and a 20 m fire zone opens where they stood for 10 s, killing
+any hostile with line of sight to the fire; the shooter's side is safe; one
+zone per shooter per 2 s. Rendered as a ring of flame boards, a glowing disc,
+embers and a light; put out on the server's clock.
+
+## Gates
+
+`verify-armoury` 245/0 (c4 and flamer documented exceptions), `verify-models`
+266/0, `verify-attach` 125/0, bandwidth budget 408 -> 416 KB itemized.
+`test.js` **317/0** live: Phase 19 proves the rocket ladder (every rung, arena
+refusal, team targeting, refused-and-kept, death reset), the C4 roof rule
+(under the roof and hugging the charge die; open sky and far away live), the
+fire zone (reach, line of sight, cooldown, expiry), the drone bounty (hostile
+credited, team-mate not) and the live drop flow. `verify-client` 66/0;
+`probe-net-degraded` 10/0 after one probe fix — it measured travel as an
+ABSOLUTE x and assumed a spawn near the origin, which the 240 m Urban's
+far-from-enemies spawn rule no longer guarantees; it now measures travel
+relative to the first snapshot. Offline board unchanged: 43 green, the same
+three documented reds.
+
+# v1.0 — THE FIFTEEN (2026-09-09)
+
+Public release name **v1.0** (Rahul: "name the version 1.0"). Internal lineage
+continues from v14.0.1; every code comment written for this release is tagged
+`v15.0`, and `package.json` reads `1.0.0` — that string is the `?v=` cache-bust
+key, so the first load after this deploy fetches every asset fresh.
+
+Rahul's list, fifteen items, all shipped. Fix numbers below are his.
+
+## Bugs fixed
+
+**7 — timer reads 0:00 after a reconnect.** Every reconnect door (token rejoin,
+name reclaim, socket.io transport recovery) already carried `startedAt`,
+`serverNow` and the settings from the server, and every one of them dropped the
+clock on the floor: only `matchStart` ever wrote `match.startedAt`. After a
+refresh it sat at 0, so `remain = max(0, 0 + 15 min - now) = 0`. One helper,
+`absorbMatchClock()` in net.js, three callers.
+
+**3 — in FFA the big map showed everyone regardless of the Intel toggle.** The
+v9.5 rule drew exact, named pins for every no-sides mode; the host's ENEMY INTEL
+toggle had nothing left to gate. Exact enemy pins on the M map are now an
+explicit per-mode flag (`fullMapContacts`) carried by Last Stand only, whose
+anti-camping design depends on it. FFA: Intel OFF shows you and the ground,
+Intel ON shows the ~50 m rings. Allies always show. `verify-fullmap` extended.
+
+**2 — the Recon Visor lit team-mates in hostile red.** It marks enemies only now;
+team-mates are already tracked through walls by their tags and the minimap. One
+word reverses it: `CFG.GEAR.visor.showAllies`.
+
+**6 — five-second respawn on every map.** `MATCH.respawnDelay: 5`. Server gate,
+client countdown and the suite all read the one number; test.js timings are
+derived from it instead of typed.
+
+**8 — small maps ration the mines.** Five per life from a twenty-per-match
+budget (`GEAR.mine.lifetimeSmall`) on any `smallMap`; big maps refill as before.
+Floor loot mines are not rationed — they cost a walk. A toast tells the player
+when the ration is spent.
+
+**9 — mine kills on the scorecard.** Counted at the one place kills are credited
+(`combat.js`), shipped in the roster, a MINES column on the end table and a
+MINEFIELD insight card. `verify-endscreen` extended.
+
+## New items
+
+**1 — EMP Charge.** A gear slot exactly like the drone: rare floor loot and in
+the crate pool, select it, left click, and every mine on the map that is not
+yours or your side's is destroyed. Refused-and-kept when there is nothing to
+fry. Owners of destroyed mines are told. Viewmodel, third-person model, pickup
+mesh, shockwave FX, audio.
+
+**5 — Ballistic Shield.** Big maps only (filtered at both loot doors). 260 hp
+soaked before helmet and vest; a scoped rifle SHATTERS it and half the round
+lands. Per life. HUD bar for the bearer, a translucent slab on the avatar for
+everyone else, via a `shield` event — the snapshot codec is untouched.
+
+**10 — Strike Remote.** One per big-map match, planted on a random interior
+point with no rarity ring and no bob. HOLD Z for 1.2 s (a tap still interacts —
+a one-shot that deletes every enemy must not fire because somebody reached for a
+bandage). Helicopter inbound for 5 s, then every operator hostile to the caller
+dies through `applyDamage` — kill feed, streaks, team score and the win
+condition all fire as for any kill. The room hears THAT it was found, never who
+holds it.
+
+## Maps
+
+**14 — Rural removed.** Builder, config, script tags, harness lists in thirty
+gate files, budgets, fingerprints, test phase 6 (now Metro). Zero references
+remain in code.
+
+**4 — Urban is 240 x 240.** The old wall at 100 is a ring boulevard; a new wall
+at 120. Four districts on the ring — NORTH YARDS (rail siding, container stacks,
+two freight sheds), SOUTHFIELD PARK (planters, pavilion, fountain, trees), EAST
+MARKET (stall rows under an arcade, a van park), WEST BARRACKS (fenced compound,
+two enterable huts, guard post, watchtower) — and FOUR CONTROL TOWERS, one per
+side: the South Terminal tower ported as `World._towerAt` (decks 4.2/8.4/12.6,
+internal stair plus external fire escape, glazed cab at 16 m), mirrored on the
+west. The port also fixed two things the original is excused for in
+`verify-stairs-quality`: a stair-foot plate under each upper flight's first
+tread (the cutter trims a full deck back to the run edge; a sub-1 m² plate
+survives it), and a 2 m landing so the flight arrives on the landing it was
+built for rather than on the top of its own wall by a 0.95 m coin-flip. 16 ring
+spawns and 53 loot points generated from the built geometry, 4 ring drops.
+Triangle budget 120,000 -> 136,000, itemized in verify-batch.js. Draw calls
+99/115, casters 62/62, lights 7/7.
+
+**13 — Urban colours.** Every ground and wall material lifted 20-35% in value
+and 10-20% in saturation; a clear late-afternoon sky (0x4d6ea6), lighter haze
+so the 240 m map reads to its far wall, a warm high sun and cool fill. Material
+count unchanged. Metro keeps its night.
+
+**11 — Killhouse reimagined.** 40 x 68 -> 52 x 88 m, every PLAN row scaled with
+it. Gone: the four angled partitions (the zig-zag AND the source of both
+phantom-wall bugs), the centre block and centre partition. In their place THE
+DECK: a 12 x 9 m platform at 2.6 m on pillars, open beneath, two crate stairs at
+opposite corners, rails on the halves the stairs don't use; two open-ended
+container corridors flank it. Cap 10 -> 15. `verify-collision`'s angled-chain
+section became a deck section: no rotated partition may return, under the deck
+is walkable end to end, the slab is solid, both stairs carry a walker up.
+
+**12 — small maps for fifteen.** Freightyard 38 -> 68 m (outer container ring,
+four open freight sheds), Bazaar 54 x 40 -> 84 x 64 (east/west souk arcades,
+caravanserai north, produce market south), Substation 46 -> 72 m (switchyard
+ring, four enterable control buildings), Sunset Row 64 x 40 -> 64 x 84 (two end
+bands with cottages, bus shelters, cross walls). Every core untouched; every cap
+15; spawns/loot/drops proved by verify-map.
+
+**15 — Airfield and Riverside get landmarks.** Airfield: a control tower beside
+the terminal, an intact airliner on the apron (walk under the wings, an
+airstair to the fuselage roof), a two-bay fire station, a fuel farm behind a
+bund, radar mast and windsocks. Riverside: the lock tower on the east quay, an
+enterable brick mill with a crate chain to its roof, a moored barge in the canal
+with gangplanks, dockside cranes, willows, sandbag flood walls in runs.
+
+## Gates
+
+44 offline gates green. Three reds are the documented pre-existing ones and did
+not move: `verify-access` (north block A), `verify-arch` (one roof), and
+`verify-climb` (16 Old Town / Colony / Airport / Eastgate flights — all listed
+before this release; none in the new geometry). `verify-cover` went green with
+Rural's removal. Fingerprints and `verify-untouched` re-recorded with the reason
+in each file. Live, against a running server: `test.js` **279/0** (new Phase 18
+exercises the mine ration, an EMP blast clearing a planted enemy mine, a shield
+soaking a rifle round and shattering to a sniper round, and the strike remote
+end to end — planted hidden, found, called, refused on the second press, the
+enemy killed and credited); `verify-client` 66/0; `probe-net-degraded` 10/0.
+
 # v14.0.1 — THE FIRST HUMAN SESSION (2026-08-28)
 
 ## What happened

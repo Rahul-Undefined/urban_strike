@@ -44,6 +44,15 @@ Obj.prototype.add = function () {
   return this;
 };
 Obj.prototype.remove = function (c) { var i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); return this; };
+/* v2.0: viewmodels.js clones the RPG-L group for the seeker (v1.0x); every gate
+   on this stub had crashed since. A shallow clone is what production three
+   does for a Group's own fields; children are re-parented copies of the list. */
+Obj.prototype.clone = function () {
+  var o = new this.constructor(); o.children = this.children.slice(); o.userData = Object.assign({}, this.userData);
+  o.position = new Vec(this.position.x, this.position.y, this.position.z); o.rotation = new Vec(this.rotation.x, this.rotation.y, this.rotation.z);
+  o.scale = new Vec(this.scale.x, this.scale.y, this.scale.z); o.visible = this.visible; o.castShadow = this.castShadow; o.receiveShadow = this.receiveShadow;
+  return o;
+};
 Obj.prototype.getWorldQuaternion = function (q) { return q; };
 Obj.prototype.getWorldDirection = function (v) { return v; };
 /* Present here even though the map gates' THREE lacks it, because a gate that

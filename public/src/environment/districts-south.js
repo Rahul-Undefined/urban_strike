@@ -241,8 +241,16 @@ World._buildPart3 = function (T) {
     }
 
     // WEST TERRACE — roof reached from the easternmost house
+    /* v1.0d (Rahul, screenshot at (-37, 67)): the west terrace was one 26 m
+       block, and from the back lane it read as a long blank brick wall that
+       "disconnects the other side". The middle house is GONE; in its place a
+       paved passage cuts the row into two 8.6 m houses, with a garden wall
+       and a bin store in the gap for cover. The row is shorter, and the lane
+       behind it connects to the street in front. */
     house(-36.0, -27.4, M.brick, false, true);
-    house(-27.4, -18.8, M.cream, false, false);
+    seg(-27.4, -18.8, 0.02, 0.05, 51.0, 66.0, M.sidewalk, { collide: false, cast: false });   // the passage
+    seg(-26.2, -20.0, 0, 1.0, 58.6, 58.9, M.brick);                                            // garden wall across the gap, room either side
+    box(-25.6, 0.7, 54.0, 1.4, 1.4, 1.0, M.contGreen); box(-20.6, 0.7, 63.0, 1.4, 1.4, 1.0, M.contGray);   // bin stores
     house(-18.8, -10.0, M.ochre, true, true);
     // EAST TERRACE — roof reached from the westernmost house
     house(10.0, 18.0, M.sage, true, true);

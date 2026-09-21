@@ -49,7 +49,25 @@ function weaponServerDamage(weapon, part, pellets, dist) {
   return dmg;
 }
 
+/* ===== v1.0v - THE HELICOPTER PROTECTS ITS RIDERS =====
+   Rahul: "the player in the heli can't be killed until the helicopter is put
+   down; from any gun the player will not be killed." A listed rider of an
+   airborne machine takes no damage from anything except the machine's own
+   end (helidown), a fall (helifall) and the zone's bleed. Guns, grenades,
+   rockets aimed at the body, fire, mines: nothing. Down the machine (RPG or
+   EMP) and the riders die with it. */
+const RIDER_PASS = { helidown: 1, helifall: 1, zone: 1 };
+function riderShielded(room, victim, weapon) {
+  const list = (room && room.helis) || (room && room.heli ? [room.heli] : []);
+  for (const h of list) {
+    if (!h || !h.riders || h.riders.indexOf(victim.id) < 0) continue;
+    if (h.state !== 'flying' && h.state !== 'returning' && h.state !== 'crash') continue;   /* v2.0: a falling cabin still shields */
+    return !RIDER_PASS[weapon];
+  }
+  return false;
+}
 function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank) {
+  if (riderShielded(room, victim, weapon)) return;   /* v1.0v */
   if (!victim.alive) return;
   const attacker = room.players.get(attackerId);
   const teams = modeInfo(room).teams;
@@ -58,6 +76,35 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
   // spawn protection (attacking others still allowed; being hit is not)
   if (victim.protUntil > now() && attackerId !== victim.id) return;
 
+  /* ===== v15.0 - THE SHIELD TAKES IT FIRST (fix 5) =====
+     Server-owned hp on the victim, spent before helmet-cut damage reaches
+     the vest. Point-blank explosives ignore it like everything else. A
+     scoped rifle SHATTERS it: the shield is gone in one round and
+     `sniperPass` of that round still lands, so the shield is cover against
+     rifles and SMGs, not against the weapon class that exists to answer
+     cover. Overflow (damage past the shield's remaining hp) continues into
+     the normal armour path below. The room is told on every change so every
+     client can draw the slab and its state. */
+  if (!pointBlank && (victim.shieldHp | 0) > 0) {
+    const SH = CFG.GEAR.shield || {};
+    const wdef = CFG.WEAPONS[weapon];
+    const sniper = !!(SH.sniperBreaks && wdef && wdef.scope === true);
+    let absorbed;
+    if (sniper) { absorbed = dmg * (1 - (SH.sniperPass === undefined ? 0.5 : SH.sniperPass)); victim.shieldHp = 0; }
+    else { absorbed = Math.min(victim.shieldHp, dmg); victim.shieldHp -= absorbed; }
+    dmg -= absorbed;
+    if (attacker && attackerId !== victim.id) attacker.damage += absorbed;   // shield damage still counts as damage dealt
+    io.to(room.code).emit('shield', { id: victim.id, hp: Math.max(0, Math.round(victim.shieldHp)),
+      max: SH.hp, broke: victim.shieldHp <= 0 ? 1 : 0, sniper: sniper ? 1 : 0 });
+    if (dmg <= 0) {
+      victim.lastHitAt = now();
+      io.to(victim.id).emit('damaged', { dmg: 0, hp: Math.round(victim.hp), lv: victim.armorLvl,
+        du: Math.round(victim.armorDur), sh: Math.round(victim.shieldHp), from: attackerId, fromPos: attacker ? attacker.pos : null });
+      if (attacker && attackerId !== victim.id)
+        io.to(attackerId).emit('hitConfirm', { dmg: Math.round(absorbed), headshot: false, kill: false, v: victim.id, shield: 1 });
+      return;
+    }
+  }
   /* Helmet: spends durability to cut the HEADSHOT BONUS only, never the base
      damage. A head hit for 100 from a 40-base weapon (2.5x) with an H2 helmet
      (0.55) loses 0.55 of the 60-point bonus, so 67 lands. Body and leg shots
@@ -107,7 +154,25 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
   }
   if (!pointBlank) victim.hp = Math.max(0, victim.hp - (dmg - soaked));
   victim.lastHitAt = now();          // v4.9: gates out-of-combat regeneration
+  if (attacker && attackerId !== victim.id) victim.lastHitByTeam = attacker.team || null;   /* v1.0w: for the train's credit in squads */
   // scoreboard credit + assist bookkeeping
+  /* v1.0w (Rahul: "killed by the train — accidentally or not — gives the
+     opponent points in team and squad modes, nothing in individual"): the
+     victim's side loses a body; the OTHER side scores. Two sides: the other
+     one. More (squads): the side that last hurt the victim within 15 s, else
+     nobody — a squad that never touched them earned nothing. Individual
+     modes: a death, no kill, as before. */
+  if (weapon === 'train' && teams && victim.team) {
+    const sides = CFG.activeTeams(room.settings.mode);
+    let credit = null;
+    if (sides.length === 2) credit = sides[0] === victim.team ? sides[1] : sides[0];
+    else if (victim.lastHitByTeam && victim.lastHitByTeam !== victim.team && now() - (victim.lastHitAt || 0) < 15000) credit = victim.lastHitByTeam;
+    if (credit && room.teamKills && credit in room.teamKills) {
+      room.teamKills[credit]++;
+      /* v1.1.1 (Rahul): no popup — the kill FEED carries the credit instead */
+      victim.trainCredit = (room.settings.teamNames && room.settings.teamNames[credit]) || (CFG.TEAMS[credit] || {}).name || credit;
+    }
+  }
   if (attacker && attackerId !== victim.id) {
     attacker.damage += dmg;
     const rec = victim.rd[attackerId] || (victim.rd[attackerId] = { d: 0, t: 0 });
@@ -121,6 +186,7 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     // said this field existed; it did not.
     dmg: Math.round(dmg),
     hp: Math.round(victim.hp), lv: victim.armorLvl, du: Math.round(victim.armorDur),
+    sh: Math.round(victim.shieldHp || 0),   /* v15.0 (fix 5) */
     from: attackerId, fromPos: attacker ? attacker.pos : null
   });
   if (attacker && attackerId !== victim.id) {
@@ -130,7 +196,12 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
   if (victim.hp <= 0) {
     victim.alive = false;
     victim.deaths++;
-    victim.respawnAt = now() + CFG.MATCH.respawnDelay * 1000;
+    /* v1.0d: arenas climb the redeploy ladder with each death; big maps keep
+       the flat delay. The number is computed HERE and shipped in the death
+       payload below, so the client counts down what the server will accept. */
+    const respawnSec = CFG.respawnDelayFor ? CFG.respawnDelayFor(room.settings.map || 'urban', victim.deaths) : CFG.MATCH.respawnDelay;
+    victim.respawnSec = respawnSec;
+    victim.respawnAt = now() + respawnSec * 1000;
     /* v8.37 LAST STAND: one life, and that was it.
 
        `out` is what makes a mode an elimination match. It is set here, on the
@@ -147,6 +218,15 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
       else {
         attacker.kills++;
         attacker.streak++;
+        /* v1.0e (Rahul): kills a STRIKE scores — the nuke, the rocket — count
+           as kills and toward the streak announcements, but NOT toward the
+           next strike. A five-kill nuke that killed four was re-arming on the
+           very next kill; the reward has to be re-earned by the player's own
+           hand. nuke.js / rocket.js read (streak - strikeKills). */
+        /* v15.0 (fix 9): mine kills are a scoreboard KPI of their own. Counted
+           here, the only place a kill is credited, on the weapon tag the mine
+           module already passes ('mine') — no second bookkeeping path. */
+        if (weapon === 'mine') attacker.mineKills = (attacker.mineKills | 0) + 1;
         killerStreak = attacker.streak;
         if (attacker.streak > (attacker.bestStreak || 0)) attacker.bestStreak = attacker.streak;
         /* v10.10: the nuke rides THIS counter rather than keeping its own.
@@ -216,9 +296,12 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
       victimId: victim.id, victimName: victim.name,
       killerId: attackerId, killerName, killerStreak, assistIds, dist: _dist,
       weapon, headshot: !!headshot, self: attackerId === victim.id,
+      credit: victim.trainCredit || null,   /* v1.1.1: the side a train death scored for */
+      respawnSec: victim.out ? 0 : respawnSec,   /* v1.0d: the arena ladder rung, or the flat delay */
       out: !!victim.out, livesLeft: CFG.livesFor(room.settings.mode)
         ? Math.max(0, CFG.livesFor(room.settings.mode) - victim.deaths) : null
     });
+    victim.trainCredit = null;
     pushLobby(room);
 
     /* Elimination is checked BEFORE the kill target, because in Last Stand
@@ -261,7 +344,10 @@ function fireRateOk(shooter, weapon) {
   const w = CFG.WEAPONS[weapon];
   if (!w || !w.rpm) return true;
   if (weapon === 'frag' || weapon === 'rocket') return true;
-  const minInterval = (60000 / w.rpm) * 0.55; // generous tolerance for jitter
+  /* v2.0: a bolt-action's cycle is gated by the client's boltTime, not rpm, and
+     a clean shot should never be eaten by a timer — 0.35 of the rpm interval
+     for scoped rifles, 0.55 for everything else */
+  const minInterval = (60000 / w.rpm) * (w.scope === true ? 0.35 : 0.55); // generous tolerance for jitter
   const last = shooter.lastShotAt[weapon] || 0;
   const t = now();
   if (t - last < minInterval) return false;

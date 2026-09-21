@@ -255,8 +255,13 @@ World._buildPart4 = function (T) {
      from the forecourt — which is how a real station resolves the same 1 m.
      F1 1.05 | F2 4.95 | roof 8.25. */
   (function () {
+    /* v1.0e (Rahul: "make the station one floor higher"): a THIRD floor.
+       F3 sits where the roof was (8.25) with the F2 window bands repeated; the
+       new roof is at 11.55 with the parapet, clock gable and stairhead moved
+       up. Stairs alternate lanes as before: F1->F2 east lane, F2->F3 west lane
+       (the old roof flight, unchanged), F3->roof east lane again. */
     var X0 = 32, X1 = 52, Z0 = -75.4, Z1 = -67.0, TT = 0.3;
-    var F1 = RAIL.PLAT, F2 = 4.95, RF = 8.25;
+    var F1 = RAIL.PLAT, F2 = 4.95, F3 = 8.25, RF = 11.55;
 
     seg(X0, X1, 0, F1, Z0, Z1, M.concrete);                            // raised concourse slab
     stairFlight(42, 0, -65.32, 0, -1, 4, 0.2625, 0.42, 5.0, M.concrete);   // forecourt -> concourse
@@ -292,11 +297,24 @@ World._buildPart4 = function (T) {
     facade('x', X0, X0 + TT, Z0, Z1, F2, F2 + 3.0, M.cream, [win(-74, F2 + 0.8, 2.4, 1.6), win(-70, F2 + 0.8, 2.4, 1.6)]);
     facade('x', X1 - TT, X1, Z0, Z1, F2, F2 + 3.0, M.cream, [win(-74, F2 + 0.8, 2.4, 1.6), win(-70, F2 + 0.8, 2.4, 1.6)]);
 
-    /* roof, holed over the WEST stair lane (x 32.4..34.6) */
-    seg(34.6, X1, RF - 0.3, RF, Z0, Z1, M.roof);
-    seg(X0, 34.6, RF - 0.3, RF, Z0, -72.6, M.roof);
-    seg(X0, 34.6, RF - 0.3, RF, -68.5, Z1, M.roof);
-    stairFlight(33.5, F2, -72.6, 0, 1, 11, 0.30, 0.34, 1.8, M.concrete);   // F2 -> roof (8.25)
+    /* F3 slab (the old roof), holed over the WEST stair lane (x 32.4..34.6) */
+    seg(34.6, X1, F3 - 0.3, F3, Z0, Z1, M.concrete);
+    seg(X0, 34.6, F3 - 0.3, F3, Z0, -72.6, M.concrete);
+    seg(X0, 34.6, F3 - 0.3, F3, -68.5, Z1, M.concrete);
+    stairFlight(33.5, F2, -72.6, 0, 1, 11, 0.30, 0.34, 1.8, M.concrete);   // F2 -> F3 (8.25)
+    // F3 walls: the same long window bands as F2
+    facade('z', Z0, Z0 + TT, X0, X1, F3, F3 + 3.0, M.cream,
+      [win(34, F3 + 0.8, 4.0, 1.7), win(40, F3 + 0.8, 4.0, 1.7), win(46, F3 + 0.8, 4.0, 1.7)]);
+    facade('z', Z1 - TT, Z1, X0, X1, F3, F3 + 3.0, M.cream,
+      [win(34, F3 + 0.8, 4.0, 1.7), win(46, F3 + 0.8, 4.0, 1.7)]);
+    facade('x', X0, X0 + TT, Z0, Z1, F3, F3 + 3.0, M.cream, [win(-74, F3 + 0.8, 2.4, 1.6), win(-70, F3 + 0.8, 2.4, 1.6)]);
+    facade('x', X1 - TT, X1, Z0, Z1, F3, F3 + 3.0, M.cream, [win(-74, F3 + 0.8, 2.4, 1.6), win(-70, F3 + 0.8, 2.4, 1.6)]);
+    /* roof, holed over the EAST stair lane (x 49.4..51.6) */
+    seg(X0, 49.4, RF - 0.3, RF, Z0, Z1, M.roof);
+    seg(51.6, X1, RF - 0.3, RF, Z0, Z1, M.roof);
+    seg(49.4, 51.6, RF - 0.3, RF, Z0, -73.6, M.roof);
+    seg(49.4, 51.6, RF - 0.3, RF, -68.8, Z1, M.roof);
+    stairFlight(50.5, F3, -69.0, 0, -1, 11, 0.30, 0.34, 1.8, M.concrete);  // F3 -> roof (11.55)
 
     // parapet, gapped on the north face so the roof cannot camp the platform safely
     seg(X0, X1, RF, RF + 0.85, Z1 - 0.22, Z1, M.cream);
@@ -307,7 +325,7 @@ World._buildPart4 = function (T) {
     // clock gable — the landmark you navigate the whole district by
     box(42, RF + 1.5, Z1 - 0.35, 3.4, 1.3, 0.3, M.cream);
     cyl(42, RF + 1.5, Z1 - 0.55, 1.0, 0.16, M.white, { collide: false });
-    box(33.6, RF + 0.9, -74.2, 1.4, 1.8, 1.4, M.metal);                 // stairhead housing
+    box(50.5, RF + 0.9, -73.6, 1.4, 1.8, 1.4, M.metal);                 // stairhead housing, over the east lane now
     lamp(30, -71, 'e'); lamp(54, -71, 'w');
   })();
 
@@ -415,5 +433,5 @@ World._buildPart4 = function (T) {
   box(72.6, 4.55, -79.3, 0.45, 1.3, 0.45, M.dark, { collide: false });
   box(72.6, 4.9, -79.05, 0.3, 0.3, 0.06, M.signalGreen, { collide: false });
 
-  lamp(30, -87.4, 'n'); lamp(58, -87.4, 'n'); lamp(44, -77.2, 's'); lamp(34, -91.4, 'n');
+  lamp(30, -85.4, 'n'); lamp(58, -85.4, 'n'); lamp(44, -77.2, 's'); lamp(34, -91.4, 'n');   /* v1.0e: the two island lamps stood IN Track 2, the train's road; moved onto the platform */
 };

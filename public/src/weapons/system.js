@@ -14,12 +14,14 @@ var Weapons = (function () {
      every spawn. */
   function baseWeapons() {
     var m = (typeof Net !== 'undefined' && Net.getMatch && Net.getMatch()) || {};
-    if (CFG.MODES[m.mode] && CFG.MODES[m.mode].botmode) return ['bm_carbine', 'bm_side'];
     return BASE_WEAPONS;
   }
   var ammo = {};                  // name -> {mag, reserve}
   var throwsLeft = { frag: 2, smoke: 1, flash: 1 };
   var droneCount = 0;                                    // v9.4, set by the server grant
+  var empCount = 0;                                      // v15.0 (fix 1), set by the server grant
+  var breath = 1.0, breathHeld = false, breathKey = false;   // v1.0e hold-breath meter (0..1), whether it is being held, Shift state
+  var c4Count = 0;                                       // v1.0b, set by the server grant
   var nextFireAt = 0, reloadUntil = 0, boltUntil = 0, switchUntil = 0;
   var reloadingShell = false;
   var triggerDown = false, semiQueued = false;
@@ -121,6 +123,9 @@ var Weapons = (function () {
        value keeps the HUD honest for the first second. */
     droneCount = 0;                 // v9.5: crate loot only, nobody spawns with one
     owned.drone = false;
+    empCount = 0; owned.emp = false;   // v15.0: per match, like the drone
+    c4Count = 0; owned.c4 = false;     // v1.0b
+    if (UI.setShield) UI.setShield(0, 0);
     fires = [];
     cooking = null;
     UI.setAttachments(atts);
@@ -201,6 +206,28 @@ var Weapons = (function () {
         Net.setVisor(true);
         UI.toast('Recon Visor \u00b7 enemies visible through walls');
       }
+      else if (d.g === 'emp') {
+        /* v15.0 (fix 1): the slot appears with the first charge, exactly as the
+           drone's does, so scrolling reaches it and a left click uses it. */
+        empCount = d.n;
+        owned.emp = empCount > 0;
+        if (owned.emp) ammo.emp = ammo.emp || { mag: 0, reserve: 0 };
+        UI.toast('EMP Charge \u00b7 ' + d.n + ' carried \u00b7 select it and click to fry enemy mines');
+      }
+      else if (d.g === 'c4') {
+        /* v1.0b: the C4 slot, exactly the EMP's shape. Select it, face a wall
+           within reach, click. */
+        c4Count = d.n;
+        owned.c4 = c4Count > 0;
+        if (owned.c4) ammo.c4 = ammo.c4 || { mag: 0, reserve: 0 };
+        UI.toast('C4 Charge \u00b7 ' + d.n + ' carried \u00b7 select it, face a wall, click to plant');
+      }
+      else if (d.g === 'shield') {
+        /* v15.0 (fix 5): no slot — it is worn, not held. The HUD bar is the
+           whole interface; the server owns the number. */
+        if (UI.setShield) UI.setShield(d.n, CFG.GEAR.shield.hp);
+        UI.toast('Ballistic Shield \u00b7 ' + d.n + ' hp \u00b7 a sniper round breaks it');
+      }
       else if (d.g === 'molotov') {
         throwsLeft.molotov = Math.min(CFG.THROWS.molotov.maxCarry, throwsLeft.molotov + d.n);
         UI.toast('Molotov +' + d.n);
@@ -260,6 +287,100 @@ var Weapons = (function () {
       } else UI.toast((res && res.err) || 'Cannot launch drone');
       refreshHud();
     });
+  }
+
+  /* ===== v15.0 - EMP (fix 1) =====
+     One implementation, one caller shape: a left click while the EMP slot is
+     selected. The server decides whether anything was cleared; a charge that
+     found no hostile mines is refused and kept, and the toast says why. */
+  function useEmp() {
+    if (!PlayerCtl.alive) return;
+    if (empCount <= 0) { UI.toast('No EMP charge \u2014 find one on the floor or in a drop'); return; }
+    Net.useEmp(function (res) {
+      if (res && res.ok) {
+        empCount = res.left;
+        UI.toast('EMP \u00b7 ' + res.cleared + ' enemy mine' + (res.cleared === 1 ? '' : 's') + ' destroyed \u00b7 ' + res.left + ' left');
+        if (empCount <= 0) {
+          owned.emp = false;
+          if (current === 'emp') cycle(1);
+        }
+      } else UI.toast((res && res.err) || 'Cannot use EMP');
+      refreshHud();
+    });
+  }
+  /* ===== v1.0b - C4 (plant on the wall in front of you) =====
+     A short ray from the eye; the first static surface within GEAR.c4.stick is
+     where it sticks. The server re-checks reach, the map and the count. */
+  function plantBomb() {
+    if (!PlayerCtl.alive) return;
+    if (c4Count <= 0) { UI.toast('No C4 \u2014 it comes from airdrops'); return; }
+    var reach = (CFG.GEAR.c4 && CFG.GEAR.c4.stick) || 3.2;
+    var o = camera.position.clone();
+    var d = camera.getWorldDirection(new THREE.Vector3());
+    var hit = World.rayHit(o, d, reach);
+    if (!hit) { UI.toast('Face a wall within ' + reach + ' m to plant the C4'); return; }
+    var pt = hit.point.clone().addScaledVector(d, -0.08);   // a hair off the surface
+    Net.plantBomb([pt.x, pt.y, pt.z], function (res) {
+      if (res && res.ok) {
+        c4Count = res.left;
+        UI.toast('C4 PLANTED \u00b7 ' + res.fuse + ' s \u00b7 clear the building');
+        if (c4Count <= 0) { owned.c4 = false; if (current === 'c4') cycle(1); }
+      } else UI.toast((res && res.err) || 'Cannot plant here', true);
+      refreshHud();
+    });
+  }
+
+  /* ===== v1.0b - DROP (K: the gun, L: the sight) =====
+     Rahul: "a button that throws away guns or scope". The loadout is
+     client-side, so the hands empty here; the server puts a matching pickup
+     on the floor when one exists (see 'dropItem' in server.js), so what you
+     throw away is what somebody else can pick up. The knife and gear slots
+     (drone, EMP, C4) are not droppable — they are not guns. */
+  function dropCurrent() {
+    if (!PlayerCtl.alive) return false;
+    var w = CFG.WEAPONS[current];
+    if (!w || current === 'knife' || w.gear) { UI.toast('Nothing to throw away'); return false; }
+    var dropped = current;
+    Net.dropItem({ w: dropped }, function (res) {
+      UI.toast((res && res.ok && res.floor) ? (w.label + ' dropped') : (w.label + ' thrown away'));
+    });
+    owned[dropped] = false;
+    /* a slot-1 base gun that is thrown away is gone until the next life */
+    cycle(1);
+    if (current === dropped) setWeapon('knife', true);
+    refreshHud();
+    return true;
+  }
+  /* v1.0v (Rahul: "a Q button for the gun which throws the scope and mags the
+     player doesn't want; pick up again with Z"): a TAP of Q drops one fitted
+     attachment — sight first, then the magazine, then the muzzle — onto the
+     floor as a pickup anybody can take with Z. A HELD Q still leans. */
+  function dropAttachment() {
+    if (!PlayerCtl.alive) return false;
+    var slot = atts.sight ? 'sight' : atts.mag ? 'mag' : atts.muzzle ? 'muzzle' : null;
+    if (!slot) { UI.toast('Nothing fitted to drop'); return false; }
+    var aid = atts[slot];
+    atts[slot] = null;
+    Net.dropItem({ a: aid }, function (res) {
+      UI.toast(((CFG.ATTACH && CFG.ATTACH[aid] && CFG.ATTACH[aid].label) || aid) + ((res && res.ok && res.floor) ? ' dropped \u00b7 Z to pick up' : ' removed'));
+    });
+    UI.setAttachments(atts);
+    setWeapon(current, true);      // re-dress the viewmodel without it
+    refreshHud();
+    return true;
+  }
+  function dropSight() {
+    if (!PlayerCtl.alive) return false;
+    var sid = atts.sight;
+    if (!sid) { UI.toast('No sight fitted'); return false; }
+    atts.sight = null;
+    Net.dropItem({ a: sid }, function (res) {
+      UI.toast((res && res.ok && res.floor) ? 'Sight dropped' : 'Sight removed');
+    });
+    UI.setAttachments(atts);
+    setWeapon(current, true);      // re-dress the viewmodel without the optic, reset the zoom
+    refreshHud();
+    return true;
   }
 
   function startReload() {
@@ -373,7 +494,15 @@ var Weapons = (function () {
          controller.js, so nobody's ability to fit through a door changed. Only
          what a bullet can strike. */
       var RG = (typeof Avatars !== 'undefined' && Avatars.RIG) ? Avatars.RIG : { x: 1, y: 1, z: 1 };
-      var halfH = (r.prone ? P.proneH / 2 : r.crouch ? P.crouchH / 2 : P.standH / 2) * RG.y;
+      /* v1.0e: the body box spans the RENDERED body — feet to shoulders. The
+         rig is scaled about the hip and poseAvatar keeps the feet on the floor
+         (RIG_LIFT), so the visible body runs from the capsule BOTTOM up to
+         stanceH * RIG.y, not symmetrically about the capsule centre. Centring
+         the box on the centre left the top of a crouched torso outside it once
+         the rig grew (verify-hitbox: 1 of 11 crouch rays missed). */
+      var stH = r.prone ? P.proneH : r.crouch ? P.crouchH : P.standH;
+      var halfH = (stH * RG.y) / 2 + 0.03;              // +0.03: the boots' soles sit a hair under the capsule bottom
+      var bcy = c.y - stH / 2 - 0.03 + halfH;
 
       /* v8.32 THE HEAD BOX NOW READS THE HEAD, INSTEAD OF RECALCULATING IT.
 
@@ -399,7 +528,7 @@ var Weapons = (function () {
       var hy = hp ? hp.y : (c.y + (r.prone ? P.eyeProne : r.crouch ? P.eyeCrouch : P.eyeStand) * RG.y + 0.04 * RG.y);
       var hz = hp ? hp.z : c.z;
       var tHead = rayBox(o, d, hx, hy, hz, HH.x, HH.y, HH.z);
-      var tBody = rayBox(o, d, c.x, c.y, c.z, P.radius * RG.x, halfH, P.radius * RG.z);
+      var tBody = rayBox(o, d, c.x, bcy, c.z, P.radius * RG.x, halfH, P.radius * RG.z);
       var part = null, t = -1;
       /* v8.32: the BODY box is 0.53 half-deep against a torso that is only 0.19
          half-deep — nearly three times the model, inherited from the movement
@@ -421,7 +550,7 @@ var Weapons = (function () {
         t = (tBody >= 0 && tBody < tHead) ? tBody : tHead;
       } else if (tBody >= 0) {
         t = tBody;
-        part = (o.y + d.y * tBody) < (c.y - halfH * 0.25) ? 'legs' : 'body';
+        part = (o.y + d.y * tBody) < (bcy - halfH * 0.25) ? 'legs' : 'body';
       }
       if (t >= 0 && t < best) {
         best = t;
@@ -456,11 +585,48 @@ var Weapons = (function () {
     var o = camera.position.clone();
     var mz = muzzleWorld(tmpV2).clone();
     var perVictim = {};
+    /* v1.0b: a flame weapon has a HARD reach — the stream ends at w.range,
+       there is no 400 m ray behind it — and draws fire, not a tracer. */
+    var reach = w.flame ? w.range : 400;
     for (var i = 0; i < pellets; i++) {
       var d = rayDir(spread, new THREE.Vector3());
-      var hit = castRay(o, d, 400);
-      var end = hit ? hit.point : o.clone().addScaledVector(d, 120);
-      FX.tracer(mz, end, w.trc);
+      var hit = castRay(o, d, reach);
+      /* v1.0l: the helicopter is a target. If the ray meets its fuselage before
+         anything else, the round stops there and the server is told.
+         v1.0s (Rahul: "from the helicopter the opponent can't be killed, and
+         vice versa"): two holes in this test ate every such shot. A RIDER's
+         ray starts INSIDE the hull box, and a box test from inside returns the
+         exit point — so the rider's own hull swallowed their rounds. And the
+         exemption for a player hit checked a field (`remote`) that player hits
+         never carried, so a ground shot at the rider through the open door
+         "hit the hull" in front of them. Now: nobody aboard tests the hull,
+         and a PLAYER hit always beats the hull. */
+      /* v1.0y: a rider's rounds DO test the hull — of the other machine; Heli.rayHit
+         excludes the one they stand in */
+      if (typeof Heli !== 'undefined' && Heli.active && Heli.active()) {
+        var hh = Heli.rayHit(o, d, reach);
+        /* v1.0u: the hull COVERS the riders. A shot that reaches a rider must
+           enter through an open side (between the hip rail and the roof); one
+           that would arrive through the floor, roof, nose or tail meets the
+           hull instead. Tough, not impossible: the door band is the shot. */
+        /* v1.0v: a rider is untouchable while the machine flies — a shot at them
+           is a shot at the hull, whatever door it comes through */
+        var riderTarget = hit && hit.type === 'player' && Heli.isRiderId && Heli.isRiderId(hit.id);
+        if (hh && (!hit || hh.t < hit.t || riderTarget) && !(hit && hit.type === 'player' && hh.opening && !riderTarget)) {
+          var hEnd = hh.point;
+          FX.tracer(mz, hEnd, w.trc); FX.impact(hEnd, d.clone().negate());
+          /* v1.0x: guns CHIP the hull again — the server's per-weapon table (AKM 15,
+             M4 12, snipers 20, shotguns 0). A hitmarker only when something came off. */
+          Net.hitHeli(current, hh.idx, function (res) {
+            if (res && res.ok && res.dmg > 0) UI.hitmarker(res.a2a);          // v1.0y: the heavy marker for air-to-air
+            if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard');
+          });
+          continue;
+        }
+      }
+      var end = hit ? hit.point : o.clone().addScaledVector(d, w.flame ? w.range : 120);
+      if (w.flame) { FX.tracer(mz, end, w.trc); FX.tracer(mz, end, 0xffd060); FX.groundFire(end, 0.7, 0.35); }
+      else FX.tracer(mz, end, w.trc);
       if (hit && hit.type === 'drone') {
         FX.impact(hit.point); AudioSys.impact(hit.point);
         Net.droneHit(hit.id, CFG.WEAPONS[current].dmg);
@@ -501,7 +667,17 @@ var Weapons = (function () {
     var E2 = eff(current);
     var d = rayDir(Input.aim ? E2.ads : E2.spread, new THREE.Vector3());
     var v = d.multiplyScalar(w.projSpeed);
-    spawnRocket(o, v, true);
+    /* v1.0x: the SEEKER locks the nearest airborne machine in range at launch;
+       the round steers at it (updateProjectiles). No machine: a plain rocket. */
+    /* v2.0: the RPG-L homes too, but only on a machine INSIDE its lockRange
+       (130 m) at the moment of firing — "the heli should be in the radius of
+       the rpg otherwise it won't shoot it down". Outside it, or with no
+       machine up, the round is a plain rocket. lockTurn is how hard the round
+       may steer (rad/s-ish gain). The seeker keeps its 320 m reach. */
+    var lock = (w.homing && typeof Heli !== 'undefined' && Heli.lockTarget) ? Heli.lockTarget(o, w.lockRange || 320) : null;
+    var pr = spawnRocket(o, v, true);
+    if (pr && w.homing && lock) { pr.kind = 'seeker'; pr.lockIdx = lock.idx; pr.turn = w.lockTurn || 6; UI.toast('LOCKED \u00b7 helicopter ' + (lock.idx === 0 ? 'A' : 'B') + ' \u00b7 ' + Math.round(lock.dist) + ' m'); }
+    else if (pr && w.homing && w.lockRange < 200) UI.toast('No helicopter within ' + (w.lockRange | 0) + ' m \u00b7 unguided');
     Net.sendProj({ type: 'rocket', o: [o.x, o.y, o.z], v: [v.x, v.y, v.z] });
     FX.muzzle(o, true);
     FX.shake(0.25);
@@ -518,6 +694,18 @@ var Weapons = (function () {
     if (w.type === 'drone') {
       nextFireAt = t + 700;
       launchDrone();
+      return;
+    }
+    /* v15.0 (fix 1): same intercept for the EMP slot. */
+    if (w.type === 'emp') {
+      nextFireAt = t + 700;
+      useEmp();
+      return;
+    }
+    /* v1.0b: and for the C4 slot. */
+    if (w.type === 'c4') {
+      nextFireAt = t + 700;
+      plantBomb();
       return;
     }
     if (isReloading()) {
@@ -651,7 +839,9 @@ var Weapons = (function () {
     tip.position.z = -0.28; g.add(tip);
     g.position.copy(o); g.lookAt(o.clone().add(v));
     scene.add(g);
-    projectiles.push({ kind: 'rocket', pos: o.clone(), vel: v.clone(), mesh: g, mine: mine, life: 0 });
+    var pr = { kind: 'rocket', pos: o.clone(), vel: v.clone(), mesh: g, mine: mine, life: 0 };
+    projectiles.push(pr);
+    return pr;
   }
 
   function resolveGrenade(p, dt) {
@@ -693,12 +883,14 @@ var Weapons = (function () {
   function detonate(p) {
     if (p.type === 'molotov') { igniteFire(p); return; }
     var pos = p.pos;
-    if (p.type === 'frag' || p.kind === 'rocket') {
-      var spec = p.kind === 'rocket' ? { dmg: CFG.WEAPONS.rocket.dmg, radius: CFG.WEAPONS.rocket.radius } : CFG.THROWS.frag;
-      FX.explosion(pos, spec.radius);
+    if (p.type === 'frag' || p.kind === 'rocket' || p.kind === 'seeker') {
+      var spec = p.kind === 'seeker' ? { dmg: CFG.WEAPONS.seeker.dmg, radius: CFG.WEAPONS.seeker.radius } : p.kind === 'rocket' ? { dmg: CFG.WEAPONS.rocket.dmg, radius: CFG.WEAPONS.rocket.radius } : CFG.THROWS.frag;
+      FX.explosion(pos, spec.fxRadius || spec.radius);   // v1.0b: a 50 m frag draws a 9 m fireball
+      /* v1.0v: my blast destroys enemy mines in its radius — the server decides whose */
+      if (p.mine && Net.blast) Net.blast({ p: [pos.x, pos.y, pos.z], w: (p.kind === 'seeker' || p.kind === 'rocket') ? 'rocket' : 'frag' });
       AudioSys.explosion(pos.distanceTo(camera.position) < 3 ? null : pos, true);
-      if (p.mine) explosionDamage(pos, spec.radius, spec.dmg, p.kind === 'rocket' ? 'rocket' : 'frag');
-      selfExplosionFeedback(pos, spec.radius);
+      if (p.mine) explosionDamage(pos, spec.radius, spec.dmg, (p.kind === 'seeker' ? 'seeker' : p.kind === 'rocket' ? 'rocket' : 'frag'));
+      selfExplosionFeedback(pos, spec.fxRadius || spec.radius);
     } else if (p.type === 'smoke') {
       FX.smokeCloud(pos, CFG.THROWS.smoke.dur);
       AudioSys.impact(pos);
@@ -725,18 +917,27 @@ var Weapons = (function () {
          the 0.25 multiplier, so cover is the counter-play rather than distance.
          Falloff is retained for the ROCKET, which is a direct-fire weapon with
          its own aiming skill and does not need the same treatment. */
-      var flat = CFG.THROWS[weaponName] && CFG.THROWS[weaponName].flatDamage;
-      var dmg = flat ? maxDmg : maxDmg * (1 - d / radius);
+      var spec2 = CFG.THROWS[weaponName];
+      var flat = spec2 && spec2.flatDamage;
+      var dmg;
+      /* v1.0b: THE TWO-BAND FRAG. Rahul: "up to 20 m instant kill, 20-50 m
+         50% health down." Inside killRadius the full number (the server reads
+         a full-damage claim as pointBlank — a guaranteed kill through vest,
+         helmet and shield); out to `radius`, outerDmg. Cover still cuts either
+         to a quarter. Bots resolve theirs by the same rule in bots.js. */
+      if (spec2 && spec2.killRadius) dmg = d <= spec2.killRadius ? maxDmg : (spec2.outerDmg || maxDmg * (1 - d / radius));
+      else dmg = flat ? maxDmg : maxDmg * (1 - d / radius);
       if (World.losBlocked(center.clone().add(new THREE.Vector3(0, 0.25, 0)), r.renderPos)) dmg *= 0.25;
       if (dmg > 1) Net.sendHit({ victim: id, w: weaponName, dmg: dmg, part: 'body', vp: [r.renderPos.x, r.renderPos.y, r.renderPos.z] });
     });
     // self-damage
+    var selfR = (CFG.THROWS[weaponName] && CFG.THROWS[weaponName].selfRadius) || radius;   // v1.0b: the OLD 7 m for your own frag
     var sd = PlayerCtl.pos.distanceTo(center);
-    if (PlayerCtl.alive && sd < radius) {
+    if (PlayerCtl.alive && sd < selfR) {
       /* Self-damage keeps the falloff even when the weapon is flat. Standing at
          the edge of your own frag should hurt, not delete you — a flat 100 here
          would make every close throw a suicide and nobody would ever use it. */
-      var dmg2 = maxDmg * (1 - sd / radius);
+      var dmg2 = maxDmg * (1 - sd / selfR);
       if (World.losBlocked(center.clone().add(new THREE.Vector3(0, 0.25, 0)), PlayerCtl.pos)) dmg2 *= 0.25;
       if (dmg2 > 1) Net.sendHit({ victim: Net.myId(), w: weaponName, dmg: dmg2, part: 'body', vp: [PlayerCtl.pos.x, PlayerCtl.pos.y, PlayerCtl.pos.z] });
     }
@@ -771,6 +972,12 @@ var Weapons = (function () {
         if (p.fuse <= 0) { detonate(p); scene.remove(p.mesh); projectiles.splice(i, 1); }
       } else { // rocket
         p.life += dt;
+        /* v1.0x: the SEEKER steers at the machine it locked on launch — the
+           machine's CURRENT pose, so a turn does not shake it */
+        if (p.kind === 'seeker' && p.lockIdx !== undefined && typeof Heli !== 'undefined') {
+          var mL = Heli.machines()[p.lockIdx], pL = mL && mL.pose();
+          if (pL) { var want = tmpV.set(pL.x - p.pos.x, pL.y + 1.6 - p.pos.y, pL.z - p.pos.z).normalize(); var spd = p.vel.length(); p.vel.lerp(want.multiplyScalar(spd), Math.min(1, dt * (p.turn || 6))).setLength(spd); }
+        }
         var step = p.vel.length() * dt;
         var dir = tmpV.copy(p.vel).normalize();
         var wh = World.rayHit(p.pos, dir, step + 0.15);
@@ -779,8 +986,17 @@ var Weapons = (function () {
           if (hitPlayer || !r.alive) return;
           if (r.renderPos.distanceTo(p.pos) < 0.85) hitPlayer = true;
         });
-        if (wh || hitPlayer || p.life > 6) {
-          if (wh) p.pos.copy(wh.point).addScaledVector(dir, -0.05);
+        /* v1.0t: the ONE thing that hurts the helicopter's hull. A rocket that
+           meets the fuselage this step detonates there and tells the server
+           (hitHeli with the rocket's own id: class damage 300). A rider's own
+           rocket never tests the hull it is standing in. */
+        var hitHeli = false;
+        if (p.mine && typeof Heli !== 'undefined' && Heli.active && Heli.active()) {   /* v1.0y: own machine excluded inside rayHit */
+          var hhR = Heli.rayHit(p.pos, dir, step + 0.6);
+          if (hhR) { hitHeli = true; p.pos.copy(hhR.point).addScaledVector(dir, -0.3); Net.hitHeli(p.kind === 'seeker' ? 'seeker' : 'rocket', hhR.idx, function (res) { if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard'); else if (res && res.ok) UI.hitmarker(false); }); }
+        }
+        if (wh || hitPlayer || hitHeli || p.life > 6) {
+          if (wh && !hitHeli) p.pos.copy(wh.point).addScaledVector(dir, -0.05);
           detonate(p); scene.remove(p.mesh); projectiles.splice(i, 1);
         } else {
           p.pos.addScaledVector(dir, step);
@@ -1036,8 +1252,21 @@ var Weapons = (function () {
     if (PlayerCtl.prone) chS *= 0.55;
     else if (PlayerCtl.crouch) chS *= 0.75;
     var crossGap = Math.max(3, Math.min(46, 5 + chS * 1300));
+    /* v1.0e: the breath meter. Shift while scoped holds it (game.js feeds the
+       key through setBreath); the meter drains while held and refills when
+       not. Sway is scaled by `steady` while a hold is live. */
+    var BR = CFG.GEAR.breath || { holdSec: 4, recoverSec: 5, steady: 0.12, minToStart: 0.25 };
+    if (scoped && breathKey && (breathHeld || breath >= BR.minToStart) && breath > 0) {
+      breathHeld = true;
+      breath = Math.max(0, breath - dt / BR.holdSec);
+      if (breath <= 0) breathHeld = false;                 // lungs empty: forced release
+    } else {
+      breathHeld = false;
+      breath = Math.min(1, breath + dt / BR.recoverSec);
+    }
+    if (UI.setBreath) UI.setBreath(scoped && w.sway ? breath : -1, breathHeld);
     if (scoped && w.sway) {
-      var swA = w.sway * (PlayerCtl.prone ? 0.15 : PlayerCtl.crouch ? 0.45 : 1);
+      var swA = w.sway * (PlayerCtl.prone ? 0.15 : PlayerCtl.crouch ? 0.45 : 1) * (breathHeld ? BR.steady : 1);
       var swT = t * 0.0011;
       camera.rotation.x += (Math.sin(swT * 2.1) + Math.sin(swT * 3.7) * 0.5) * swA;
       camera.rotation.y += (Math.sin(swT * 1.7 + 1.3) + Math.sin(swT * 2.9) * 0.5) * swA;
@@ -1059,6 +1288,8 @@ var Weapons = (function () {
 
   return {
     setFirstPerson: setFirstPerson,
+    setBreath: function (pressed) { breathKey = !!pressed; },   /* v1.0e: Shift state from game.js */
+    breathHeld: function () { return breathHeld; },
     setMines: setMines,
     init: init,
     update: update,
@@ -1089,6 +1320,18 @@ var Weapons = (function () {
        it down; see server/lib/drones.js. */
     launchDrone: launchDrone,
     droneCount: function () { return droneCount; },
+    /* v15.0 */
+    useEmp: useEmp,
+    empCount: function () { return empCount; },
+    setEmps: function (n) {          // rejoin mirror
+      empCount = Math.max(0, n | 0); owned.emp = empCount > 0;
+      if (owned.emp) ammo.emp = ammo.emp || { mag: 0, reserve: 0 };
+    },
+    /* v1.0b */
+    plantBomb: plantBomb,
+    c4Count: function () { return c4Count; },
+    setC4: function (n) { c4Count = Math.max(0, n | 0); owned.c4 = c4Count > 0; if (owned.c4) ammo.c4 = ammo.c4 || { mag: 0, reserve: 0 }; },
+    dropCurrent: dropCurrent, dropSight: dropSight, dropAttachment: dropAttachment,   /* v1.0v */
     getDetectMs: function () { return eff(current).detectMs; },
     selectByKey: selectByKey,
     cycle: cycle,

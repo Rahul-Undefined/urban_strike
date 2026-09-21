@@ -44,11 +44,10 @@ const ctx = { console, Math, Date, JSON, Object, Array, Float32Array, Uint32Arra
 ctx.self = ctx; ctx.window = ctx; ctx.globalThis = ctx;
 vm.createContext(ctx);
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-rural.config.js","public/src/config/maps-metro.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js",
+ "public/src/config/world.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js",
  "public/src/config/districts.config.js", "public/src/config/index.js","public/src/environment/merge.js","public/src/environment/world.js",
  "public/src/environment/districts-south.js","public/src/environment/districts-north.js",
- "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/rural.js",
- "public/src/environment/metro.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/access.js"]
+ "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/access.js"]
   .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 
@@ -107,6 +106,7 @@ function scanPlane(faceIdx, oA, oB, label) {
   hits.sort((p, q) => q.area - p.area);
   const high = hits.filter(h => h.ylo > ROOF);
   console.log(`        ${label}: ${hits.length} coplanar pairs (${high.length} above y ${ROOF})`);
+  if (process.env.ZF_ALL) hits.forEach(h => console.log(`          ALL ${label} plane ${h.plane.toFixed(3)} ${h.area.toFixed(1)} m2 [${DIST.nameAt(h.x, h.z)}] at (${h.x.toFixed(1)}, ${h.z.toFixed(1)}) y[${h.ylo.toFixed(2)},${h.yhi.toFixed(2)}]`));
   if (VERBOSE || high.length) high.slice(0, 8).forEach(h => console.log(
     `          plane ${h.plane.toFixed(3)}  gap ${h.gap.toFixed(4)}m  ${h.area.toFixed(1)} m2  ` +
     `[${DIST.nameAt(h.x, h.z)}] at (${h.x.toFixed(1)}, ${h.z.toFixed(1)}) y[${h.ylo.toFixed(1)},${h.yhi.toFixed(1)}]`));
@@ -163,7 +163,10 @@ const totalAll = r.top.all + r.west.all + r.east.all + r.north.all + r.south.all
    this file has held since v8.5.
    Left at 46/110 rather than tightened to 45/107, because the one spare pair is
    Urban's existing slack and not something the stadium earned. */
-const ROOF_PAIRS = 46, ALL_PAIRS = 110;
+/* v1.1: ALL_PAIRS 110 -> 150 for the Western Reach (its floors, roofs and
+   street planes against each other and the ground plane). Same audit item as
+   verify-props. */
+const ROOF_PAIRS = 46, ALL_PAIRS = 150;
 ok(totalHigh <= ROOF_PAIRS, `urban: ${totalHigh} coplanar pairs above roof height (budget ${ROOF_PAIRS})`);
 ok(totalAll <= ALL_PAIRS, `urban: ${totalAll} coplanar pairs total (budget ${ALL_PAIRS})`);
 

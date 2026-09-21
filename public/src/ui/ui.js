@@ -13,11 +13,9 @@ var UI = (function () {
          simply absent; anything still guarded on them resolves null. */
       'profile-name', 'btn-play', 'btn-howto', 'btn-howto-close', 'howto-overlay',
       'deploy-panel', 'btn-deploy-close', 'btn-create-quick', 'join-code', 'btn-join', 'deploy-hint',
-      'botmode-panel', 'btn-botmode', 'btn-botmode-close', 'btn-botmode-launch',
-      'bm-mode-seg', 'bm-diff-seg', 'bm-diff-row', 'bm-hint',
       'wave-banner', 'wave-title', 'wave-sub',
       'reclaim-overlay', 'reclaim-body', 'btn-reclaim-yes', 'btn-reclaim-fresh',
-      'lobby-cat', 'lobby-mode', 'lobby-var-field', 'lobby-map', 'lobby-time', 'lobby-intel',
+      'lobby-cat', 'lobby-mode', 'lobby-var-field', 'lobby-map', 'lobby-time', 'lobby-intel', 'lobby-dress', 'lobby-dress-field', 'lobby-dress-reset',
       'lobby-summary', 'cfg-role', 'intel-map-name', 'intel-map-meta',
       'btn-shuffle', 'loading-label', 'live-board', 'team-score', 'armor-badge', 'armor-row',
       'lobby-code', 'btn-copy-code', 'lobby-players', 'lobby-count',
@@ -55,7 +53,7 @@ var UI = (function () {
   }
   function mapItems() {
     return Object.keys(CFG.MAPS)
-      .filter(function (k) { return CFG.MAPS[k].ready !== false && !CFG.MAPS[k].botOnly; })   /* v14.0: Blacksite is Bot Mode's alone */
+      .filter(function (k) { return CFG.MAPS[k].ready !== false; })
       .map(function (k) { return { v: k, t: CFG.MAPS[k].label }; });
   }
   /* v8.37 TWO-STEP MODE PICKER.
@@ -272,6 +270,8 @@ var UI = (function () {
         if (sel) { Net.setPlayerTeam(sel.getAttribute('data-id'), sel.value); return; }
         var inp = e.target.closest && e.target.closest('.team-rename');
         if (inp) pushTeamName(inp.getAttribute('data-team'), inp.value);
+        var col = e.target.closest && e.target.closest('.team-dress');   /* v1.0r */
+        if (col) { var dc = {}; dc[col.getAttribute('data-team')] = col.value; Net.updateSettings({ dressColors: dc }); }
       });
       els['lobby-players'].addEventListener('keydown', function (e) {
         var inp = e.target.closest && e.target.closest('.team-rename');
@@ -295,8 +295,7 @@ var UI = (function () {
        because from the players' point of view that is what it is. The bot side
        is described by the Strike Team panel further down, not by an empty team
        header nobody can fill. */
-    var vsBots = !!mode.vsBots;
-    if (mode.teams && !vsBots) {
+    if (mode.teams) {
       /* v8.37: EVERY side the mode fields, not just a and b. Rahul: "All teams
          are currently not showing in the staging area just amber and cobalt."
          Empty squads are still listed, because a host needs to see the empty
@@ -310,11 +309,16 @@ var UI = (function () {
           /* Renaming happens IN PLACE on the team header. Ten sides would need
              ten inputs in the rules panel; here each one sits exactly where it
              already reads, and there is nothing extra to find. */
-          hdr.innerHTML = '<input class="team-rename" data-team="' + t +
+          /* v1.0r: the DRESS COLOUR picker sits beside the name — the host's pick
+             for this side, or the side's default colour. */
+          var dress = ((d.settings && d.settings.dressColors) || {})[t] || tint;
+          hdr.innerHTML = '<input type="color" class="team-dress" data-team="' + t + '" value="' + dress + '" title="Dress colour">' +
+            '<input class="team-rename" data-team="' + t +
             '" maxlength="12" value="' + esc(teamName(t)) +
-            '" style="color:' + tint + '"><em class="tcount">' + members.length + '</em>';
+            '" style="color:' + dress + '"><em class="tcount">' + members.length + '</em>';
         } else {
-          hdr.innerHTML = '<span style="color:' + tint + '">' + esc(teamName(t)) +
+          var dress2 = ((d.settings && d.settings.dressColors) || {})[t] || tint;
+          hdr.innerHTML = '<span style="color:' + dress2 + '">' + esc(teamName(t)) +
             '</span><em class="tcount">' + members.length + '</em>';
         }
         els['lobby-players'].appendChild(hdr);
@@ -410,11 +414,7 @@ var UI = (function () {
     var livesN = CFG.livesFor(d.settings.mode);
     if (els['mode-brief']) {
       var tag, line;
-      if (mBrief.vsBots) {
-        tag = 'Strike Team';
-        line = '<b>' + mBrief.maxPlayers + ' operator' + (mBrief.maxPlayers > 1 ? 's' : '') +
-          '</b> against a squad of machines. Set how many bots and how hard they fight.';
-      } else if (isElim) {
+      if (isElim) {
         tag = 'Last Stand';
         line = '<b>' + (livesN === 1 ? 'One life' : livesN + ' lives') + '.</b> ' +
           (mBrief.squads ? mBrief.teamCount + ' squads of ' + mBrief.squadSize : 'Everyone for themselves') +
@@ -427,9 +427,6 @@ var UI = (function () {
         tag = 'Team Battle';
         line = '<b>' + mBrief.maxPlayers / 2 + ' v ' + mBrief.maxPlayers / 2 +
           '.</b> Team kills are pooled. Friendly fire is off.';
-      } else if (mBrief.practice) {
-        tag = 'Overrun';
-        line = '<b>One operator, the whole sector.</b> Choose how many bots come for you and how mean they are.';
       } else {
         tag = 'Free For All';
         line = '<b>Everyone for themselves.</b> First to the kill target wins.';
@@ -448,7 +445,7 @@ var UI = (function () {
        a control that exists only because the mode happens to satisfy an old
        shape test. */
     var teamsOn = !!(CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams)
-      && sidesN === 2 && !CFG.MODES[d.settings.mode].vsBots;
+      && sidesN === 2;
     if (els['team-name-row']) els['team-name-row'].style.display = teamsOn ? '' : 'none';
     ['a', 'b'].forEach(function (t) {
       var el = els['lobby-team-' + t];
@@ -476,8 +473,20 @@ var UI = (function () {
     }
     if (els['lobby-map'] && document.activeElement !== els['lobby-map'])
       els['lobby-map'].value = d.settings.map || 'urban';
+      /* v1.0j: a mode with mapLock owns the map — the select shows it and is
+         disabled so the host cannot pick what the server would refuse. */
+      var mlMode = CFG.MODES[d.settings.mode] || {};
+      els['lobby-map'].disabled = !!mlMode.mapLock || !isHost || counting;
+      els['lobby-map'].title = mlMode.mapLock ? 'Urban Zone is played on Urban' : '';
     if (els['lobby-time'] && document.activeElement !== els['lobby-time'])
       els['lobby-time'].value = String(d.settings.minutes);
+    /* v1.0r: in a mode without sides the one dress colour applies to everyone */
+    if (els['lobby-dress'] && els['lobby-dress-field']) {
+      var mdT = (CFG.MODES[d.settings.mode] || {}).teams;
+      els['lobby-dress-field'].style.display = mdT ? 'none' : '';
+      els['lobby-dress'].disabled = !isHost || counting;
+      if (document.activeElement !== els['lobby-dress']) els['lobby-dress'].value = ((d.settings && d.settings.dressColors) || {}).all || CFG.COLORS[0];
+    }
     if (els['lobby-intel'] && document.activeElement !== els['lobby-intel'])
       els['lobby-intel'].value = d.settings.enemyIntel ? '1' : '0';   // v12.0 (item 10)
     /* v12.0 (item 7): a bot mode is Urban-only. The map select is forced to
@@ -606,7 +615,15 @@ var UI = (function () {
     var wLabel = (CFG.WEAPONS[d.weapon] && CFG.WEAPONS[d.weapon].label) ||
       (CFG.THROWS[d.weapon] && CFG.THROWS[d.weapon].label) ||
       (CFG.GEAR[d.weapon] && CFG.GEAR[d.weapon].label) || d.weapon || '?';
-    if (d.self) {
+    if (d.weapon === 'helidown') {
+      row.innerHTML = '<b>' + d.killerName + '</b> <span class="fw">shot down the helicopter with</span> <b>' + d.victimName + '</b> <span class="fw">aboard</span>';   /* v1.0o */
+    } else if (d.weapon === 'helifall') {
+      row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">fell from the helicopter</span>' + (d.self ? '' : ' <span class="fw">(hit by</span> <b>' + d.killerName + '</b><span class="fw">)</span>');   /* v1.0l */
+    } else if (d.weapon === 'zone') {
+      row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">bled out in the zone</span>';   /* v1.0j */
+    } else if (d.weapon === 'train') {
+      row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">was run over by the train</span>' + (d.credit ? ' <span class="fw">\u00b7 +1</span> <b>' + d.credit + '</b>' : '');   /* v1.0f / v1.1.1 */
+    } else if (d.self) {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">eliminated themselves</span>';
     } else {
       row.innerHTML = '<b>' + d.killerName + '</b> <span class="fw">[' + wLabel + (d.headshot ? ' \u2620' : '') + ']</span> <b>' + d.victimName + '</b>';
@@ -707,11 +724,19 @@ var UI = (function () {
     }
     if (els['death-title']) els['death-title'].textContent = 'K.I.A.';
     var wl = (CFG.WEAPONS[d.weapon] && CFG.WEAPONS[d.weapon].label) ||
-             (CFG.THROWS[d.weapon] && CFG.THROWS[d.weapon].label) || '';
+             (CFG.THROWS[d.weapon] && CFG.THROWS[d.weapon].label) ||
+             (CFG.GEAR[d.weapon] && CFG.GEAR[d.weapon].label) || '';   /* v15.0: mine / drone / nuke / air strike */
     /* v11.0: the range rides the death event (combat.js). Killer, weapon and
        DISTANCE together answer "where did that come from" — 8 m and 80 m are
        different lessons, and until now the screen taught neither. */
-    els['death-info'].textContent = d.self ? 'Careful with those explosives.'
+    /* v1.0o: the world's own causes say what happened; "explosives" is only
+       for a grenade that came back. */
+    var cause = d.weapon === 'train' ? 'Run over by the train.'
+      : d.weapon === 'zone' ? 'Bled out outside the zone.'
+      : d.weapon === 'helifall' ? (d.self ? 'You fell from the helicopter.' : 'Fell from the helicopter after ' + d.killerName + ' hit it.')
+      : d.weapon === 'helidown' ? 'Shot down with the helicopter by ' + d.killerName + '.'
+      : null;
+    els['death-info'].textContent = cause ? cause : d.self ? 'Careful with those explosives.'
       : 'Taken out by ' + d.killerName + (wl ? ' \u00b7 ' + wl : '') +
         (typeof d.dist === 'number' ? ' \u00b7 ' + d.dist + ' m' : '') +
         (d.headshot ? ' \u00b7 HEADSHOT' : '');
@@ -756,7 +781,9 @@ var UI = (function () {
          left out — it is a live network reading and means nothing once the
          match is over. */
       var kd = p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : (p.kills > 0 ? p.kills.toFixed(2) : '0.00');
-      tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (p.assists || 0) + '</td><td>' + (p.damage || 0) + '</td><td>' + (p.bestStreak || p.streak || 0) + '</td><td>' + kd + '</td>';
+      /* v15.0 (fix 9): MINES column — kills scored with AP mines, a KPI the
+         server counts per kill (combat.js) and ships in the roster payload. */
+      tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (p.assists || 0) + '</td><td>' + (p.damage || 0) + '</td><td>' + (p.bestStreak || p.streak || 0) + '</td><td>' + (p.mineKills || 0) + '</td><td>' + kd + '</td>';
       els['end-body'].appendChild(tr);
     }
     if (d.winnerTeam) {
@@ -792,7 +819,7 @@ var UI = (function () {
         var hdr = document.createElement('tr');
         hdr.className = 'team-hdr t' + t;
         if (!d.players.some(function (p) { return p.team === t; })) return;   // v8.34: skip empty squads
-        hdr.innerHTML = '<td>TEAM ' + teamName(t) + '</td><td></td><td></td><td></td><td></td><td></td><td></td>';
+        hdr.innerHTML = '<td>TEAM ' + teamName(t) + '</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>';
         els['end-body'].appendChild(hdr);
         d.players.filter(function (p) { return p.team === t; })
           .sort(function (a, b) { return b.kills - a.kills; }).forEach(row);
@@ -835,6 +862,8 @@ var UI = (function () {
           CFG.GEAR[ins.favouriteWeapon.w] || {}).label || ins.favouriteWeapon.w));
       if (ins.headshots) card('DEADEYE', ins.headshots.name + ' &middot; ' + ins.headshots.n +
         ' headshot' + (ins.headshots.n === 1 ? '' : 's'));
+      if (ins.mineKills) card('MINEFIELD', ins.mineKills.name + ' &middot; ' + ins.mineKills.n +
+        ' mine kill' + (ins.mineKills.n === 1 ? '' : 's'), 'hot');   // v15.0 (fix 9)
       if (ins.mostDamage) card('MOST DAMAGE', ins.mostDamage.name + ' &middot; ' +
         ins.mostDamage.n);
       if (ins.firstBlood) card('FIRST BLOOD', ins.firstBlood.name + ' \u2192 ' + ins.firstBlood.victim);
@@ -878,65 +907,65 @@ var UI = (function () {
     setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 4000);
   }
 
-  /* ===== v10.10 KILLHOUSE NUKE + RECON VISOR HUD =====
-
-     Display only. Not one of these functions decides anything: `armed` lives
-     on the server (server/lib/nuke.js) and the banner is a mirror of what the
-     server said. If this file and the server ever disagree, the server is
-     right and the banner is stale — which is the correct failure direction for
-     a reward that can be lost mid-aim. */
-  var nukeArmed = false;
-  function nukeEl() { return document.getElementById('nuke-banner'); }
-
-  function nukeReady() {
-    nukeArmed = true;
-    var e = nukeEl(); if (e) e.classList.add('armed');
-    toast('NUKE ACTIVATED \u00b7 press N to select a target');
+  /* v2.0: the nuke, rocket-ladder and visor-HUD block that stood here is gone
+     with the kill-streak strikes; the visor pip lives below (setVisorHud). */
+  function setShield(hp, max) {
+    var row = document.getElementById('shield-row');
+    if (!row) return;
+    hp = Math.max(0, hp | 0); max = Math.max(1, max | 0);
+    row.classList.toggle('on', hp > 0);
+    var f = document.getElementById('shield-fill'), n = document.getElementById('shield-num');
+    if (f) f.style.width = Math.round(100 * hp / max) + '%';
+    if (n) n.textContent = String(hp);
   }
-  /* Called on death, on spending it, and on match end. Also closes the target
-     map if it is open — being killed while aiming must take the map away as
-     well as the nuke, or the player sits staring at a crosshair that no longer
-     does anything. */
-  function nukeLost(reason) {
-    if (!nukeArmed) return;
-    nukeArmed = false;
-    var e = nukeEl(); if (e) e.classList.remove('armed');
-    if (Minimap.setNukeAim) Minimap.setNukeAim(false);
-    if (Minimap.isFullOpen && Minimap.isFullOpen()) Minimap.toggleFull();
-    if (reason === 'died') toast('Nuke lost \u2014 you were killed before launch', true);
+  /* v1.0e: the breath meter beside the reticle. frac < 0 hides it. */
+  function setBreath(frac, held) {
+    var e = document.getElementById('breath-bar');
+    if (!e) return;
+    if (frac < 0) { if (!e.classList.contains('hidden')) e.classList.add('hidden'); return; }
+    e.classList.remove('hidden');
+    e.classList.toggle('held', !!held);
+    var f = document.getElementById('breath-fill');
+    if (f) f.style.height = Math.round(frac * 100) + '%';
   }
-  function nukeFired() {
-    nukeArmed = false;
-    var e = nukeEl(); if (e) e.classList.remove('armed');
-    if (Minimap.setNukeAim) Minimap.setNukeAim(false);
+  /* v1.0l: the helicopter's health, shown while one exists */
+  /* v1.0x: two machines — the top-right bar keeps a line per machine; the
+     machine I RIDE also fills the big hull bar on the LEFT beside my health,
+     so I can judge when to press Q. */
+  var heliRows = {};
+  function setHeliHud(h, idx) {
+    var e = document.getElementById('heli-hud');
+    if (!e) return;
+    idx = idx || (h && h.idx) || 0;
+    if (!h) { delete heliRows[idx]; } else heliRows[idx] = h;
+    var keys = Object.keys(heliRows);
+    if (!keys.length) { e.classList.remove('on'); setRiderHull(null); return; }
+    e.classList.add('on');
+    var lines = keys.map(function (k) { var m = heliRows[k]; var pct = Math.round(100 * Math.max(0, m.hp) / Math.max(1, m.max));
+      return '<div class="hrow"><span>HELI ' + (k === '0' ? 'A' : 'B') + ' \u00b7 ' + (m.state === 'flying' ? 'AIRBORNE' : m.state === 'returning' ? 'RETURNING' : m.state === 'landed' ? 'READY' : 'ON PAD') + ' \u00b7 ' + Math.max(0, m.hp | 0) + '</span><div class="bar"><div class="fill" style="width:' + pct + '%"></div></div></div>'; });
+    e.innerHTML = lines.join('');
+    var mine = null; keys.forEach(function (k) { if (heliRows[k].riding) mine = heliRows[k]; });
+    setRiderHull(mine);
   }
-  function nukeArmedNow() { return nukeArmed; }
-
-  /* ===== v10.15 - N CALLS THE STRIKE. IT DOES NOT OPEN A MENU. =====
-
-     This used to open the full map in a targeting mode and wait for a click.
-     Rahul: "there is no option to select the area" — and he was right, because
-     the only route into that mode was a map overlay nobody opens mid-fight, so
-     pressing N looked like it did nothing at all.
-
-     One press, one strike. The server decides where it lands (nuke.js
-     bestTarget), which is what the player would have tried to do with the map
-     anyway, done without leaving the fight. */
-  function nukeToggleAim() {
-    if (!nukeArmed) return false;
-    nukeArmed = false;                       // spend it here so N cannot double-fire
-    var e = nukeEl(); if (e) e.classList.remove('armed');
-    Net.nukeStrike(0, 0);                    // coordinates ignored; the server aims
-    toast('STRIKE CALLED');
-    return true;
+  function setRiderHull(m) {
+    var e = document.getElementById('heli-rider');
+    if (!e) return;
+    if (!m) { e.classList.remove('on'); return; }
+    e.classList.add('on');
+    var f = document.getElementById('heli-rider-fill'), t = document.getElementById('heli-rider-txt');
+    if (f) f.style.width = Math.round(100 * Math.max(0, m.hp) / Math.max(1, m.max)) + '%';
+    if (t) t.textContent = 'HULL ' + Math.max(0, m.hp | 0) + ' / ' + m.max + (heliHint ? ' \u00b7 ' + heliHint : '');
   }
-
-  function nukeIncoming(d) {
-    var mine = d && d.by === Net.myId();
-    toast(mine ? 'NUKE INBOUND \u00b7 your strike is landing'
-               : 'NUKE INBOUND \u00b7 ' + ((d && d.byName) || 'Enemy') + ' \u2014 get clear', !mine);
+  var heliHint = '';
+  function setHeliHint(txt) { heliHint = txt || ''; }   /* v1.0u: the rider's one-line reminder lives in the HUD bar */
+  /* v1.0j: the zone banner under the timer */
+  function setZoneBanner(text, urgent) {
+    var e = document.getElementById('zone-banner');
+    if (!e) return;
+    e.textContent = text || '';
+    e.classList.toggle('on', !!text);
+    e.classList.toggle('urgent', !!urgent);
   }
-
   function setVisorHud(on) {
     var e = document.getElementById('visor-pip');
     if (e) e.classList.toggle('on', !!on);
@@ -959,6 +988,17 @@ var UI = (function () {
     els['quality-shadows'].addEventListener('change', function () {
       Game.setShadows(this.checked);
     });
+    /* v1.0c: the QUALITY preference — AUTO or a fixed tier (src/core/quality.js). */
+    var qm = document.getElementById('quality-mode');
+    if (qm && window.Quality) {
+      qm.value = Quality.getMode();
+      qm.addEventListener('change', function () { Quality.setMode(this.value); setQualityReadout(Quality.describe()); });
+      setQualityReadout(Quality.describe());
+    }
+  }
+  function setQualityReadout(text) {
+    var e = document.getElementById('quality-now');
+    if (e) e.textContent = text || '';
   }
 
   // ---------- menu wiring ----------
@@ -1000,49 +1040,7 @@ var UI = (function () {
       if (els['howto-overlay']) els['howto-overlay'].classList.add('hidden');
     };
 
-    /* ===== v14.0 BOT MODE front door ===== */
-    var bmSel = { mode: 'bm_solo', diff: 'medium' };
-    function segWire(el, onPick) {
-      if (!el) return;
-      el.addEventListener('click', function (e) {
-        var b = e.target && e.target.closest ? e.target.closest('button') : null;
-        if (!b || !b.dataset.v) return;
-        [].forEach.call(el.querySelectorAll('button'), function (x) { x.classList.remove('on'); });
-        b.classList.add('on');
-        onPick(b.dataset.v);
-      });
-    }
-    segWire(els['bm-mode-seg'], function (v) {
-      bmSel.mode = v;
-      /* BATTLE owns its own ladder — a difficulty row there would be a
-         control that lies, so it hides rather than disables. */
-      if (els['bm-diff-row']) els['bm-diff-row'].style.display = (v === 'bm_battle') ? 'none' : '';
-      if (els['bm-hint']) els['bm-hint'].textContent =
-        v === 'bm_solo' ? 'You vs 8 machines at your chosen difficulty. Loot the Blacksite pool; watch the roof.' :
-        v === 'bm_team' ? 'Open the lobby, share the five-letter code, up to four operators vs 10 machines.' :
-        'Waves of 5 \u2192 10 \u2192 15 \u2192 20 across 15 minutes \u2014 each wave smarter than the last.';
-    });
-    segWire(els['bm-diff-seg'], function (v) { bmSel.diff = v; });
-    function showBotPanel(on) {
-      if (els['botmode-panel']) els['botmode-panel'].classList.toggle('hidden', !on);
-      if (on && els['deploy-panel']) els['deploy-panel'].classList.add('hidden');
-    }
-    if (els['btn-botmode']) els['btn-botmode'].onclick = function () { showBotPanel(true); };
-    if (els['btn-botmode-close']) els['btn-botmode-close'].onclick = function () { showBotPanel(false); };
-    if (els['btn-botmode-launch']) els['btn-botmode-launch'].onclick = function () {
-      var name = callsign();
-      if (!name) return needCallsign();
-      els['btn-botmode-launch'].disabled = true;
-      Net.createRoom(name, { mode: bmSel.mode, map: 'blacksite', killTarget: 0, minutes: 15 }, function (res) {
-        els['btn-botmode-launch'].disabled = false;
-        if (res && res.ok) {
-          /* difficulty rides updateSettings — same channel a lobby control
-             would use, so the server clamp is the single authority. */
-          if (bmSel.mode !== 'bm_battle') Net.updateSettings({ bmDiff: bmSel.diff });
-          showBotPanel(false); showScreen('screen-lobby');
-        } else toast((res && res.error) || 'Could not open the bot lobby', true);
-      });
-    };
+    /* v1.0d: the v14.0 Bot Mode front door was here. Removed with the mode. */
 
     if (els['btn-create-quick']) els['btn-create-quick'].onclick = function () {
       var name = callsign();
@@ -1149,6 +1147,8 @@ var UI = (function () {
     });
     if (els['lobby-mode']) els['lobby-mode'].addEventListener('change', pushSettings);
     if (els['lobby-map']) els['lobby-map'].addEventListener('change', pushSettings);
+    if (els['lobby-dress']) els['lobby-dress'].addEventListener('change', function () { Net.updateSettings({ dressColors: { all: els['lobby-dress'].value } }); });   /* v1.0r */
+    if (els['lobby-dress-reset']) els['lobby-dress-reset'].addEventListener('click', function () { Net.updateSettings({ dressColors: { all: null } }); });
     if (els['lobby-time']) els['lobby-time'].addEventListener('change', pushSettings);
     /* ===== v13.0 - THE INTEL "REVERSAL" WAS THIS MISSING LINE =====
        Every config select above pushes on change; v12 added the intel select
@@ -1378,9 +1378,17 @@ var UI = (function () {
       if (el) el.style.display = 'none';
     },
     toast: toast, waveBanner: waveBanner,
-    nukeReady: nukeReady, nukeLost: nukeLost, nukeFired: nukeFired,
-    nukeIncoming: nukeIncoming, nukeToggleAim: nukeToggleAim,
-    nukeArmedNow: nukeArmedNow, setVisorHud: setVisorHud,
+    setVisorHud: setVisorHud,
+    setShield: setShield,   /* v15.0 */
+    setQualityReadout: setQualityReadout,   /* v1.0c */
+    setBreath: setBreath,                   /* v1.0e */
+    setZoneBanner: setZoneBanner,           /* v1.0j */
+    setHeliHud: setHeliHud,                 /* v1.0l */
+    setHeliHint: setHeliHint,               /* v1.0u */
+    aliveCount: function () {               /* v1.0k: operators still in it (Urban Zone's "N ALIVE") */
+      if (!lastLobby || !lastLobby.players) return 0;
+      return lastLobby.players.filter(function (p) { return !p.out && p.connected !== false; }).length;
+    },
     getSensitivity: function () { return sensitivity; },
     el: function (id) { return els[id]; }
   };

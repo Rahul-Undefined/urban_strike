@@ -43,6 +43,8 @@ function Obj() {
 }
 Obj.prototype.add = function (c) { this.children.push(c); return this; };
 Obj.prototype.remove = function (c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); return this; };
+/* v2.0: the seeker's viewmodel (v1.0x) is `models.rocket.clone()`; the stub lacked clone, so this gate had crashed since. */
+Obj.prototype.clone = function () { const o = new this.constructor(); o.children = this.children.slice(); o.userData = Object.assign({}, this.userData); o.position = new Vec(this.position.x, this.position.y, this.position.z); return o; };
 function Klass() { return function () { }; }
 const THREE = {
   Group: Obj, Sprite: Obj, Mesh: function () { Obj.call(this); }, Vector3: Vec,

@@ -104,7 +104,7 @@ function runMap(mapName, data, wallDefault) {
   vm.createContext(ctx);
   ["config/districts.config.js",
    "environment/world.js", "environment/districts-south.js", "environment/districts-north.js",
-   "environment/districts-outer.js", "environment/deco.js", "environment/rural.js", "environment/metro.js", "environment/killhouse.js", "environment/sunsetrow.js", "environment/smallmaps.js", "environment/medium.js", "environment/access.js"].forEach(f => {
+   "environment/districts-outer.js", "environment/deco.js", "environment/killhouse.js", "environment/sunsetrow.js", "environment/smallmaps.js", "environment/medium.js", "environment/access.js"].forEach(f => {
     const p = path.join(ROOT, "public/src", f);
     /* v10.12: this was `if (fs.existsSync(p))`, which silently skipped a file
        that was not there. sunsetrow.js was added to the game and NOT to this
@@ -147,6 +147,9 @@ function runMap(mapName, data, wallDefault) {
     }
   }
   const WALL = ctx.World.BOUND || wallDefault;
+  /* v1.1: a map may have an ASYMMETRIC extent (Urban's Western Reach) */
+  const EXT = (CFG.MAPS[mapName] && CFG.MAPS[mapName].ext) || { x0: -WALL, x1: WALL, z0: -WALL, z1: WALL };
+  const inExt = (x, z) => x > EXT.x0 && x < EXT.x1 && z > EXT.z0 && z < EXT.z1;
 
   function supportAt(x, y, z) {
     for (const c of cols) {
@@ -172,12 +175,12 @@ function runMap(mapName, data, wallDefault) {
 
   console.log("--- [" + mapName + "] loot points (" + data.LOOT_POINTS.length + ") ---");
   data.LOOT_POINTS.forEach((p, i) => {
-    ok(Math.abs(p[0]) < WALL && Math.abs(p[2]) < WALL, mapName + " loot#" + i + " [" + p + "] inside bounds");
+    ok(inExt(p[0], p[2]), mapName + " loot#" + i + " [" + p + "] inside bounds");
     ok(supportAt(p[0], p[1], p[2]), mapName + " loot#" + i + " [" + p + "] floats (no support at y=" + p[1] + ")");
   });
   console.log("--- [" + mapName + "] spawns (" + data.SPAWNS.length + ") ---");
   data.SPAWNS.forEach((s, i) => {
-    ok(Math.abs(s[0]) < WALL && Math.abs(s[1]) < WALL, mapName + " spawn#" + i + " [" + s[0] + "," + s[1] + "] inside bounds");
+    ok(inExt(s[0], s[1]), mapName + " spawn#" + i + " [" + s[0] + "," + s[1] + "] inside bounds");
     const bad = standingClear(s[0], s[1]);
     ok(!bad, mapName + " spawn#" + i + " [" + s[0] + "," + s[1] + "] " + bad);
   });
@@ -191,14 +194,13 @@ function runMap(mapName, data, wallDefault) {
   });
 }
 
-runMap("urban", { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points }, 100);
-runMap("rural", CFG.MAPS_RURAL, 100);
+runMap("urban", { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POINTS: CFG.AIRDROP.points }, CFG.MAPS.urban.bound);   /* v15.0: 120 */
 /* v8.18: this used to remap CFG.MAPS_METRO.AIRDROPS onto AIRDROP_POINTS right
    here, which meant the gate validated metro airdrops through a key the GAME
    never reads. The config was broken for months and this line kept it green.
    Feed the config object directly, exactly as rural does — if a map ships the
    wrong key name, this gate must be the thing that says so. */
-runMap("metro", CFG.MAPS_METRO, 100);
+/* v2.0: metro removed */
 /* v10.10: killhouse. Bound is 32, not 100 — passing the wrong bound would let
    every point inside a 200 m square count as in-bounds and the gate would
    validate nothing. Taken from CFG.MAPS so it cannot drift from the value the

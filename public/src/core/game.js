@@ -151,6 +151,8 @@ var Game = (function () {
            whose buffers no longer exist. */
         World.reset();
         World.buildMap(scene, currentMapId || 'urban');
+        if (window.Quality) Quality.setSun(World.getSun());   /* v1.0c: the restored context gets the tier's shadow map */
+        if (window.Train) { Train.init(scene, currentMapId || 'urban'); if (window.Heli) Heli.init(scene, currentMapId || 'urban'); PlayerCtl.setPlatform(platformProbe); }   /* v1.0e / v1.0l */
         Minimap.invalidate(); Minimap.init();
         Pickups.build(scene);
         UI.toast('Graphics restored');
@@ -163,6 +165,20 @@ var Game = (function () {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.08, 320);
     camera.rotation.order = 'YXZ';
+    /* ===== v1.0c - QUALITY TIERS =====
+       See src/core/quality.js. AUTO starts at HIGH, which is exactly the 1.75 /
+       2048 this file shipped for two years, so the boot frame is unchanged;
+       the scaler then climbs to ULTRA on a machine with headroom or steps down
+       on one without. The pause panel's QUALITY select overrides it. */
+    if (window.Zone) Zone.init(scene);   /* v1.0j */
+    if (window.Quality) Quality.init(renderer, scene, {
+      onChange: function (id, T, why) {
+        if (UI.setQualityReadout) UI.setQualityReadout(Quality.describe());
+        if (why === 'lag') UI.toast('Quality \u2193 ' + T.label + ' \u2014 lag detected', true);
+        else if (why === 'headroom') UI.toast('Quality \u2191 ' + T.label);
+        else if (why === 'manual') UI.toast('Quality \u00b7 ' + T.label);
+      }
+    });
     _boomO = new THREE.Vector3(); _boomD = new THREE.Vector3();
     /* v13.0 (item 5): perspective survives reloads; the viewmodel obeys it
        from the first frame rather than flashing first-person for one tick. */
@@ -292,12 +308,17 @@ var Game = (function () {
         UI.toast(tpp ? 'THIRD PERSON \u00b7 P to switch back' : 'FIRST PERSON');
         return;
       }
-      /* v10.10: N calls the killhouse nuke. Sits beside M because it opens the
-         same map, and returns early only when a nuke is actually armed — so on
-         every other map, and for every player who has not earned one, N falls
-         through to whatever else wants it. UI.nukeToggleAim reports whether it
-         consumed the key rather than this line guessing. */
-      if (e.code === 'KeyN' && UI.nukeToggleAim && UI.nukeToggleAim()) { e.preventDefault(); return; }
+      /* v1.0l: jumping out of the flying helicopter is a choice — the floor lets go */
+      if (e.code === 'Space' && window.Heli && Heli.isRiding && Heli.isRiding()) Heli.bail();
+      /* v1.0q: Q aboard the flying helicopter brings it down (a lean is pointless up there) */
+      if (e.code === 'KeyQ' && window.Heli && Heli.isRiding && Heli.isRiding()) { Heli.landRequest(); e.preventDefault(); return; }
+      if (e.code === 'KeyQ') qDownAt = performance.now();   /* v1.0v: a TAP drops an attachment (see keyup); a HOLD leans */
+      /* v2.0: N does nothing — the kill-streak strikes are gone. */
+      /* v1.0b: K throws the gun in your hands away, L the sight on it. Every
+         map, every mode. The server drops a matching pickup on the floor where
+         one exists (see 'dropItem' in server.js). */
+      if (e.code === 'KeyK' && playing) { e.preventDefault(); Weapons.dropCurrent(); return; }
+      if (e.code === 'KeyL' && playing) { e.preventDefault(); Weapons.dropSight(); return; }
       /* v10.13: V spots whatever enemy is in the crosshair for the team.
 
          This was KeyX for exactly one gate run. X is toggleProne, bound
@@ -366,6 +387,9 @@ var Game = (function () {
       // work in the lobby too, so it does NOT live here. The old duplicate also
       // shadowed the smoke grenade, which had been unbindable ever since.
       if (e.code === 'KeyZ') {
+        /* v1.0m: near the helicopter on its pad, Z boards it (or steps off) and
+           nothing else — a pickup at your feet can wait a second. */
+        if (window.Heli && Heli.canBoard && Heli.canBoard()) { Heli.board(); e.preventDefault(); return; }
         /* v10.6: Z is the one INTERACT key. It rides a lift when you are stood
            in a shaft and picks up loot when you are stood on some; the two can
            never both apply, because a lift stop is not a loot spawn. Loot no
@@ -389,6 +413,8 @@ var Game = (function () {
     });
     document.addEventListener('keyup', function (e) {
       if (e.code === 'Tab') { UI.showScoreboard(false); return; }
+      if (e.code === 'KeyQ' && qDownAt && performance.now() - qDownAt < 220 && playing && !(window.Heli && Heli.isRiding && Heli.isRiding())) { qDownAt = 0; if (Weapons.dropAttachment) Weapons.dropAttachment(); }   /* v1.0v */
+      if (e.code === 'KeyQ') qDownAt = 0;
       if (e.code === 'KeyG') { Weapons.releaseCook(); return; }
       if (e.code === 'KeyY' && pingWheel) { pingWheel = false; UI.setPingWheel(false); sendPing('enemy'); return; }
       var map2 = {
@@ -424,6 +450,15 @@ var Game = (function () {
     }, { passive: true });
   }
 
+  /* v1.0l: one moving-floor probe for the controller — the train's, then the
+     helicopter's. Whichever has the player answers. */
+  var qDownAt = 0;   /* v1.0v: when Q went down, for tap-vs-hold */
+  function platformProbe(pos, halfY) {
+    var r = (window.Train && Train.isActive()) ? Train.floorAt(pos, halfY) : null;
+    if (r) r.src = 'train';
+    if (!r && window.Heli && Heli.active()) { r = Heli.floorAt(pos, halfY); if (r) r.src = 'heli'; }
+    return r;
+  }
   function clearInput() {
     for (var k in Input) Input[k] = false;
     Weapons.setTrigger(false);
@@ -515,6 +550,8 @@ var Game = (function () {
       currentMapId = mapId;
       UI.setLoadingMap((CFG.MAPS[mapId] || CFG.MAPS.urban).label);
       World.buildMap(scene, mapId);
+      if (window.Quality) Quality.setSun(World.getSun());   /* v1.0c: the tier's shadow map applies to the new sun */
+      if (window.Train) { Train.init(scene, mapId); if (window.Heli) Heli.init(scene, mapId); PlayerCtl.setPlatform(platformProbe); }   /* v1.0e / v1.0l */
       Minimap.invalidate();
       Weapons.matchReset();
       Pickups.build(scene);
@@ -536,6 +573,8 @@ var Game = (function () {
       try {
         World.reset();
         World.buildMap(scene, currentMapId);
+        if (window.Quality) Quality.setSun(World.getSun());   /* v1.0c */
+        if (window.Train) { Train.init(scene, currentMapId); if (window.Heli) Heli.init(scene, currentMapId); PlayerCtl.setPlatform(platformProbe); }   /* v1.0e / v1.0l */
         Minimap.invalidate();
         Weapons.matchReset();
         Pickups.build(scene);
@@ -729,7 +768,9 @@ var Game = (function () {
       startSpectating();
       return;
     }
-    var left = CFG.MATCH.respawnDelay;
+    /* v1.0d: the server names the wait — the arena ladder rung for this death,
+       or the flat delay on big maps — so the HUD count matches its gate. */
+    var left = (d && typeof d.respawnSec === 'number' && d.respawnSec > 0) ? d.respawnSec : CFG.MATCH.respawnDelay;
     UI.setDeathCountdown(left);
     if (deathInterval) clearInterval(deathInterval);
     deathInterval = setInterval(function () {
@@ -814,8 +855,15 @@ var Game = (function () {
        frame still renders. `step()` reports through the same rate-limited
        surface, so the first failure names itself once and does not spam. */
     var playing = Net.getPhase() === 'playing';
+    /* v1.0c: the quality scaler measures only in-match with the pointer locked —
+       menus, the lobby and a hidden tab are not lag. */
+    if (window.Quality) step('quality', function () { Quality.setActive(playing && locked && World.isBuilt()); Quality.tick(dt * 1000, t); });
 
+    if (window.Train && World.isBuilt()) step('train', function () { Train.update(dt); });   /* v1.0e: the train runs in the lobby too (deterministic clock) */
+    if (window.Zone && World.isBuilt()) step('zone', function () { Zone.update(dt); });      /* v1.0j: the circle */
+    if (window.Heli && World.isBuilt()) step('heli', function () { Heli.update(dt); });      /* v1.0l: the helicopter */
     if (playing && World.isBuilt()) {
+      if (Weapons.setBreath) Weapons.setBreath(Input.sprint);   /* v1.0e: Shift while scoped = hold breath */
       var wu = step('weapons', function () { return Weapons.update(dt); });
       /* Every later line reads wu. If the weapons update itself failed, fall
          back to inert values rather than letting one fault cascade. */
@@ -832,6 +880,8 @@ var Game = (function () {
 
       step('camera', function () {
         PlayerCtl.eyePosition(camera.position);
+        /* v2.0: the shadow frustum follows the player (World.followSun) */
+        if (World.followSun) World.followSun(camera.position.x, camera.position.z);
         camera.position.y -= landDip * 0.2;
         camera.rotation.y = -PlayerCtl.yaw;
         camera.rotation.x = PlayerCtl.pitch;

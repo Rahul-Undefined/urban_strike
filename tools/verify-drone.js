@@ -65,8 +65,11 @@ ok(S.radius < CFG.THROWS.frag.radius,
 const weakest = Math.min.apply(null, CFG.WEAPON_ORDER
   .filter(w => CFG.WEAPONS[w].type !== 'melee' && !CFG.WEAPONS[w].radius && !CFG.WEAPONS[w].gear)
   .map(w => CFG.WEAPONS[w].dmg * (CFG.WEAPONS[w].pellets || 1)));
-ok(S.hp <= weakest * 2,
-  'the weakest weapon downs a drone in two hits [drone ' + S.hp + ' hp, weakest shot ' + weakest + ']');
+/* v1.0z (Rahul: "shooting it down thoda competitive karo"): 45 -> 110 hp. The
+   old rule — two hits from the weakest gun — is exactly the tap-kill he asked
+   to lose. The new bar: a full magazine of the weakest gun still downs it. */
+ok(S.hp > weakest * 2 && S.hp <= weakest * 4,
+  'a drone takes three or four hits from the weakest gun — a burst, not a tap, and not a chore [drone ' + S.hp + ' hp, weakest shot ' + weakest + ']');
 ok(S.lockSec > 0, 'there is a lock phase, which is when the warning lands');
 ok(S.armSec > 0, 'it cannot be shot down before it clears the launcher');
 ok(S.maxLifeSec > 0 && S.maxLifeSec < 60, 'it never loiters forever [' + S.maxLifeSec + 's]');
@@ -149,33 +152,14 @@ console.log('\n--- friendly fire on detonation ---');
   ok(!hitFriend, 'the TEAM-MATE standing at the same point is not');
 }
 
-console.log('\n--- not in bot modes ---');
-/* The rule lives in server.js as a CFG.botsAllowed check, so assert the
-   predicate covers exactly the modes it should. A drone in Strike Team would
-   trivialise a mode whose whole point is practising your aim.
-
-   v10.9: bots are switched off in the shipping build (world.config.js
-   BOTS_ENABLED), so botsAllowed() is false everywhere and this block was
-   asserting that Overrun is a bot mode while nothing in the game fields bots.
-
-   The rule still matters — the bot engine is retained and Rahul intends to
-   switch it back on, at which point a drone must still be refused in those
-   modes. So the predicate is evaluated in a child process with the switch ON,
-   which is the only state in which the question means anything. The
-   human-mode half is checked against the SHIPPING build, because "drones are
-   available in FFA" must be true right now. */
-{
-  const { execFileSync } = require('child_process');
-  const cfgPath = path.join(__dirname, '..', 'public/src/config/index.js').replace(/\\/g, '\\\\');
-  const probe = `const C=require('${cfgPath}');console.log(JSON.stringify(
-    ['bots','co1','co2','co3','co4','co6','co10'].map(m => C.botsAllowed(m))));`;
-  const env = Object.assign({}, process.env, { US_BOTS: '1' });
-  const withBotsOn = JSON.parse(execFileSync(process.execPath, ['-e', probe], { env, encoding: 'utf8' }));
-  ['bots', 'co1', 'co2', 'co3', 'co4', 'co6', 'co10'].forEach((m, i) =>
-    ok(withBotsOn[i], m + ': is a bot mode when bots are enabled, so drones are refused there'));
-}
-['ffa', 't2', 't5', 't10', 'sq2', 'sq4', 'ls', 'lsq2', 'lsq4'].forEach(m =>
-  ok(!CFG.botsAllowed(m), m + ': drones are available'));
+console.log('\n--- no bot mode exists to refuse drones ---');
+/* v1.0d: Bot Mode was removed at Rahul's request. The old rule ("a drone in
+   Strike Team would trivialise the mode") has nothing left to guard; what
+   remains to assert is that drones are available in every mode that exists
+   and that no bot-fielding mode or helper can come back unnoticed. */
+ok(!CFG.botsAllowed && !CFG.backfillAllowed, 'the bot-mode predicates are gone from CFG');
+ok(Object.keys(CFG.MODES).every(m => !CFG.MODES[m].botmode && !CFG.MODES[m].vsBots && !CFG.MODES[m].practice),
+  'no mode fields bots, so a drone is refused nowhere');
 ok(!!CFG.LOOT_ITEMS.drone && CFG.LOOT_ITEMS.drone.kind === 'gear',
   'drones can be looted as gear');
 ok((CFG.AIRDROP.exoticPool || []).indexOf('drone') >= 0,

@@ -1,9 +1,113 @@
-# URBAN STRIKE — browser multiplayer FPS (2–10 players · FFA / 3v3 / 5v5)
+# URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
-**v14.0 — BOT MODE.** From the welcome rail: SOLO (you vs 8 machines), TEAM
-(squad up by room code vs 10), or BATTLE (waves 5-10-15-20 over 15 minutes,
-smarter every wave) — on Blacksite, a bot-only arena with its own weapon pool.
-Difficulty scales intelligence, never damage.
+**v2.0.0 — THE OUTER CITY.** Urban is 500 × 440 m: 100 m of new city on every
+side — CANNERY ROW, NORTH RIDGE, REFINERY, QUARRY, SOUTH COMMONS, SOUTHPORT,
+GASWORKS, RIVER TERRACES, FOUNDRY, WESTFIELD — with sniper towers in the four
+corners and one fast train (30 m/s) round the whole perimeter stopping at a
+halt on each side. The helicopter flies at 80 m over all of it and, out of fuel,
+goes down with everyone aboard (a siren at 30 s; Q lands). Every weapon is
+airdrop-only (a crate a minute, exclusive contents, gone after 60 s); the floor
+carries heals, ammo, armour, mags and gear indoors and on roofs only. No Metro,
+no kill-streak strikes. The twelve-minute lag and the late-match avatar jitter
+are fixed at their causes (server clock on the wire, shared loot meshes, audio
+chain teardown, disposed crates). Details: CHANGELOG.md; HANDOFF-v2.0.md (repo root) for
+the code map.
+
+**v1.0 build 5 — THE TRAIN (superseded in v2.0).** An 800 m loop around Urban's ring boulevard
+through SECTOR 7 CENTRAL: a locomotive and three coaches, deterministic
+schedule (3 s at the station, 8 m/s around the map, ~110 s a lap), board at the
+platform or jump on from the road, ride the coaches or the roof, shoot from the
+doors. The station hall is a floor higher. Also: the operator is ~2.3 m tall and
+every doorway it can prove is a doorway is 2.65 m; nuke/rocket kills no longer
+count toward the next strike; Shift while scoped holds your breath.
+
+**v1.1.0 — THE WESTERN REACH.** Urban grows 60 m to the west: WEST DOCKS,
+HARBOUR MARKET and MILL ROW beyond the old wall, the second train's loop running
+through them, five-storey towers on all four sides, and maps that show the new
+shape.
+
+**v1.0.12 — RAHUL'S TEN.** Hull 4000, faster trains, both helicopters on the
+M map, five grenades, a tougher and quicker drone, exclusive-only airdrops every
+100 s, unreachable Urban loot removed, a line-of-sight check so nobody dies
+behind a wall they reached, two minutes of fuel, and spark effects that no
+longer rebuild the shader every impact.
+
+**v1.0.10 — TWO HELICOPTERS, FUEL, A 5000-POINT HULL, THE SEEKER.** Guns chip
+the hull (AKM 15, M4 12, snipers 20, shotguns 0); the RPG-L and the auto-lock
+SEEKER-9 each take half. Three minutes of fuel, one minute to refuel. A second
+machine arrives on pad B two minutes after the first lifts off.
+
+**v1.0.8 — PROTECTED RIDERS, THE STRIKE KEY.** Helicopter riders can't be shot;
+only an RPG or an EMP downs the machine (and them). Blasts destroy enemy mines.
+One Strike Key hides on Urban each match — find it, press N, every hostile dies.
+Tap Q to drop an attachment. Trains and the helicopter merged to a few draws.
+
+**v1.0.7 — RESPAWNS IN THE ZONE.** Urban Zone respawns (inside the circle);
+helicopter riders sit in the cabin behind the rails and can only be hit through
+the open door band; no boarding popups; untaken loot expires so late matches
+stay smooth.
+
+**v1.0.6 — ONLY A ROCKET.** Guns no longer scratch the helicopter's hull; three
+RPG-L hits (legendary airdrop loot) bring it down. The riders are still fair game.
+
+**v1.0.5 — SHOOT FROM THE HELICOPTER, AND AT IT.** Riders' rounds no longer
+stop at their own hull; a ground shot at a rider through the open door lands.
+
+**v1.0.4 — A SECOND TRAIN.** Two trains on the ring, opposite hands, provably
+never touching; rails that meet round the corners; the host picks dress colours.
+
+**v1.0.3 — THE HELICOPTER FLIES FREE.** It stays airborne on a different
+wandering route every match until a rider presses Q to land; Z re-launches a
+landed one; shoot the ground from the cabin; next one 3 minutes after it leaves.
+
+**v1.0.2 — NOBODY FALLS WITHOUT A REASON.** A rider leaves the flying
+helicopter only by jumping (Space); lag, clock skew and frame hitches can no
+longer count as a fall.
+
+**v1.0.1 — THE HELICOPTER, PROPERLY.** Walk up to it on the airport pad and
+press Z to board (Z again to step off); it lifts 3 s after the first boarding.
+Asset URLs now carry a content hash, so a deploy never serves a stale client.
+
+**v1.0 build 12 — THE HELICOPTER.** Board it on the airport pad (3 s), fly a
+loop over the city and shoot from the cabin; 900 hull points, assault rifles
+hurt it, snipers barely, rockets a lot; fall out and you die, shoot it down and
+everyone aboard dies; back on the pad five minutes later. The train now stops
+at four halts, one per side. Urban Zone can be played Solo, Duos or Squads.
+
+**v1.0 build 10 — URBAN ZONE.** A new category: one life on Urban, the circle
+closes minute by minute from 2:00 to 12:00 (random every match), 10% health a
+second outside it, drops land inside, the train still runs. Red is danger,
+green is safe on the M map.
+
+**v1.0 build 4 — FROM THE SCREENSHOTS.** Bus geometry fixed; the Colony's 86 m
+rear wall and the terrace block opened; the stadium is green again (the old
+Ship Harbour was built through it — gone, a Training Ground stands there) and
+a storey taller; the M map works on every arena; the Bazaar court is a market;
+every map redeploys in a flat 5 s; **Bot Mode removed completely**.
+
+**v1.0 build 3 — HD.** Quality tiers with an AUTO scaler: ULTRA renders at
+native resolution with 4K shadows and climbs/drops with your machine; pin a
+tier from the pause panel (QUALITY) if you prefer.
+
+**v1.0 build 2 — THE ARSENAL.** K drops your gun, L drops your sight (a pickup
+appears for others); big-map ROCKET ladder on N (5, 7, 10 kills without dying);
+shooting down a drone is a kill and gives you one; frags kill within 20 m and
+halve health to 50 m; C4 from crates levels everyone under a roof; a
+Flamethrower found indoors burns its target and opens a 20 m fire zone. See
+CHANGELOG.
+
+**v1.0 — THE FIFTEEN.** Rahul's fifteen-item list, shipped: EMP Charge (fries
+every enemy mine), Ballistic Shield (260 hp, a sniper round breaks it), the
+hidden Strike Remote (hold Z, helicopter, everyone hostile dies), mine-kill KPI,
+5 s respawn, small-map mine ration, FFA map/visor/reconnect-timer fixes; Urban
+grown to 240 x 240 with four ring districts and four control towers plus a new
+colour pass; Killhouse rebuilt around THE DECK; every small map enlarged for 15
+players; Airfield and Riverside given landmarks; Rural removed. See CHANGELOG.
+
+**Bot Mode was removed in v1.0 build 4 at Rahul's request, and is not to be
+reintroduced.** There are no bots in this game: no Overrun, no Strike Team, no
+Blacksite, no seat backfill. `server/lib/bots.js` is a headless geometry harness
+the gates and the server's line-of-sight checks read, nothing more.
 
 A Counter-Strike-inspired shooter you run yourself. No accounts, no downloads for your friends — you share a 5-letter room code, they open a link.
 
@@ -34,7 +138,10 @@ A Counter-Strike-inspired shooter you run yourself. No accounts, no downloads fo
 | Key | Action |
 |---|---|
 | W A S D | Move |
-| SHIFT (hold) | Sprint (forward only) |
+| SHIFT (hold) | Sprint (forward only) · while SCOPED: hold breath — steadies the scope for ~4 s (v1.0) |
+| K / L | Throw away the gun in your hands / the sight on it (v1.0) |
+| N | Big maps: launch the earned ROCKET · arenas: call the earned NUKE (v1.0) |
+| Z (hold 1.2 s) | Call the helicopter when you hold the Strike Remote (v1.0) |
 | SPACE | Jump |
 | C (hold) | Crouch |
 | Q / E (hold) | Lean left / right |

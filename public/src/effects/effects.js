@@ -26,15 +26,25 @@ var FX = (function () {
     var dir = new THREE.Vector3().subVectors(to, from);
     var len = dir.length();
     if (len < 0.5) return;
-    var m = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, len), tracerMat.clone());
+    /* v2.0: a 90 ms streak does not need its own material to fade — one shared
+       material, scaled geometry, no per-shot allocation of a material */
+    var m = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, len), tracerMat); m.userData.sharedMat = true;
     m.position.copy(from).addScaledVector(dir, 0.5);
     m.lookAt(to);
-    add(m, 0.09, function (e, t) { e.mesh.material.opacity = 0.9 * (1 - t); });
+    add(m, 0.09, null);
   }
 
+  /* v1.0z: one spark geometry for every spark ever — five fresh BoxGeometries
+     per bullet impact was hundreds of GPU buffer creations a second in a
+     busy fight, and their disposal churned the same. Shared geometry is
+     flagged so the cleanup below leaves it alone. */
+  var sparkGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+  var puffMat = new THREE.SpriteMaterial({ color: 0x9aa0a6, transparent: true, opacity: 0.3, depthWrite: false });
+  var holeMat = new THREE.SpriteMaterial({ color: 0x14171c, transparent: true, opacity: 0.85, depthWrite: false });
+  var _holeTmp = new THREE.Vector3();
   function impact(point) {
     for (var i = 0; i < 5; i++) {
-      var m = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), sparkMat);
+      var m = new THREE.Mesh(sparkGeo, sparkMat); m.userData.sharedGeo = true; m.userData.sharedMat = true;
       m.position.copy(point);
       var v = new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3.5, (Math.random() - 0.5) * 4);
       (function (vv) {
@@ -44,18 +54,17 @@ var FX = (function () {
         });
       })(v);
     }
-    var puff = new THREE.Sprite(smokeMat.clone());
+    /* v2.0: shared materials — the puff grows and the hole shrinks away
+       instead of fading, so neither needs a material of its own. An impact
+       is now five sparks, a puff and a hole with ZERO material allocations. */
+    var puff = new THREE.Sprite(puffMat); puff.userData.sharedMat = true;
     puff.position.copy(point); puff.scale.set(0.3, 0.3, 1);
-    add(puff, 0.5, function (e, t) {
-      e.mesh.scale.setScalar(0.3 + t * 0.9);
-      e.mesh.material.opacity = 0.4 * (1 - t);
-    });
-    // Bullet hole — dark decal sprite, pulled a hair off the surface toward the camera.
-    var hole = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x14171c, transparent: true, opacity: 0.85, depthWrite: false }));
+    add(puff, 0.5, function (e, t) { e.mesh.scale.setScalar(0.3 + t * 0.9); });
+    var hole = new THREE.Sprite(holeMat); hole.userData.sharedMat = true;
     hole.position.copy(point);
-    if (camera) hole.position.addScaledVector(new THREE.Vector3().subVectors(camera.position, point).normalize(), 0.045);
+    if (camera) hole.position.addScaledVector(_holeTmp.subVectors(camera.position, point).normalize(), 0.045);
     hole.scale.set(0.08, 0.08, 1);
-    add(hole, 4.5, function (e, t) { if (t > 0.6) e.mesh.material.opacity = 0.85 * (1 - (t - 0.6) / 0.4); });
+    add(hole, 4.5, function (e, t) { if (t > 0.6) { var k = 0.08 * (1 - (t - 0.6) / 0.4); e.mesh.scale.set(k, k, 1); } });
   }
 
   function bloodPuff(point) {
@@ -271,14 +280,23 @@ var FX = (function () {
 
   function update(dt) {
     updatePings();          // v9.11: team pings fade on the same clock
+    updateFireZones(dt);    // v1.0b
     for (var i = live.length - 1; i >= 0; i--) {
       var e = live[i];
       e.life += dt;
       var t = e.life / e.ttl;
       if (t >= 1) {
         scene.remove(e.mesh);
-        if (e.mesh.geometry) e.mesh.geometry.dispose();
-        if (e.mesh.material && e.mesh.material.dispose) e.mesh.material.dispose();
+        if (e.mesh.geometry && !e.mesh.userData.sharedGeo) e.mesh.geometry.dispose();
+        /* v1.0z: never dispose a SHARED material — disposing sparkMat on every
+           spark forced the shader program to be rebuilt on the next impact,
+           dozens of times a second in a fight */
+        if (e.mesh.material && e.mesh.material.dispose && !e.mesh.userData.sharedMat) e.mesh.material.dispose();
+        /* v15.0: a GROUP effect (the helicopter) owns its children's buffers. */
+        if (e.mesh.isGroup) e.mesh.traverse(function (o) {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material && o.material.dispose) o.material.dispose();
+        });
         live.splice(i, 1);
       } else if (e.update) e.update(e, t, dt);
     }
@@ -304,33 +322,115 @@ var FX = (function () {
      Purely cosmetic. The kills come from the server tick in
      server/lib/nuke.js, so a client that never renders this still dies in the
      circle, and a client that renders it does not get to decide who died. */
-  var nukeTimer = null;
-  function nukeEnd() {
-    if (nukeTimer) { clearInterval(nukeTimer); nukeTimer = null; }
-    var f = document.getElementById('nuke-flash');
-    if (f) f.classList.remove('on');
-  }
-  function nukeStart(d) {
-    nukeEnd();                                  // a second strike replaces the first
+  function empBlast(d) {
     if (!d) return;
-    var f = document.getElementById('nuke-flash');
-    if (f) f.classList.add('on');
-    var r = d.r || 11, cx = d.x || 0, cz = d.z || 0;
-    var ends = performance.now() + (d.duration || 10) * 1000;
-    nukeTimer = setInterval(function () {
-      if (performance.now() >= ends) { nukeEnd(); return; }
-      /* Two blasts per beat at random points in the circle, biased outward by
-         sqrt so they spread evenly over AREA rather than clustering in the
-         middle — a uniform radius would put half the explosions in the inner
-         quarter and read as one big centre blast. */
-      for (var i = 0; i < 2; i++) {
-        var a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * r;
-        explosion(new THREE.Vector3(cx + Math.cos(a) * rr, 0.6, cz + Math.sin(a) * rr), 1.5);
+    var o = new THREE.Vector3(d.x || 0, (d.y || 1) - 0.6, d.z || 0);
+    var ring = new THREE.Mesh(new THREE.RingGeometry(0.6, 1.0, 40),
+      new THREE.MeshBasicMaterial({ color: 0x51d0e8, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.copy(o);
+    add(ring, 1.1, function (e, t) {
+      e.mesh.scale.setScalar(1 + t * 40);
+      e.mesh.material.opacity = 0.85 * (1 - t);
+    });
+    var fl = new THREE.PointLight(0x51d0e8, 2.5, 18, 2);
+    fl.position.copy(o).add(new THREE.Vector3(0, 1.2, 0)); scene.add(fl);
+    add(fl, 0.5, function (e, t) { e.mesh.intensity = 2.5 * (1 - t); });
+    (d.mines || []).forEach(function (m) {
+      var p = new THREE.Vector3(m.x, m.y + 0.1, m.z);
+      for (var i = 0; i < 6; i++) {
+        var sp = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05),
+          new THREE.MeshBasicMaterial({ color: i % 2 ? 0x51d0e8 : 0xffffff }));
+        sp.position.copy(p);
+        var vx = (Math.random() - 0.5) * 3, vy = 1.5 + Math.random() * 2.5, vz = (Math.random() - 0.5) * 3;
+        (function (a, b, c) {
+          add(sp, 0.6, function (e, t, dt) {
+            e.mesh.position.x += a * dt; e.mesh.position.z += c * dt;
+            e.mesh.position.y += (b - t * 8) * dt;
+          });
+        })(vx, vy, vz);
       }
-      shake(0.55);
-    }, 320);
+    });
+    var dd = camera ? camera.position.distanceTo(o) : 99;
+    shake(Math.max(0, 0.25 - dd * 0.01));
   }
 
+  /* ===== v1.0b - FIRE ZONE =====
+     Twenty metres of ground on fire for ten seconds: a ring of flame boards
+     around the edge, a glowing disc, a light, and rising embers. One handle
+     per zone so fireZoneEnd can put it out early or on time. */
+  var fireZones = {};
+  function fireZone(d) {
+    if (!d || fireZones[d.id]) return;
+    var c = new THREE.Vector3(d.p[0], d.p[1], d.p[2]), r = d.r || 20, dur = d.dur || 10;
+    var g = new THREE.Group();
+    var disc = new THREE.Mesh(new THREE.CircleGeometry(r, 48),
+      new THREE.MeshBasicMaterial({ color: 0xff5a10, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }));
+    disc.rotation.x = -Math.PI / 2; disc.position.y = 0.06; g.add(disc);
+    var flames = [];
+    var FM = new THREE.MeshBasicMaterial({ color: 0xff8a20, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+    var FM2 = new THREE.MeshBasicMaterial({ color: 0xffd040, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
+    var n = Math.max(24, Math.round(r * 2.2));
+    for (var i = 0; i < n; i++) {
+      var a = (i / n) * Math.PI * 2, rr = r * (0.55 + Math.random() * 0.45);
+      var h = 1.2 + Math.random() * 1.8;
+      var f = new THREE.Mesh(new THREE.PlaneGeometry(1.4, h), i % 3 ? FM : FM2);
+      f.position.set(Math.cos(a) * rr, h / 2, Math.sin(a) * rr);
+      f.rotation.y = a + Math.PI / 2;
+      f.userData = { a: a, rr: rr, h: h, ph: Math.random() * 6 };
+      g.add(f); flames.push(f);
+    }
+    var light = new THREE.PointLight(0xff7a20, 2.2, r * 1.6, 2);
+    light.position.set(0, 3, 0); g.add(light);
+    g.position.copy(c);
+    scene.add(g);
+    fireZones[d.id] = { grp: g, flames: flames, disc: disc, light: light, born: performance.now(), dur: dur };
+    var dd = camera ? camera.position.distanceTo(c) : 99;
+    shake(Math.max(0, 0.3 - dd * 0.01));
+  }
+  function fireZoneEnd(id) {
+    var z = fireZones[id];
+    if (!z) return;
+    scene.remove(z.grp);
+    z.grp.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.dispose) o.material.dispose(); });
+    delete fireZones[id];
+  }
+  function fireZonesReset() { for (var id in fireZones) fireZoneEnd(id); }
+  function updateFireZones(dt) {
+    var t = performance.now() * 0.001;
+    for (var id in fireZones) {
+      var z = fireZones[id];
+      var age = (performance.now() - z.born) / 1000;
+      var fade = age > z.dur - 1.5 ? Math.max(0, (z.dur - age) / 1.5) : 1;
+      for (var i = 0; i < z.flames.length; i++) {
+        var f = z.flames[i], u = f.userData;
+        var sc = 0.75 + 0.35 * Math.sin(t * 9 + u.ph);
+        f.scale.set(1, sc * fade + 0.01, 1);
+        f.position.y = (u.h * sc * fade) / 2;
+      }
+      z.disc.material.opacity = 0.32 * fade;
+      z.light.intensity = 2.2 * fade * (0.85 + 0.15 * Math.sin(t * 13));
+      if (camera && camera.position.distanceTo(z.grp.position) < 22 && Math.random() < 0.3) {
+        // rising embers
+        var e = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), new THREE.MeshBasicMaterial({ color: 0xffb040 }));
+        var a = Math.random() * Math.PI * 2, rr = Math.random() * 20;
+        e.position.set(z.grp.position.x + Math.cos(a) * rr, z.grp.position.y + 0.3, z.grp.position.z + Math.sin(a) * rr);
+        add(e, 1.2, function (ev, tt, dt2) { ev.mesh.position.y += 2.4 * dt2; ev.mesh.material.opacity = 1 - tt; });
+      }
+    }
+  }
+
+  /* v1.0j: the zone's red edge — a persistent vignette while outside. */
+  var zoneEdgeEl = null;
+  var zoneEdgeLast = -1;
+  function zoneEdge(strength) {
+    if (!zoneEdgeEl) zoneEdgeEl = document.getElementById('zone-edge');
+    if (!zoneEdgeEl) return;
+    var v = Math.round(Math.max(0, Math.min(1, strength)) * 20) / 20;   /* v1.0u: write the style only when it changes */
+    if (v === zoneEdgeLast) return;
+    zoneEdgeLast = v;
+    zoneEdgeEl.style.opacity = String(v);
+  }
   function damageFlash(strength) {
     if (!vignetteEl) return;
     vignetteEl.style.opacity = Math.min(1, 0.35 + strength);
@@ -433,6 +533,8 @@ var FX = (function () {
     shake: shake, applyShake: applyShake,
     damageFlash: damageFlash, damageDirection: damageDirection,
     hitmarker: hitmarker, flashbang: flashbang, updateFlash: updateFlash,
-    nukeStart: nukeStart, nukeEnd: nukeEnd
+    empBlast: empBlast,   /* v15.0 */
+    fireZone: fireZone, fireZoneEnd: fireZoneEnd, fireZonesReset: fireZonesReset,   /* v1.0b */
+    zoneEdge: zoneEdge   /* v1.0j */
   };
 })();

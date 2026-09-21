@@ -140,8 +140,9 @@ console.log('\n--- config helpers reach the BROWSER, not just Node ---');
 /* The v9.2 UI calls these. In Node they come from require(); in the browser
    they only exist if world.config.js registered into __CFG_PARTS and
    index.html loaded it before config/index.js. */
-['botsAllowed', 'humanSideOf', 'botSideOf', 'activeTeams', 'modesInCat',
- 'livesFor', 'isElimination'].forEach(fn => {
+/* v1.0d: botsAllowed / humanSideOf / botSideOf left with Bot Mode. */
+['activeTeams', 'modesInCat', 'livesFor', 'isElimination', 'isArena', 'respawnDelayFor',
+ 'spawnProtectFor'].forEach(fn => {
   ok(typeof ctx.CFG[fn] === 'function', 'CFG.' + fn + '() is callable in the browser');
 });
 ['MODES', 'MODE_CATS', 'MAPS', 'TEAMS', 'WEAPONS', 'WEAPON_ORDER', 'THROWS',
@@ -150,18 +151,13 @@ console.log('\n--- config helpers reach the BROWSER, not just Node ---');
 });
 
 console.log('\n--- the v9.2 features are wired to real things ---');
-/* v10.9: this asserted botsAllowed('co4') === true, which pinned the STATE of
-   the bot switch rather than the RULE the v9.2 work introduced. Bots are off
-   (world.config.js BOTS_ENABLED), so co4 is correctly not a bot mode now.
-
-   The rule worth keeping is that the browser CFG can still tell a bot-fielding
-   mode from a human one — the distinction lives in the `vsBots` / `practice`
-   flags, which survive the switch. Testing those tests the classification;
-   testing botsAllowed() tested whether bots happened to be enabled today. */
-ok(ctx.CFG.MODES.co4.vsBots === true && !ctx.CFG.MODES.t5.vsBots,
-  'the browser CFG classifies Strike Team and Team Battle correctly');
-ok(ctx.CFG.botsAllowed('co4') === ctx.CFG.BOTS_ENABLED,
-  'and botsAllowed() follows the bot switch [BOTS_ENABLED=' + ctx.CFG.BOTS_ENABLED + ']');
+/* v1.0d: the bot-fielding classification is gone with Bot Mode — what the
+   browser CFG must now say is that NO mode fields bots, and that the helpers
+   Bot Mode owned are absent rather than stubbed. */
+ok(Object.keys(ctx.CFG.MODES).every(m => !ctx.CFG.MODES[m].vsBots && !ctx.CFG.MODES[m].practice && !ctx.CFG.MODES[m].botmode),
+  'the browser CFG classifies every mode as human-only');
+ok(ctx.CFG.botsAllowed === undefined && ctx.CFG.BOTS_ENABLED === undefined,
+  'and carries no bot switch or predicate to flip back on');
 ok(typeof ctx.Net.getMatch === 'function',
   'Net.getMatch() exists — minimap.js reads the mode through it');
 ok(ctx.Net.getMatch() && typeof ctx.Net.getMatch().mode === 'string',
@@ -183,29 +179,22 @@ const catIds = ctx.CFG.MODE_CATS.map(c => c.id);
 const selectable = Object.keys(ctx.CFG.MODES).filter(m => !ctx.CFG.MODES[m].hidden);
 ok(selectable.length > 0, 'at least one mode is selectable [' + selectable.length + ']');
 selectable.forEach(m => {
-  /* v14.0: botmode modes have their OWN front door (the BOT MODE panel) —
-       the picker-category rule guards against UNREACHABLE modes, and these
-       are reachable by design elsewhere. Their reachability is asserted
-       right below instead of being exempted silently. */
-    if (!(ctx.CFG.MODES[m] && ctx.CFG.MODES[m].botmode)) ok(catIds.indexOf(ctx.CFG.MODES[m].cat) >= 0,
+    ok(catIds.indexOf(ctx.CFG.MODES[m].cat) >= 0,
     'mode ' + m + ' resolves to a category the picker shows');
 });
-  /* the counterpart: the separate door actually exists and creates these
-     exact modes */
+  /* v1.0d: Bot Mode's separate front door is GONE, and must stay gone. */
   (function () {
     var uiSrc, htmlSrc;
     try {
       uiSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'public/src/ui/ui.js'), 'utf8');
       htmlSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'public/index.html'), 'utf8');
     } catch (e) { uiSrc = ''; htmlSrc = ''; }
-    ok(htmlSrc.indexOf('id="btn-botmode"') !== -1 && htmlSrc.indexOf('id="botmode-panel"') !== -1,
-      'the BOT MODE door exists on the welcome screen');
-    ok(/data-v="bm_solo"[\s\S]*data-v="bm_team"[\s\S]*data-v="bm_battle"/.test(htmlSrc),
-      'the panel offers exactly the three bot modes');
-    ok(uiSrc.indexOf("mode: bmSel.mode, map: 'blacksite'") !== -1,
-      'the panel launch creates the selected bm mode on Blacksite');
-    ok(uiSrc.indexOf('!CFG.MAPS[k].botOnly') !== -1,
-      'the multiplayer map picker excludes botOnly maps');
+    ok(htmlSrc.indexOf('id="btn-botmode"') === -1 && htmlSrc.indexOf('id="botmode-panel"') === -1,
+      'no BOT MODE door on the welcome screen (removed v1.0d at Rahul\'s request)');
+    ok(!/data-v="bm_/.test(htmlSrc) && !/blacksite/.test(htmlSrc) && !/botmode\.config/.test(htmlSrc),
+      'no bot-mode panel, Blacksite reference or botmode config script in index.html');
+    ok(uiSrc.indexOf("map: 'blacksite'") === -1 && uiSrc.indexOf('bmSel') === -1,
+      'ui.js carries no bot-mode launcher');
   })();
 
 Object.keys(ctx.CFG.MODES).filter(m => ctx.CFG.MODES[m].hidden).forEach(m => {
