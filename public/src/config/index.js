@@ -47,5 +47,18 @@
     for (var i = 0; i < L.length; i++) if (d <= L[i][0]) return L[i][1];
     return L[L.length - 1][1];
   };
+  /* ===== v2.2 - URBAN SMALL's tables are URBAN's, filtered to the core =====
+     Everything inside |x|,|z| <= 106 (the ring boulevard is the edge road; the
+     wall stands at 108). Derived here, not hand-copied, so a change to Urban's
+     core loot or spawns reaches Urban Small automatically. The server's
+     mapData() picks this up by the MAPS_<ID> convention. */
+  (function () {
+    var LIM = 106, inCore = function (x, z) { return Math.abs(x) <= LIM && Math.abs(z) <= LIM; };
+    C.MAPS_URBANSMALL = {
+      SPAWNS: (C.SPAWNS || []).filter(function (s) { return inCore(s[0], s[1]); }),
+      LOOT_POINTS: (C.LOOT_POINTS || []).filter(function (p) { return inCore(p[0], p[2]); }),
+      AIRDROP_POINTS: ((C.AIRDROP && C.AIRDROP.points) || []).filter(function (p) { return inCore(p[0], p[1]); })
+    };
+  })();
   return C;
 });

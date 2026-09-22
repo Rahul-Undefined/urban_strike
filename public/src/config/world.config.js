@@ -153,13 +153,17 @@
     return { cx: a.cx + (b.cx - a.cx) * f, cz: a.cz + (b.cz - a.cz) * f, r: a.r + (b.r - a.r) * f, phase: k, next: b, shrinking: true, holdLeft: 0 };
   }
   /* Roll a schedule. `rnd` is Math.random on the server; the client never rolls. */
-  function zoneSchedule(rnd, bound) {
+  function zoneSchedule(rnd, bound, mapId) {
     var Z = ZONE, n = Z.shrinkPhases;
-    /* v2.0: the playable box — MAPS.urban.ext when present, else the +/-bound square */
-    var E = (typeof MAPS !== 'undefined' && MAPS.urban && MAPS.urban.ext) || null;
+    /* v2.0: the playable box — the map's ext when present, else the +/-bound square (v2.2: per map) */
+    var MM = (typeof MAPS !== 'undefined' && MAPS[mapId || 'urban']) || null;
+    var E = (MM && MM.ext) || null;
     var X0 = E ? E.x0 : -(bound || 120), X1 = E ? E.x1 : (bound || 120), Z0 = E ? E.z0 : -(bound || 120), Z1 = E ? E.z1 : (bound || 120);
     var mx = (X0 + X1) / 2, mz = (Z0 + Z1) / 2;
-    var circles = [{ cx: mx, cz: mz, r: Z.r0 }];
+    /* v2.2: the opening circle covers the map's corners — Z.r0 for Urban, the half-diagonal (+2) for a smaller map */
+    var cornerR = Math.hypot((X1 - X0) / 2, (Z1 - Z0) / 2) + 2;
+    var r0 = (mapId && mapId !== 'urban') ? Math.min(Z.r0, cornerR) : Z.r0;
+    var circles = [{ cx: mx, cz: mz, r: r0 }];
     var fa = rnd() * Math.PI * 2, fd = Math.sqrt(rnd()) * Z.finalCenterMax;
     var fx = mx + Math.cos(fa) * fd, fz = mz + Math.sin(fa) * fd;
     var pad = Z.boundPad;
@@ -277,6 +281,17 @@
        symmetric readers use; anything that needs the whole map reads `ext`
        (server st bounds, minimap, zone, helicopter route, gates). */
     urban: { label: 'Urban', ready: true, bound: 120, ext: { x0: -280, x1: 220, z0: -220, z1: 220 } },
+    /* ===== v2.2 - URBAN SMALL (Rahul: "a copy of the urban map, small, good
+       for 8 people — just this portion (the core inside the ring boulevard),
+       no train and no helicopter"). The same builder (World.build with
+       { small: true }) lays the core districts and the ring boulevard, then a
+       wall at +/-108 where the outer strips would begin; parts 6's strips,
+       the towers, the halts, the helipad, the Reach (part 7) and the Outer
+       City (part 8) are not built. NOT an arena: full loot rules, lifts,
+       crates. Spawn / loot / drop tables are Urban's, filtered to the core
+       (config/index.js derives MAPS_URBANSMALL). Heli is `map === 'urban'`
+       only and TRAINS has no entry for it — so neither exists here. */
+    urbansmall: { label: 'Urban Small', ready: true, bound: 108, ext: { x0: -108, x1: 108, z0: -108, z1: 108 }, core: 'urban' },
     /* v15.0 (fix 14): RURAL REMOVED. Rahul: "it is of no use now, remove it
        completely." Builder, config table, script tags, harness lists and gate
        budgets all deleted in the same commit — the entry is not hidden, it is

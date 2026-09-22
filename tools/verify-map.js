@@ -206,6 +206,8 @@ runMap("urban", { LOOT_POINTS: CFG.LOOT_POINTS, SPAWNS: CFG.SPAWNS, AIRDROP_POIN
    validate nothing. Taken from CFG.MAPS so it cannot drift from the value the
    game uses. */
 runMap("killhouse", CFG.MAPS_KILLHOUSE, CFG.MAPS.killhouse.bound);
+/* v2.2: Urban Small — Urban's core tables against its own (walled) build */
+runMap("urbansmall", CFG.MAPS_URBANSMALL, CFG.MAPS.urbansmall.bound);
 runMap("sunsetrow", CFG.MAPS_SUNSETROW, CFG.MAPS.sunsetrow.bound);   // v10.12
 runMap("freightyard", CFG.MAPS_FREIGHTYARD, CFG.MAPS.freightyard.bound); // v10.14
 runMap("bazaar", CFG.MAPS_BAZAAR, CFG.MAPS.bazaar.bound);                // v10.14

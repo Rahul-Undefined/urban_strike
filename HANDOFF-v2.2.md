@@ -1,4 +1,4 @@
-# Urban Strike — Project Handoff (v2.1.0 · build 31 · 2026-09-22)
+# Urban Strike — Project Handoff (v2.2.0 · build 32 · 2026-09-22)
 
 Read this file, then `CHANGELOG.md` (the v2.1.0 and v2.0.0 entries have the
 *why* of every change), then the code. Everything below is true of the code
@@ -116,6 +116,25 @@ assertion whether it measured a contract or an accident of the old numbers.**
 ---
 
 ## §2 WHAT v2.0 IS — SYSTEM BY SYSTEM
+
+### Urban Small (v2.2) — the core as its own map
+
+- Registry `MAPS.urbansmall` (bound/ext ±108, `core: 'urban'`, not arena).
+  `World.buildMap` → `World.build(sceneRef, { small: true })`; the flag is
+  `World._buildSmall` during the build and `T.small` inside `_buildPart6`,
+  which walls at ±108 and returns after the boulevard. Parts 7/8 skipped;
+  ground ±120; skyline 150; lighting is Urban's; sign builder filters to
+  ±106; `signClear`'s boulevard rule applies.
+- Tables: `MAPS_URBANSMALL` is DERIVED in `config/index.js` from Urban's
+  tables (|x|,|z| ≤ 106). Do not hand-edit it; edit Urban's core.
+- Lifts: `game.js` maps `builtMap 'urbansmall'` → `'urban'` for the LIFTS
+  filter (the two shafts are in the core).
+- Zone: `zoneSchedule(rnd, bound, mapId)` — `zone.js` passes the room's map.
+- No heli (map === 'urban' checks on both sides), no train (no TRAINS entry).
+  If you ever want a train here, add `TRAINS.urbansmall` with a loop inside
+  ±98 and the gates will sweep it; the heli would need `has()`/`start()` in
+  `server/lib/heli.js` and `init()` in the client to accept the id.
+
 
 ### The map (Urban, 500 × 440 m)
 

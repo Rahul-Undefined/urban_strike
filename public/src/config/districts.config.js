@@ -156,7 +156,7 @@
     }
     return { d: best, dist: Math.sqrt(bd) };
   }
-  function listFor(map) { return (!map || map === 'urban') ? D : null; }
+  function listFor(map) { return (!map || map === 'urban' || map === 'urbansmall') ? D : null; }   /* v2.2: Urban Small shares the core's districts */
 
   /* Rural is deliberately absent. Hollow Ridge is a valley with landmarks, not
      a grid of districts, and inventing rectangles for it would produce names

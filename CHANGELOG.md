@@ -1,3 +1,42 @@
+# v2.2.0 (build 32) — URBAN SMALL (2026-09-22)
+
+Tagged `v2.2.0`. Rahul: "a copy of the urban map named Urban Small — good for
+8 people, not Killhouse-small: just the core inside the ring boulevard, no
+train and no helicopter; minimap and big map accordingly."
+
+## Urban Small (`urbansmall`)
+
+- `MAPS.urbansmall = { label: 'Urban Small', ready: true, bound: 108,
+  ext: ±108, core: 'urban' }` — the lobby lists it from the registry. NOT an
+  arena: full loot rules (shield, flamer, C4 allowed), the two core lifts,
+  crates every 60 s at the core's 14 drop points, full-map respawn delay.
+- **One builder, one flag.** `World.buildMap(scene, 'urbansmall')` calls
+  `World.build(sceneRef, { small: true })`: the core districts (parts 1–5) and
+  the ring boulevard are built exactly as on Urban; `_buildPart6` then stands
+  the wall at ±108 (just outside the boulevard lamps) and returns before the
+  rails, halts, helipad, towers and outer strips; parts 7 and 8 are skipped.
+  Ground ±120, skyline r 150. 3,331 colliders, 97k triangles — a third of
+  Urban; builds in under a second in the harness.
+- **Tables are derived, not copied.** `config/index.js` filters Urban's
+  SPAWNS / LOOT_POINTS / AIRDROP points to |x|,|z| ≤ 106 into
+  `MAPS_URBANSMALL` (44 spawns, 109 loot, 14 drops); the server's `mapData()`
+  picks it up by the MAPS_<ID> convention. Change Urban's core and Urban
+  Small follows.
+- **No helicopter, no train, by construction:** heli is `map === 'urban'` on
+  both sides; TRAINS has no `urbansmall` entry. Zone modes: `zoneSchedule`
+  now takes the map id and opens at the map's half-diagonal (~155 m) instead
+  of Urban's 335.
+- Districts: `DISTRICTS.listFor('urbansmall')` returns the core list; district
+  signs outside ±106 are not built. Minimap and M-map are extent-driven (±108)
+  and draw the boulevard from the recorded ground planes.
+
+## Gates
+
+`verify-map` now runs Urban Small against its own build (109 loot, 44 spawns,
+14 drops: 2095/0 total); `verify-spawn-geometry` resolves its tables by
+convention (65/0). 44 gates green, 3 documented reds unchanged. test.js:
+registry, derived tables, no-train, not-arena assertions.
+
 # v2.1.0 (build 31) — THE OUTER CITY, REBUILT; FOUR TRAINS THROUGH SECTOR 7 (2026-09-22)
 
 Tagged `v2.1.0`. Rahul, with the v2.0 big map on screen: "lots of vacant

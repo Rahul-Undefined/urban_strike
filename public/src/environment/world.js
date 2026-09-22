@@ -934,11 +934,12 @@ var World = (function () {
 
   function groundAndRoads() {
     // Ground: four slabs leaving a hole for the sunken tunnel trench (x[45.4,48.6] z[-28,-9])
-    /* v2.0: the ground runs under the whole Outer City — x -290..230, z -230..230. */
-    seg(-290, 45.4, -1, 0, -230, 230, M.dirt, { cast: false });
-    seg(48.6, 230, -1, 0, -230, 230, M.dirt, { cast: false });
-    seg(45.4, 48.6, -1, 0, -230, -28, M.dirt, { cast: false });
-    seg(45.4, 48.6, -1, 0, -9, 230, M.dirt, { cast: false });
+    /* v2.0: the ground runs under the whole Outer City — x -290..230, z -230..230 (v2.2: +/-120 on Urban Small). */
+    var GX0 = World._buildSmall ? -120 : -290, GX1 = World._buildSmall ? 120 : 230, GZ = World._buildSmall ? 120 : 230;
+    seg(GX0, 45.4, -1, 0, -GZ, GZ, M.dirt, { cast: false });
+    seg(48.6, GX1, -1, 0, -GZ, GZ, M.dirt, { cast: false });
+    seg(45.4, 48.6, -1, 0, -GZ, -28, M.dirt, { cast: false });
+    seg(45.4, 48.6, -1, 0, -9, GZ, M.dirt, { cast: false });
     // Roads (visual planes on top of the ground)
     seg(-7, 7, 0.005, 0.02, -68, 68, M.asphalt, { collide: false, cast: false });
     seg(-68, 68, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
@@ -1467,7 +1468,7 @@ var World = (function () {
       strays.forEach(function (o) { try { (o.parent || scene).remove(o); } catch (e) {} });
       flickers.length = 0;   // the two urban interior lights re-register below
       var id = mapId || World.builtMap || 'urban';
-      lighting(id === 'urban', id);
+      lighting(id === 'urban' || id === 'urbansmall', id);   /* v2.2 */
       return true;
     },
     reset: function () {
@@ -1505,9 +1506,11 @@ var World = (function () {
 })();
 
 /* ---------- PART 2: buildings, vehicles, props ---------- */
-World.build = function (sceneRef) {
+World.build = function (sceneRef, opts) {
   if (World.isBuilt()) return;
-  World._initPart1(sceneRef);
+  var SMALL = !!(opts && opts.small);   /* v2.2: Urban Small — the core and the ring boulevard only */
+  World._buildSmall = SMALL;
+  World._initPart1(sceneRef, SMALL ? { map: 'urbansmall' } : undefined);
   var H = World._internals();
   var emissiveMat = H.emissive;   // unlit-but-mergeable material factory, for districts
   var seg = H.seg, box = H.box, cyl = H.cyl, stairFlight = H.stairFlight, crater = H.crater, M = H.M, rnd = H.rnd, addCollider = H.addCollider;
@@ -2022,7 +2025,8 @@ World.build = function (sceneRef) {
   function signClear(sx, sz, face, BW, BH, PH) {
     /* v1.0r: never on the ring boulevard — both of its lanes are railway now.
        The four ring-district signs sit at ±96.6 on purpose, just inside. */
-    if ((World._buildingMap || World.builtMap) === 'urban') {
+    var bmS = (World._buildingMap || World.builtMap);
+    if (bmS === 'urban' || bmS === 'urbansmall') {
       var az = Math.abs(sz);
       var onNS = az > 97.2 && az < 107;                                  // the north/south lanes, the whole width (v1.1)
       var onE = sx > 97.2 && sx < 107 && az < 107;
@@ -2050,6 +2054,7 @@ World.build = function (sceneRef) {
   function districtSigns() {
     if (typeof DISTRICTS === 'undefined') return;
     var list = DISTRICTS.list;
+    if (World._buildSmall) list = list.filter(function (d) { return d.sign && Math.abs(d.sign[0]) <= 106 && Math.abs(d.sign[1]) <= 106; });   /* v2.2: only the core's signs */
     var PW = 0.17, PH = 2.55;                      // post thickness / height
     var BW = 5.2, BH = 1.20;                       // board width / height
 
@@ -2219,7 +2224,7 @@ World.build = function (sceneRef) {
   seg(68, 98, 0.005, 0.02, -7, 7, M.asphalt, { collide: false, cast: false });
   for (var i = 0; i < 12; i++) {
     var ang = (i / 12) * Math.PI * 2;
-    var rr = 345 + rnd() * 40;   /* v2.0: the skyline steps back beyond the 500 x 440 map */
+    var rr = (World._buildSmall ? 150 : 345) + rnd() * 40;   /* v2.0: the skyline steps back beyond the 500 x 440 map (v2.2: 150 on Urban Small) */
     box(Math.cos(ang) * rr, 7 + rnd() * 10, Math.sin(ang) * rr,
       9 + rnd() * 11, 14 + rnd() * 20, 9 + rnd() * 11, M.dark, { collide: false, cast: false, recv: false });
   }
@@ -2246,17 +2251,18 @@ World.build = function (sceneRef) {
   /* v15.0 (fix 4): the outer ring — four districts, four towers, the new wall.
      Before deco so its lamps register their ground-pool spots. */
   if (World._buildPart6) World._buildPart6({
+    small: SMALL,
     seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win, emissive: emissiveMat,
     container: container, crates: crates, brokenWall: brokenWall, lamp: lamp, barrel: barrel,
     bus: bus, sedan: sedan, van: van, jeep: jeep, truck: truck,
     M: M, rnd: rnd, scene: H.sceneRef()
   });
-  if (World._buildPart7) World._buildPart7({   /* v1.1: the Western Reach */
+  if (!SMALL && World._buildPart7) World._buildPart7({   /* v1.1: the Western Reach */
     seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win,
     container: container, crates: crates, lamp: lamp, barrel: barrel, van: van, truck: truck, sedan: sedan,
     M: M, rnd: rnd, scene: H.sceneRef()
   });
-  if (World._buildPart8) World._buildPart8({   /* v2.0: the Outer City — ten districts, four towers, the perimeter */
+  if (!SMALL && World._buildPart8) World._buildPart8({   /* v2.0: the Outer City — ten districts, four towers, the perimeter */
     seg: seg, box: box, cyl: cyl, stairFlight: stairFlight, facade: facade, win: win,
     container: container, crates: crates, lamp: lamp, barrel: barrel, van: van, truck: truck, sedan: sedan, bus: bus,
     M: M, rnd: rnd, scene: H.sceneRef()
@@ -2313,6 +2319,11 @@ World.buildMap = function (sceneRef, map) {
                    substation: World._buildSubstation,
                    riverside: World._buildRiverside,
                    airfield: World._buildAirfield })[map] || null;
+  if (map === 'urbansmall') {        /* v2.2: the core of Urban, walled at +/-108 */
+    World.build(sceneRef, { small: true });
+    World.builtMap = 'urbansmall';
+    return;
+  }
   if (map === 'urban' || !builder) {
     World.build(sceneRef);            // urban's own lighting: _initPart1 defaults map:'urban'
     World.builtMap = 'urban';

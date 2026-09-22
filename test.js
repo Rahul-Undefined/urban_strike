@@ -805,8 +805,14 @@ function configGates() {
   ok(typeof CFG.MATCH.startCountdown === 'number' && CFG.MATCH.startCountdown > 0, 'launch countdown is configured');
   ok(!!CFG.MODES.t2 && CFG.MODES.t2.teams === true && CFG.MODES.t2.maxPlayers === 4, '2v2 mode exists (teams, 4 players)');
   ['ffa', 't2', 't3', 't5'].forEach(k => ok(!!CFG.MODES[k], 'mode registered: ' + k));
-  ['urban', 'riverside', 'killhouse'].forEach(k =>
+  ['urban', 'urbansmall', 'riverside', 'killhouse'].forEach(k =>
     ok(CFG.MAPS[k] && CFG.MAPS[k].ready !== false, 'map selectable in registry: ' + k));
+  /* v2.2: Urban Small — the core's tables, no train, no helicopter, not an arena */
+  ok(CFG.MAPS_URBANSMALL && CFG.MAPS_URBANSMALL.SPAWNS.length >= 30 && CFG.MAPS_URBANSMALL.LOOT_POINTS.length >= 80 && CFG.MAPS_URBANSMALL.AIRDROP_POINTS.length >= 8,
+    'Urban Small has its own derived tables [' + CFG.MAPS_URBANSMALL.SPAWNS.length + ' spawns, ' + CFG.MAPS_URBANSMALL.LOOT_POINTS.length + ' loot, ' + CFG.MAPS_URBANSMALL.AIRDROP_POINTS.length + ' drops]');
+  ok(CFG.MAPS_URBANSMALL.SPAWNS.every(sp => Math.abs(sp[0]) <= 106 && Math.abs(sp[1]) <= 106) && CFG.MAPS_URBANSMALL.LOOT_POINTS.every(lp => Math.abs(lp[0]) <= 106 && Math.abs(lp[2]) <= 106), 'every Urban Small table entry is inside the ring boulevard');
+  ok(!(CFG.TRAINS && CFG.TRAINS.urbansmall) && !(CFG.TRAIN && CFG.TRAIN.urbansmall), 'Urban Small has no train');
+  ok(!CFG.isArena('urbansmall'), 'Urban Small is not an arena (full loot rules, lifts, crates)');
   ok(!CFG.MAPS.metro, 'v2.0: Metro City is not in the registry');
 
   // index.html must not hardcode map/mode options — that is how Metro was lost.

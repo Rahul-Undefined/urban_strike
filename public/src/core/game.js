@@ -239,7 +239,8 @@ var Game = (function () {
       var L = CFG.LIFTS || [], p = PlayerCtl.pos, half = CFG.PLAYER.standH / 2;
       for (var i = 0; i < L.length; i++) {
         var s = L[i], dx = p.x - s.x, dz = p.z - s.z;
-        if (s.map && World.builtMap && s.map !== World.builtMap) continue;
+        var liftMap = World.builtMap === 'urbansmall' ? 'urban' : World.builtMap;   /* v2.2: Urban Small keeps the core's two lifts */
+        if (s.map && liftMap && s.map !== liftMap) continue;
         if (dx * dx + dz * dz > s.r * s.r) continue;
         var foot = p.y - half, best = 0, bd = 1e9;
         for (var k = 0; k < s.stops.length; k++) {

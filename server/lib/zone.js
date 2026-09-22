@@ -22,7 +22,7 @@ module.exports = function initZone(ctx) {
   function start(room) {
     if (!isZoneRoom(room)) { room.zone = null; return null; }
     const bound = (CFG.MAPS[room.settings.map || 'urban'] || {}).bound || 120;
-    room.zone = { sched: CFG.zoneSchedule(Math.random, bound), lastTick: 0, announced: {} };
+    room.zone = { sched: CFG.zoneSchedule(Math.random, bound, room.settings.map || 'urban'), lastTick: 0, announced: {} };   /* v2.2: per-map extent */
     return room.zone.sched;
   }
   function circleNow(room) {

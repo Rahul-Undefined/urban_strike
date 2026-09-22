@@ -1869,6 +1869,16 @@ World._buildPart6 = function (T) {
   for (var lx = -96; lx <= 96; lx += 24) lamp(lx, 107.2, 's');
   for (var lz = -84; lz <= 84; lz += 24) { lamp(-107.2, lz, 'w'); lamp(107.2, lz, 'e'); }
 
+  /* ===== v2.2 - URBAN SMALL stops here: the wall stands just outside the
+     boulevard lamps (+/-108), and nothing beyond — no rails, halts, helipad,
+     towers or outer strips. The ring boulevard is the edge road. */
+  if (T.small) {
+    segx(-108.9, 108.9, 0, 3.2, -108.9, -108, M.concrete);
+    segx(-108.9, 108.9, 0, 3.2, 108, 108.9, M.concrete);
+    segx(-108.9, -108, 0, 3.2, -108, 108, M.concrete);
+    segx(108, 108.9, 0, 3.2, -108, 108, M.concrete);
+    return;
+  }
   /* ---- THE LOOP LINE (v1.0e) --------------------------------------------
      Rails and sleepers laid along CFG.TRAIN.urban's path — the SAME path the
      moving train follows (World.trainPath), so track and train cannot
