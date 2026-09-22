@@ -1,3 +1,94 @@
+# v2.1.0 (build 31) — THE OUTER CITY, REBUILT; FOUR TRAINS THROUGH SECTOR 7 (2026-09-22)
+
+Tagged `v2.1.0`. Rahul, with the v2.0 big map on screen: "lots of vacant
+space and similar-looking visuals — different structures, monuments, parks;
+think like the middle of the map. The train should go to Sector 7 Central and
+back to circling; four trains, one track, same direction, never colliding.
+Colourful buildings, proper roads, buses, bus stands, towers properly placed;
+all areas playable; minimap and big map aligned."
+
+## The Outer City, rebuilt (districts-outer.js, World._buildPart8)
+
+v2.0's band was 75 identical shells in two rows. It is now a CITY cut from a
+seeded parcel grid: three rows per district (16-18 m deep, 8 m lanes, 3 m
+alleys between parcels), each parcel one of eleven kinds — shophouse (2-3
+floors, awning, parapet, roof shed), apartment (4 floors, balconies, lift
+house), warehouse (5.4 m hall, doors both ends, a mezzanine with its own
+stair), park (turf, hedges, trees, benches, a fountain), monument (stepped
+plinth and obelisk), market (stalls under coloured canopies), bus stand (a
+shelter, a bench, a sign, and a BUS drawn up beside it on the avenue), car
+park (bays with kerb islands), canal basin (water, promenade wall, jetty),
+water tower, radio mast; footbridges between equal-height shophouse roofs.
+Each district weights the kinds differently and has a landmark: Cannery Row
+a water tower, North Ridge a mast, Refinery two tanks and a pipe rack, Quarry
+a water tower, South Commons a bandstand on a green, Southport two cranes and
+a container stack, Gasworks the gasometer, River Terraces a monument and two
+canal basins, Foundry the chimney, Westfield the pitch. Four new facade skins
+(coral, mustard, sky, mint) join teal, amber, rose, indigo, olive, cream,
+plaster and brick. The four corner towers stay. 64 lootable buildings + ~40
+non-loot features; 113 probed loot points (interiors, mezzanines, roofs), 76
+spawns, 33 drop points — every one proven by verify-map (1775/0). The two
+rail corridors (x -60, x 103.2) are kept clear by the parcel cutter; the
+tower footprints and landmarks are reserved the same way. World.V2 is data.
+
+## Four trains, one track, through Sector 7 Central
+
+The loop (~2 km, clockwise): west, south and east perimeter straights as in
+v2.0; from the north-west corner east to x -60, down the x -60 corridor
+(inner avenue, North Yards — two containers and a truck moved off it — the
+old ring), east along z -103.2, the v1.0 jog into SECTOR 7 CENTRAL at z -88
+(the original platform stop, head at x 74.8 short of the footbridge), east to
+x 103.2, up that corridor to the perimeter, east to the north-east corner.
+Four stops: Sector 7 Central, Eastbank Halt, South Commons Halt, Westfield
+Halt. FOUR TRAINS (`TRAINS.urban`, `startStop` k): train k runs the shared
+schedule advanced to stop k's departure (`CFG.trainOffset`), so at every
+instant all four sit at the same phase of different legs; verify-train
+sweeps a whole lap at 0.1 s with a 2D OBB per car (step boards included):
+zero contacts, closest approach far over a train length, and all four dwell
+at once at four different stops. Rails are laid once per distinct track.
+verify-train 61/0.
+
+## The maps draw the real roads
+
+`World.minimapGround` records every axis-aligned ground plane the builder
+lays (asphalt, water, turf, ballast); the baked static layer both the radar
+and the M-map use draws them — roads grey, water blue, turf green — instead
+of v1.0d's fixed 14 m cross through the origin, which by v2.0 was a 500 m grey
+band across the whole map. 77 planes on Urban; arenas unaffected.
+
+## Also
+
+- Heli-to-ground fire checked: hitscan reach 400 m, no server distance cap,
+  damage floors at 45% past a gun's range (an AKM does ~22 a hit from 80 m,
+  snipers 100). It works and is a hard shot; `HELI.alt` is the knob.
+- Bus model: the lamps sat 2 cm off the body and every bus in the game read
+  as a floating prop to verify-props. Fixed in `bus()`.
+- Warehouse mezzanine stairs start on the 0.15 floor (verify-climb spawns a
+  climber at the flight's base; a flight from y 0 inside a slab was
+  unclimbable).
+- Helicopter fall rule, two fixes found through the live suite: (1) the
+  horizontal "off the machine" limit was 22 m — 1.5 s of travel at the v1.0
+  14 m/s — and at 22 m/s a client 700 ms behind was inside the margin only by
+  luck; it is now 1.5 s of travel at the configured speed. (2) A rider is
+  judged only on a FRESH position (`p.posAt`, reported within 1.2 s): a client
+  that goes quiet for three seconds at lift-off (a hitch, a tab switch — or
+  test.js building Urban in its own harness, which is what was happening) is
+  not thrown out of the cabin for it. A rider who really left keeps reporting,
+  from the ground. test.js now warms its path builder before the flight.
+
+## Gates
+
+44 green, 3 documented reds unchanged (access 45/1, arch, climb 7). Rewritten
+to the new contract: verify-train (Sector 7 stop, four-train OBB sweep, three
+halt shelters). Re-recorded as a decision, itemised in place: fingerprint /
+untouched (colliders 9283 -> 11778, draws 101 -> 109, tris 271k -> 332k,
+casters 62 -> 66 — the four skins; minimap 583 -> 606), batch (tris 280k ->
+345k, casters 62 -> 66). Fixed at the geometry: zfight (floor slabs inset;
+balconies and awnings overlap into the wall; ballast stops at the avenue;
+car bays perpendicular to the aisle), props (bus lamps; bus-stop sign posts;
+footbridges only between equal roofs), stairs-quality (mezzanine and
+water-tower flights arrive on their decks). test.js unchanged.
+
 # v2.0.0 (build 30) — THE OUTER CITY (2026-09-21)
 
 Tagged `v2.0.0`. Rahul's thirteen-point brief, answered in one release: a map

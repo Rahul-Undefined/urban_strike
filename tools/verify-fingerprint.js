@@ -217,7 +217,8 @@ const BASELINE = {
      draws 99 -> 101, tris 158912 -> 271052, casters 62 and lights 7 unchanged,
      colSig/meshSig moved: the whole map grew. bound stays 120 (the core
      square); the true extent is MAPS.urban.ext. */
-  urban: { colliders: 9283, draws: 101, tris: 271052, casters: 62, lights: 7, bound: 120, colSig: 1632371828, meshSig: 1239058784 },
+  /* v2.1: the Outer City rebuilt (see verify-untouched.js): colliders -> 11105, draws -> 109, tris -> 310680, casters -> 66 */
+  urban: { colliders: 11778, draws: 109, tris: 331764, casters: 66, lights: 7, bound: 120, colSig: -1717318851, meshSig: -1026995791 },
   /* v10.10: rural moved on purpose. The three river-bridge stair pairs climbed
      AWAY from the deck and finished 2.1 m short of it, so all six were
      unclimbable (verify-climb, "reached 0.05m"). Turned around and extended

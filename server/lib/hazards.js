@@ -178,7 +178,7 @@ module.exports = function initHazards(ctx) {
     room.trainScheds = room.trainScheds || {};
     if (!room.trainScheds[ti]) room.trainScheds[ti] = CFG.trainSchedule(cfg, P.length, CFG.trainStops(cfg, P));
     const t = now();
-    const h = CFG.trainHeadAt(room.trainScheds[ti], (t - room.startedAt) / 1000 + (cfg.tOffset || 0));
+    const h = CFG.trainHeadAt(room.trainScheds[ti], (t - room.startedAt) / 1000 + (CFG.trainOffset ? CFG.trainOffset(cfg, room.trainScheds[ti]) : (cfg.tOffset || 0)));   /* v2.1 */
     const cars = CFG.trainCars(cfg), FLOOR = cfg.floor || 1.05, half = CFG.PLAYER.standH / 2;
     const poses = cars.map(c => { const p = P.at(h.s - c.off); return { c, p, cs: Math.cos(p.yaw), sn: Math.sin(p.yaw) }; });
     /* local coordinates of a player against each car; `inBody` with the tight

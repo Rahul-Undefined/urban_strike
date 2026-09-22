@@ -131,7 +131,11 @@ module.exports = function initHeli(ctx) {
     const trail = h.trail || [[pose.x, pose.z]];
     let best = Infinity;
     for (const p of trail) { const d = Math.hypot(q.pos[0] - p[0], q.pos[2] - p[1]); if (d < best) best = d; }
-    return best > 22.0;
+    /* v2.1: the horizontal tolerance scales with the machine's speed — 22 m was
+       1.5 s of travel at the v1.0 14 m/s; at 22 m/s a client 700 ms behind plus
+       clock skew is 20+ m and was being read as a fall. 1.5 s of travel, never
+       under 22 m. */
+    return best > Math.max(22.0, (CFG.HELI.speed || 14) * 1.5);
   }
   function fall(room, h, q, tag) {
     const t = now();
@@ -243,6 +247,11 @@ module.exports = function initHeli(ctx) {
         for (const id of h.riders) {
           const q = room.players.get(id);
           if (!q || !q.alive || q.out) continue;
+          /* v2.1: a rider whose client has gone quiet (no position for 1.2 s —
+             a frame hitch, a tab switch, a lag spike) is not judged; their last
+             known position is where they WERE, not where they are. A rider who
+             is really off the machine keeps reporting, from the ground. */
+          if (q.posAt && t - q.posAt > 1200) { still.push(id); continue; }
           if (!fallen(pose, h, q)) { h.outCount[id] = 0; still.push(id); continue; }
           h.outCount[id] = (h.outCount[id] || 0) + 1;
           if (h.outCount[id] < 2) { still.push(id); continue; }

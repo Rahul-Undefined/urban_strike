@@ -48,7 +48,8 @@ const CFG = ctx.CFG, T = CFG.TRAIN.urban;
 console.log('--- the loop ---');
 const P = vm.runInContext('World.trainPath(CFG.TRAIN.urban)', ctx);
 /* v2.0: the loop is the PERIMETER boulevard of the 500 x 440 map — ~1.78 km */
-ok(P.length > 1700 && P.length < 1850, 'the Urban loop is the ~1.78 km perimeter [' + P.length.toFixed(1) + ']');
+/* v2.1: the perimeter with the northern excursion through Sector 7 Central — ~1.99 km */
+ok(P.length > 1900 && P.length < 2100, 'the Urban loop is the ~2 km perimeter-through-Sector-7 [' + P.length.toFixed(1) + ']');
 const a0 = P.at(0), aL = P.at(P.length - 1e-6);
 ok(Math.hypot(a0.x - aL.x, a0.z - aL.z) < 0.05, 'the loop closes on itself');
 let maxTurn = 0;
@@ -60,11 +61,15 @@ for (let s = 0; s < P.length; s += 0.5) {
 ok(maxTurn < 0.5 / (T.fillet * 0.9), 'no corner is sharper than the fillet radius allows (max ' + (maxTurn * 180 / Math.PI).toFixed(1) + ' deg per 0.5 m)');
 const sSt = P.sAtWaypoint(T.stationAt) + T.stopOffset;
 const head = P.at(sSt);
-const TRK = { N: -210, S: 210, E: 210, W: -270 };   /* v2.0: the straights' centrelines (world.config waypoints) */
-const stN = T.stations.find(q => q.side === 'N');
-ok(Math.abs(head.z - TRK.N) < 0.05 && Math.abs(head.x - (stN.c + 24.85)) < 0.6, 'the head stops on the north straight half a train past the NORTH RIDGE HALT centre [' + head.x.toFixed(1) + ', ' + head.z.toFixed(1) + ']');
+const TRK = { N: -210, S: 210, E: 210, W: -270 };   /* v2.0: the perimeter straights' centrelines */
+/* v2.1: the first stop is SECTOR 7 CENTRAL again — the v1.0 geometry: head on
+   Track 2 at the east end of the island platform, short of the footbridge */
+ok(Math.abs(head.z + 88) < 0.05 && head.x > 66 && head.x < 76, 'the head stops on Track 2 at the east end of the island platform, short of the footbridge [' + head.x.toFixed(1) + ', ' + head.z.toFixed(1) + ']');
 const tail = P.at(sSt - 3 * 12 - 11 - 3 * 0.9);
-ok(Math.abs(tail.x - (stN.c - 24.85)) < 0.6 && Math.abs(tail.z - TRK.N) < 0.05, 'and the last coach stands at the platform\'s other end — the train is centred on the halt [tail x ' + tail.x.toFixed(1) + ']');
+ok(tail.x > 22 && Math.abs(tail.z + 88) < 0.05, 'and the last coach stands at the platform (x 26..68) [tail x ' + tail.x.toFixed(1) + ']');
+/* the loop visits every side of the map AND the core */
+ok(P.length && [[-270, 0], [210, 0], [-30, 210], [50, -88]].every(pt => { let best = 1e9; for (let q = 0; q < P.length; q += 2) { const a = P.at(q); best = Math.min(best, Math.hypot(a.x - pt[0], a.z - pt[1])); } return best < 2; }),
+  'the track runs the west, east and south perimeter AND through Sector 7 Central');
 
 console.log('--- the schedule ---');
 vm.runInContext('var __sc = new THREE.Scene(); World.reset(); World.buildMap(__sc, "urban"); Net = { getMatch: function () { return { startedAt: 1000, serverOffset: 0 }; } }; Train.init(__sc, "urban");', ctx);
@@ -76,11 +81,11 @@ function headAt(tSec) {
 const h0 = headAt(0.1), h1 = headAt(T.dwellSec - 0.1), h2 = headAt(T.dwellSec + 5), hEnd = headAt(S.T - 0.05), hNext = headAt(S.T + 0.5);
 /* v1.0l: four stops a lap — Sector 7 Central and the three halts. */
 ok(S.stops.length === 4 && S.legs.length === 4, 'the schedule has four stops and four legs a lap [' + S.stops.length + ']');
-ok(S.T > 70 && S.T < 110, 'a lap with four dwells at ' + T.speed + ' m/s takes ' + S.T.toFixed(0) + ' s');   /* v2.0: 1.78 km at 30 m/s */
+ok(S.T > 80 && S.T < 130, 'a lap with four dwells at ' + T.speed + ' m/s takes ' + S.T.toFixed(0) + ' s');   /* v2.1: ~2 km at 30 m/s */
 {
   const stopsWorld = S.stops.map(st => P.at(st));
-  const sides = stopsWorld.map(q => Math.abs(q.z - TRK.N) < 0.1 ? 'N' : Math.abs(q.x - TRK.E) < 0.1 ? 'E' : Math.abs(q.z - TRK.S) < 0.1 ? 'S' : Math.abs(q.x - TRK.W) < 0.1 ? 'W' : '?');
-  ok(sides.sort().join('') === 'ENSW', 'one stop on each side of the map [' + sides.join(',') + ']');
+  const sides = stopsWorld.map(q => Math.abs(q.z + 88) < 0.1 ? 'N' : Math.abs(q.x - TRK.E) < 0.1 ? 'E' : Math.abs(q.z - TRK.S) < 0.1 ? 'S' : Math.abs(q.x - TRK.W) < 0.1 ? 'W' : '?');   /* v2.1: N = Sector 7 Central */
+  ok(sides.sort().join('') === 'ENSW', 'one stop on each side of the map (Sector 7 Central for the north) [' + sides.join(',') + ']');
   // each halt's platform lies alongside the coaches at its stop
   /* v2.0: each halt is a 52 m deck centred at `c` on the inner side of its
      straight; the whole train (49.7 m) stands alongside it at the stop */
@@ -100,16 +105,39 @@ ok(S.T > 70 && S.T < 110, 'a lap with four dwells at ' + T.speed + ' m/s takes '
 }
 ok(h0.v === 0 && Math.abs(h0.s - h1.s) < 1e-6, 'the train stands still through the dwell');
 ok(h2.v > 0 && h2.s > h1.s, 'and moves after it');
-ok(Math.abs(hEnd.s - (S.s0 + P.length)) < 1.0 && hEnd.v < 0.6, 'one lap later it has done the whole loop and is stopping at the first halt again [' + (hEnd.s - S.s0 - P.length).toFixed(2) + ' m]');
+ok(Math.abs(hEnd.s - (S.s0 + P.length)) < 1.0 && hEnd.v < 0.6, 'one lap later it has done the whole loop and is stopping at Sector 7 again [' + (hEnd.s - S.s0 - P.length).toFixed(2) + ' m]');
 ok(hNext.v === 0, 'and dwells again');
 let vmax = 0;
 for (let t = 0; t < S.T; t += 0.5) vmax = Math.max(vmax, headAt(t).v);
 ok(Math.abs(vmax - T.speed) < 0.01, 'cruise speed is the configured ' + T.speed + ' m/s');
 
-console.log('--- one train (v2.0) ---');
+console.log('--- four trains, one track, never touching (v2.1) ---');
 const Bots = require('../server/lib/bots.js')({});
-ok(!CFG.TRAIN2 && CFG.TRAINS.urban.length === 1 && CFG.TRAINS.urban[0] === T, 'the second train (v1.0r) is gone: one loop, one machine');
-ok(T.speed >= 28 && T.brakeM >= 2 * T.speed && T.accelM >= 2.5 * T.speed, 'a 30 m/s train brakes and accelerates over lengths sized for it [' + T.speed + ' m/s, brake ' + T.brakeM + ' m, accel ' + T.accelM + ' m]');
+{
+  const TR = CFG.TRAINS.urban;
+  ok(TR.length === 4 && TR.every((c, k) => c.startStop === k && c.waypoints === T.waypoints), 'four trains share the one track; train k starts at stop k');
+  ok(T.speed >= 28 && T.brakeM >= 2 * T.speed && T.accelM >= 2.5 * T.speed, 'a 30 m/s train brakes and accelerates over lengths sized for it [' + T.speed + ' m/s, brake ' + T.brakeM + ' m, accel ' + T.accelM + ' m]');
+  const offs4 = TR.map(c => CFG.trainOffset(c, S));
+  ok(offs4[0] === 0 && offs4.every((o, k) => k === 0 || o > offs4[k - 1]) && offs4[3] < S.T, 'each train\'s phase is the shared schedule\'s departure at its stop [' + offs4.map(o => o.toFixed(1)).join(', ') + ']');
+  const cars = CFG.trainCars(T);
+  const posesAt = (t) => { const h = CFG.trainHeadAt(S, t); return cars.map(c => { const q = P.at(h.s - c.off); return { x: q.x, z: q.z, yaw: q.yaw, L: c.L }; }); };
+  const corners = c => { const cs = Math.cos(c.yaw), sn = Math.sin(c.yaw), hl = c.L / 2, hw = 1.8; return [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]].map(p => [c.x + p[0] * cs - p[1] * sn, c.z + p[0] * sn + p[1] * cs]); };
+  const proj = (pts, ax) => { let mn = 1e9, mx = -1e9; for (const p of pts) { const v = p[0] * ax[0] + p[1] * ax[1]; mn = Math.min(mn, v); mx = Math.max(mx, v); } return [mn, mx]; };
+  const obb = (a, b) => { const A = corners(a), Bc = corners(b); for (const ax of [[Math.cos(a.yaw), Math.sin(a.yaw)], [-Math.sin(a.yaw), Math.cos(a.yaw)], [Math.cos(b.yaw), Math.sin(b.yaw)], [-Math.sin(b.yaw), Math.cos(b.yaw)]]) { const pa = proj(A, ax), pb = proj(Bc, ax); if (pa[1] < pb[0] || pb[1] < pa[0]) return false; } return true; };
+  let overlaps = 0, minGap = 1e9;
+  for (let t = 0; t < S.T; t += 0.1) {
+    const all = offs4.map(o => posesAt(t + o));
+    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
+      for (const ca of all[i]) for (const cb of all[j]) { if (obb(ca, cb)) overlaps++; minGap = Math.min(minGap, Math.hypot(ca.x - cb.x, ca.z - cb.z)); }
+    }
+  }
+  ok(overlaps === 0, 'over a whole lap no car of any train ever overlaps a car of another (2D OBB incl. step boards, every 0.1 s) [' + overlaps + ']');
+  ok(minGap > 60, 'the closest any two trains ever come is well over a train length [' + minGap.toFixed(0) + ' m]');
+  /* all four dwell at once, at four different stops */
+  const dwellPos = offs4.map(o => CFG.trainHeadAt(S, 0.5 + o).s);
+  ok(new Set(dwellPos.map(v => Math.round(v))).size === 4 && offs4.every(o => CFG.trainHeadAt(S, 0.5 + o).v === 0), 'at t = 0.5 s all four stand at four different stops');
+}
+
 console.log('--- nothing stands in its way ---');
 const cols = Bots.buildColliders('urban');
 const HALF_W = 1.5, HEIGHT = 4.1, offs = [5.5, 11 + 0.9 + 6, 11 + 0.9 + 12 + 0.9 + 6, 11 + 0.9 + 24 + 1.8 + 6];
@@ -137,10 +165,10 @@ for (const PP of [P]) for (let s = 0; s < PP.length; s += 2.0) {
   }
 }
 ok(hits.size === 0, 'the swept four-car envelope meets no static collider along the loop [' + hits.size + ']');
-[...hits.values()].slice(0, 6).forEach(c => console.log('        in the way: ' + JSON.stringify(c.slice(0, 6).map(v => +v.toFixed(2)))));
+[...hits.values()].slice(0, 40).forEach(c => console.log('        in the way: ' + JSON.stringify(c.slice(0, 6).map(v => +v.toFixed(2)))));
 /* v2.0: the footbridge is off the loop now (the train no longer visits Sector 7); every halt's shelter roof must clear the coach roof (3.75) */
 const shelters = cols.filter(c => c[1] > 3.5 && c[1] < 5.5 && Math.max(c[3] - c[0], c[5] - c[2]) > 10 && Math.max(c[3] - c[0], c[5] - c[2]) < 16 && (Math.abs((c[2] + c[5]) / 2 + 210) < 6 || Math.abs((c[2] + c[5]) / 2 - 210) < 6 || Math.abs((c[0] + c[3]) / 2 - 210) < 6 || Math.abs((c[0] + c[3]) / 2 + 270) < 6));
-ok(shelters.length >= 4 && shelters.every(c => c[1] >= T.roof + 0.2), 'every halt shelter roof clears the coach roof [' + shelters.length + ' shelters, lowest ' + (shelters.length ? Math.min(...shelters.map(c => c[1])).toFixed(2) : '?') + ' m]');
+ok(shelters.length >= 3 && shelters.every(c => c[1] >= T.roof + 0.2), 'every halt shelter roof clears the coach roof (three halts; Sector 7 has its hall) [' + shelters.length + ' shelters, lowest ' + (shelters.length ? Math.min(...shelters.map(c => c[1])).toFixed(2) : '?') + ' m]');
 
 console.log('--- riding it ---');
 vm.runInContext(`

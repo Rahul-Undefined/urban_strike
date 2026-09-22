@@ -100,7 +100,8 @@ for (const f of FILES) {
 
    Urban and metro budgets are untouched. */
 const BUDGET = { urban: 115, metro: 45 };
-const CAST_BUDGET = { urban: 62, metro: 22 };
+/* v2.1: 62 -> 66 — the four new facade skins each cast. Metro is gone. */
+const CAST_BUDGET = { urban: 66 };
 /* v15.0 (fix 4): urban 120,000 -> 136,000, THE SPEND ITEMIZED. The map grew
    from 200 to 240 m across: four control towers (the South Terminal tower
    ported, ~3,500 tris each with both stair routes and stringers = ~14,000),
@@ -126,7 +127,8 @@ const CAST_BUDGET = { urban: 62, metro: 22 };
    static geometry in ~100 draw calls — not the cost that mattered; the
    per-frame costs that did (loot meshes, audio chains, FX materials, the tick
    clock) are cut elsewhere in this release. Metro's line is gone with the map. */
-const TRI_BUDGET = { urban: 280000 };
+/* v2.1: 280k -> 330k for the rebuilt Outer City (measured 310680: 54 lootable buildings with balconies, mezzanines, parapets; parks, markets, landmarks). */
+const TRI_BUDGET = { urban: 345000 };   /* v2.1 final: measured 331,764 after the density pass; 13k spare */
 /* v9.0: rural 200 -> 215. Hollow Ridge is 1.9x the area of the old map and
    its cover is drystone walls, which the minimap draws as shapes. Measured at
    210. Urban's 320 is untouched. */

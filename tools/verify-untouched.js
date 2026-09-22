@@ -135,8 +135,15 @@ const BASELINE = {
        casters 62 (unchanged), lights 7 (unchanged), minimap 296 -> 583 shapes.
      The v1.1 line for the record: urban {"colliders":5160,"sum":893361222,
      "draws":99,"tris":158912,"casters":62,"lights":7,"minimap":296,"bound":120}. */
-  urban: {"colliders":9283,"sum":916360811,"draws":101,"tris":271052,"casters":62,"lights":7,"minimap":583,"bound":120},
-  urbanData: {"loot":245,"spawns":94,"airdrops":46},   /* v2.0: 245 interior/roof/signature points (437 -> 245: every open-field point gone, 112 added in the Outer City), 94 spawns (+28), 46 drop points (+32) */
+  /* ===== v2.1 — THE OUTER CITY REBUILT (Rahul on the v2.0 map: repetitive,
+     vacant). Three rows of mixed parcels — shophouses, apartments, warehouses,
+     parks, monuments, markets, bus stands, car parks, water towers, masts,
+     footbridges, canal basins — four new facade skins, four trains on one
+     track through Sector 7. colliders 9283 -> 11105, draws 101 -> 109 (the four
+     skins), tris 271,052 -> 310680, casters 62 -> 66 (the skins cast), lights 7,
+     minimap 583 -> 526. */
+  urban: {"colliders":11778,"sum":870156241,"draws":109,"tris":331764,"casters":66,"lights":7,"minimap":606,"bound":120},
+  urbanData: {"loot":246,"spawns":142,"airdrops":51},   /* v2.1: 246 points (113 in the rebuilt Outer City), 142 spawns, 51 drop points */
   urbanLifts: "84.2:-25.5:1.6:0.25/3.25/6.25 | -76.2:-81.9:1.6:0.25/3.25/6.25"
 };
 // ---------------------------------------------------------------------------

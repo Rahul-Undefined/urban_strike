@@ -134,6 +134,11 @@ var World = (function () {
     M.facadeRose  = facadeSkin('#c45c72', 'rgba(64,28,34,0.26)');
     M.facadeIndigo = facadeSkin('#5169b5', 'rgba(24,30,54,0.26)');
     M.facadeOlive = facadeSkin('#7f9448', 'rgba(38,44,20,0.26)');
+    /* v2.1: four more skins for the Outer City (Rahul: "colourful buildings") */
+    M.facadeCoral   = facadeSkin('#c9705a', 'rgba(70,30,22,0.26)');
+    M.facadeMustard = facadeSkin('#c9a24a', 'rgba(64,50,14,0.26)');
+    M.facadeSky     = facadeSkin('#6f9fc9', 'rgba(24,40,60,0.26)');
+    M.facadeMint    = facadeSkin('#6fb0a0', 'rgba(22,52,46,0.26)');
 
     M.metal = L({ map: canvasTex(256, function (g, s) {
       noise(g, s, '#5f6c7b', 0.3, 800);
@@ -262,7 +267,7 @@ var World = (function () {
   }
 
   // ---------- geometry helpers ----------
-  var minimapShapes = [];
+  var minimapShapes = [], minimapGround = [];   /* v2.1: ground planes for the maps */
   var outer = null;
   var solids = [];            // v8.10: emitted box <-> collider pairing, for stairwells()
   function addCollider(x0, y0, z0, x1, y1, z1) {
@@ -310,6 +315,15 @@ var World = (function () {
   }
 
   function box(cx, cy, cz, w, h, d, mat, opts) {
+    opts = opts || {};
+    /* v2.1 (Rahul: "minimap and big map properly aligned and functional"): the
+       GROUND PLANES — asphalt, water, turf, ballast — are recorded here (they
+       never reach addCollider) so both maps draw the real road network instead
+       of v1.0d's fixed 14 m cross through the origin. Axis-aligned only. */
+    if (h <= 0.06 && cy + h / 2 <= 0.12 && w * d >= 12 && !opts.rotY) {
+      var gk = mat === M.asphalt ? 'road' : mat === M.steelBlue ? 'water' : mat === M.sage ? 'turf' : (mat === M.dirt && w * d < 5000) ? 'dirt' : null;
+      if (gk) minimapGround.push([cx - w / 2, cz - d / 2, cx + w / 2, cz + d / 2, gk]);
+    }
     /* Test-only introspection, same idea as _colliders() and _stairs(). Every
        surface in this game is a box, and z-fighting is two boxes sharing a
        plane — but by the time the scene exists they have been merged into ~90
@@ -1377,6 +1391,7 @@ var World = (function () {
     },
     colliders: colliders,
     minimapShapes: minimapShapes,
+    minimapGround: minimapGround,
     flickers: flickers,
     fits: fits,
     rayHit: rayHit,
@@ -1474,7 +1489,7 @@ var World = (function () {
          verify-collision the first time that gate reset a map twice. */
       colliders.length = 0; grid = null;   // v10: a stale grid indexes a dead map
       stairs.length = 0;
-      minimapShapes.length = 0;
+      minimapShapes.length = 0; minimapGround.length = 0;
       if (World._lampSpots) World._lampSpots.length = 0;
       built = false;
       World.builtMap = null;
@@ -1837,8 +1852,9 @@ World.build = function (sceneRef) {
       wm.matrixAutoUpdate = false; wm.updateMatrix();
       scene.add(wm);
     });
-    var lf = OFF(0, 4.5); box(lf[0], 0.9, lf[1], 2.1, 0.16, 0.06, VLF, { rotY: RY, collide: false });
-    var lr = OFF(0, -4.5); box(lr[0], 0.9, lr[1], 2.1, 0.14, 0.06, VLR, { rotY: RY, collide: false });
+    /* v2.1: 4.5 -> 4.47 — the lamps sat 2 cm off the body's end and verify-props read every bus as floating */
+    var lf = OFF(0, 4.47); box(lf[0], 0.9, lf[1], 2.1, 0.16, 0.06, VLF, { rotY: RY, collide: false });
+    var lr = OFF(0, -4.47); box(lr[0], 0.9, lr[1], 2.1, 0.14, 0.06, VLR, { rotY: RY, collide: false });
   }
   function truck(cx, cz, r) {
     vpart(cx, cz, r, -2.6, 0, 1.35, 2.2, 2.3, 2.4, M.cargoWood);

@@ -1,8 +1,8 @@
-# Urban Strike — Project Handoff (v2.0.0 · build 30 · 2026-09-21)
+# Urban Strike — Project Handoff (v2.1.0 · build 31 · 2026-09-22)
 
-Read this file, then `CHANGELOG.md` (the v2.0.0 entry has the *why* of every
-change), then the code. Everything below is true of the code as shipped in
-`urban-strike-v2_0_0.zip`. The v1.x handoff (`HANDOFF-v1.0.md`) is history;
+Read this file, then `CHANGELOG.md` (the v2.1.0 and v2.0.0 entries have the
+*why* of every change), then the code. Everything below is true of the code
+as shipped in `urban-strike-v2_1_0.zip`. The v1.x handoff (`HANDOFF-v1.0.md`) is history;
 its §6 rules are carried forward here, amended where v2.0 changed them.
 
 Play group: at most 6–7 people per match. Hosted on Render's free plan.
@@ -45,6 +45,14 @@ assertion whether it measured a contract or an accident of the old numbers.**
 ---
 
 ## §1 OPEN ITEMS (owed, in priority order)
+
+0. **Play v2.1 before anything else.** Nothing in the rebuilt Outer City has
+   been walked in a browser. Things to look at first: parcel alleys (3 m) —
+   too tight for two players?; the four trains at 30 m/s through Sector 7
+   (one every ~30 s) — if it feels like a subway, `TRAIN.urban.speed` 30 → 24
+   keeps the no-collision proof intact (re-run verify-train); the shophouse
+   outside stairs land in the lanes — check none blocks a lane you want to
+   run down; the big map's new road layer (grey) against the district names.
 
 1. **PLAY-VERIFICATION of v2.0 by a human: none yet.** Every change is proved
    headlessly (44 gates) and against a live server (`test.js`), none in a
@@ -121,8 +129,25 @@ assertion whether it measured a contract or an accident of the old numbers.**
   train centreline x −270/210, z ±210, kerbs, lamps every 36 m) → the
   **band** of ten districts, 68 m deep → the **inner avenue** where the old
   wall stood (z ±120..128, x 120..128, x −188..−180) → the v1.1 city.
-  Sixteen **cross streets** (8 m) join the two rings; four **station plazas**
-  sit inside each halt.
+  Fourteen **cross streets** (8 m) join the two rings; three **station plazas**
+  sit inside the halts; two **rail corridors** (x −60, x 103.2) cross the north
+  band for the train's Sector 7 excursion.
+- **v2.1: the band is a procedural city.** `World.V2.districts` (ten entries)
+  each give a band (N/S/E/W), an along-range, four facade materials, a kind
+  list per row and a landmark. `World._buildPart8` cuts each band into three
+  rows (16–18 m deep, 8 m lanes) and walks each row with a seeded mulberry32,
+  placing parcels 3 m apart from the row's kind list — `shophouse`,
+  `apartment`, `warehouse`, `park`, `monument`, `market`, `busstop` (with a
+  bus on the avenue), `carpark`, `water`; landmarks `watertower`, `mast`,
+  `tanks`, `cranes`, `gasometer`, `chimney`, `pitch`, `bandstand`. Streets,
+  rail corridors, plazas, tower footprints and landmarks are cut out first
+  (`obstaclesAlong`). Every lootable building is pushed to `World.V2.buildings`
+  as `{kind, id, x0..z1, H, floor, roof, mez?}` — that list is what
+  `tools/_v2points.js` probes for loot points (interior 0.15 → 0.70, mezzanine
+  3.2 → 3.75, roof H+0.3 → H+0.85). Change the seed or a kind list and RE-RUN
+  THE PROBE and re-inject; the loot table is generated, not hand-placed.
+  `shell()` is the shared hollow-building primitive (facades with windows, one
+  doorway, inset floor slab, roof slab, outside stair + landing).
 - Districts (`districts.config.js`, listed first so they cannot steal a
   match): CANNERY ROW / NORTH RIDGE / REFINERY (north), QUARRY / SOUTH
   COMMONS / SOUTHPORT (south), GASWORKS / RIVER TERRACES (east), FOUNDRY /
@@ -162,37 +187,33 @@ assertion whether it measured a contract or an accident of the old numbers.**
 returns early when the snap has not changed. Texel 0.049 m at 2048 (v1.1 was
 0.119 over a fixed ±122). `Quality.setSun` still owns `mapSize` per tier.
 
-### One train, four halts
+### Four trains, one track, through Sector 7 Central (v2.1)
 
-- `CFG.TRAIN.urban`: waypoints `[[-270,-210],[210,-210],[210,210],[-270,210]]`,
-  fillet 14, speed 30, dwell 3, brake 75, accel 95. `stops`: head at
-  `sAtWaypoint(i) + offset` with offsets 250.85 (N/S) / 220.85 (E/W) = straight
-  midpoint + half a train (24.85), so the train is centred on each halt.
-  `stations: [{id, name, side:'N'|'E'|'S'|'W', c}]` — `c` is the platform
-  centre along its straight. `stationAt`/`stopOffset` kept for old readers.
-  `TRAINS.urban = [TRAIN.urban]`; **TRAIN2 is gone**.
-- Halt builder (`_buildPart6`, "THE HALTS (v1.0l, rebuilt v2.0)") is
-  track-relative: `P(a0,a1,y0,y1,w0,w1)` with `w` = distance from the
-  centreline toward the city, `TRK = {N:-210,S:210,E:210,W:-270}`. Deck
-  1.05 high, w 2.2..4.9, 52 m long, steps at both ends, shelter roof at 3.95
-  (clears the coach roof 3.75 by 0.2), bench, name board, lamp.
-- Riding at 30 m/s (`train.js floorAt`, `controller.js`):
-  - the rigid carry is consumed ONCE per train pose (`c.carried`), so a
-    controller frame without a train frame no longer applies a stale delta;
-  - stale-pose limit 4 → 9 m, yaw 0.6 → 0.9 (a 250 ms hitch at 30 m/s moves
-    a coach 7.5 m; an uncarried rider lands on the road behind a train that
-    left — fatal by the v1.0g rule);
-  - `high` block results: a player at deck height (feet ≥ FLOOR − 0.5) who
-    walks into the coach wall is pushed to 2.35 m (onto the deck edge, 2.2)
-    instead of 1.9 (the gap); and the step-board strip (HALF_W..+0.6) is a
-    wall at deck height except at the doors, so the deck-to-body gap cannot
-    be walked into.
-- `verify-train` (57/0) now asserts: loop 1,700–1,850 m; head/tail centred on
-  the north halt; lap 70–110 s; one stop per side against `TRK`; each deck
-  spans the whole train; cruise 30; brake/accel sized for speed; single
-  train; the swept four-car envelope meets no collider; every halt shelter
-  roof ≥ 3.95; riding from the road is refused, from the deck at a door
-  boards, from the deck mid-coach stays on the deck.
+- `CFG.TRAIN.urban.waypoints`: `[[-270,-210],[-60,-210],[-60,-103.2],
+  [-6,-103.2],[9,-88],[103.2,-88],[103.2,-210],[210,-210],[210,210],[-270,210]]`
+  — the perimeter with a northern excursion down x −60, along the old ring,
+  through Sector 7 at z −88 (the v1.0 platform geometry) and back up
+  x 103.2. ~1.99 km, fillet 14, speed 30, dwell 3, brake 75, accel 95.
+- `stops`: `{at:4, offset:60}` Sector 7 (head at x 74.8, short of the
+  footbridge), `{at:7, 220.85}` Eastbank, `{at:8, 250.85}` South Commons,
+  `{at:9, 220.85}` Westfield. `stations` (three: E/S/W) build the halt decks
+  in `_buildPart6`; Sector 7 has its own hall and lays its own rails
+  (`layRails` skips x 16..96 at z −88).
+- `CFG.TRAINS.urban` is FOUR objects, each `Object.create(TRAIN.urban)` with
+  `startStop: k`, `idx: k`. `CFG.trainOffset(cfg, S)` returns
+  `S.legs[startStop].tD` — train k runs the shared schedule advanced to stop
+  k's departure. Client (`train.js matchTime`) and server (`hazards.js`) both
+  add it. Rails are laid once per distinct waypoint set.
+- Why they cannot meet: every train is at the same phase of a different leg
+  at every instant; the shortest leg is ~400 m and a train 49.7 m.
+  `verify-train` proves it with a 2D OBB sweep of all cars of all four trains
+  over a full lap at 0.1 s (zero contacts), and that all four dwell at once
+  at four different stops.
+- Riding at 30 m/s (v2.0/2.1 fixes in `train.js floorAt` / `controller.js`):
+  the rigid carry is consumed once per train pose (`c.carried`); the
+  stale-pose limit is 9 m; at deck height (`plat.high`) a wall push lands
+  2.35 m out — on the halt deck; the step-board strip is a wall at deck
+  height except at the doors.
 
 ### The helicopter
 
@@ -340,30 +361,40 @@ nuke*/rocket*/setRemoteHud/Hold; `minimap.js setNukeAim`; `index.html`
 
 ## §4 VERIFICATION STATE AT SHIP
 
-- **44 offline gates green, 3 documented reds** (§1b). Rewritten to new
-  contracts: `verify-heli` 113/0, `verify-train` 57/0, `verify-zone` 44/0,
-  `verify-protect` 29/0. Re-recorded as a decision with itemised reasons in
-  the files: `verify-fingerprint` 64/0 and `verify-untouched` 12/0
-  (colliders 5160 → 9283, draws 99 → 101, tris 158,912 → 271,052, casters 62
-  and lights 7 unchanged, minimap 296 → 583, loot 437 → 245, spawns 66 → 94,
-  drops 14 → 46), `verify-batch` 19/0 (tris 168k → 280k, minimap 320 → 620).
-  Fixed at the geometry: `verify-zfight` 2/0 (154 → 150 budget met by the
-  floor-slab inset and moving the quarry terraces, river and pitch off the
-  streets), `verify-props` 2/0. `verify-map` 1672/0 (every one of 245 loot,
-  94 spawns, 46 drops probed). `verify-attach` 117/0 and `verify-barrel` 57/0
-  had crashed since v1.0x (stub lacked `clone`) — the stubs gained `clone`.
-  `verify-lighting` 27/0, `verify-collision` 49/0, `verify-build` PASS with
-  Metro's lines removed.
-- **Live against a running server:** `test.js` — **311 passed, 0 failed**,
-  server log clean (one boot line). Phases 1–20 with the rocket-ladder phase
-  removed, Phase 18's remote steps replaced by absence assertions (no remote,
-  no strike key, no weapon on the floor), the crate and floor-loot assertions
-  rewritten to the exotic-only contract, metro rooms → riverside. Run it as
-  `node server.js` in one shell and `node test.js` in another; it takes about
-  eight minutes (match countdowns are real).
-- Two working scripts are in `tools/`: `_v2points.js` (the Outer City probe)
-  and `_v2pick.js` (headless template build of every item type — 51 items →
-  102 meshes).
+- **44 offline gates green, 3 documented reds** (§1b: `verify-access` 45/1,
+  `verify-arch`, `verify-climb` 7 flights). v2.1 rewrites: `verify-train`
+  61/0 (Sector 7 stop, four-train OBB sweep, three halt shelters).
+  Re-recorded as a decision with the reasons in the files:
+  `verify-fingerprint` / `verify-untouched` (colliders 5160 → 9283 → 11778,
+  draws 99 → 101 → 109, tris 158,912 → 271,052 → 331,764, casters 62 → 66 —
+  the four new facade skins; minimap 296 → 583 → 606; loot 437 → 245 → 246,
+  spawns 66 → 94 → 142, drops 14 → 46 → 51), `verify-batch` (tris 168k →
+  280k → 345k, casters 62 → 66, minimap 320 → 620). Fixed at the geometry:
+  `verify-zfight` (inset floor slabs; balconies/awnings overlap into the
+  wall; ballast stops at the avenue; car bays perpendicular to the aisle),
+  `verify-props` (bus lamps touch the body — a real model bug; bus-stop sign
+  posts; footbridges only between equal roofs), `verify-stairs-quality` and
+  `verify-climb` (mezzanine and water-tower flights start on their floors
+  and arrive on their decks).
+- **Live against a running server:** `test.js` — see the v2.1 CHANGELOG entry
+  for the count of the run at ship. v2.1 changes to the suite: the crate
+  weapon assertion checks the granted weapon IS the crate's weapon (every
+  weapon is crate-only now, exclusive or not); the heli-lag phase was
+  exposing two real bugs in the fall rule (`heli.js fallen()`: a 22 m
+  horizontal limit sized for 14 m/s — now 1.5 s of travel at the configured
+  speed; and a rider was judged on a STALE position — now only within 1.2 s
+  of their last `st`, `p.posAt`). The harness itself warms its Urban build
+  before the flight (`Bots2.buildColliders('urban')`) — its first `pathFrom`
+  used to build the map mid-flight and starve the server of updates.
+  Run it as `node server.js` in one shell and `node test.js` in another;
+  about eight minutes.
+- **Headless build:** Urban 108 draw calls, ~332k triangles, 11,778 colliders,
+  builds in ~3 s in the harness. Rebuild + re-probe: `node tools/_v2build.js`
+  then `node tools/_v2points.js` (writes `/tmp/v2out.json`; the inject step is
+  the small python block in the session log — copy the loot rows into
+  `loot.config.js` between the `v2.1: THE OUTER CITY` marker and `];`, the
+  drops under `// v2.1: the outer city`, the spawns under `/* v2.1: THE
+  OUTER CITY` in `gameplay.config.js`).
 
 ## §5 PERFORMANCE NOTE
 

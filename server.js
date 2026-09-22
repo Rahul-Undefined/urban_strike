@@ -1517,7 +1517,7 @@ io.on('connection', (socket) => {
       if (ddx * ddx + ddz * ddz > budget * budget) return;
     }
     p.lastStAt = tSt;
-    p.pos = [nx, ny, nz];
+    p.pos = [nx, ny, nz]; p.posAt = now();   /* v2.1: when this position was reported — heli.js judges a fall only on a FRESH position */
     p.ry = num(s.ry); p.rx = num(s.rx);
     p.crouch = Math.max(0, Math.min(2, (s.cr | 0))); p.mv = s.mv | 0; p.wp = s.wp | 0; p.ln = num(s.ln); // cr: 0 stand, 1 crouch, 2 prone
     p.rl = s.rl ? 1 : 0;                       // reloading — cosmetic only, never trusted for anything

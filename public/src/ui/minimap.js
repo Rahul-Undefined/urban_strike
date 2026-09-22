@@ -82,7 +82,19 @@ var Minimap = (function () {
     /* roads hinted as slightly lighter strips — URBAN'S avenue cross only.
        v1.0d: this was drawn on every map, which put a 14 m cross of road
        through the middle of the Killhouse and the arenas that have no roads. */
-    if (World.builtMap === 'urban' || !World.builtMap) {
+    /* v2.1: the real ground — roads grey, water blue, turf green, ballast
+       brown — from World.minimapGround (every asphalt/water/turf plane the
+       builder laid). Falls back to the old avenue cross only if the builder
+       recorded nothing (an old cached build). */
+    var ground = World.minimapGround || [];
+    if (ground.length) {
+      var GC = { road: 'rgba(56,62,70,0.95)', water: 'rgba(38,72,110,0.9)', turf: 'rgba(46,78,44,0.9)', dirt: 'rgba(62,54,44,0.9)' };
+      for (var gi = 0; gi < ground.length; gi++) {
+        var gr = ground[gi];
+        g.fillStyle = GC[gr[4]] || GC.road;
+        g.fillRect((gr[0] - WX0) * SCALE, (gr[1] - WZ0) * SCALE, Math.max(1, (gr[2] - gr[0]) * SCALE), Math.max(1, (gr[3] - gr[1]) * SCALE));
+      }
+    } else if (World.builtMap === 'urban' || !World.builtMap) {
       g.fillStyle = 'rgba(52,58,66,0.9)';
       g.fillRect((0 - WX0 - 7) * SCALE, 0, 14 * SCALE, pz);
       g.fillRect(0, (0 - WZ0 - 7) * SCALE, px, 14 * SCALE);

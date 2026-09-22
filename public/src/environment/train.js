@@ -158,7 +158,7 @@ function makeTrain(cfgIn, sceneIn) {
   function matchTime() {
     var m = (typeof Net !== 'undefined' && Net.getMatch) ? Net.getMatch() : null;
     if (!m || !m.startedAt) return 0;
-    return (Date.now() + (m.serverOffset || 0) - m.startedAt) / 1000 + (cfg && cfg.tOffset ? cfg.tOffset : 0);
+    return (Date.now() + (m.serverOffset || 0) - m.startedAt) / 1000 + (CFG.trainOffset ? CFG.trainOffset(cfg, sched) : (cfg && cfg.tOffset ? cfg.tOffset : 0));   /* v2.1: train k runs stop k's phase */
   }
   var wasAboard = false, boardToastAt = 0;
   /* v1.0g: the rider's HUD hint. Once per boarding: leaving a moving train is

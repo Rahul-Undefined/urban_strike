@@ -650,6 +650,7 @@ function phase19() {
     const Ah = io(URL), Bh = io(URL);
     let uph = 0, states = [], deathsH = [], offH = 0, seatH = null, posH = null;
     const Bots2 = require('./server/lib/bots.js')({}), HH = CFG.HELI, halfH = CFG.PLAYER.standH / 2;
+    Bots2.buildColliders('urban');   /* v2.1: warm the harness builder NOW — its first pathFrom() builds Urban (~3 s) and that stall inside the flight starved the server of position updates */
     const heliPaths = {};
     const PHfor = (seed) => { if (!heliPaths[seed]) { const R = CFG.heliRoute(HH, seed); heliPaths[seed] = Bots2.pathFrom(R.waypoints, R.fillet); } return heliPaths[seed]; };
     Ah.on('heliState', d => states.push(d));
@@ -1181,7 +1182,8 @@ function phase3(done) {
           ok(grants.some(g => want.indexOf(g.t) >= 0), 'crate item ' + e.t + ' (' + k + ') is granted on pickup [' + grants.map(g => g.t).join(',') + ']');
         });
         const w = [first, second].find(e => kindOf(e) === 'weapon');
-        if (w) ok(grants.some(g => g.t === 'weapon' && CFG.WEAPONS[g.w] && CFG.WEAPONS[g.w].ex), 'crate weapon granted into slot 9 (exclusive)');
+        /* v2.0+: every weapon is crate-only, exclusive or not — the grant must be THE weapon the crate held */
+        if (w) ok(grants.some(g => g.t === 'weapon' && g.w === CFG.LOOT_ITEMS[w.t].w), 'crate weapon granted is the weapon the crate held [' + CFG.LOOT_ITEMS[w.t].w + ']');
         else ok(true, 'no weapon among the first two crate items this roll — slot-9 grant covered by verify-armoury');
         A.disconnect(); B.disconnect();
         setTimeout(done, 300);

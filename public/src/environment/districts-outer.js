@@ -1898,7 +1898,9 @@ World._buildPart6 = function (T) {
     }
   }
   if (CFG.TRAINS && CFG.TRAINS.urban && World.trainPath) {
-    CFG.TRAINS.urban.forEach(function (tc, i) { layRails(World.trainPath(tc), i === 0); });
+    /* v2.1: four trains share ONE track — lay each distinct waypoint set once */
+    var laid = {};
+    CFG.TRAINS.urban.forEach(function (tc) { var key = JSON.stringify(tc.waypoints); if (laid[key]) return; laid[key] = 1; layRails(World.trainPath(tc), true); });
   } else if (CFG.TRAIN && CFG.TRAIN.urban && World.trainPath) {
     layRails(World.trainPath(CFG.TRAIN.urban), true);
   }
@@ -1985,6 +1987,7 @@ World._buildPart6 = function (T) {
     // container rows: singles and doubles, gaps for movement, on both sides of the tower
     var row = [-100, -88, -76, -64, -52, -34, -22, 14, 26, 44, 56, 68, 80, 92];
     row.forEach(function (cx, i) {
+      if (cx === -64 || cx === 92) return;   /* v2.1: the x -60 and x 103.2 rail corridors cross the yard (indices kept: the stacks above stay where the loot table has them) */
       var paint = [M.contBlue, M.contRed, M.contGreen, M.contGray][i % 4];
       container(cx, -116.4, false, paint, false);
       if (i % 3 === 1) {
@@ -2024,7 +2027,7 @@ World._buildPart6 = function (T) {
     box(20, 4.0, -118.2, 0.4, 8.0, 0.4, M.metal); box(42, 4.0, -118.2, 0.4, 8.0, 0.4, M.metal);
     segx(19, 43, 8.0, 8.5, -118.4, -117.6, M.steelBlue, NC);
     // flatbed trucks on the yard road, a jeep by the tower
-    truck(-58, -108.5, 0); truck(60, -108.5, Math.PI);
+    truck(-46, -108.5, 0); truck(60, -108.5, Math.PI);   /* v2.1: the west truck moved off the x -60 corridor */
     jeep(10, -109.5, 1.2);
     barrel(-30, -108.2, true); barrel(-29.2, -108.9, false); crates(70, -110);
   })();
@@ -2292,235 +2295,359 @@ World._buildPart7 = function (T) {
 };
 
 
-/* ===== v2.0 - THE OUTER CITY (Rahul: "make the urban map bigger on all
-   sides by adding more districts") =====
-   A 100 m band on every side of the v1.1 map: the wall moves from x -180/120,
-   z +/-120 to x -280/220, z +/-220. Just inside the new wall runs the
-   PERIMETER BOULEVARD (asphalt x -276..-264 / 204..216, z +/-204..216) with
-   the one fast train on its centreline (x -270 / 210, z +/-210) and a halt in
-   the middle of each side. Just outside the OLD wall line runs the INNER
-   AVENUE (z +/-120..128, x 120..128, x -188..-180) so every old back alley now
-   opens onto a road; cross streets join the two rings every 60-80 m. Between
-   them, ten districts:
-
-     north  CANNERY ROW (x -260..-114)  NORTH RIDGE (-114..60)  REFINERY (60..200)
-     south  QUARRY      (x -260..-114)  SOUTH COMMONS (-114..60) SOUTHPORT (60..200)
-     east   GASWORKS (z -128..0)  RIVER TERRACES (0..128)
-     west   FOUNDRY  (z -128..0)  WESTFIELD (0..128)
-
-   Every building is the Western Reach's `block()` — a hollow two/three-storey
-   shell with one doorway, a window per face and an outside stair to a flat
-   roof — so it is a place to loot (interior point) and a place to shoot from
-   (roof point) at ~45 boxes and one existing material each. Four five-storey
-   control towers (World._towerAt, the ring's geometry) stand in the four
-   corners: the sniper perches. Everything is DATA (World.V2 below) so the
-   loot / spawn probes and the gates read the same numbers the builder does. */
+/* ===== v2.1 - THE OUTER CITY, REBUILT (Rahul on the v2.0 map: "lots of vacant
+   space and similar-looking visuals; think in the same fashion as the middle —
+   dynamic, colourful buildings, monuments, parks, bus stands, towers properly
+   placed; all areas playable") =====
+   The v2.0 band was 75 identical shells in two rows. This is a CITY: the
+   68 m band between the inner avenue and the perimeter boulevard is cut into
+   THREE rows of parcels (16-18 m deep, 8 m lanes between), each parcel filled
+   by a district's own mix from a vocabulary of eleven kinds —
+     shophouse   2-3 floors, an awning over the door, a parapet, a rooftop shed
+     apartment   4 floors, balconies on the long faces, a lift house on the roof
+     warehouse   one tall floor, doors at both ends, a mezzanine with its own stair
+     park        turf, hedges, trees, benches, a fountain or a lamp ring
+     monument    a stepped plinth and an obelisk — cover in the open
+     market      two rows of stalls under canopies
+     busstop     a shelter, a bench, a sign — and a bus drawn up beside it
+     carpark     cars and vans in bays with kerb islands
+     watertower  four legs and a tank at 14 m — a landmark you steer by
+     mast        a radio mast with dishes — the other landmark
+     footbridge  a steel deck between two roofs — a route and a firing line
+   Parcel widths and kinds come from a SEEDED rng (the map is the same for
+   every client and the server), each district weights the kinds differently
+   so Cannery Row reads as docks-and-sheds and River Terraces as flats-and-
+   promenade. Everything is still boxes on existing helpers and materials.
+   Every building keeps the v1.1/v2.0 contract: a floor at 0.15 you can loot,
+   a roof you can reach (outside stair), one material per face family.
+   The two RAIL CORRIDORS (x -60 and x 103.2, north band) are kept clear by
+   the parcel cutter: nothing within 4.2 m of either centreline. */
 World.V2 = {
   ext: { x0: -280, x1: 220, z0: -220, z1: 220 },
-  /* perimeter boulevard inner/outer edges and train centreline offset */
   ring: { inner: 204, outer: 216, track: 210, wInner: -264, wOuter: -276, wTrack: -270 },
-  /* [x0, x1, z0, z1, floors, material, doorFace, districtId] */
-  blocks: [
-    // ---- CANNERY ROW (north-west) ----
-    [-226, -206, -196, -176, 2, 'cream', 's', 'cannery'], [-200, -180, -196, -178, 2, 'facadeOlive', 's', 'cannery'],
-    [-176, -158, -194, -176, 1, 'contRed', 'w', 'cannery'], [-226, -208, -156, -138, 2, 'plaster', 'n', 'cannery'],
-    [-196, -170, -158, -136, 3, 'brick', 'n', 'cannery'], [-146, -120, -196, -176, 2, 'steelBlue', 's', 'cannery'],
-    [-146, -124, -156, -136, 1, 'cream', 'n', 'cannery'],
-    // ---- NORTH RIDGE (north) ----
-    [-110, -88, -196, -176, 2, 'brick', 's', 'northridge'], [-84, -66, -194, -176, 2, 'cream', 's', 'northridge'],
-    [0, 22, -196, -176, 3, 'facadeIndigo', 'w', 'northridge'], [36, 56, -196, -178, 2, 'plaster', 's', 'northridge'],
-    [-108, -84, -156, -136, 2, 'steelBlue', 'n', 'northridge'], [-78, -64, -154, -138, 1, 'contBlue', 'n', 'northridge'],
-    [-52, -30, -158, -136, 3, 'facadeOlive', 'n', 'northridge'], [-24, -4, -156, -136, 2, 'cream', 'n', 'northridge'],
-    [2, 24, -158, -136, 2, 'brick', 'n', 'northridge'], [38, 56, -156, -138, 2, 'plaster', 'n', 'northridge'],
-    // ---- REFINERY (north-east) ----
-    [64, 88, -156, -136, 2, 'metal', 'n', 'refinery'], [94, 106, -158, -138, 1, 'rust', 'n', 'refinery'],
-    [118, 140, -196, -176, 2, 'facadeOlive', 's', 'refinery'], [146, 166, -194, -176, 2, 'cream', 's', 'refinery'],
-    [118, 142, -156, -136, 3, 'steelBlue', 'n', 'refinery'], [150, 166, -156, -138, 1, 'contRed', 'n', 'refinery'],
-    [176, 196, -160, -136, 2, 'brick', 'n', 'refinery'],
-    // ---- QUARRY (south-west) ----
-    [-226, -204, 136, 156, 2, 'plaster', 's', 'quarry'], [-198, -176, 138, 158, 1, 'rust', 's', 'quarry'],
-    [-170, -154, 136, 158, 2, 'facadeOlive', 's', 'quarry'], [-146, -124, 136, 156, 2, 'brick', 's', 'quarry'],
-    [-146, -126, 176, 196, 2, 'cream', 'n', 'quarry'], [-200, -176, 176, 196, 1, 'metal', 'n', 'quarry'],
-    // ---- SOUTH COMMONS (south) ----
-    [-110, -90, 136, 156, 3, 'brick', 's', 'commons'], [-86, -66, 136, 154, 2, 'cream', 's', 'commons'],
-    [-54, -32, 136, 156, 2, 'facadeIndigo', 's', 'commons'], [-24, -4, 136, 158, 2, 'plaster', 's', 'commons'],
-    [2, 24, 136, 156, 3, 'steelBlue', 's', 'commons'], [38, 56, 136, 154, 2, 'cream', 's', 'commons'],
-    [-54, -34, 176, 194, 1, 'cream', 'n', 'commons'], [0, 26, 176, 196, 2, 'brick', 'n', 'commons'],
-    [38, 56, 178, 196, 2, 'facadeOlive', 'n', 'commons'],
-    // ---- SOUTHPORT (south-east) ----
-    [64, 86, 136, 156, 2, 'steelBlue', 's', 'southport'], [92, 106, 138, 158, 1, 'contBlue', 's', 'southport'],
-    [118, 140, 136, 156, 2, 'cream', 's', 'southport'], [146, 166, 136, 156, 2, 'facadeOlive', 's', 'southport'],
-    [176, 196, 136, 158, 3, 'brick', 'w', 'southport'], [118, 142, 176, 196, 1, 'metal', 'n', 'southport'],
-    [150, 166, 176, 194, 1, 'rust', 'n', 'southport'],
-    // ---- GASWORKS (east, north half) ----
-    [136, 156, -124, -104, 2, 'rust', 'e', 'gasworks'], [136, 158, -96, -76, 2, 'metal', 'e', 'gasworks'],
-    [180, 198, -124, -102, 2, 'steelBlue', 'w', 'gasworks'], [136, 156, -52, -32, 2, 'brick', 'e', 'gasworks'],
-    [162, 182, -50, -30, 3, 'facadeOlive', 'w', 'gasworks'], [136, 158, -24, -4, 2, 'cream', 'e', 'gasworks'],
-    [176, 196, -52, -32, 1, 'contRed', 'w', 'gasworks'],
-    // ---- RIVER TERRACES (east, south half) ----
-    [136, 154, 8, 26, 2, 'plaster', 'e', 'terraces'], [136, 154, 30, 48, 2, 'brick', 'e', 'terraces'],
-    [136, 154, 68, 86, 2, 'plaster', 'e', 'terraces'], [136, 154, 90, 108, 2, 'brick', 'e', 'terraces'],
-    [160, 180, 8, 26, 3, 'facadeIndigo', 'w', 'terraces'], [160, 180, 68, 88, 2, 'cream', 'w', 'terraces'],
-    [160, 182, 96, 116, 2, 'steelBlue', 'w', 'terraces'],
-    // ---- FOUNDRY (west, north half) ----
-    [-250, -214, -124, -104, 2, 'rust', 's', 'foundry'], [-256, -220, -100, -74, 2, 'metal', 'e', 'foundry'],
-    [-210, -192, -124, -104, 2, 'brick', 'w', 'foundry'], [-212, -194, -96, -76, 1, 'rust', 'w', 'foundry'],
-    [-252, -232, -52, -32, 2, 'steelBlue', 'e', 'foundry'], [-226, -206, -50, -30, 3, 'facadeOlive', 'e', 'foundry'],
-    [-252, -230, -24, -4, 2, 'cream', 'e', 'foundry'], [-212, -194, -52, -32, 1, 'contBlue', 'w', 'foundry'],
-    // ---- WESTFIELD (west, south half) ----
-    [-252, -230, 8, 28, 2, 'plaster', 'e', 'westfield'], [-224, -204, 8, 26, 2, 'brick', 'e', 'westfield'],
-    [-252, -232, 32, 52, 3, 'facadeIndigo', 'e', 'westfield'], [-226, -206, 34, 52, 2, 'cream', 'e', 'westfield'],
-    [-252, -230, 68, 88, 2, 'brick', 'e', 'westfield'], [-224, -204, 70, 88, 2, 'steelBlue', 'e', 'westfield'],
-    [-256, -236, 96, 118, 2, 'plaster', 'e', 'westfield']
-  ],
-  /* the four corner towers: [x0, z0, mirrored] — World._towerAt footprint 8 x 12 */
-  towers: [[-260, -200, false], [192, -200, false], [192, 188, false], [-260, 188, true]],
-  /* cross streets: ['x', x, z0, z1] or ['z', z, x0, x1], 8 m wide, asphalt */
+  /* cross streets: ['x', x, z0, z1] or ['z', z, x0, x1], 8 m wide */
   streets: [
-    ['x', -230, -204, -128], ['x', -150, -204, -128], ['x', -60, -204, -128], ['x', 30, -204, -128], ['x', 110, -204, -128], ['x', 170, -204, -128],
+    ['x', -230, -204, -128], ['x', -150, -204, -128], ['x', 30, -204, -128], ['x', 170, -204, -128],
     ['x', -230, 128, 204], ['x', -150, 128, 204], ['x', -60, 128, 204], ['x', 30, 128, 204], ['x', 110, 128, 204], ['x', 170, 128, 204],
     ['z', -60, 128, 204], ['z', 60, 128, 204], ['z', -60, -264, -188], ['z', 60, -264, -188]
   ],
-  /* station plazas: [x0, x1, z0, z1] — asphalt aprons between the halt and the inner avenue */
-  plazas: [[-56, -4, -204, -190], [-56, -4, 190, 204], [190, 204, -26, 26], [-264, -250, -26, 26]]
+  /* rail corridors through the north band (the Sector 7 excursion): [x, z0, z1] */
+  rails: [[-60, -204, -103.2], [103.2, -204, -88]],
+  plazas: [[-56, -4, 190, 204], [190, 204, -26, 26], [-264, -250, -26, 26]],
+  towers: [[-260, -200, false], [192, -200, false], [192, 188, false], [-260, 188, true]],
+  /* districts: band, along-range, and the kind weights for the three rows [outer, middle, inner] */
+  districts: [
+    { id: 'cannery',    band: 'N', a0: -260, a1: -114, mats: ['facadeMustard', 'brick', 'contRed', 'cream'],      rows: [['shop', 'shop', 'wh'], ['wh', 'carpark', 'wh', 'market'], ['shop', 'busstop', 'shop']], landmark: ['watertower', -190, -168] },
+    { id: 'northridge', band: 'N', a0: -114, a1: 60,   mats: ['facadeRose', 'facadeSky', 'plaster', 'brick'],    rows: [['apt', 'shop', 'apt'], ['park', 'monument', 'apt'], ['shop', 'busstop', 'shop', 'apt']], landmark: ['mast', -100, -168] },
+    { id: 'refinery',   band: 'N', a0: 60,   a1: 200,  mats: ['metal', 'rust', 'facadeAmber', 'steelBlue'],      rows: [['wh', 'shop', 'wh'], ['wh', 'carpark', 'wh'], ['shop', 'busstop', 'apt']], landmark: ['tanks', 150, -168] },
+    { id: 'quarry',     band: 'S', a0: -260, a1: -114, mats: ['rust', 'facadeAmber', 'brick', 'cream'],          rows: [['wh', 'shop', 'apt'], ['wh', 'carpark', 'monument'], ['shop', 'busstop', 'shop']], landmark: ['watertower', -200, 168] },
+    { id: 'commons',    band: 'S', a0: -114, a1: 60,   mats: ['facadeMint', 'cream', 'facadeRose', 'plaster'],   rows: [['shop', 'apt', 'shop'], ['park', 'park', 'market'], ['shop', 'busstop', 'apt', 'shop']], landmark: ['bandstand', -82, 168] },
+    { id: 'southport',  band: 'S', a0: 60,   a1: 200,  mats: ['steelBlue', 'contBlue', 'facadeTeal', 'brick'],   rows: [['wh', 'shop', 'wh'], ['carpark', 'wh', 'wh'], ['shop', 'busstop', 'apt']], landmark: ['cranes', 140, 168] },
+    { id: 'gasworks',   band: 'E', a0: -116, a1: 0,    mats: ['rust', 'metal', 'facadeAmber', 'brick'],          rows: [['wh', 'apt', 'wh'], ['wh', 'monument'], ['shop', 'busstop', 'shop']], landmark: ['gasometer', 168, -62] },
+    { id: 'terraces',   band: 'E', a0: 0,    a1: 116,  mats: ['facadeSky', 'facadeCoral', 'cream', 'facadeMint'], rows: [['water', 'apt', 'water', 'water'], ['park', 'apt'], ['shop', 'busstop', 'shop']], landmark: ['monument', 168, 62] },
+    { id: 'foundry',    band: 'W', a0: -116, a1: 0,    mats: ['brick', 'rust', 'facadeCoral', 'metal'],          rows: [['wh', 'shop', 'wh'], ['wh', 'carpark'], ['shop', 'busstop', 'apt']], landmark: ['chimney', -228, -62] },
+    { id: 'westfield',  band: 'W', a0: 0,    a1: 116,  mats: ['facadeMustard', 'facadeMint', 'plaster', 'facadeSky'], rows: [['shop', 'apt', 'shop'], ['park', 'monument'], ['shop', 'busstop', 'shop']], landmark: ['pitch', -228, 30] }
+  ],
+  /* filled by the builder: every lootable building as { kind, x0, x1, z0, z1, H, floor, roof, mez } and the parked buses */
+  buildings: [], buses: []
 };
 
 World._buildPart8 = function (T) {
-  var seg = T.seg, box = T.box, cyl = T.cyl, M = T.M, rnd = T.rnd, facade = T.facade, win = T.win, stairFlight = T.stairFlight;
+  var seg = T.seg, box = T.box, cyl = T.cyl, M = T.M, facade = T.facade, win = T.win, stairFlight = T.stairFlight;
   var container = T.container, crates = T.crates, lamp = T.lamp, barrel = T.barrel, van = T.van, truck = T.truck, sedan = T.sedan, bus = T.bus;
   var NC = { collide: false }, NCAST = { cast: false }, NBOTH = { cast: false, collide: false };
   var V = World.V2, E = V.ext, R = V.ring;
+  V.buildings = []; V.buses = [];
+  /* mulberry32 — the map is the same on every machine */
+  var seedv = 0x5ee0c17e; function rnd() { seedv |= 0; seedv = seedv + 0x6D2B79F5 | 0; var t = Math.imul(seedv ^ seedv >>> 15, 1 | seedv); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }
+  function pick(arr) { return arr[Math.floor(rnd() * arr.length)]; }
   function segx(xa, xb, y0, y1, za, zb, mat, o) { seg(Math.min(xa, xb), Math.max(xa, xb), y0, y1, Math.min(za, zb), Math.max(za, zb), mat, o); }
-  function block(x0, x1, z0, z1, floors, mat, doorFace) {
-    var H = 3.3 * floors, TT = 0.3;
+
+  /* ---------- the vocabulary ---------- */
+  function shell(x0, x1, z0, z1, H, mat, doorFace, opts) {
+    /* the Reach's hollow shell: four facades with a window each, one doorway,
+       an inset floor (verify-zfight), a roof slab, an outside stair to it */
+    opts = opts || {};
+    var TT = 0.3;
     seg(x0, x1, H, H + 0.3, z0, z1, M.roof);
-    /* v2.0: the floor slab is INSET by the wall thickness — a full-footprint slab
-       put its four side faces in the plane of the four outer walls, one coplanar
-       pair per face per block (verify-zfight); inside the walls they are hidden.
-       The doorway keeps a 13 cm step, well under MOVE.step. */
     seg(x0 + TT, x1 - TT, 0.02, 0.15, z0 + TT, z1 - TT, M.concrete);
-    if (doorFace !== 'n') facade('z', z0, z0 + TT, x0, x1, 0, H, mat, [win((x0 + x1) / 2, 1.3, 2.2, 1.4)]);
-    if (doorFace !== 's') facade('z', z1 - TT, z1, x0, x1, 0, H, mat, [win((x0 + x1) / 2, 1.3, 2.2, 1.4)]);
-    if (doorFace !== 'w') facade('x', x0, x0 + TT, z0, z1, 0, H, mat, [win((z0 + z1) / 2, 1.3, 2.2, 1.4)]);
-    if (doorFace !== 'e') facade('x', x1 - TT, x1, z0, z1, 0, H, mat, [win((z0 + z1) / 2, 1.3, 2.2, 1.4)]);
+    var wx = (x1 - x0) > 14 ? [x0 + (x1 - x0) * 0.25 - 1.1, x0 + (x1 - x0) * 0.75 - 1.1] : [(x0 + x1) / 2 - 1.1];
+    var wz = (z1 - z0) > 14 ? [z0 + (z1 - z0) * 0.25 - 1.1, z0 + (z1 - z0) * 0.75 - 1.1] : [(z0 + z1) / 2 - 1.1];
+    var wins = function (list, H0) { var out = []; for (var f = 0; f < Math.max(1, Math.floor(H0 / 3.3)); f++) list.forEach(function (u) { out.push(win(u, 1.3 + f * 3.3, 2.2, 1.4)); }); return out; };
+    if (doorFace !== 'n') facade('z', z0, z0 + TT, x0, x1, 0, H, mat, wins(wx, H));
+    if (doorFace !== 's') facade('z', z1 - TT, z1, x0, x1, 0, H, mat, wins(wx, H));
+    if (doorFace !== 'w') facade('x', x0, x0 + TT, z0, z1, 0, H, mat, wins(wz, H));
+    if (doorFace !== 'e') facade('x', x1 - TT, x1, z0, z1, 0, H, mat, wins(wz, H));
+    var cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, dw = opts.doorW || 1.3;
+    if (doorFace === 'e') { seg(x1 - TT, x1, 0, 2.7, z0 + TT, cz - dw, mat); seg(x1 - TT, x1, 0, 2.7, cz + dw, z1 - TT, mat); seg(x1 - TT, x1, 2.7, H, z0, z1, mat); }
+    if (doorFace === 'w') { seg(x0, x0 + TT, 0, 2.7, z0 + TT, cz - dw, mat); seg(x0, x0 + TT, 0, 2.7, cz + dw, z1 - TT, mat); seg(x0, x0 + TT, 2.7, H, z0, z1, mat); }
+    if (doorFace === 'n') { seg(x0 + TT, cx - dw, 0, 2.7, z0, z0 + TT, mat); seg(cx + dw, x1 - TT, 0, 2.7, z0, z0 + TT, mat); seg(x0, x1, 2.7, H, z0, z0 + TT, mat); }
+    if (doorFace === 's') { seg(x0 + TT, cx - dw, 0, 2.7, z1 - TT, z1, mat); seg(cx + dw, x1 - TT, 0, 2.7, z1 - TT, z1, mat); seg(x0, x1, 2.7, H, z1 - TT, z1, mat); }
+    if (!opts.noStair) {
+      /* the outside stair climbs along the face AWAY from the door; landing bridges onto the slab */
+      var steps = Math.ceil(H / 0.30), run = 0.34, len = steps * run;
+      if (doorFace === 'n' || doorFace === 's') {
+        var sz = doorFace === 'n' ? z1 + 1.9 : z0 - 1.9, dir = doorFace === 'n' ? 1 : -1;
+        stairFlight(x0 + 0.3, 0, sz, 1, 0, steps, H / steps, run, 1.6, M.concrete);
+        seg(x0 + 0.3 + len, x0 + 0.3 + len + 1.6, H, H + 0.3, doorFace === 'n' ? z1 : z0 - 2.7, doorFace === 'n' ? z1 + 2.7 : z0, M.concrete);
+      } else {
+        var sx = doorFace === 'w' ? x1 + 1.9 : x0 - 1.9;
+        stairFlight(sx, 0, z0 + 0.3, 0, 1, steps, H / steps, run, 1.6, M.concrete);
+        seg(doorFace === 'w' ? x1 : x0 - 2.7, doorFace === 'w' ? x1 + 2.7 : x0, H, H + 0.3, z0 + 0.3 + len, z0 + 0.3 + len + 1.6, M.concrete);
+      }
+    }
+  }
+  function shophouse(x0, x1, z0, z1, floors, mat, face, awn, id) {
+    var H = 3.3 * floors;
+    shell(x0, x1, z0, z1, H, mat, face);
+    /* parapet on the roof edge, an awning over the door face, a shed on the roof */
+    seg(x0, x1, H + 0.3, H + 0.9, z0, z0 + 0.25, mat); seg(x0, x1, H + 0.3, H + 0.9, z1 - 0.25, z1, mat);
+    seg(x0, x0 + 0.25, H + 0.3, H + 0.9, z0, z1, mat); seg(x1 - 0.25, x1, H + 0.3, H + 0.9, z0, z1, mat);
     var cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-    if (doorFace === 'e') { seg(x1 - TT, x1, 0, 2.7, z0 + TT, cz - 1.3, mat); seg(x1 - TT, x1, 0, 2.7, cz + 1.3, z1 - TT, mat); seg(x1 - TT, x1, 2.7, H, z0, z1, mat); }
-    if (doorFace === 'w') { seg(x0, x0 + TT, 0, 2.7, z0 + TT, cz - 1.3, mat); seg(x0, x0 + TT, 0, 2.7, cz + 1.3, z1 - TT, mat); seg(x0, x0 + TT, 2.7, H, z0, z1, mat); }
-    if (doorFace === 'n') { seg(x0 + TT, cx - 1.3, 0, 2.7, z0, z0 + TT, mat); seg(cx + 1.3, x1 - TT, 0, 2.7, z0, z0 + TT, mat); seg(x0, x1, 2.7, H, z0, z0 + TT, mat); }
-    if (doorFace === 's') { seg(x0 + TT, cx - 1.3, 0, 2.7, z1 - TT, z1, mat); seg(cx + 1.3, x1 - TT, 0, 2.7, z1 - TT, z1, mat); seg(x0, x1, 2.7, H, z1 - TT, z1, mat); }
-    /* outside stair to the roof, along the north wall climbing east (the Reach's
-       geometry, gate-proven); a landing bridges the last step onto the slab */
+    if (face === 'n') seg(cx - 3.5, cx + 3.5, 2.55, 2.7, z0 - 1.5, z0 + 0.1, awn, NCAST);
+    if (face === 's') seg(cx - 3.5, cx + 3.5, 2.55, 2.7, z1 - 0.1, z1 + 1.5, awn, NCAST);
+    if (face === 'w') seg(x0 - 1.5, x0 + 0.1, 2.55, 2.7, cz - 3.5, cz + 3.5, awn, NCAST);
+    if (face === 'e') seg(x1 - 0.1, x1 + 1.5, 2.55, 2.7, cz - 3.5, cz + 3.5, awn, NCAST);
+    if (rnd() < 0.6) box(cx + (rnd() - 0.5) * (x1 - x0 - 6), H + 0.3 + 1.0, cz + (rnd() - 0.5) * (z1 - z0 - 6), 2.4, 2.0, 2.0, M.metal);   // roof shed: cover
+    V.buildings.push({ kind: 'shop', id: id, x0: x0, x1: x1, z0: z0, z1: z1, H: H, floor: 0.15, roof: H + 0.3 });
+  }
+  function apartment(x0, x1, z0, z1, mat, face, id) {
+    var H = 3.3 * 4;
+    shell(x0, x1, z0, z1, H, mat, face);
+    /* balconies on the long faces at floors 2-4, a lift house and a parapet on the roof */
+    var longX = (x1 - x0) >= (z1 - z0);
+    for (var f = 1; f < 4; f++) {
+      var y = f * 3.3;
+      if (longX) { for (var bx = x0 + 2; bx + 3 <= x1 - 2; bx += 5) { seg(bx, bx + 3, y, y + 0.15, z0 - 1.2, z0 + 0.1, M.concrete); seg(bx, bx + 3, y + 0.15, y + 1.0, z0 - 1.2, z0 - 1.1, M.trim, NCAST); seg(bx, bx + 3, y, y + 0.15, z1 - 0.1, z1 + 1.2, M.concrete); seg(bx, bx + 3, y + 0.15, y + 1.0, z1 + 1.1, z1 + 1.2, M.trim, NCAST); } }
+      else { for (var bz = z0 + 2; bz + 3 <= z1 - 2; bz += 5) { seg(x0 - 1.2, x0 + 0.1, y, y + 0.15, bz, bz + 3, M.concrete); seg(x0 - 1.2, x0 - 1.1, y + 0.15, y + 1.0, bz, bz + 3, M.trim, NCAST); seg(x1 - 0.1, x1 + 1.2, y, y + 0.15, bz, bz + 3, M.concrete); seg(x1 + 1.1, x1 + 1.2, y + 0.15, y + 1.0, bz, bz + 3, M.trim, NCAST); } }
+    }
+    seg(x0, x1, H + 0.3, H + 1.1, z0, z0 + 0.25, mat); seg(x0, x1, H + 0.3, H + 1.1, z1 - 0.25, z1, mat);
+    seg(x0, x0 + 0.25, H + 0.3, H + 1.1, z0, z1, mat); seg(x1 - 0.25, x1, H + 0.3, H + 1.1, z0, z1, mat);
+    var cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    box(cx, H + 0.3 + 1.3, cz, 3.2, 2.6, 3.2, M.concrete);   // lift house
+    V.buildings.push({ kind: 'apt', id: id, x0: x0, x1: x1, z0: z0, z1: z1, H: H, floor: 0.15, roof: H + 0.3 });
+  }
+  function warehouse(x0, x1, z0, z1, mat, id) {
+    var H = 5.4, TT = 0.3, longX = (x1 - x0) >= (z1 - z0);
+    seg(x0, x1, H, H + 0.3, z0, z1, M.roof);
+    seg(x0 + TT, x1 - TT, 0.02, 0.15, z0 + TT, z1 - TT, M.concrete);
+    var cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    if (longX) {
+      /* big doors on the short (x) ends, high windows on the long faces */
+      seg(x0, x0 + TT, 0, H, z0, cz - 2.2, mat); seg(x0, x0 + TT, 0, H, cz + 2.2, z1, mat); seg(x0, x0 + TT, 3.6, H, cz - 2.2, cz + 2.2, mat);
+      seg(x1 - TT, x1, 0, H, z0, cz - 2.2, mat); seg(x1 - TT, x1, 0, H, cz + 2.2, z1, mat); seg(x1 - TT, x1, 3.6, H, cz - 2.2, cz + 2.2, mat);
+      var ws = []; for (var u = x0 + 2; u + 2.6 <= x1 - 2; u += 4.5) ws.push(win(u, 3.4, 2.6, 1.2));
+      facade('z', z0, z0 + TT, x0, x1, 0, H, mat, ws); facade('z', z1 - TT, z1, x0, x1, 0, H, mat, ws);
+      /* mezzanine along the north wall with its stair at the east end */
+      seg(x0 + TT + 0.05, x1 - TT - 0.05, 3.0, 3.2, z0 + TT + 0.05, z0 + 3.6, M.metal); seg(x0 + TT + 0.05, x1 - TT - 0.05, 3.2, 4.1, z0 + 3.5, z0 + 3.6, M.trim, NCAST);
+      stairFlight(x1 - TT - 1.2, 0.15, z0 + 3.6 + 3.4, 0, -1, 10, 0.305, 0.34, 1.3, M.metal);   // from the 0.15 floor, climbs north onto the 3.2 deck edge
+      V.buildings.push({ kind: 'wh', id: id, x0: x0, x1: x1, z0: z0, z1: z1, H: H, floor: 0.15, roof: H + 0.3, mez: { y: 3.2, x: (x0 + x1) / 2, z: z0 + 1.9 } });
+    } else {
+      seg(x0, cx - 2.2, 0, H, z0, z0 + TT, mat); seg(cx + 2.2, x1, 0, H, z0, z0 + TT, mat); seg(cx - 2.2, cx + 2.2, 3.6, H, z0, z0 + TT, mat);
+      seg(x0, cx - 2.2, 0, H, z1 - TT, z1, mat); seg(cx + 2.2, x1, 0, H, z1 - TT, z1, mat); seg(cx - 2.2, cx + 2.2, 3.6, H, z1 - TT, z1, mat);
+      var ws2 = []; for (var u2 = z0 + 2; u2 + 2.6 <= z1 - 2; u2 += 4.5) ws2.push(win(u2, 3.4, 2.6, 1.2));
+      facade('x', x0, x0 + TT, z0, z1, 0, H, mat, ws2); facade('x', x1 - TT, x1, z0, z1, 0, H, mat, ws2);
+      seg(x0 + TT + 0.05, x0 + 3.6, 3.0, 3.2, z0 + TT + 0.05, z1 - TT - 0.05, M.metal); seg(x0 + 3.5, x0 + 3.6, 3.2, 4.1, z0 + TT + 0.05, z1 - TT - 0.05, M.trim, NCAST);
+      stairFlight(x0 + 3.6 + 3.4, 0.15, z1 - TT - 1.2, -1, 0, 10, 0.305, 0.34, 1.3, M.metal);   // from the 0.15 floor, climbs west onto the 3.2 deck edge
+      V.buildings.push({ kind: 'wh', id: id, x0: x0, x1: x1, z0: z0, z1: z1, H: H, floor: 0.15, roof: H + 0.3, mez: { y: 3.2, x: x0 + 1.9, z: (z0 + z1) / 2 } });
+    }
+    /* skylights on the roof (cover) and an outside stair on the south-west corner */
+    for (var k = x0 + 3; k + 2 <= x1 - 3; k += 6) box(k + 1, H + 0.3 + 0.35, cz, 2.0, 0.7, 2.0, M.glass || M.steelBlue, NCAST);
     var steps = Math.ceil(H / 0.30), run = 0.34;
-    stairFlight(x0 + 0.3, 0, z0 - 1.9, 1, 0, steps, H / steps, run, 1.6, M.concrete);
-    seg(x0 + 0.3 + steps * run, x0 + 0.3 + steps * run + 1.6, H, H + 0.3, z0 - 2.7, z0 + 0.4, M.concrete);
+    stairFlight(x0 + 0.3, 0, z1 + 1.9, 1, 0, steps, H / steps, run, 1.6, M.concrete);
+    seg(x0 + 0.3 + steps * run, x0 + 0.3 + steps * run + 1.6, H, H + 0.3, z1, z1 + 2.7, M.concrete);
+  }
+  function tree(x, z, big) {
+    var h = big ? 6.5 : 4.5, r = big ? 3.0 : 2.1;
+    cyl(x, h * 0.35, z, 0.22, h * 0.7, M.wood);
+    cyl(x, h * 0.7 + r * 0.55, z, r, r * 1.1, M.foliage, NC);   /* v2.1: canopies do not collide — a tree is a trunk to walk round, not a wall */
+  }
+  function park(x0, x1, z0, z1, id) {
+    segx(x0, x1, 0.01, 0.03, z0, z1, M.sage, NBOTH);
+    // hedges on the two long sides with gaps, a path across, trees in the corners
+    var w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    seg(x0, cx - 2.5, 0, 0.9, z0, z0 + 0.6, M.foliage); seg(cx + 2.5, x1, 0, 0.9, z0, z0 + 0.6, M.foliage);
+    seg(x0, cx - 2.5, 0, 0.9, z1 - 0.6, z1, M.foliage); seg(cx + 2.5, x1, 0, 0.9, z1 - 0.6, z1, M.foliage);
+    segx(cx - 1.5, cx + 1.5, 0.02, 0.05, z0, z1, M.sidewalk, NBOTH); segx(x0, x1, 0.02, 0.05, cz - 1.5, cz + 1.5, M.sidewalk, NBOTH);
+    tree(x0 + 3, z0 + 3, w > 16); tree(x1 - 3, z0 + 3, false); tree(x0 + 3, z1 - 3, false); tree(x1 - 3, z1 - 3, w > 16);
+    if (w > 18 && d > 14) { cyl(cx, 0.3, cz, 2.6, 0.6, M.concrete); cyl(cx, 1.3, cz, 0.35, 2.0, M.metal); cyl(cx, 2.3, cz, 1.1, 0.15, M.steelBlue, NC); }   // fountain
+    else lamp(cx, cz + 3.2, 'n');
+    [[cx - 5, cz - 3.6], [cx + 5, cz - 3.6], [cx - 5, cz + 3.6], [cx + 5, cz + 3.6]].forEach(function (b) { if (b[0] > x0 + 2 && b[0] < x1 - 2) box(b[0], 0.45, b[1], 1.8, 0.4, 0.5, M.wood); });
+  }
+  function monument(x, z) {
+    seg(x - 5, x + 5, 0, 0.5, z - 5, z + 5, M.concrete); seg(x - 3.6, x + 3.6, 0.5, 1.0, z - 3.6, z + 3.6, M.concrete); seg(x - 2.2, x + 2.2, 1.0, 1.5, z - 2.2, z + 2.2, M.concrete);
+    box(x, 1.5 + 5.5, z, 1.4, 11, 1.4, M.plaster); box(x, 12.6, z, 0.6, 1.2, 0.6, M.trim, NC);
+    [[-4, -4], [4, -4], [-4, 4], [4, 4]].forEach(function (o) { cyl(x + o[0], 0.6, z + o[1], 0.3, 1.2, M.metal); });
+    [[-6.2, 0, 0], [6.2, 0, 0], [0, -6.2, 1], [0, 6.2, 1]].forEach(function (o) { lamp(x + o[0], z + o[1], o[2] ? (o[1] < 0 ? 's' : 'n') : (o[0] < 0 ? 'e' : 'w')); });
+  }
+  function market(x0, x1, z0, z1) {
+    segx(x0, x1, 0.02, 0.05, z0, z1, M.sidewalk, NBOTH);
+    var longX = (x1 - x0) >= (z1 - z0), cz = (z0 + z1) / 2, cx = (x0 + x1) / 2, mats = [M.contRed, M.contGreen, M.contBlue, M.facadeMustard];
+    if (longX) for (var u = x0 + 2, i = 0; u + 3 <= x1 - 2; u += 4.2, i++) { [cz - 3.2, cz + 3.2].forEach(function (zz, j) { box(u + 1.5, 0.45, zz, 3, 0.9, 1.4, M.wood); box(u + 1.5, 2.3, zz, 3.4, 0.12, 2.2, mats[(i + j) % 4], NCAST); [[-1.4, -0.9], [1.4, -0.9], [-1.4, 0.9], [1.4, 0.9]].forEach(function (pp) { box(u + 1.5 + pp[0], 1.3, zz + pp[1], 0.1, 2.3, 0.1, M.metal); }); }); }
+    else for (var v = z0 + 2, k = 0; v + 3 <= z1 - 2; v += 4.2, k++) { [cx - 3.2, cx + 3.2].forEach(function (xx, j) { box(xx, 0.45, v + 1.5, 1.4, 0.9, 3, M.wood); box(xx, 2.3, v + 1.5, 2.2, 0.12, 3.4, mats[(k + j) % 4], NCAST); [[-0.9, -1.4], [0.9, -1.4], [-0.9, 1.4], [0.9, 1.4]].forEach(function (pp) { box(xx + pp[0], 1.3, v + 1.5 + pp[1], 0.1, 2.3, 0.1, M.metal); }); }); }
+    crates(x0 + 1.5, z0 + 1.5); barrel(x1 - 1.2, z1 - 1.2, false);
+  }
+  function busstop(x0, x1, z0, z1, face) {
+    /* the shelter stands on the parcel's avenue side; the bus is drawn up on the avenue itself */
+    var cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    var sx = cx, sz = cz, rot = 0, bxp = cx, bzp = cz;
+    if (face === 'n') { sz = z0 + 1.2; rot = 0; bzp = z0 - 5.0; } if (face === 's') { sz = z1 - 1.2; rot = 0; bzp = z1 + 5.0; }
+    if (face === 'w') { sx = x0 + 1.2; rot = Math.PI / 2; bxp = x0 - 5.0; } if (face === 'e') { sx = x1 - 1.2; rot = Math.PI / 2; bxp = x1 + 5.0; }
+    var alongX = (face === 'n' || face === 's');
+    // roof, two posts, bench, sign
+    if (alongX) { seg(sx - 3.2, sx + 3.2, 2.6, 2.75, sz - 1.1, sz + 1.1, M.steelBlue, NCAST); box(sx - 2.9, 1.3, sz + 0.9, 0.12, 2.6, 0.12, M.metal); box(sx + 2.9, 1.3, sz + 0.9, 0.12, 2.6, 0.12, M.metal); box(sx, 0.5, sz + 0.7, 4.0, 0.4, 0.5, M.wood); seg(sx - 3.2, sx + 3.2, 0.3, 2.6, sz + 1.0, sz + 1.1, M.glass || M.steelBlue, NC); box(sx + 3.6, 1.9, sz - 0.6, 0.6, 1.0, 0.08, M.facadeIndigo, NC); box(sx + 3.6, 0.7, sz - 0.6, 0.08, 1.4, 0.08, M.metal); }
+    else { seg(sx - 1.1, sx + 1.1, 2.6, 2.75, sz - 3.2, sz + 3.2, M.steelBlue, NCAST); box(sx + 0.9, 1.3, sz - 2.9, 0.12, 2.6, 0.12, M.metal); box(sx + 0.9, 1.3, sz + 2.9, 0.12, 2.6, 0.12, M.metal); box(sx + 0.7, 0.5, sz, 0.5, 0.4, 4.0, M.wood); seg(sx + 1.0, sx + 1.1, 0.3, 2.6, sz - 3.2, sz + 3.2, M.glass || M.steelBlue, NC); box(sx - 0.6, 1.9, sz + 3.6, 0.08, 1.0, 0.6, M.facadeIndigo, NC); box(sx - 0.6, 0.7, sz + 3.6, 0.08, 1.4, 0.08, M.metal); }
+    bus(bxp, bzp, rot); V.buses.push([bxp, bzp]);
+    // the rest of the parcel: planters and a lamp
+    box(cx - 4, 0.5, cz, 2.4, 1.0, 1.2, M.concrete); box(cx + 4, 0.5, cz, 2.4, 1.0, 1.2, M.concrete); tree(cx - 4, cz, false); tree(cx + 4, cz, false);
+  }
+  function carpark(x0, x1, z0, z1) {
+    segx(x0, x1, 0.005, 0.02, z0, z1, M.asphalt, NBOTH);
+    var longX = (x1 - x0) >= (z1 - z0), cz = (z0 + z1) / 2, cx = (x0 + x1) / 2, n = 0;
+    /* cars stand PERPENDICULAR to the aisle (a 4.2 m body across a 3.2 m bay pitch never overlaps its neighbour) */
+    /* (a car's 4.2 m body runs along X at rotation 0 — vpart(w=4.2, d=1.9)) */
+    if (longX) { seg(x0, x1, 0, 0.35, cz - 0.6, cz + 0.6, M.concrete, NCAST); for (var u = x0 + 2.2; u + 2 <= x1 - 2; u += 3.2, n++) { if (rnd() < 0.8) { if (n % 5 === 2) van(u, cz - 3.6, Math.PI / 2); else sedan(u, cz - 3.6, Math.PI / 2, n % 6, rnd() < 0.12); } if (rnd() < 0.8) sedan(u, cz + 3.6, -Math.PI / 2, (n + 3) % 6, false); } }
+    else { seg(cx - 0.6, cx + 0.6, 0, 0.35, z0, z1, M.concrete, NCAST); for (var v = z0 + 2.2; v + 2 <= z1 - 2; v += 3.2, n++) { if (rnd() < 0.8) sedan(cx - 3.6, v, 0, n % 6, false); if (rnd() < 0.8) { if (n % 4 === 1) van(cx + 3.6, v, Math.PI); else sedan(cx + 3.6, v, Math.PI, (n + 2) % 6, rnd() < 0.12); } } }
+    lamp(x0 + 1, z0 + 1, 'e');
+  }
+  function water(x0, x1, z0, z1) {
+    /* a canal basin: the water plane, a 1 m promenade wall on the city side, a jetty */
+    segx(x0, x1, 0.01, 0.03, z0, z1, M.steelBlue, NBOTH);
+    seg(x0 - 0.4, x0, 0, 1.0, z0 - 0.4, z1 + 0.4, M.concrete);
+    seg(x0 - 0.4, x1, 0, 1.0, z0 - 0.4, z0, M.concrete); seg(x0 - 0.4, x1, 0, 1.0, z1, z1 + 0.4, M.concrete);
+    var cz = (z0 + z1) / 2; seg(x0, x0 + 6, 0.4, 0.6, cz - 1, cz + 1, M.wood); cyl(x0 + 5.6, 0.9, cz - 0.8, 0.12, 1.2, M.wood); cyl(x0 + 5.6, 0.9, cz + 0.8, 0.12, 1.2, M.wood);
+    tree(x0 - 2.2, z0 + 3, false); tree(x0 - 2.2, z1 - 3, false);
+  }
+  function watertower(x, z) {
+    [[-2.2, -2.2], [2.2, -2.2], [-2.2, 2.2], [2.2, 2.2]].forEach(function (o) { box(x + o[0], 6, z + o[1], 0.5, 12, 0.5, M.metal); });
+    seg(x - 2.6, x + 2.6, 5.8, 6.1, z - 2.6, z + 2.6, M.metal, NCAST); seg(x - 2.6, x + 2.6, 11.7, 12.0, z - 2.6, z + 2.6, M.metal);
+    cyl(x, 14.6, z, 3.4, 5.2, M.facadeSky); cyl(x, 17.5, z, 3.6, 0.5, M.dark, NC);
+    stairFlight(x - 2.6 - 5.2, 0, z, 1, 0, 20, 0.305, 0.26, 1.0, M.metal);   // climbs east onto the 6.1 m deck: a perch
+    seg(x - 2.6, x + 2.6, 6.1, 7.1, z + 2.5, z + 2.6, M.trim, NCAST);
+  }
+  function mast(x, z) {
+    box(x, 14, z, 1.2, 28, 1.2, M.metal); box(x, 28.4, z, 0.3, 1.6, 0.3, M.contRed, NC);
+    cyl(x + 0.9, 20, z, 0.9, 0.15, M.white, NC); cyl(x - 0.9, 16, z, 0.9, 0.15, M.white, NC);
+    seg(x - 3.5, x + 3.5, 0, 2.2, z - 3.5, z - 3.2, M.metal); seg(x - 3.5, x + 3.5, 0, 2.2, z + 3.2, z + 3.5, M.metal); seg(x - 3.5, x - 3.2, 0, 2.2, z - 3.5, z + 3.5, M.metal);   // a compound fence, open to the south
+    box(x + 2.4, 1.2, z + 2.4, 1.6, 2.4, 1.6, M.contGray);
+  }
+  function footbridge(A, B) {
+    /* a steel deck between two roofs (A, B are buildings); the deck sits 0.3 above the lower roof */
+    var y = A.roof + 0.1, ax = (A.x0 + A.x1) / 2, az = (A.z0 + A.z1) / 2, bx = (B.x0 + B.x1) / 2, bz = (B.z0 + B.z1) / 2;   // equal roofs: the deck top is 0.1 above them, its underside 0.1 inside the slabs
+    var dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz), yaw = Math.atan2(dz, dx);
+    box((ax + bx) / 2, y - 0.1, (az + bz) / 2, L, 0.2, 1.8, M.metal, { rotY: -yaw });   // the deck
+    box((ax + bx) / 2 - Math.sin(yaw) * 0.85, y + 0.45, (az + bz) / 2 + Math.cos(yaw) * 0.85, L, 0.9, 0.08, M.trim, { rotY: -yaw, cast: false });
+    box((ax + bx) / 2 + Math.sin(yaw) * 0.85, y + 0.45, (az + bz) / 2 - Math.cos(yaw) * 0.85, L, 0.9, 0.08, M.trim, { rotY: -yaw, cast: false });
   }
 
-  /* ---- THE NEW WALL ---- */
+  /* ---------- the perimeter, the avenue, the streets ---------- */
   segx(E.x0 - 0.9, E.x1 + 0.9, 0, 3.2, E.z0 - 0.9, E.z0, M.concrete);
   segx(E.x0 - 0.9, E.x1 + 0.9, 0, 3.2, E.z1, E.z1 + 0.9, M.concrete);
   segx(E.x0 - 0.9, E.x0, 0, 3.2, E.z0, E.z1, M.concrete);
   segx(E.x1, E.x1 + 0.9, 0, 3.2, E.z0, E.z1, M.concrete);
-
-  /* ---- THE PERIMETER BOULEVARD (asphalt, non-colliding) and its kerbs ---- */
-  segx(R.wOuter, R.outer, 0.005, 0.02, -R.outer, -R.inner, M.asphalt, NBOTH);      // north run
-  segx(R.wOuter, R.outer, 0.005, 0.02, R.inner, R.outer, M.asphalt, NBOTH);        // south run
-  segx(R.wOuter, R.wInner, 0.005, 0.02, -R.inner, R.inner, M.asphalt, NBOTH);      // west run
-  segx(R.inner, R.outer, 0.005, 0.02, -R.inner, R.inner, M.asphalt, NBOTH);        // east run
-  for (var d2 = R.wTrack + 10; d2 < R.track - 10; d2 += 12) {                      // dashed centre lines
-    segx(d2, d2 + 3, 0.03, 0.045, -R.track - 0.2, -R.track + 0.2, M.roadPaint, NBOTH);
-    segx(d2, d2 + 3, 0.03, 0.045, R.track - 0.2, R.track + 0.2, M.roadPaint, NBOTH);
-  }
-  for (var d3 = -R.inner + 10; d3 < R.inner - 10; d3 += 12) {
-    segx(R.wTrack - 0.2, R.wTrack + 0.2, 0.03, 0.045, d3, d3 + 3, M.roadPaint, NBOTH);
-    segx(R.track - 0.2, R.track + 0.2, 0.03, 0.045, d3, d3 + 3, M.roadPaint, NBOTH);
-  }
-  // outer kerb (13 cm) against the wall, inner kerb on the city side
-  segx(R.wOuter - 0.6, R.outer + 0.6, 0, 0.13, -R.outer - 0.6, -R.outer, M.sidewalk, NCAST);
-  segx(R.wOuter - 0.6, R.outer + 0.6, 0, 0.13, R.outer, R.outer + 0.6, M.sidewalk, NCAST);
-  segx(R.wOuter - 0.6, R.wOuter, 0, 0.13, -R.outer, R.outer, M.sidewalk, NCAST);
-  segx(R.outer, R.outer + 0.6, 0, 0.13, -R.outer, R.outer, M.sidewalk, NCAST);
-  segx(R.wInner, R.inner, 0, 0.13, -R.inner - 0.6, -R.inner, M.sidewalk, NCAST);
-  segx(R.wInner, R.inner, 0, 0.13, R.inner, R.inner + 0.6, M.sidewalk, NCAST);
-  segx(R.wInner, R.wInner + 0.6, 0, 0.13, -R.inner, R.inner, M.sidewalk, NCAST);
-  segx(R.inner - 0.6, R.inner, 0, 0.13, -R.inner, R.inner, M.sidewalk, NCAST);
-  // boulevard lamps every 36 m on the inner kerb, arms toward the road
-  for (var lx = -252; lx <= 192; lx += 36) { lamp(lx, -R.inner - 1.2, 'n'); lamp(lx, R.inner + 1.2, 's'); }
+  segx(R.wOuter, R.outer, 0.005, 0.02, -R.outer, -R.inner, M.asphalt, NBOTH);
+  segx(R.wOuter, R.outer, 0.005, 0.02, R.inner, R.outer, M.asphalt, NBOTH);
+  segx(R.wOuter, R.wInner, 0.005, 0.02, -R.inner, R.inner, M.asphalt, NBOTH);
+  segx(R.inner, R.outer, 0.005, 0.02, -R.inner, R.inner, M.asphalt, NBOTH);
+  for (var d2 = R.wTrack + 10; d2 < R.track - 10; d2 += 12) { segx(d2, d2 + 3, 0.03, 0.045, R.track - 0.2, R.track + 0.2, M.roadPaint, NBOTH); }
+  for (var d3 = -R.inner + 10; d3 < R.inner - 10; d3 += 12) { segx(R.wTrack - 0.2, R.wTrack + 0.2, 0.03, 0.045, d3, d3 + 3, M.roadPaint, NBOTH); segx(R.track - 0.2, R.track + 0.2, 0.03, 0.045, d3, d3 + 3, M.roadPaint, NBOTH); }
+  segx(R.wOuter - 0.6, R.outer + 0.6, 0, 0.13, -R.outer - 0.6, -R.outer, M.sidewalk, NCAST); segx(R.wOuter - 0.6, R.outer + 0.6, 0, 0.13, R.outer, R.outer + 0.6, M.sidewalk, NCAST);
+  segx(R.wOuter - 0.6, R.wOuter, 0, 0.13, -R.outer, R.outer, M.sidewalk, NCAST); segx(R.outer, R.outer + 0.6, 0, 0.13, -R.outer, R.outer, M.sidewalk, NCAST);
+  segx(R.wInner, R.inner, 0, 0.13, -R.inner - 0.6, -R.inner, M.sidewalk, NCAST); segx(R.wInner, R.inner, 0, 0.13, R.inner, R.inner + 0.6, M.sidewalk, NCAST);
+  segx(R.wInner, R.wInner + 0.6, 0, 0.13, -R.inner, R.inner, M.sidewalk, NCAST); segx(R.inner - 0.6, R.inner, 0, 0.13, -R.inner, R.inner, M.sidewalk, NCAST);
+  for (var lx = -252; lx <= 192; lx += 36) { if (Math.abs(lx + 60) > 5 && Math.abs(lx - 103.2) > 5) lamp(lx, -R.inner - 1.2, 'n'); lamp(lx, R.inner + 1.2, 's'); }
   for (var lz = -192; lz <= 192; lz += 36) { lamp(R.wInner + 1.2, lz, 'w'); lamp(R.inner - 1.2, lz, 'e'); }
-
-  /* ---- THE INNER AVENUE (where the old wall stood) ---- */
-  segx(-264, 204, 0.005, 0.02, -128, -120, M.asphalt, NBOTH);
-  segx(-264, 204, 0.005, 0.02, 120, 128, M.asphalt, NBOTH);
-  segx(120, 128, 0.005, 0.02, -120, 120, M.asphalt, NBOTH);
-  segx(-188, -180, 0.005, 0.02, -120, 120, M.asphalt, NBOTH);
+  segx(-264, 204, 0.005, 0.02, -128, -120, M.asphalt, NBOTH); segx(-264, 204, 0.005, 0.02, 120, 128, M.asphalt, NBOTH);
+  segx(120, 128, 0.005, 0.02, -120, 120, M.asphalt, NBOTH); segx(-188, -180, 0.005, 0.02, -120, 120, M.asphalt, NBOTH);
   for (var da = -256; da < 200; da += 10) { segx(da, da + 4, 0.03, 0.045, -124.2, -123.8, M.roadPaint, NBOTH); segx(da, da + 4, 0.03, 0.045, 123.8, 124.2, M.roadPaint, NBOTH); }
   for (var db = -116; db < 116; db += 10) { segx(123.8, 124.2, 0.03, 0.045, db, db + 4, M.roadPaint, NBOTH); segx(-184.2, -183.8, 0.03, 0.045, db, db + 4, M.roadPaint, NBOTH); }
+  V.streets.forEach(function (st) { if (st[0] === 'x') segx(st[1] - 4, st[1] + 4, 0.005, 0.02, st[2], st[3], M.asphalt, NBOTH); else segx(st[2], st[3], 0.005, 0.02, st[1] - 4, st[1] + 4, M.asphalt, NBOTH); });
+  V.rails.forEach(function (rc) { segx(rc[0] - 4.5, rc[0] + 4.5, 0.004, 0.018, rc[1], -128.3, M.dirt, NBOTH); });   // ballast strip under the corridor rails, stopping at the inner avenue (asphalt from there)
+  V.plazas.forEach(function (pz) { segx(pz[0], pz[1], 0.005, 0.02, pz[2], pz[3], M.asphalt, NBOTH); });
 
-  /* ---- CROSS STREETS and STATION PLAZAS ---- */
-  V.streets.forEach(function (st) {
-    if (st[0] === 'x') segx(st[1] - 4, st[1] + 4, 0.005, 0.02, st[2], st[3], M.asphalt, NBOTH);
-    else segx(st[2], st[3], 0.005, 0.02, st[1] - 4, st[1] + 4, M.asphalt, NBOTH);
+  /* ---------- the parcel cutter ---------- */
+  /* a band is described along `a` (x for N/S, z for E/W) with three rows at
+     fixed depths `b`; obstacles along a (streets, rails, plazas) are cut out */
+  function bandRows(band) {
+    if (band === 'N') return [[-200, -184], [-176, -160], [-152, -136]];   // outer, middle, inner (z)
+    if (band === 'S') return [[184, 200], [160, 176], [136, 152]];
+    if (band === 'E') return [[184, 200], [160, 176], [136, 152]];         // (x)
+    return [[-260, -244], [-236, -220], [-212, -196]];                       // W (x): outer by the perimeter kerb (-264), inner by the avenue (-188)
+  }
+  function obstaclesAlong(band) {
+    var cuts = [];
+    V.streets.forEach(function (st) {
+      if ((band === 'N' || band === 'S') && st[0] === 'x' && ((band === 'N' && st[2] < 0) || (band === 'S' && st[2] > 0))) cuts.push([st[1] - 4, st[1] + 4]);
+      if ((band === 'E' || band === 'W') && st[0] === 'z' && ((band === 'E' && st[2] > 0) || (band === 'W' && st[2] < 0))) cuts.push([st[1] - 4, st[1] + 4]);
+    });
+    if (band === 'N') V.rails.forEach(function (rc) { cuts.push([rc[0] - 4.5, rc[0] + 4.5]); });
+    /* the four corner towers (8 x 12 footprints) */
+    V.towers.forEach(function (tw) {
+      var X0 = tw[0], Z0 = tw[1];
+      if ((band === 'N' && Z0 < 0) || (band === 'S' && Z0 > 0)) cuts.push([X0 - 1, X0 + 8 + 1]);
+      if ((band === 'E' && X0 > 0) || (band === 'W' && X0 < 0)) cuts.push([Z0 - 1, Z0 + 12 + 1]);
+    });
+    V.plazas.forEach(function (pz) {
+      if (band === 'S' && pz[2] > 100) cuts.push([pz[0], pz[1]]);
+      if (band === 'E' && pz[0] > 100) cuts.push([pz[2], pz[3]]);
+      if (band === 'W' && pz[0] < -100) cuts.push([pz[2], pz[3]]);
+    });
+    return cuts;
+  }
+  function free(a0, a1, cuts) { for (var i = 0; i < cuts.length; i++) if (a1 > cuts[i][0] - 2 && a0 < cuts[i][1] + 2) return false; return true; }
+  function rect(band, a0, a1, b0, b1) { return (band === 'N' || band === 'S') ? { x0: a0, x1: a1, z0: b0, z1: b1 } : { x0: b0, x1: b1, z0: a0, z1: a1 }; }
+  /* which face of a parcel opens onto the lane / avenue / boulevard */
+  function faceFor(band, rowIdx) {
+    // outer row faces the boulevard (away from centre), inner row faces the avenue (toward centre), middle faces the outer lane
+    if (band === 'N') return rowIdx === 2 ? 's' : 'n';
+    if (band === 'S') return rowIdx === 2 ? 'n' : 's';
+    if (band === 'E') return rowIdx === 2 ? 'w' : 'e';
+    return rowIdx === 2 ? 'e' : 'w';
+  }
+  var count = 0;
+  V.districts.forEach(function (D) {
+    var rows = bandRows(D.band), cuts = obstaclesAlong(D.band);
+    var lastShop = null, lastApt = null, bridges = 0;
+    // reserve the landmark's footprint
+    var LM = D.landmark, lmA = (D.band === 'N' || D.band === 'S') ? LM[1] : LM[2], lmRow = 1, lmHalf = LM[0] === 'tanks' || LM[0] === 'cranes' || LM[0] === 'bandstand' ? 18 : LM[0] === 'gasometer' ? 13 : LM[0] === 'pitch' ? 10 : 7;   /* the landmark's half-width along the band */
+    rows.forEach(function (rowB, ri) {
+      var kinds = D.rows[ri], a = D.a0 + 3, kIdx = Math.floor(rnd() * kinds.length);
+      while (a < D.a1 - 12) {
+        var kind = kinds[kIdx % kinds.length]; kIdx++;
+        var w = kind === 'wh' ? 20 + Math.floor(rnd() * 3) * 4 : kind === 'apt' ? 16 + Math.floor(rnd() * 3) * 3 : kind === 'park' ? 22 + Math.floor(rnd() * 2) * 6 : kind === 'market' ? 18 : kind === 'busstop' ? 14 : kind === 'carpark' ? 22 : kind === 'monument' ? 14 : 10 + Math.floor(rnd() * 4) * 3;
+        var a1 = Math.min(a + w, D.a1 - 3);
+        if (a1 - a < 9) break;
+        var bigLM = (LM[0] === 'tanks' || LM[0] === 'cranes' || LM[0] === 'gasometer' || LM[0] === 'bandstand' || LM[0] === 'pitch');
+        if ((ri === lmRow || (bigLM && ri === 0)) && a1 > lmA - lmHalf && a < lmA + lmHalf) { a = lmA + lmHalf + 3; continue; }   // the landmark's ground (big ones also take the outer row)
+        if (!free(a, a1, cuts)) { a += 2; continue; }
+        var r = rect(D.band, a, a1, rowB[0], rowB[1]), face = faceFor(D.band, ri), mat = M[pick(D.mats)] || M.plaster, id = D.id + '-' + (count++);
+        if (kind === 'shop') { shophouse(r.x0, r.x1, r.z0, r.z1, 2 + (rnd() < 0.4 ? 1 : 0), mat, face, pick([M.contRed, M.contGreen, M.contBlue, M.facadeMustard]), id); var b = V.buildings[V.buildings.length - 1]; if (lastShop && bridges < 1 && lastShop.H === b.H && Math.hypot((lastShop.x0 + lastShop.x1) / 2 - (b.x0 + b.x1) / 2, (lastShop.z0 + lastShop.z1) / 2 - (b.z0 + b.z1) / 2) < 30 && ri === 0) { footbridge(lastShop, b); bridges++; } lastShop = b; }
+        else if (kind === 'apt') { apartment(r.x0, r.x1, r.z0, r.z1, mat, face, id); lastApt = V.buildings[V.buildings.length - 1]; }
+        else if (kind === 'wh') warehouse(r.x0, r.x1, r.z0, r.z1, mat, id);
+        else if (kind === 'park') park(r.x0, r.x1, r.z0, r.z1, id);
+        else if (kind === 'monument') monument((r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2);
+        else if (kind === 'market') market(r.x0, r.x1, r.z0, r.z1);
+        else if (kind === 'busstop') busstop(r.x0, r.x1, r.z0, r.z1, face);
+        else if (kind === 'carpark') carpark(r.x0, r.x1, r.z0, r.z1);
+        else if (kind === 'water') water(r.x0, r.x1, r.z0, r.z1);
+        a = a1 + 3;   /* v2.1: 3 m between parcels (was 4-6) — alleys, not gaps */
+      }
+    });
+    /* the landmark, in the middle row */
+    var lm = D.landmark, lx0 = lm[1], lz0 = lm[2];
+    if (lm[0] === 'watertower') watertower(lx0, lz0);
+    else if (lm[0] === 'mast') mast(lx0, lz0);
+    else if (lm[0] === 'tanks') { cyl(lx0 - 9, 4, lz0, 7, 8, M.metal); cyl(lx0 + 9, 4, lz0, 7, 8, M.metal); cyl(lx0 - 9, 8.3, lz0, 7.2, 0.5, M.dark, NC); cyl(lx0 + 9, 8.3, lz0, 7.2, 0.5, M.dark, NC); seg(lx0 - 17, lx0 + 17, 3.0, 3.5, lz0 + 8.6, lz0 + 9.6, M.metal, NCAST); [lx0 - 16, lx0 - 5, lx0 + 6, lx0 + 16].forEach(function (px) { seg(px - 0.25, px + 0.25, 0, 3.0, lz0 + 8.8, lz0 + 9.4, M.metal); }); barrel(lx0 - 18, lz0 - 6, true); barrel(lx0 - 17, lz0 - 7, true); }
+    else if (lm[0] === 'cranes') { [lx0 - 14, lx0 + 6].forEach(function (cx) { seg(cx - 0.6, cx + 0.6, 0, 11, lz0 - 0.6, lz0 + 0.6, M.metal); seg(cx + 7.4, cx + 8.6, 0, 11, lz0 - 0.6, lz0 + 0.6, M.metal); seg(cx - 1, cx + 9, 11, 11.7, lz0 - 0.8, lz0 + 0.8, M.metal, NCAST); }); [[lx0 - 12, lz0 + 6], [lx0 - 6, lz0 + 6], [lx0, lz0 + 6], [lx0 - 12, lz0 - 6], [lx0 - 6, lz0 - 6]].forEach(function (c, i) { container(c[0], c[1], false, [M.contBlue, M.contRed, M.contGreen, M.contGray, M.contBlue][i], false); }); box(lx0 - 9, 3.9, lz0 + 6, 6.0, 2.6, 2.44, M.contRed); }
+    else if (lm[0] === 'gasometer') { cyl(lx0, 6, lz0, 11, 12, M.metal); cyl(lx0, 12.4, lz0, 11.4, 0.6, M.dark, NC); [[lx0, lz0 + 14], [lx0 + 14, lz0], [lx0 - 14, lz0]].forEach(function (c) { cyl(c[0], 0.9, c[1], 0.6, 1.8, M.rust); }); stairFlight(lx0 + 11.9, 0, lz0 - 6.1, 0, 1, 12, 0.325, 0.34, 1.0, M.metal); seg(lx0 + 11.2, lx0 + 12.6, 3.6, 3.9, lz0 - 2, lz0 + 3, M.metal); }
+    else if (lm[0] === 'chimney') { cyl(lx0, 9, lz0, 1.8, 18, M.contRed); cyl(lx0, 18.3, lz0, 2.0, 0.5, M.dark); [[lx0 - 6, lz0 + 8], [lx0, lz0 + 8], [lx0 + 6, lz0 + 8]].forEach(function (c, i) { container(c[0], c[1], false, i % 2 ? M.contGray : M.contRed, false); }); crates(lx0 + 8, lz0 - 4); barrel(lx0 - 8, lz0 - 4, true); }
+    else if (lm[0] === 'pitch') { segx(lx0 - 8, lx0 + 8, 0.01, 0.03, lz0 - 15, lz0 + 15, M.sage, NBOTH); [[lx0, lz0 - 12], [lx0, lz0 + 12]].forEach(function (g) { seg(g[0] - 3.6, g[0] - 3.4, 0, 2.4, g[1] - 0.1, g[1] + 0.1, M.white); seg(g[0] + 3.4, g[0] + 3.6, 0, 2.4, g[1] - 0.1, g[1] + 0.1, M.white); seg(g[0] - 3.6, g[0] + 3.6, 2.4, 2.6, g[1] - 0.1, g[1] + 0.1, M.white, NCAST); }); seg(lx0 + 8, lx0 + 8.4, 0, 1.0, lz0 - 15, lz0 + 15, M.concrete); }
+    else if (lm[0] === 'bandstand') { segx(lx0 - 18, lx0 + 18, 0.01, 0.03, lz0 - 10, lz0 + 10, M.sage, NBOTH); seg(lx0 - 4.2, lx0 + 4.2, 0, 0.6, lz0 - 4.2, lz0 + 4.2, M.concrete); for (var bp = 0; bp < 6; bp++) { var ba = bp / 6 * Math.PI * 2; box(lx0 + Math.cos(ba) * 3.4, 2.2, lz0 + Math.sin(ba) * 3.4, 0.22, 3.2, 0.22, M.metal); } cyl(lx0, 3.9, lz0, 4.4, 0.3, M.roof, NCAST); tree(lx0 - 14, lz0 - 7, true); tree(lx0 + 14, lz0 + 7, true); tree(lx0 - 14, lz0 + 7, false); tree(lx0 + 14, lz0 - 7, false); box(lx0 - 9, 0.45, lz0, 1.8, 0.4, 0.5, M.wood); box(lx0 + 9, 0.45, lz0, 1.8, 0.4, 0.5, M.wood); }
   });
-  V.plazas.forEach(function (p) { segx(p[0], p[1], 0.005, 0.02, p[2], p[3], M.asphalt, NBOTH); });
 
-  /* ---- THE BLOCKS ---- */
-  V.blocks.forEach(function (b) { block(b[0], b[1], b[2], b[3], b[4], M[b[5]] || M.plaster, b[6]); });
-
-  /* ---- THE FOUR CORNER TOWERS (sniper perches) ---- */
+  /* ---------- the four corner towers ---------- */
   V.towers.forEach(function (tw) { World._towerAt(T, tw[0], tw[1], tw[2]); });
 
-  /* ---- DISTRICT SIGNATURES ---- */
-  // CANNERY ROW: a container yard in the lane
-  [[-215, -166], [-209, -166], [-190, -166], [-203, -172]].forEach(function (c, i) { container(c[0], c[1], i % 2 === 1, [M.contRed, M.contBlue, M.contGreen, M.contGray][i % 4], false); });
-  box(-212, 3.9, -166, 6.0, 2.6, 2.44, M.contGray);                                   // stacked second
-  crates(-168, -166); barrel(-160, -170, true); truck(-132, -166, 0);
-  // NORTH RIDGE: two concrete berms (1.2 m cover) along the lane, a bus at the halt
-  seg(-100, -70, 0, 1.2, -170, -168.6, M.concrete); seg(0, 24, 0, 1.2, -170, -168.6, M.concrete);
-  bus(-34, -180, Math.PI / 2); crates(-70, -166); barrel(-46, -168, false);
-  // REFINERY: two tanks and a pipe rack
-  cyl(80, 4, -186, 7, 8, M.metal); cyl(98, 4, -186, 7, 8, M.metal);
-  cyl(80, 8.3, -186, 7.2, 0.5, M.dark, NC); cyl(98, 8.3, -186, 7.2, 0.5, M.dark, NC);
-  seg(70, 108, 3.0, 3.5, -176.6, -175.6, M.metal, NCAST); [72, 84, 96, 106].forEach(function (px) { seg(px - 0.25, px + 0.25, 0, 3.0, -176.4, -175.8, M.metal); });
-  [[125, -166], [131, -166], [150, -168]].forEach(function (c, i) { container(c[0], c[1], i === 2, i % 2 ? M.contBlue : M.contRed, false); });
-  barrel(112, -170, true); barrel(113, -169, true); crates(180, -168);
-  // QUARRY: stepped concrete terraces and a crusher
-  seg(-226, -206, 0, 1.0, 170, 176, M.concrete); seg(-226, -206, 1.0, 2.0, 173, 176, M.concrete);   // stepped terraces in the lane (v2.0: moved off the mill block)
-  seg(-220, -166, 0, 1.0, 160, 163, M.concrete);
-  box(-238, 2.2, 170, 6, 4.4, 6, M.metal); cyl(-238, 5.2, 170, 3.4, 1.6, M.rust);   // the crusher
-  seg(-236, -196, 4.0, 4.4, 169.2, 170.8, M.metal, NCAST);                          // conveyor
-  crates(-170, 170); barrel(-152, 166, true); truck(-184, 168, Math.PI / 2);
-  // SOUTH COMMONS: the green, hedges, a bandstand
-  segx(-100, -64, 0.01, 0.03, 160, 196, M.sage, NBOTH);
-  seg(-100, -64, 0, 0.9, 159.4, 160, M.foliage); seg(-100, -64, 0, 0.9, 196, 196.6, M.foliage);
-  seg(-86.2, -77.8, 0, 0.6, 173.8, 182.2, M.concrete);   // the bandstand deck (a box: verify-props reads box support only)
-  for (var bp = 0; bp < 6; bp++) { var ba = bp / 6 * Math.PI * 2; box(-82 + Math.cos(ba) * 3.4, 2.2, 178 + Math.sin(ba) * 3.4, 0.22, 3.2, 0.22, M.metal); }
-  cyl(-82, 3.9, 178, 4.4, 0.3, M.roof, NCAST);
-  box(-30, 0.5, 168, 2.2, 1.0, 0.6, M.wood); box(-30, 0.5, 186, 2.2, 1.0, 0.6, M.wood); bus(-34, 190, Math.PI / 2);
-  // SOUTHPORT: quay wall, bollards, two cranes, a container stack
-  seg(66, 106, 0, 1.2, 190, 191.4, M.concrete); [70, 80, 90, 100].forEach(function (bx) { cyl(bx, 0.7, 188.5, 0.3, 1.4, M.metal); });
-  [124, 152].forEach(function (cx) { seg(cx - 0.6, cx + 0.6, 0, 11, 168, 169.2, M.metal); seg(cx + 15.4, cx + 16.6, 0, 11, 168, 169.2, M.metal); seg(cx - 1, cx + 17, 11, 11.7, 167.8, 169.4, M.metal, NCAST); });
-  [[70, 175], [76, 175], [82, 175], [70, 183], [76, 183]].forEach(function (c, i) { container(c[0], c[1], false, [M.contBlue, M.contRed, M.contGreen, M.contGray, M.contBlue][i], false); });
-  box(73, 3.9, 175, 6.0, 2.6, 2.44, M.contRed); crates(96, 172); barrel(110, 174, false);
-  // GASWORKS: the gasometer and a valve yard
-  cyl(166, 6, -96, 11, 12, M.metal); cyl(166, 12.4, -96, 11.4, 0.6, M.dark, NC);
-  [[166, -78], [180, -96], [152, -96]].forEach(function (c) { cyl(c[0], 0.9, c[1], 0.6, 1.8, M.rust); });
-  seg(140, 196, 2.2, 2.7, -64.3, -63.7, M.metal, NCAST); [142, 160, 178, 194].forEach(function (px) { seg(px - 0.25, px + 0.25, 0, 2.2, -64.2, -63.8, M.metal); });
-  barrel(148, -70, true); barrel(149, -69, false); crates(188, -70);
-  // RIVER TERRACES: the river (a water plane) and its promenade wall, a bus at the halt
-  segx(186, 200, 0.01, 0.03, 30, 56, M.steelBlue, NBOTH); segx(186, 200, 0.01, 0.03, 64, 120, M.steelBlue, NBOTH);   // the river, either side of the z 60 street
-  seg(184, 186, 0, 1.0, 30, 120, M.concrete); seg(184, 200, 0, 1.0, 120, 121.6, M.concrete);
-  cyl(190, 0.6, 50, 0.4, 1.2, M.wood); cyl(190, 0.6, 90, 0.4, 1.2, M.wood);
-  bus(190, -12, Math.PI / 2); sedan(178, 2, 0, 2, false);
-  // FOUNDRY: the chimney and a slag yard
-  cyl(-226, 9, -96, 1.8, 18, M.contRed); cyl(-226, 18.3, -96, 2.0, 0.5, M.dark);
-  [[-230, -66], [-224, -66], [-218, -66]].forEach(function (c, i) { container(c[0], c[1], false, i % 2 ? M.contGray : M.contRed, false); });
-  crates(-200, -66); barrel(-244, -60, true); barrel(-243, -61, true); truck(-240, -70, 0);
-  // WESTFIELD: the pitch with two goals, a bus at the halt
-  segx(-228, -196, 0.01, 0.03, 96, 118, M.sage, NBOTH);   // the pitch stops short of the inner avenue
-  [[-224, 111], [-200, 111]].forEach(function (g) { seg(g[0] - 0.1, g[0] + 0.1, 0, 2.4, g[1] - 3.6, g[1] - 3.4, M.white); seg(g[0] - 0.1, g[0] + 0.1, 0, 2.4, g[1] + 3.4, g[1] + 3.6, M.white); seg(g[0] - 0.1, g[0] + 0.1, 2.4, 2.6, g[1] - 3.6, g[1] + 3.6, M.white, NCAST); });
-  bus(-258, 12, Math.PI / 2); crates(-236, 60); barrel(-210, 62, false);
-
-  /* ---- gates through the old outer-ring fences where the cross streets meet the inner avenue ---- */
-  [[-60, -119.6], [30, -119.6], [-60, 119.6], [30, 119.6]].forEach(function (g) {
-    cyl(g[0] - 3.2, 1.2, g[1], 0.12, 2.4, M.metal); cyl(g[0] + 3.2, 1.2, g[1], 0.12, 2.4, M.metal);
-  });
+  /* ---------- gates through the old ring fences where the cross streets meet the avenue ---------- */
+  [[30, -119.6], [-60, 119.6], [30, 119.6]].forEach(function (g) { cyl(g[0] - 3.2, 1.2, g[1], 0.12, 2.4, M.metal); cyl(g[0] + 3.2, 1.2, g[1], 0.12, 2.4, M.metal); });
 };

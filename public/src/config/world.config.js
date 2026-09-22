@@ -383,31 +383,37 @@
      platforms and under the footbridge, back out to the east side. */
   var TRAIN = {
     urban: {
-      /* ===== v2.0 - ONE FAST TRAIN ROUND THE WHOLE MAP =====
-         Rahul: "very fast, cover the entire map boundaries, stopping on all
-         4 sides." The loop is the new PERIMETER BOULEVARD, 10 m inside the
-         wall: x -270 / 210, z +/-210 (~1.75 km a lap). 30 m/s on the
-         straights; brake and accel lengths are sized for that speed so a coach
-         does not throw a rider on arrival. One station per side at the middle
-         of each straight (the `stations` below are what districts-outer.js
-         builds; the `stops` are where the HEAD halts — the train is centred on
-         the platform, so head = platform centre + half a train). The second
-         train (v1.0r) is gone: one machine, one track, half the moving
-         geometry and one fewer schedule for the server to sweep. */
-      waypoints: [[-270, -210], [210, -210], [210, 210], [-270, 210]],
+      /* ===== v2.1 - FOUR TRAINS, ONE TRACK, THROUGH SECTOR 7 CENTRAL =====
+         Rahul: "it circles around the map but does not go to Sector 7 Central
+         — it should, and go back circling. Four trains all going the same
+         direction, every train starts from one station, same speed, so they
+         never collide; one track for all four."
+         THE LOOP (clockwise): the west and south perimeter straights as in
+         v2.0, then from the north-west corner east along the perimeter to
+         x -60, SOUTH down the x -60 rail corridor (through the inner avenue
+         and North Yards to the old ring boulevard), east along the ring at
+         z -103.2, the v1.0 jog into SECTOR 7 CENTRAL at z -88 (the platform
+         at x 26..68, head stopping short of the footbridge — the original,
+         gate-proven geometry), on east to x 103.2, NORTH up the x 103.2
+         corridor back to the perimeter, east to the north-east corner and on
+         round. ~2.1 km a lap. Four stops — SECTOR 7 CENTRAL, EASTBANK HALT,
+         SOUTH COMMONS HALT, WESTFIELD HALT — and four trains: train k starts
+         its match at stop k (TRAINS below, `startStop`), so at every instant
+         all four are at the same phase of different legs; the shortest leg is
+         ~400 m and a train is 50 m, so they cannot meet (verify-train sweeps
+         a whole lap of all four). */
+      waypoints: [[-270, -210], [-60, -210], [-60, -103.2], [-6, -103.2], [9, -88], [103.2, -88], [103.2, -210], [210, -210], [210, 210], [-270, 210]],
       fillet: 14, speed: 30.0, dwellSec: 3, brakeM: 75, accelM: 95,
-      /* straight lengths at fillet 14: N/S 452 (mid 226), E/W 392 (mid 196);
-         half a four-car train is 24.85 m */
-      stops: [{ at: 0, offset: 250.85 }, { at: 1, offset: 220.85 }, { at: 2, offset: 250.85 }, { at: 3, offset: 220.85 }],
-      /* side: which wall the straight runs beside; c: the platform's centre
-         along the straight; the platform is 52 m long on the INNER side */
+      /* at: the waypoint whose following straight holds the HEAD stop; offset
+         along it. Sector 7: head at x ~74.8 (as v1.0: 66..76). The halts: the
+         train is centred on the 52 m deck (half a train is 24.85 m). */
+      stops: [{ at: 4, offset: 60 }, { at: 7, offset: 220.85 }, { at: 8, offset: 250.85 }, { at: 9, offset: 220.85 }],
       stations: [
-        { id: 'north', name: 'NORTH RIDGE HALT', side: 'N', c: -30 },
-        { id: 'east',  name: 'EASTBANK HALT',    side: 'E', c: 0 },
+        { id: 'east',  name: 'EASTBANK HALT',      side: 'E', c: 0 },
         { id: 'south', name: 'SOUTH COMMONS HALT', side: 'S', c: -30 },
-        { id: 'west',  name: 'WESTFIELD HALT',   side: 'W', c: 0 }
+        { id: 'west',  name: 'WESTFIELD HALT',     side: 'W', c: 0 }
       ],
-      stationAt: 0, stopOffset: 250.85,        // kept for readers of the old field; `stops` is what runs
+      stationAt: 4, stopOffset: 60,           // kept for readers of the old field; `stops` is what runs
       floor: 1.05, roof: 3.75,               // coach floor (platform height) and roof walking surface
       cars: 4                                 // locomotive + 3 coaches
     }
@@ -535,8 +541,16 @@
     return k === undefined ? 0 : k;
   }
 
-  /* v2.0: the second train (v1.0r TRAIN2) is removed — one loop, one machine. */
-  var TRAINS = { urban: [TRAIN.urban] };
+  /* v2.1: FOUR trains on the one loop. Each entry is the same track; `startStop`
+     is the stop it begins its match at, and trainOffset() turns that into the
+     schedule phase (the departure time of stop k on the shared schedule). */
+  var TRAINS = { urban: [0, 1, 2, 3].map(function (k) { var c = Object.create(TRAIN.urban); c.startStop = k; c.idx = k; return c; }) };
+  /* the phase (seconds) a train's clock is advanced by: stop k's departure time
+     on the schedule S (CFG.trainSchedule), or a plain tOffset for old readers */
+  function trainOffset(cfg, S) {
+    if (cfg && typeof cfg.startStop === 'number' && S && S.legs && S.legs.length) return S.legs[cfg.startStop % S.legs.length].tD;
+    return (cfg && cfg.tOffset) || 0;
+  }
 
   /* v1.0f: THE SCHEDULE IS SHARED. The server kills whoever the moving train
      hits, so it must place the train exactly where every client draws it —
@@ -589,7 +603,7 @@
     return out;
   }
 
-  return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams, TRAIN: TRAIN, TRAINS: TRAINS,
+  return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams, TRAIN: TRAIN, TRAINS: TRAINS, trainOffset: trainOffset,
     trainSchedule: trainSchedule, trainHeadAt: trainHeadAt, trainCars: trainCars, trainStops: trainStops,
     ZONE: ZONE, zoneSchedule: zoneSchedule, zoneCircleAt: zoneCircleAt, zoneInside: zoneInside,
     HELI: HELI, heliPoseAt: heliPoseAt, heliReturnPose: heliReturnPose, heliCrashPose: heliCrashPose, heliRoute: heliRoute, heliRouteBox: routeBox, heliDamageFor: heliDamageFor,
