@@ -1,99 +1,42 @@
 @echo off
-setlocal
+title Urban Strike Deployment Tool
+color 0A
 
-title Urban Strike - Deploy
-
-cd /d "%~dp0"
-
-echo.
 echo ==========================================
-echo        URBAN STRIKE DEPLOYMENT
+echo         Urban Strike Deployment
 echo ==========================================
 echo.
 
-echo [1/5] Checking Git...
+cd /d C:\Users\RahulOjha\Documents\urban_strike
+
+echo Checking Git status...
 git status
-if errorlevel 1 (
-    echo.
-    echo ERROR: Git repository not available.
-    pause
-    exit /b 1
-)
 
 echo.
-echo [2/5] Fetching latest GitHub changes...
-git fetch origin
-if errorlevel 1 (
-    echo.
-    echo ERROR: Could not fetch from GitHub.
-    pause
-    exit /b 1
-)
+set /p msg=Enter Commit Message: 
 
 echo.
-echo [3/5] Adding latest game files...
-git add -A
-if errorlevel 1 (
-    echo.
-    echo ERROR: Could not add files.
-    pause
-    exit /b 1
-)
+echo Adding files...
+git add .
 
 echo.
-echo [4/5] Creating update commit...
-
-git diff --cached --quiet
-
-if errorlevel 1 (
-    git commit -m "Latest Urban Strike game update"
-    if errorlevel 1 (
-        echo.
-        echo ERROR: Commit failed.
-        pause
-        exit /b 1
-    )
-) else (
-    echo No new file changes detected.
-)
-
-echo.
-echo [5/5] Synchronizing with GitHub...
-
-git merge -s ours origin/main -m "Sync remote with latest local game update"
-if errorlevel 1 (
-    echo.
-    echo ERROR: GitHub synchronization failed.
-    echo.
-    echo DO NOT FORCE PUSH.
-    pause
-    exit /b 1
-)
+echo Committing...
+git commit -m "%msg%"
 
 echo.
 echo Pushing to GitHub...
-
 git push origin main
-if errorlevel 1 (
-    echo.
-    echo ==========================================
-    echo          DEPLOYMENT FAILED
-    echo ==========================================
-    echo.
-    echo GitHub rejected the push.
-    echo No deployment was started.
-    echo.
-    pause
-    exit /b 1
-)
+
+echo.
+echo Opening GitHub...
+start https://github.com
+
+echo Opening Render Dashboard...
+start https://dashboard.render.com
 
 echo.
 echo ==========================================
-echo       DEPLOYMENT STARTED SUCCESSFULLY
-echo ==========================================
-echo.
-echo GitHub has accepted the latest game.
+echo Deployment Started Successfully
 echo Render will deploy automatically.
-echo.
-
+echo ==========================================
 pause
