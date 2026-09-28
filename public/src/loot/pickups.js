@@ -227,7 +227,7 @@ var Pickups = (function () {
       e.spin += 0.6;
       e.grp.rotation.y = e.spin;
       var hot = (d.f === 'lock' || d.f === 'dive');
-      e.led.material.color.setHex(hot ? 0xff2a24 : 0xffb020);
+      e.led.material.color.setHex(d.k === 'h' ? (hot ? 0xff2a24 : 0x51d0e8) : (hot ? 0xff2a24 : 0xffb020));   /* v2.3: a hunter's LED is cyan */
       e.led.visible = hot ? (Math.floor(performance.now() / 90) % 2 === 0) : true;
     });
     for (var k in drones) {

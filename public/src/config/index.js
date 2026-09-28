@@ -47,6 +47,17 @@
     for (var i = 0; i < L.length; i++) if (d <= L[i][0]) return L[i][1];
     return L[L.length - 1][1];
   };
+  /* ===== v2.3 - THE FRAG'S REACH PER MAP (Rahul): 50 m / 20 m kill radius on
+     Urban and Urban Small; 40% of that (20 m / 8 m) on every arena — "the map
+     is small, it is not fun." Client blast damage and the FX ring read this. */
+  C.ARENA_BLAST = 0.4;
+  C.fragSpecFor = function (mapId) {
+    var F = C.THROWS.frag, k = (C.isArena && C.isArena(mapId)) ? C.ARENA_BLAST : 1;
+    if (k === 1) return F;
+    var out = {}; for (var key in F) out[key] = F[key];
+    out.radius = F.radius * k; out.killRadius = F.killRadius * k; out.selfRadius = F.selfRadius * k; out.fxRadius = Math.max(4, F.fxRadius * k);
+    return out;
+  };
   /* ===== v2.2 - URBAN SMALL's tables are URBAN's, filtered to the core =====
      Everything inside |x|,|z| <= 106 (the ring boulevard is the edge road; the
      wall stands at 108). Derived here, not hand-copied, so a change to Urban's

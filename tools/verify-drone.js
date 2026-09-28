@@ -165,5 +165,53 @@ ok(!!CFG.LOOT_ITEMS.drone && CFG.LOOT_ITEMS.drone.kind === 'gear',
 ok((CFG.AIRDROP.exoticPool || []).indexOf('drone') >= 0,
   'and they appear in airdrop crates');
 
+/* ===== v2.3 - THE HUNTER (same module, kind 'hunter') ===== */
+console.log('--- the hunter drone ---');
+{
+  /* a harness with ONE wall: a collider slab at x 10, z -5..5, 0..3 m — the LOS the hunter respects */
+  const wallCols = [[9.7, 0, -8, 10.3, 14, 8, 0]];   // 14 m tall: the hunter at 9 m cannot see over it
+  const seg = (cols, ax, ay, az, bx, by, bz) => {   // a tiny segment-vs-AABB test, enough for one slab
+    for (const c of cols) { let t0 = 0, t1 = 1; const d = [bx - ax, by - ay, bz - az], o = [ax, ay, az]; let hit = true;
+      for (let k = 0; k < 3; k++) { const lo = c[k], hi = c[k + 3]; if (Math.abs(d[k]) < 1e-9) { if (o[k] < lo || o[k] > hi) { hit = false; break; } continue; } let ta = (lo - o[k]) / d[k], tb = (hi - o[k]) / d[k]; if (ta > tb) { const q = ta; ta = tb; tb = q; } t0 = Math.max(t0, ta); t1 = Math.min(t1, tb); if (t0 > t1) { hit = false; break; } }
+      if (hit) return true; } return false; };
+  const DronesH = require(path.join(__dirname, '..', 'server/lib/drones.js'))({
+    io, now: () => T, CFG, applyDamage: (room, victim, dmg, by, w) => { damaged.push({ v: victim.id, dmg, by, w }); },
+    modeInfo: (room) => ({ teams: !!CFG.MODES[room.settings.mode].teams }),
+    colliders: () => wallCols, segmentBlocked: seg
+  });
+  const H = CFG.GEAR.hunter;
+  const room = mkRoom('ffa');
+  const a = mkP('A', null, 0, 0, { hunters: 1, drones: 0 }), b = mkP('B', null, 0, 20);   // B 20 m south, open ground; A has no strike drone
+  room.players.set('A', a); room.players.set('B', b);
+  ok(DronesH.launch(room, a).ok === false, 'with no strike drones the plain launch is refused (the hunter stock is separate)');
+  const r = DronesH.launch(room, a, 'hunter');
+  ok(r.ok && r.left === 0 && room.drones.length === 1 && room.drones[0].kind === 'hunter', 'a hunter launches from the hunter stock, not the drone stock [' + JSON.stringify(r) + ']');
+  damaged.length = 0; emitted.length = 0;
+  const flyH = (sec) => { const dt = 1 / 20; for (let i = 0; i < sec * 20; i++) { T += dt * 1000; DronesH.tick(room, dt); } };
+  flyH(6);
+  const fires = emitted.filter(e => e.ev === 'droneFire').length, dmgB = damaged.filter(x => x.v === 'B' && x.w === 'hunter').reduce((s, x) => s + x.dmg, 0);
+  ok(fires >= 6 && dmgB >= 3 * H.dmg, 'in six seconds over open ground it has fired ' + fires + ' times and done ' + dmgB + ' to B (tag hunter, credited to A)');
+  ok(damaged.every(x => x.by === 'A' && x.w === 'hunter'), 'every hit is the owner\'s kill, tagged hunter');
+  const d = room.drones[0];
+  ok(Math.abs(d.pos[1] - H.cruiseY) < 0.5 && Math.hypot(d.pos[0] - b.pos[0], d.pos[2] - b.pos[2]) <= H.standoff + 2, 'it holds cruise height and stands off ~' + H.standoff + ' m [' + d.pos.map(v => v.toFixed(1)).join(',') + ']');
+  ok(emitted.some(e => e.ev === 'droneWarn' && e.who === 'B' && e.d.k === 'hunter'), 'B was warned when it acquired them');
+  /* behind the wall: B moves to x 20 (the slab at x 10 between); the hunter stops firing and lets go after loseSec */
+  b.pos = [20, 0.95, 0]; d.pos = [0, H.cruiseY, 0]; damaged.length = 0; emitted.length = 0;
+  flyH(H.loseSec + 1.5);
+  ok(damaged.length === 0, 'with a wall between them it does not fire [' + damaged.length + ' hits]');
+  ok(d.target === null || d.phase === 'patrol', 'and after loseSec it has let the target go [' + d.phase + ']');
+  /* the bounty: B shoots it down and is granted a HUNTER, not a strike drone */
+  b.hunters = 0; b.drones = 0; T += 100;
+  const res = DronesH.damage(room, d.id, 999, 'B');
+  ok(res && res.destroyed && b.hunters === 1 && b.drones === 0, 'shot down: B is granted a hunter (not a strike drone) [hunters ' + b.hunters + ', drones ' + b.drones + ']');
+  ok(emitted.some(e => e.ev === 'grant' && e.who === 'B' && e.d.g === 'hunter'), 'and told so with a hunter grant');
+  /* lifetime: a fresh one over an empty map self-destructs at lifeSec, harming nobody */
+  a.hunters = 1; damaged.length = 0; emitted.length = 0;
+  const r2 = DronesH.launch(room, a, 'hunter'); room.players.delete('B');
+  ok(r2.ok, 'a hunter launches even with nobody in sight (it patrols)');
+  flyH(H.lifeSec + 1);
+  ok(room.drones.length === 0 && damaged.length === 0 && emitted.some(e => e.ev === 'droneBoom' && e.d.lethal === false), 'lifeSec later it is gone, harmlessly');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

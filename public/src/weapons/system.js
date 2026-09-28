@@ -199,6 +199,9 @@ var Weapons = (function () {
         if (owned.drone) ammo.drone = ammo.drone || { mag: 0, reserve: 0 };
         UI.toast('Strike Drone \u00b7 ' + d.n + ' carried');
       }
+      else if (d.g === 'hunter') { hunterCount = d.n; UI.toast('Hunter Drone \u00b7 ' + d.n + ' carried \u00b7 O launches (stays up 30 s, hunts what it can see)'); }
+      else if (d.g === 'recon') { reconCount = d.n; UI.toast('Recon Flare \u00b7 J fires it \u00b7 your side sees every enemy on the map for the rest of the match'); }
+      else if (d.g === 'adrenaline') { adrenalineCount = d.n; UI.toast('Adrenaline \u00b7 ' + d.n + ' carried \u00b7 N to inject (+30% speed, 45 s)'); }
       else if (d.g === 'visor') {
         /* v10.10: no slot, no count, no HUD item — it is a passive effect that
            lasts until death. Net.setVisor drives the through-wall render; this
@@ -271,6 +274,32 @@ var Weapons = (function () {
 
   /* v9.5: one implementation, two callers — the T key and a left click while
      the drone slot is selected. */
+  /* ===== v2.3 - the three crate enhancers (keys N / J / O in game.js) ===== */
+  var hunterCount = 0, reconCount = 0, adrenalineCount = 0;
+  function launchHunter() {
+    if (!PlayerCtl.alive) return;
+    if (hunterCount <= 0) { UI.toast('No hunter drone \u2014 find one in an airdrop'); return; }
+    Net.launchHunter(function (res) {
+      if (res && res.ok) { hunterCount = res.left; UI.toast('Hunter away \u00b7 ' + res.left + ' left'); }
+      else UI.toast((res && res.err) || 'Cannot launch');
+    });
+  }
+  function launchRecon() {
+    if (!PlayerCtl.alive) return;
+    if (reconCount <= 0) { UI.toast('No recon flare \u2014 find one in an airdrop'); return; }
+    Net.launchRecon(function (res) {
+      if (res && res.ok) { reconCount = res.left; UI.toast('Flare up \u00b7 bursts in 3 s'); }
+      else UI.toast((res && res.err) || 'Cannot fire the flare');
+    });
+  }
+  function useAdrenaline() {
+    if (!PlayerCtl.alive) return;
+    if (adrenalineCount <= 0) { UI.toast('No adrenaline \u2014 find one in an airdrop'); return; }
+    Net.useAdrenaline(function (res) {
+      if (res && res.ok) { adrenalineCount = res.left; PlayerCtl.setSpeedMult(res.mult, res.durSec); UI.toast('ADRENALINE \u00b7 +' + Math.round((res.mult - 1) * 100) + '% speed for ' + res.durSec + ' s'); }
+      else UI.toast((res && res.err) || 'Cannot inject');
+    });
+  }
   function launchDrone() {
     if (!PlayerCtl.alive) return;
     if (droneCount <= 0) { UI.toast('No drones \u2014 find one in an airdrop'); return; }
@@ -563,6 +592,7 @@ var Weapons = (function () {
   function fireBullet(w) {
     var E2 = eff(current);
     var sp = (Input.aim ? E2.ads : E2.spread) * (PlayerCtl.prone ? 0.4 : PlayerCtl.crouch ? 0.6 : 1);
+    sp *= 1 + 4 * (PlayerCtl.proneShake ? PlayerCtl.proneShake() : 0);   /* v2.3: going down / getting up costs your aim for a moment */
     var d2 = rayDir(sp, new THREE.Vector3());
     bullets.push({ pos: camera.position.clone(), vel: d2.multiplyScalar(w.bulletSpeed),
       drop: w.bulletDrop, life: 0, w: current, trc: w.trc || 0xffe2b0 });
@@ -884,7 +914,7 @@ var Weapons = (function () {
     if (p.type === 'molotov') { igniteFire(p); return; }
     var pos = p.pos;
     if (p.type === 'frag' || p.kind === 'rocket' || p.kind === 'seeker') {
-      var spec = p.kind === 'seeker' ? { dmg: CFG.WEAPONS.seeker.dmg, radius: CFG.WEAPONS.seeker.radius } : p.kind === 'rocket' ? { dmg: CFG.WEAPONS.rocket.dmg, radius: CFG.WEAPONS.rocket.radius } : CFG.THROWS.frag;
+      var spec = p.kind === 'seeker' ? { dmg: CFG.WEAPONS.seeker.dmg, radius: CFG.WEAPONS.seeker.radius } : p.kind === 'rocket' ? { dmg: CFG.WEAPONS.rocket.dmg, radius: CFG.WEAPONS.rocket.radius } : (CFG.fragSpecFor ? CFG.fragSpecFor(World.builtMap || 'urban') : CFG.THROWS.frag);   /* v2.3: 20 m on arenas */
       FX.explosion(pos, spec.fxRadius || spec.radius);   // v1.0b: a 50 m frag draws a 9 m fireball
       /* v1.0v: my blast destroys enemy mines in its radius — the server decides whose */
       if (p.mine && Net.blast) Net.blast({ p: [pos.x, pos.y, pos.z], w: (p.kind === 'seeker' || p.kind === 'rocket') ? 'rocket' : 'frag' });
@@ -917,7 +947,7 @@ var Weapons = (function () {
          the 0.25 multiplier, so cover is the counter-play rather than distance.
          Falloff is retained for the ROCKET, which is a direct-fire weapon with
          its own aiming skill and does not need the same treatment. */
-      var spec2 = CFG.THROWS[weaponName];
+      var spec2 = (weaponName === 'frag' && CFG.fragSpecFor) ? CFG.fragSpecFor(World.builtMap || 'urban') : CFG.THROWS[weaponName];   /* v2.3 */
       var flat = spec2 && spec2.flatDamage;
       var dmg;
       /* v1.0b: THE TWO-BAND FRAG. Rahul: "up to 20 m instant kill, 20-50 m
@@ -1319,6 +1349,7 @@ var Weapons = (function () {
        outlives the moment its owner is watching it and a third player can shoot
        it down; see server/lib/drones.js. */
     launchDrone: launchDrone,
+    launchHunter: launchHunter, launchRecon: launchRecon, useAdrenaline: useAdrenaline,   /* v2.3 */
     droneCount: function () { return droneCount; },
     /* v15.0 */
     useEmp: useEmp,

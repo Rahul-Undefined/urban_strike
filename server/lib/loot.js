@@ -111,6 +111,13 @@ function tryCollect(room, p) {
         if ((p.drones | 0) >= CFG.GEAR.drone.maxCarry) continue;
         p.drones = Math.min(CFG.GEAR.drone.maxCarry, (p.drones | 0) + it.n);
         grant = { t: 'gear', g: 'drone', n: p.drones };
+      } else if (it.g === 'hunter' || it.g === 'adrenaline' || it.g === 'recon') {
+        /* v2.3: counted gear, per match, like the drone */
+        const K = it.g === 'hunter' ? 'hunters' : it.g === 'adrenaline' ? 'adrenalines' : 'recons';
+        const cap = CFG.GEAR[it.g].maxCarry;
+        if ((p[K] | 0) >= cap) continue;
+        p[K] = Math.min(cap, (p[K] | 0) + it.n);
+        grant = { t: 'gear', g: it.g, n: p[K] };
       } else if (it.g === 'visor') {
         /* v10.10: a boolean, not a count. Picking up a second visor while
            wearing one must not stack or refresh anything — there is nothing to

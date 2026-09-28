@@ -178,7 +178,7 @@ var Minimap = (function () {
         dot(rx, rz, 4, r.color || '#63d968', true);
       } else {
         var dist = Math.sqrt((r.renderPos.x - px) * (r.renderPos.x - px) + (r.renderPos.z - pz) * (r.renderPos.z - pz));
-        var detected = CFG.MINIMAP.alwaysShowPlayers ||
+        var detected = CFG.MINIMAP.alwaysShowPlayers || (Net.reconActive && Net.reconActive()) ||   /* v2.3: recon shows every enemy */
           (now - r.lastShotAt) < CFG.NET.detectMs || dist < CFG.MINIMAP.proximity;
         if (detected) dot(rx, rz, 4.2, '#e8563e', true);
       }
@@ -693,7 +693,9 @@ var Minimap = (function () {
       var ally = myTeam && r.team === myTeam;
       /* The one line that splits the two switches. An ally is drawn in every
          mode; an enemy only where the mode allows it. */
-      if (!(ally ? showAllies : showEnemies)) return;
+      /* v2.3: with recon, an enemy is drawn regardless of the mode's switch — the flare bought it */
+      if (!ally && Net.reconActive && Net.reconActive()) { /* fall through to the enemy pin */ }
+      else if (!(ally ? showAllies : showEnemies)) return;
       if (ally) {
         if (!r.alive) return;
         marker(r.renderPos.x, r.renderPos.z, 5, r.color || '#63d968', true, r.name || '');

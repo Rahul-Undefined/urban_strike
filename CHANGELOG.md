@@ -1,3 +1,66 @@
+# v2.3.0 (build 33) — ENHANCERS, THE HUNTER, RECON, THE PRONE SHAKE (2026-09-28)
+
+Tagged `v2.3.0`. Rahul: "drops are full of guns — add things that enhance
+gameplay like the visor; a drop that raises movement speed; a missile that,
+when it blasts, shows enemy locations on the minimap for the team for the
+whole match; a drone-like thing that stays up 30 s and hunts; the prone
+advantage needs a shake; small maps' grenade reach 50 → 20 m."
+
+## The crate (Urban and Urban Small)
+
+`exoticPool` is 40 entries: every gun ONCE (16), enhancers 24 — strike drone
+×2, hunter ×2, visor ×2, recon ×2, adrenaline ×3, EMP ×2, C4, shield, L3,
+H3, the seven sights/muzzles. Five draws: expect ~1.8 guns, ~3.2 enhancers.
+
+## Three new exclusives (weapons.config `GEAR`, loot.config, keys in game.js)
+
+- **ADRENALINE (N)** — `mult 1.30` for `durSec 45`, `maxCarry 2`. Server
+  `useAdrenaline` spends one and answers with the numbers; the client's
+  controller multiplies the stance speed until it expires. The position
+  budget (3× sprint) has room; no server movement change.
+- **RECON FLARE (J)** — `launchRecon`: a streak up (`FX.reconFlare`), a burst
+  after `fuseSec 3` everyone sees and hears (`reconBoom`), and from then on
+  the launcher's SIDE (team, or just the launcher in FFA) gets `reconReveal`:
+  every enemy is drawn on the radar and the M-map for the rest of the match
+  (`Net.reconActive()` overrides the mode's enemy switch and the detection
+  rule). The server keeps `room.recon[side]` and re-sends the reveal on
+  every spawn, so deaths and late joins keep it; a second flare on a side
+  that has it is refused and not spent. Enemies never see the blips. Per
+  match; `maxCarry 1`.
+- **HUNTER DRONE (O)** — the strike-drone module with a `kind`. Launches even
+  with nobody in sight, climbs to `cruiseY 9`, patrols off its owner's
+  shoulder, and when an enemy is within `seekRange 55` WITH LINE OF SIGHT
+  through the map's colliders it closes to `standoff 12` and fires `dmg 7`
+  every `fireSec 0.5` (80% of rounds; armour applies; the kill is the
+  owner's, tag `hunter` — "Hunter Drone" in the feed). Loses sight for
+  `loseSec 2.5` and it goes back to patrolling; `lifeSec 30` and it
+  self-destructs harmlessly. `hp 60`; shoot it down and the bounty grants the
+  shooter a HUNTER (not a strike drone). Snapshot carries `k`; the client
+  draws a cyan LED, a tracer per shot and the target's hit puff.
+  `verify-drone` +12: stock separation, open-ground fire, standoff, warning,
+  the wall test (14 m slab — it does not fire without LOS, and lets go after
+  loseSec), the bounty kind, the harmless timeout.
+
+## The prone shake (all maps)
+
+X used to be a free advantage: a prone target with a 0.4× spread bonus and
+nothing to pay for it. Now going down starts a 0.8 s settle (getting up
+0.5 s): the camera sways (render only — what you send and shoot along is
+untouched) and the spread is ×(1 + 4·shake), so the first shots from a fresh
+prone are unreliable and the opponent has their fraction of a second.
+
+## Grenades on arenas
+
+`CFG.fragSpecFor(mapId)`: on any arena the frag's radius / killRadius /
+selfRadius / fxRadius are 40% (50 → 20 m, kill 20 → 8 m); Urban and Urban
+Small keep 50 m. The client's blast damage and the FX ring read it.
+
+## Gates
+
+44 green, 3 documented reds. `verify-drone` 43/0 (hunter section added),
+`verify-bindings` 16/0 (N/J/O clear), `verify-fullmap` 47/0 (the recon
+override sits above the gate's anchor line). Live suite 316/0.
+
 # v2.2.0 (build 32) — URBAN SMALL (2026-09-22)
 
 Tagged `v2.2.0`. Rahul: "a copy of the urban map named Urban Small — good for

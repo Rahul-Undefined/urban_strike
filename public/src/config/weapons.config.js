@@ -377,6 +377,24 @@
        STRIKE REMOTE (v15.0) are all deleted: server/lib/rocket.js, nuke.js, the
        N key, the banners, the loot entries, the gates. Nothing here is hidden
        behind a switch. */
+    /* ===== v2.3 - THREE NEW CRATE EXCLUSIVES (Rahul: "drops are full of guns;
+       add things that enhance gameplay, like the visor") =====
+       ADRENALINE (N): a shot that raises your move speed by `mult` for
+       `durSec`, then wears off. Per match, like drones; the server's
+       position budget (3x sprint) has room for it.
+       RECON FLARE (J): fired straight up, bursts after fuseSec; from then
+       on, FOR THE REST OF THE MATCH, your side sees every enemy on the
+       minimap and the M-map. Enemies see and hear the burst, never the
+       blips. One per side is enough — a second only re-confirms.
+       HUNTER DRONE (O): a quadcopter that stays up `lifeSec`, patrols over
+       its owner, and when an enemy is within `seekRange` WITH LINE OF SIGHT
+       closes to `standoff` and fires `dmg` every `fireSec` (armour applies).
+       Shoot it down and, as with the strike drone, the shooter is granted
+       one. hp 60: a burst brings it down. */
+    adrenaline: { label: 'Adrenaline', mult: 1.30, durSec: 45, maxCarry: 2 },
+    recon:      { label: 'Recon Flare', maxCarry: 1, fuseSec: 3.0, height: 45 },
+    hunter:     { label: 'Hunter Drone', hp: 60, maxCarry: 2, lifeSec: 30, armSec: 1.0, climbSpeed: 7, cruiseY: 9, speed: 9,
+                  seekRange: 55, standoff: 12, fireSec: 0.5, dmg: 7, loseSec: 2.5 },
     /* v1.0b: the drone bounty. Shooting a drone down is a KILL on the board and
        puts a Strike Drone in the shooter's bag (up to drone maxCarry). */
     droneBounty: { kill: 1, grantDrone: 1 },
@@ -449,6 +467,7 @@
     flashh: { cat: 'muzzle', label: 'Flash Hider',   noFlash: 1 },
     comp:   { cat: 'muzzle', label: 'Compensator',   recoilMult: 0.8 }
   };
+
 
   return { WEAPONS: WEAPONS, WEAPON_ORDER: WEAPON_ORDER, THROWS: THROWS, ATTACH: ATTACH, GEAR: GEAR };
 });

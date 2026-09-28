@@ -273,6 +273,8 @@ var Net = (function () {
     if (CFG.GEAR && CFG.GEAR.visor && CFG.GEAR.visor.showAllies) return true;
     return !(myTeam && r && r.team === myTeam);
   }
+  var reconOn = false;   /* v2.3: this side has recon — enemies drawn on both maps until the match ends */
+  function reconActive() { return reconOn; }
   function setVisor(on) {
     visorOn = !!on;
     for (var id in remotes) {
@@ -391,6 +393,8 @@ var Net = (function () {
     });
 
     s.on('matchStart', function (d) {
+
+      reconOn = false;   /* v2.3: recon is per match */
       if (typeof Zone !== 'undefined') Zone.set(d && d.zone ? d.zone : null);   /* v1.0j: the circle schedule, or none */
       if (typeof Heli !== 'undefined') Heli.set(d && d.heli ? d.heli : null);   /* v1.0l */
       phase = 'playing';
@@ -854,6 +858,25 @@ var Net = (function () {
        kill from a direction nobody looks. With it, dying to one is a decision
        the victim lost rather than a dice roll they never saw. */
     socket.on('droneWarn', function (d) { UI.droneWarn && UI.droneWarn(d.d); });
+    /* ===== v2.3: the hunter fires; the recon flare goes up, bursts, reveals ===== */
+    socket.on('droneFire', function (d) {
+      if (!d || !d.from || !d.to) return;
+      var a = new THREE.Vector3(d.from[0], d.from[1], d.from[2]), b = new THREE.Vector3(d.to[0], d.to[1], d.to[2]);
+      FX.tracer(a, b, 0xff7a4a);
+      if (d.hit) FX.bloodPuff && FX.bloodPuff(b); else FX.impact && FX.impact(b, new THREE.Vector3(0, 1, 0), null);
+      AudioSys.shot('ump9', a, { vol: 0.35 });
+    });
+    socket.on('reconLaunch', function (d) { if (d && d.p) FX.reconFlare && FX.reconFlare(new THREE.Vector3(d.p[0], d.p[1], d.p[2]), d.top || 45, d.fuseSec || 3); });
+    socket.on('reconBoom', function (d) {
+      if (!d || !d.p) return;
+      var at = new THREE.Vector3(d.p[0], d.p[1], d.p[2]);
+      FX.reconBurst && FX.reconBurst(at);
+      AudioSys.explosion && AudioSys.explosion(at, 0.35);
+    });
+    socket.on('reconReveal', function (d) {
+      reconOn = true;
+      UI.toast('RECON \u00b7 every enemy is on your map for the rest of the match');
+    });
     /* v9.10: a team-mate's map marker. Relayed by the server to that side only,
        so this can be trusted to be from an ally. */
     /* v14.0 BOT MODE: wave changes are worth the centre of the screen. */
@@ -1242,6 +1265,11 @@ var Net = (function () {
     isAlly: function (id) { var r = remotes[id]; return !!(myTeam && r && r.team === myTeam); },
     netDiag: netDiag,                 // v10.17 — read by the F3 panel
     setVisor: setVisor,               // v10.10 recon visor
-    visorActive: visorActive
+    visorActive: visorActive,
+    reconActive: reconActive,
+    /* v2.3 */
+    useAdrenaline: function (cb) { if (socket) socket.emit('useAdrenaline', {}, cb); },
+    launchRecon: function (cb) { if (socket) socket.emit('launchRecon', {}, cb); },
+    launchHunter: function (cb) { if (socket) socket.emit('launchHunter', {}, cb); }
   };
 })();

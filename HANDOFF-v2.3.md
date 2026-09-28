@@ -1,4 +1,4 @@
-# Urban Strike — Project Handoff (v2.2.0 · build 32 · 2026-09-22)
+# Urban Strike — Project Handoff (v2.3.0 · build 33 · 2026-09-28)
 
 Read this file, then `CHANGELOG.md` (the v2.1.0 and v2.0.0 entries have the
 *why* of every change), then the code. Everything below is true of the code
@@ -116,6 +116,28 @@ assertion whether it measured a contract or an accident of the old numbers.**
 ---
 
 ## §2 WHAT v2.0 IS — SYSTEM BY SYSTEM
+
+### The v2.3 enhancers (adrenaline / recon / hunter) and the prone shake
+
+- Stock lives on the player as `p.adrenalines / p.recons / p.hunters`
+  (per match, zeroed with `p.drones` at match start; caps in `GEAR.*.maxCarry`;
+  granted in `loot.js` next to the drone branch). Handlers in `server.js`:
+  `useAdrenaline`, `launchRecon`, `launchHunter` (→ `Drones.launch(room, p,
+  'hunter')`). Keys: N / J / O in `game.js`; actions in `weapons/system.js`.
+- Recon state: `room.recon['t:<team>' | 'p:<id>'] = true`; re-emitted in
+  `spawnPlayer`; cleared at match start. Client: `Net.reconActive()`; both
+  minimap draw loops honour it. Keep the recon override ABOVE the literal
+  `if (!(ally ? showAllies : showEnemies)) return;` — verify-fullmap anchors
+  on that line.
+- Hunter: `server/lib/drones.js tickHunter` — LOS via `ctx.colliders` +
+  `ctx.segmentBlocked` (server.js passes Bots'). It fires only at a target it
+  can see THIS tick. Snapshot `k: 'h'|'d'`; client `droneFire` → tracer.
+- Prone shake: `controller.js startShake / proneShake()`; sway in the camera
+  step AFTER the rotation assignment; spread in `system.js`.
+- Frag reach per map: `CFG.fragSpecFor(mapId)` in `config/index.js`; the
+  client reads `World.builtMap`. The server never distance-checks a frag
+  (it caps dmg only) — that was true before v2.3 too.
+
 
 ### Urban Small (v2.2) — the core as its own map
 

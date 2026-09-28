@@ -1,5 +1,7 @@
 # URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
+**v2.3.0 — ENHANCERS.** Crates are enhancer-heavy now: Adrenaline (N, +30% speed for 45 s), the Recon Flare (J: your side sees every enemy on the map for the rest of the match), the Hunter Drone (O: 30 s in the air, hunts what it can see; shoot it down and it's yours). Going prone shakes your aim for a moment. Grenades reach 20 m on arenas, 50 m on Urban.
+
 **v2.2.0 — URBAN SMALL.** The core inside the ring boulevard as its own 8-player map: no train, no helicopter, full loot rules, the two lifts, crates. Pick it in the lobby.
 
 **v2.1.0 — THE OUTER CITY, REBUILT.** Ten dense, varied, colourful districts (shophouses, apartments, warehouses, parks, monuments, markets, bus stands with buses, car parks, canals, water towers, masts, footbridges); four trains on one track through Sector 7 Central; the maps draw the real roads. Below, the v2.0 note it builds on.
@@ -14,7 +16,7 @@ airdrop-only (a crate a minute, exclusive contents, gone after 60 s); the floor
 carries heals, ammo, armour, mags and gear indoors and on roofs only. No Metro,
 no kill-streak strikes. The twelve-minute lag and the late-match avatar jitter
 are fixed at their causes (server clock on the wire, shared loot meshes, audio
-chain teardown, disposed crates). Details: CHANGELOG.md; HANDOFF-v2.2.md (repo root) for
+chain teardown, disposed crates). Details: CHANGELOG.md; HANDOFF-v2.3.md (repo root) for
 the code map.
 
 **v1.0 build 5 — THE TRAIN (superseded in v2.0).** An 800 m loop around Urban's ring boulevard

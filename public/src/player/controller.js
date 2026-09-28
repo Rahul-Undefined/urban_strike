@@ -27,16 +27,28 @@ var PlayerCtl = (function () {
   function halfH() { return prone ? P.proneH / 2 : crouch ? P.crouchH / 2 : P.standH / 2; }
   function eyeOffset() { return prone ? P.eyeProne : crouch ? P.eyeCrouch : P.eyeStand; }
 
+  /* ===== v2.3 - ADRENALINE and the PRONE SHAKE =====
+     speedMult: set by the adrenaline ack (setSpeedMult), expires on its own.
+     proneShake: 0..1 for a moment after X — the camera sways (game.js) and
+     the spread opens (weapons/system.js). Rahul: "when the avatar lies down
+     it creates a disadvantage for the opponent — the shake gives the
+     opponent a fraction of a second." Down: 0.8 s; up: 0.5 s. */
+  var speedMult = 1, speedMultUntil = 0, shakeUntil = 0, shakeLen = 1;
+  function speedMultNow() { if (speedMult !== 1 && performance.now() > speedMultUntil) speedMult = 1; return speedMult; }
+  function setSpeedMult(m, durSec) { speedMult = m || 1; speedMultUntil = performance.now() + (durSec || 0) * 1000; }
+  function adrenalineLeft() { return speedMult !== 1 ? Math.max(0, (speedMultUntil - performance.now()) / 1000) : 0; }
+  function proneShake() { var left = shakeUntil - performance.now(); return left > 0 ? Math.min(1, left / shakeLen) : 0; }
+  function startShake(sec) { shakeLen = sec * 1000; shakeUntil = performance.now() + shakeLen; }
   function toggleProne() {
     if (!alive) return;
-    if (!prone) { prone = true; crouch = false; halfY = halfH(); return; }
+    if (!prone) { prone = true; crouch = false; halfY = halfH(); startShake(0.8); return; }
     // getting up: try standing first, fall back to crouch under low ceilings
     var tries = [[false, P.standH / 2], [true, P.crouchH / 2]];
     for (var i = 0; i < tries.length; i++) {
       var h = tries[i][1];
       if (overlapAny(pos.x, pos.y + (h - halfY) + 0.02, pos.z, P.radius, h, P.radius) < 0) {
         pos.y += (h - halfY);
-        prone = false; crouch = tries[i][0]; halfY = h;
+        prone = false; crouch = tries[i][0]; halfY = h; startShake(0.5);
         return;
       }
     }
@@ -228,6 +240,7 @@ var PlayerCtl = (function () {
     if (len > 0) { fx /= len; fz /= len; }
     var sprinting = input.sprint && input.fwd && !crouch && !prone && !isAiming;
     var speed = prone ? MV.prone : crouch ? MV.crouch : (sprinting ? MV.sprint : MV.walk);
+    speed *= speedMultNow();   /* v2.3: adrenaline */
     speed *= (weaponSpeedMult || 1);
     if (isAiming) speed *= MV.adsMult;
 
@@ -345,6 +358,7 @@ var PlayerCtl = (function () {
     get crouch() { return crouch; },
     get prone() { return prone; },
     toggleProne: toggleProne,
+    setSpeedMult: setSpeedMult, adrenalineLeft: adrenalineLeft, proneShake: proneShake,   /* v2.3 */
     get grounded() { return grounded; },
     get lean() { return lean; },
     get moveState() { return moveState; },

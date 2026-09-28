@@ -319,6 +319,7 @@ function netstat(room, packet) {
 }
 
 const Drones = require('./server/lib/drones.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo, CFG,
+  colliders: (mapId) => Bots.buildColliders(mapId), segmentBlocked: (...a) => Bots.segmentBlocked(...a),   /* v2.3: the hunter's line of sight */
   /* v1.0b: the drone bounty — a downed hostile drone is a KILL on the board.
      Credited here, where the team score, the roster push and the kill target
      live, through the same checks a kill in combat.js runs. */
@@ -551,6 +552,8 @@ function spawnPlayer(room, p) {
   const prot = CFG.spawnProtectFor(room.settings.map || 'urban');
   p.protUntil = now() + prot * 1000;
   p.pos = [s[0], 0.95, s[1]]; p.ry = s[2]; p.history = [];
+  /* v2.3: a side that has recon keeps it across deaths and late joins */
+  if (room.recon) { const qk = (modeInfo(room).teams && p.team) ? 't:' + p.team : 'p:' + p.id; if (room.recon[qk]) io.to(p.id).emit('reconReveal', { by: null }); }
   p.justSpawned = true;   /* v13.1 audit: the next st may legitimately jump — see the st gate */
   /* v10.22: the spawn message now carries the refilled gear.
 
@@ -591,6 +594,7 @@ function startMatch(room) {
        stock is zero in every mode — otherwise the drop-only rule would be
        cosmetic and everyone would still open the match with two. */
     p.drones = 0;
+    p.hunters = 0; p.recons = 0; p.adrenalines = 0; p.adrenalineUntil = 0;   /* v2.3: per match, like drones */
     /* v15.0: EMP charges and the strike remote are per match, like drones.
        The shield is per life and is cleared in spawnPlayer. */
     p.emps = 0; p.shieldHp = 0;
@@ -881,6 +885,7 @@ function endMatch(room, winnerId, reason) {
   stopSnapshots(room);
   clearAirdrop(room);
   Mines.clear(room);
+  room.recon = {};   /* v2.3: recon is per match */
   Hazards.reset(room);   // v1.0b
   Zone.reset(room); Heli.reset(room);        // v1.0j / v1.0l
   const teams = modeInfo(room).teams;
@@ -942,7 +947,7 @@ io.on('connection', (socket) => {
         state: room.state, settings: room.settings,
         startedAt: room.startedAt, serverNow: now(),
         team: p.team || null, mines: p.mines | 0,
-        emps: p.emps | 0, shield: p.shieldHp | 0, c4: p.c4 | 0,   /* v15.0 / v1.0b */
+        emps: p.emps | 0, shield: p.shieldHp | 0, c4: p.c4 | 0, hunters: p.hunters | 0, recons: p.recons | 0, adrenalines: p.adrenalines | 0,   /* v15.0 / v1.0b */
         zone: room.zone ? room.zone.sched : null,   /* v1.0j */
         heli: Heli.snapshot(room),   /* v1.0l */
         respawnSec: p.respawnSec || CFG.MATCH.respawnDelay
@@ -1107,6 +1112,48 @@ io.on('connection', (socket) => {
      Drones.launch path. test.js phase 14, which asserted the old refusal, is
      rewritten to assert the new symmetry — a product change recorded as one,
      not a weakened test. */
+  /* ===== v2.3 - ADRENALINE / RECON FLARE / HUNTER ===== */
+  socket.on('useAdrenaline', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket); if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    const p = room.players.get(socket.id); if (!p || !p.alive) return ack({ ok: false, err: 'Down' });
+    if ((p.adrenalines | 0) <= 0) return ack({ ok: false, err: 'No adrenaline' });
+    const A = CFG.GEAR.adrenaline;
+    if (p.adrenalineUntil && now() < p.adrenalineUntil) return ack({ ok: false, err: 'Already running' });
+    p.adrenalines--; p.adrenalineUntil = now() + A.durSec * 1000;
+    ack({ ok: true, left: p.adrenalines, mult: A.mult, durSec: A.durSec });
+  });
+  socket.on('launchRecon', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket); if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    const p = room.players.get(socket.id); if (!p || !p.alive) return ack({ ok: false, err: 'Down' });
+    if ((p.recons | 0) <= 0) return ack({ ok: false, err: 'No recon flare' });
+    const R = CFG.GEAR.recon, teamKey = (modeInfo(room).teams && p.team) ? 't:' + p.team : 'p:' + p.id;
+    room.recon = room.recon || {};
+    if (room.recon[teamKey]) return ack({ ok: false, err: 'Your side already has recon' });
+    p.recons--;
+    const at = { x: p.pos[0], y: p.pos[1] + R.height, z: p.pos[2] };
+    io.to(room.code).emit('reconLaunch', { by: p.id, p: [p.pos[0], p.pos[1] + 1.4, p.pos[2]], top: R.height, fuseSec: R.fuseSec });
+    const code = room.code;
+    setTimeout(() => {
+      const r2 = rooms.get(code); if (!r2 || r2.state !== 'playing') return;
+      r2.recon = r2.recon || {}; r2.recon[teamKey] = true;
+      io.to(code).emit('reconBoom', { p: [at.x, at.y, at.z] });
+      for (const q of r2.players.values()) {
+        const qKey = (modeInfo(r2).teams && q.team) ? 't:' + q.team : 'p:' + q.id;
+        if (qKey === teamKey) io.to(q.id).emit('reconReveal', { by: p.name });
+      }
+      io.to(code).emit('toast', { msg: p.name + "'s recon flare is up" });
+    }, R.fuseSec * 1000);
+    ack({ ok: true, left: p.recons });
+  });
+  socket.on('launchHunter', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket); if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
+    const p = room.players.get(socket.id); if (!p) return ack({ ok: false, err: 'Not in a room' });
+    if (modeInfo(room).bots) return ack({ ok: false, err: 'Not in this mode' });
+    ack(Drones.launch(room, p, 'hunter'));
+  });
   socket.on('launchDrone', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};
     const room = getRoom(socket);

@@ -32,7 +32,14 @@
 module.exports = function initDroneModule(ctx) {
   const { io, now, applyDamage, modeInfo, CFG } = ctx;
 
-  function spec() { return CFG.GEAR.drone; }
+  function spec(kind) { return kind === 'hunter' ? CFG.GEAR.hunter : CFG.GEAR.drone; }   /* v2.3: two kinds on one module */
+  function stockKey(kind) { return kind === 'hunter' ? 'hunters' : 'drones'; }
+  /* line of sight from the drone to the target's chest, through the map's static colliders */
+  function canSee(room, from, q) {
+    if (!ctx.colliders || !ctx.segmentBlocked) return true;
+    const cols = ctx.colliders(room.settings.map || 'urban') || [];
+    return !ctx.segmentBlocked(cols, from[0], from[1], from[2], q.pos[0], q.pos[1] + 0.3, q.pos[2]);
+  }
 
   /* Valid targets: alive, not the owner, and NEVER a team-mate. The side check
      is done here rather than in applyDamage so a drone does not merely fail to
@@ -50,34 +57,35 @@ module.exports = function initDroneModule(ctx) {
     return out;
   }
 
-  function launch(room, owner) {
-    const S = spec();
+  function launch(room, owner, kind) {
+    kind = kind === 'hunter' ? 'hunter' : 'drone';
+    const S = spec(kind), K = stockKey(kind);
     if (!room.drones) room.drones = [];
-    if ((owner.drones | 0) <= 0) return { ok: false, err: 'No drones left' };
+    if ((owner[K] | 0) <= 0) return { ok: false, err: kind === 'hunter' ? 'No hunter drones left' : 'No drones left' };
     if (!owner.alive) return { ok: false, err: 'Cannot launch while down' };
     /* Refuse the launch when there is nobody to hunt, and DO NOT spend the
        drone. A drone that flies out over an empty map and self-destructs looks
        exactly like a bug. */
-    if (!candidates(room, owner).length) return { ok: false, err: 'No targets in the air picture' };
+    if (kind === 'drone' && !candidates(room, owner).length) return { ok: false, err: 'No targets in the air picture' };
 
-    owner.drones--;
+    owner[K]--;
     const d = {
-      id: room.nextDroneId = (room.nextDroneId || 1) + 1,
+      id: room.nextDroneId = (room.nextDroneId || 1) + 1, kind: kind,
       owner: owner.id, team: owner.team || null,
       pos: [owner.pos[0], owner.pos[1] + 1.2, owner.pos[2]],
       hp: S.hp, phase: 'climb', target: null,
-      born: now(), lockAt: 0
+      born: now(), lockAt: 0, lastFire: 0, lastSeen: 0
     };
     room.drones.push(d);
     io.to(room.code).emit('droneLaunch', {
-      id: d.id, owner: d.owner, team: d.team, p: d.pos.slice()
+      id: d.id, owner: d.owner, team: d.team, p: d.pos.slice(), k: kind
     });
-    return { ok: true, left: owner.drones };
+    return { ok: true, left: owner[K] };
   }
 
   function boom(room, d, lethal) {
-    const S = spec();
-    io.to(room.code).emit('droneBoom', { id: d.id, p: d.pos.slice(), lethal: !!lethal });
+    const S = spec(d.kind);
+    io.to(room.code).emit('droneBoom', { id: d.id, p: d.pos.slice(), lethal: !!lethal, k: d.kind });
     if (lethal) {
       const teams = modeInfo(room).teams;
       for (const q of room.players.values()) {
@@ -104,7 +112,7 @@ module.exports = function initDroneModule(ctx) {
     if (!room.drones) return null;
     const d = room.drones.find(x => x.id === droneId);
     if (!d) return null;
-    const S = spec();
+    const S = spec(d.kind);
     if (now() - d.born < S.armSec * 1000) return null;   // still in the launch tube
     d.hp -= amount;
     io.to(room.code).emit('droneHit', { id: d.id, hp: Math.max(0, d.hp) });
@@ -126,11 +134,13 @@ module.exports = function initDroneModule(ctx) {
         if (!ally) {
           const B = CFG.GEAR.droneBounty || { kill: 1, grantDrone: 1 };
           if (B.grantDrone) {
-            shooter.drones = Math.min(S.maxCarry, (shooter.drones | 0) + 1);
-            io.to(byId).emit('grant', { t: 'gear', g: 'drone', n: shooter.drones });
+            /* v2.3: the same kind you shot down — a hunter for a hunter */
+            const K = stockKey(d.kind);
+            shooter[K] = Math.min(S.maxCarry, (shooter[K] | 0) + 1);
+            io.to(byId).emit('grant', { t: 'gear', g: d.kind, n: shooter[K] });
           }
           const owner = room.players.get(d.owner);
-          io.to(room.code).emit('toast', { msg: shooter.name + ' shot down ' + (owner ? owner.name + "'s" : 'a') + ' drone' });
+          io.to(room.code).emit('toast', { msg: shooter.name + ' shot down ' + (owner ? owner.name + "'s" : 'a') + (d.kind === 'hunter' ? ' hunter drone' : ' drone') });
           if (ctx.onDroneBounty) ctx.onDroneBounty(room, shooter, B.kill | 0);
         }
       }
@@ -145,6 +155,7 @@ module.exports = function initDroneModule(ctx) {
     const t = now();
     for (let i = room.drones.length - 1; i >= 0; i--) {
       const d = room.drones[i];
+      if (d.kind === 'hunter') { tickHunter(room, d, dt, t); continue; }   /* v2.3 */
 
       if (t - d.born > S.maxLifeSec * 1000) { boom(room, d, false); continue; }
 
@@ -189,12 +200,64 @@ module.exports = function initDroneModule(ctx) {
     }
   }
 
+  /* ===== v2.3 - THE HUNTER =====
+     climb -> patrol (hover 6 m off its owner's shoulder at cruiseY) -> engage:
+     an enemy within seekRange that it can SEE (static colliders) is closed to
+     `standoff` and fired on every fireSec for `dmg` (armour applies; the kill
+     is the owner's, tag 'hunter'). Lose sight for loseSec and it goes back to
+     patrolling. lifeSec after launch it self-destructs harmlessly. Shot down:
+     the normal bounty, a hunter for the shooter. */
+  function tickHunter(room, d, dt, t) {
+    const S = spec('hunter');
+    if (t - d.born > S.lifeSec * 1000) { boom(room, d, false); return; }
+    const owner = room.players.get(d.owner);
+    if (d.phase === 'climb') {
+      d.pos[1] += S.climbSpeed * dt;
+      if (d.pos[1] >= S.cruiseY) { d.pos[1] = S.cruiseY; d.phase = 'patrol'; }
+      return;
+    }
+    let tgt = d.target ? room.players.get(d.target) : null, seenNow = false;
+    if (tgt && (!tgt.alive || tgt.out)) { tgt = null; d.target = null; }
+    if (tgt) {
+      const dx = tgt.pos[0] - d.pos[0], dz = tgt.pos[2] - d.pos[2], dist = Math.hypot(dx, dz);
+      seenNow = dist <= S.seekRange * 1.2 && canSee(room, d.pos, tgt);
+      if (seenNow) d.lastSeen = t; else if (t - d.lastSeen > S.loseSec * 1000) { tgt = null; d.target = null; }
+    }
+    if (!tgt) {
+      const pool = candidates(room, owner || { id: d.owner, team: d.team });
+      let best = null, bd = S.seekRange;
+      for (const q of pool) {
+        const dq = Math.hypot(q.pos[0] - d.pos[0], q.pos[2] - d.pos[2]);
+        if (dq < bd && canSee(room, d.pos, q)) { bd = dq; best = q; }
+      }
+      if (best) { tgt = best; d.target = best.id; d.lastSeen = t; seenNow = true; d.phase = 'engage'; io.to(best.id).emit('droneWarn', { id: d.id, d: Math.round(bd), k: 'hunter' }); }
+      else d.phase = 'patrol';
+    }
+    let gx, gz;
+    if (tgt) {
+      const dx = tgt.pos[0] - d.pos[0], dz = tgt.pos[2] - d.pos[2], dist = Math.hypot(dx, dz) || 0.001;
+      const want = Math.max(0, dist - S.standoff);
+      gx = d.pos[0] + (dx / dist) * want; gz = d.pos[2] + (dz / dist) * want;
+      if (seenNow && t - d.lastFire >= S.fireSec * 1000 && dist <= S.seekRange) {   // it fires only at what it can see THIS tick
+        d.lastFire = t;
+        const hit = Math.random() < 0.8;   // the odd round misses; a hunter is pressure, not a laser
+        io.to(room.code).emit('droneFire', { id: d.id, from: d.pos.slice(), to: [tgt.pos[0], tgt.pos[1] + 0.3, tgt.pos[2]], hit: hit });
+        if (hit) applyDamage(room, tgt, S.dmg, d.owner, 'hunter', false, false);
+      }
+    } else if (owner && owner.alive) {
+      gx = owner.pos[0] + 4; gz = owner.pos[2] + 4;
+    } else { gx = d.pos[0]; gz = d.pos[2]; }
+    const mx = gx - d.pos[0], mz = gz - d.pos[2], md = Math.hypot(mx, mz);
+    if (md > 0.3) { const step = Math.min(md, S.speed * dt); d.pos[0] += (mx / md) * step; d.pos[2] += (mz / md) * step; }
+    d.pos[1] += (S.cruiseY - d.pos[1]) * Math.min(1, dt * 2);
+  }
+
   /* Serialised into the normal snapshot so clients render and can shoot at
      them without a second channel. Deliberately terse: this runs every tick. */
   function snapshot(room) {
     if (!room.drones || !room.drones.length) return undefined;
     return room.drones.map(d => ({
-      i: d.id, o: d.owner, tm: d.team,
+      i: d.id, o: d.owner, tm: d.team, k: d.kind === 'hunter' ? 'h' : 'd',
       p: [Math.round(d.pos[0] * 100) / 100, Math.round(d.pos[1] * 100) / 100, Math.round(d.pos[2] * 100) / 100],
       h: Math.max(0, Math.round(d.hp)), f: d.phase
     }));

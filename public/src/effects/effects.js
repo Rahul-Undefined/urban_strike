@@ -360,6 +360,18 @@ var FX = (function () {
      around the edge, a glowing disc, a light, and rising embers. One handle
      per zone so fireZoneEnd can put it out early or on time. */
   var fireZones = {};
+  /* ===== v2.3 - THE RECON FLARE: a streak up, then a bright burst that hangs ===== */
+  var flareMat = new THREE.SpriteMaterial({ color: 0xff8a3a, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending });
+  function reconFlare(from, top, fuseSec) {
+    var s = new THREE.Sprite(flareMat); s.userData.sharedMat = true; s.scale.set(0.5, 0.5, 1); s.position.copy(from);
+    var y0 = from.y, dur = Math.max(0.5, fuseSec || 3);
+    add(s, dur, function (e, t) { e.mesh.position.y = y0 + top * Math.min(1, t * 1.15); if (Math.random() < 0.5) { var p = new THREE.Sprite(puffMat); p.userData.sharedMat = true; p.scale.set(0.6, 0.6, 1); p.position.copy(e.mesh.position); add(p, 0.6, function (e2, t2) { e2.mesh.scale.setScalar(0.6 + t2 * 1.2); }); } });
+  }
+  function reconBurst(at) {
+    var s = new THREE.Sprite(flareMat); s.userData.sharedMat = true; s.position.copy(at); s.scale.set(2, 2, 1);
+    add(s, 6, function (e, t) { var k = t < 0.1 ? 2 + t * 60 : 8 - t * 5; e.mesh.scale.set(k, k, 1); });
+    for (var i = 0; i < 10; i++) { var p = new THREE.Sprite(puffMat); p.userData.sharedMat = true; p.position.copy(at); var a = i / 10 * Math.PI * 2; p.scale.set(1, 1, 1); (function (pp, ang) { add(pp, 2.5, function (e, t) { e.mesh.position.set(at.x + Math.cos(ang) * t * 9, at.y - t * 4, at.z + Math.sin(ang) * t * 9); e.mesh.scale.setScalar(1 + t * 2); }); })(p, a); }
+  }
   function fireZone(d) {
     if (!d || fireZones[d.id]) return;
     var c = new THREE.Vector3(d.p[0], d.p[1], d.p[2]), r = d.r || 20, dur = d.dur || 10;
@@ -529,7 +541,7 @@ var FX = (function () {
     init: init, initDOM: initDOM, update: update,
     tracer: tracer, impact: impact, bloodPuff: bloodPuff, muzzle: muzzle, shell: shell,
     damageNumber: damageNumber, pickupBurst: pickupBurst, softFlash: softFlash, groundFire: groundFire,
-    explosion: explosion, smokeCloud: smokeCloud,
+    explosion: explosion, smokeCloud: smokeCloud, reconFlare: reconFlare, reconBurst: reconBurst,   /* v2.3 */
     shake: shake, applyShake: applyShake,
     damageFlash: damageFlash, damageDirection: damageDirection,
     hitmarker: hitmarker, flashbang: flashbang, updateFlash: updateFlash,

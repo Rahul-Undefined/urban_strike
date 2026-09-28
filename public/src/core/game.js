@@ -314,7 +314,10 @@ var Game = (function () {
       /* v1.0q: Q aboard the flying helicopter brings it down (a lean is pointless up there) */
       if (e.code === 'KeyQ' && window.Heli && Heli.isRiding && Heli.isRiding()) { Heli.landRequest(); e.preventDefault(); return; }
       if (e.code === 'KeyQ') qDownAt = performance.now();   /* v1.0v: a TAP drops an attachment (see keyup); a HOLD leans */
-      /* v2.0: N does nothing — the kill-streak strikes are gone. */
+      /* v2.3: N injects adrenaline, J fires the recon flare, O launches the hunter drone. */
+      if (e.code === 'KeyN' && playing) { e.preventDefault(); Weapons.useAdrenaline(); return; }
+      if (e.code === 'KeyJ' && playing) { e.preventDefault(); Weapons.launchRecon(); return; }
+      if (e.code === 'KeyO' && playing) { e.preventDefault(); Weapons.launchHunter(); return; }
       /* v1.0b: K throws the gun in your hands away, L the sight on it. Every
          map, every mode. The server drops a matching pickup on the floor where
          one exists (see 'dropItem' in server.js). */
@@ -883,10 +886,23 @@ var Game = (function () {
         PlayerCtl.eyePosition(camera.position);
         /* v2.0: the shadow frustum follows the player (World.followSun) */
         if (World.followSun) World.followSun(camera.position.x, camera.position.z);
+
         camera.position.y -= landDip * 0.2;
         camera.rotation.y = -PlayerCtl.yaw;
         camera.rotation.x = PlayerCtl.pitch;
         camera.rotation.z = -PlayerCtl.lean * CFG.MOVE.leanAngle;
+        /* v2.3: the prone shake — a decaying sway on the camera for the moment
+           after X (down 0.8 s, up 0.5 s), so the opponent has a window while
+           you settle. Rendering only: PlayerCtl.yaw/pitch (what you SEND and
+           SHOOT along) are untouched — the spread penalty in weapons/system.js
+           is what makes the shot itself unreliable. */
+        var shk = PlayerCtl.proneShake ? PlayerCtl.proneShake() : 0;
+        if (shk > 0) {
+          var tt = performance.now() * 0.014;
+          camera.rotation.x += Math.sin(tt * 6.3) * 0.035 * shk;
+          camera.rotation.y += Math.cos(tt * 4.7) * 0.028 * shk;
+          camera.rotation.z += Math.sin(tt * 5.1) * 0.02 * shk;
+        }
 
         var targetFov = wu.aiming ? wu.adsFov : 75;
         camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 11);

@@ -75,6 +75,10 @@
     drone:      { kind: 'gear', g: 'drone', n: 1, rar: 'l', drop: 1, label: 'Strike Drone' },
     visor:      { kind: 'gear', g: 'visor', n: 1, rar: 'l', drop: 1, label: 'Recon Visor' },
     c4:         { kind: 'gear', g: 'c4', n: 1, rar: 'l', drop: 1, bigOnly: 1, label: 'C4 Charge' },
+    /* v2.3 crate-only enhancers (Rahul: "drops are full of guns") */
+    adrenaline: { kind: 'gear', g: 'adrenaline', n: 1, rar: 'l', drop: 1, label: 'Adrenaline' },
+    recon:      { kind: 'gear', g: 'recon', n: 1, rar: 'l', drop: 1, label: 'Recon Flare' },
+    hunter:     { kind: 'gear', g: 'hunter', n: 1, rar: 'l', drop: 1, label: 'Hunter Drone' },
     /* floor gear */
     emp:        { kind: 'gear', g: 'emp', n: 1, rar: 'l', label: 'EMP Charge' },
     shield:     { kind: 'gear', g: 'shield', n: 1, rar: 'l', bigOnly: 1, label: 'Ballistic Shield' }
@@ -193,9 +197,14 @@
        `exoticPool` alone — what a crate is now for. Weapons sit in the pool
        twice as often as gear so a crate is usually worth a gun. */
     count: 5,
+    /* v2.3 (Rahul: "drops are basically full of guns"): guns once each (14 of
+       40 entries); the enhancers are the other 26 — drones, hunters, visors,
+       flares, adrenaline, EMP, C4, shield, L3/H3, the big sights. A crate is
+       five draws: expect ~1.8 guns and ~3.2 enhancers. */
     exoticPool: ['wpn_kar98', 'wpn_awm', 'wpn_scarh', 'wpn_akm', 'wpn_aug', 'wpn_mk14', 'wpn_p90', 'wpn_ump9', 'wpn_mp5',
-      'wpn_m249', 'wpn_vector', 'wpn_famas', 'wpn_aa12', 'wpn_rocket', 'wpn_rocket', 'wpn_seeker', 'wpn_flamer',
-      'drone', 'drone', 'visor', 'c4', 'emp', 'shield', 'armor3', 'helm_3',
+      'wpn_m249', 'wpn_vector', 'wpn_famas', 'wpn_aa12', 'wpn_rocket', 'wpn_seeker', 'wpn_flamer',
+      'drone', 'drone', 'hunter', 'hunter', 'visor', 'visor', 'recon', 'recon', 'adrenaline', 'adrenaline', 'adrenaline',
+      'c4', 'emp', 'emp', 'shield', 'armor3', 'helm_3',
       'att_x8', 'att_x6', 'att_x4', 'att_supp', 'att_quick', 'att_comp', 'att_reddot'],
     /* kept for old readers; loot.js draws from exoticPool only */
     weaponPool: ['wpn_aa12', 'wpn_awm', 'wpn_m249', 'wpn_vector'],
