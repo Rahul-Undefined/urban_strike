@@ -127,6 +127,9 @@ var Pickups = (function () {
     } else if (it.kind === 'gear' && it.g === 'mine') {
       P(L, new THREE.CylinderGeometry(0.16, 0.19, 0.07, 10), 0x232a22, -0.14, 0, 0, 0, 0); P(L, new THREE.CylinderGeometry(0.16, 0.19, 0.07, 10), 0x232a22, 0.14, 0, 0.1, 0, 0);
       boxP(L, 0.045, 0.02, 0.045, 0xff3428, -0.14, 0.05, 0); boxP(L, 0.045, 0.02, 0.045, 0xff3428, 0.14, 0.05, 0.1);
+    } else if (it.kind === 'gear' && it.g === 'frag') {   /* v2.6: a bundle of five frags on a strap */
+      for (var fi = 0; fi < 5; fi++) P(L, new THREE.SphereGeometry(0.075, 10, 8), 0x3b4a3a, -0.2 + fi * 0.1, 0, (fi % 2) * 0.06, 0, 0);
+      boxP(L, 0.5, 0.03, 0.05, 0x8a7a50, 0, 0.03, 0.03);
     } else if (it.kind === 'gear' && it.g === 'molotov') {
       cylP(L, 0.08, 0.3, 0x3a5a3a, 0, 0, 0); cylP(L, 0.03, 0.12, 0x2a2a2a, 0, 0.2, 0); boxP(L, 0.08, 0.05, 0.03, 0xe2d0a0, 0, 0.27, 0);
     } else {

@@ -621,7 +621,7 @@ var Net = (function () {
     s.on('damaged', function (d) {
       UI.setVitals(d.hp, d.lv, d.du);
       if (d.sh !== undefined && UI.setShield) UI.setShield(d.sh, CFG.GEAR.shield.hp);   // v15.0 (fix 5)
-      FX.damageFlash(d.zone ? 0.18 : d.dmg === 0 ? 0.12 : 0.3);   // a shield hit stings less; the zone bleeds
+      FX.damageFlash(d.zone ? (d.dmg >= 25 ? 0.4 : 0.18) : d.dmg === 0 ? 0.12 : 0.3);   // a shield hit stings less; the zone bleeds (v2.4: Urban Small Zone's 50% hit flashes hard)
       if (d.zone && AudioSys.zoneTick) AudioSys.zoneTick();          /* v1.0k: the heartbeat */
       FX.shake(0.12);
       if (d.fromPos) {

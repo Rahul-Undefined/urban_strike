@@ -18,6 +18,7 @@ var Weapons = (function () {
   }
   var ammo = {};                  // name -> {mag, reserve}
   var throwsLeft = { frag: 2, smoke: 1, flash: 1 };
+  var zoneFragSched = null;   /* v2.6: the zone schedule the current frag stock was issued for */
   var droneCount = 0;                                    // v9.4, set by the server grant
   var empCount = 0;                                      // v15.0 (fix 1), set by the server grant
   var breath = 1.0, breathHeld = false, breathKey = false;   // v1.0e hold-breath meter (0..1), whether it is being held, Shift state
@@ -137,7 +138,17 @@ var Weapons = (function () {
       var w = CFG.WEAPONS[n];
       ammo[n] = { mag: eff(n).mag, reserve: w.reserve };
     }
-    throwsLeft = { frag: CFG.THROWS.frag.count, smoke: CFG.THROWS.smoke.count, flash: CFG.THROWS.flash.count, molotov: CFG.THROWS.molotov.count };
+    /* ===== v2.6 - ZONE: FRAGS DO NOT REFILL ON RESPAWN =====
+       Rahul: "in the zone mode max 5 grenades are pre-equipped with the
+       player, next they can take it from the loot drop." So in a zone match
+       the five are issued ONCE, at the match's first spawn, and carried
+       across deaths; the crate's Frag Bundle is the only top-up. The
+       schedule object the server shipped identifies the match: a new one
+       means a new match, and the five are issued again. */
+    var zSched = (typeof Zone !== 'undefined' && Zone.schedule) ? Zone.schedule() : null;
+    var keepFrag = zSched && zoneFragSched === zSched ? (throwsLeft.frag | 0) : CFG.THROWS.frag.count;
+    zoneFragSched = zSched;
+    throwsLeft = { frag: keepFrag, smoke: CFG.THROWS.smoke.count, flash: CFG.THROWS.flash.count, molotov: CFG.THROWS.molotov.count };
     cooking = null; UI.setCooking(false, 0);
     setWeapon(owned[current] ? current : 'ak47', true);
   }
@@ -234,6 +245,11 @@ var Weapons = (function () {
       else if (d.g === 'molotov') {
         throwsLeft.molotov = Math.min(CFG.THROWS.molotov.maxCarry, throwsLeft.molotov + d.n);
         UI.toast('Molotov +' + d.n);
+      }
+      else if (d.g === 'frag') {   /* v2.6: the zone crate's bundle — back to the full five, never above */
+        var before = throwsLeft.frag | 0;
+        throwsLeft.frag = Math.min(CFG.THROWS.frag.count, before + (d.n | 0));
+        UI.toast(throwsLeft.frag > before ? 'Frags +' + (throwsLeft.frag - before) + ' \u00b7 ' + throwsLeft.frag + ' carried' : 'Frags already full');
       }
     }
     refreshHud();

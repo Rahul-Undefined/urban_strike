@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>URBAN STRIKE — Tactical Browser FPS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- v2.5: two war-grade faces join the set — BLACK OPS ONE (stencil, the wordmark, the room-code plate, the result title)
+     and TEKO (tall condensed, every heading, button and label). Rajdhani stays for body, Plex Mono for data. -->
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Teko:wght@500;600;700&family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <style>
 @keyframes hudPulse{0%,100%{opacity:1}50%{opacity:.55}}
@@ -117,6 +119,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
     <div class="bd-haze"></div>
     <div class="bd-dust"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <div class="bd-sweep"></div>
+    <div class="bd-beams" aria-hidden="true"><i></i><i></i></div>
     <div class="bd-grid"></div>
   </div>
   <div class="menu-vignette"></div>
@@ -129,6 +132,8 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
         <span class="bm-chev">&#9666;</span>
         <h1>URBAN<span>STRIKE</span></h1>
         <span class="bm-chev">&#9656;</span>
+        <!-- v2.5: the stamp — a red stencil plate hung off the wordmark, like an inspection mark on a crate -->
+        <em class="mn-stamp" aria-hidden="true">LIVE OPS</em>
         <em class="mn-serial">MK-XII &#183; TACTICAL OPERATIONS &#183; BUILD <b id="brand-ver">&mdash;</b></em>
       </div>
       <div class="profile-chip">
@@ -140,6 +145,10 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
         <em class="pc-status">ONLINE</em>
       </div>
     </header>
+
+    <!-- v2.5: the theatre ticker — a slow conveyor of every theatre and mode category
+         the game ships, filled from CFG by ui.js (never hardcoded here). -->
+    <div class="mn-ticker" aria-hidden="true"><div class="tk-track" id="mn-ticker"></div></div>
 
     <!-- The hero: a second, contained WebGL context (showcase.js). Operator
          rig + the featured weapon it is holding; on any failure the panel
@@ -154,8 +163,10 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
     </div>
 
     <nav class="nav-rail">
+      <div class="rail-head" aria-hidden="true"><b>MISSION SELECT</b><i></i></div>
       <button class="rail-btn primary" id="btn-play"><i></i><span>PLAY</span><em>DEPLOY TO A MATCH</em></button>
       <button class="rail-btn" id="btn-howto"><i></i><span>FIELD MANUAL</span><em>CONTROLS &amp; INTEL</em></button>
+      <div class="rail-tape" aria-hidden="true"></div>
       <div class="rail-foot">NO DOWNLOAD &#183; NO ACCOUNT &#183; ONE FIVE-LETTER CODE</div>
     </nav>
 
@@ -370,6 +381,8 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
   <div id="end-overlay" class="hidden">
     <div class="end-title" id="end-title">MATCH OVER</div>
     <div class="end-sub" id="end-sub"></div>
+    <!-- v2.5: the MVP plate — the match's top operator stamped above the board, numbers counting up -->
+    <div class="end-mvp" id="end-mvp"></div>
     <!-- v8.31.2: three-column stage. The scoreboard is the centrepiece and the
          insight cards flank it, so the result reads left-to-right instead of
          as one long column pushed off the bottom of the screen. -->

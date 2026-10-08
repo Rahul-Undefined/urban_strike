@@ -1,5 +1,11 @@
 # URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
+**v2.6.0 — ZONE RULES.** In a zone match the five frags are issued once and only the crate's Frag Bundle refills them; dying to the zone costs the team (or, solo, the player) one point.
+
+**v2.5.0 — WAR-GRADE.** Black Ops One stencil for the wordmark, the room-code plate and the result title; Teko for every heading and button; a LIVE OPS stamp, a theatre ticker, chamfered rails, searchlights over the skyline. The end screen stamps its title, names the MVP, ranks every row with a kill bar and counts every number up from zero. Urban and Urban Small may run 15 or 30 minutes; zone modes and arenas are always 15.
+
+**v2.4.0 — URBAN SMALL ZONE.** Three setups in the Urban Zone category on Urban Small (Solo, Duos 4 × 2, Squads 2 × 4 — eight players): a new circle every 2 minutes, placed at random anywhere on the map (not nested — the wall slides there over 75 s, the next circle is shown for 45 s first), 50% of your life every 10 s outside, respawns only on ground that is safe now and stays safe. Urban Zone itself is unchanged.
+
 **v2.3.0 — ENHANCERS.** Crates are enhancer-heavy now: Adrenaline (N, +30% speed for 45 s), the Recon Flare (J: your side sees every enemy on the map for the rest of the match), the Hunter Drone (O: 30 s in the air, hunts what it can see; shoot it down and it's yours). Going prone shakes your aim for a moment. Grenades reach 20 m on arenas, 50 m on Urban.
 
 **v2.2.0 — URBAN SMALL.** The core inside the ring boulevard as its own 8-player map: no train, no helicopter, full loot rules, the two lifts, crates. Pick it in the lobby.

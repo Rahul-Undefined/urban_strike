@@ -252,7 +252,7 @@ function phase15() {
       setTimeout(() => {
         const L = lobbies[lobbies.length - 1];
         ok(!!L, 'a lobby payload arrived');
-        ok(L.settings.minutes === 15, 'sixty requested minutes clamped to the one legal duration [' + L.settings.minutes + ']');
+        ok(L.settings.minutes === 15, 'sixty requested minutes clamped to a legal duration [' + L.settings.minutes + ']');
         ok(L.settings.mode === CFG.MATCH.defaultMode,
           'a removed bot mode id at create falls to the default — no bot matchmaking exists [' + L.settings.mode + ']');
         ok(L.settings.map === 'riverside', 'and the map request stands — nothing drags a room anywhere [' + L.settings.map + ']');
@@ -770,9 +770,13 @@ function configGates() {
      duration should be 15 minutes." The old pinned list is replaced by the
      new rule, asserted as a rule — one option, and default IS that option, so
      the lobby cannot render a choice that does not exist. */
-  ok(CFG.MATCH.timeOptions.length === 1 && CFG.MATCH.timeOptions[0] === 15,
-    '15 minutes is the ONLY duration (brief item 8) [' + CFG.MATCH.timeOptions.join(',') + ']');
-  ok(CFG.MATCH.defaultMinutes === 15, 'and the default is that one option');
+  /* v2.5 SUPERSESSION: 15 or 30, by map and mode (Rahul: "add a 30-minute
+     option — only 15 and 30, only on Urban and Urban Small, zone always 15"). */
+  ok(CFG.MATCH.timeOptions.join(',') === '15,30', 'the durations are 15 and 30 [' + CFG.MATCH.timeOptions.join(',') + ']');
+  ok(CFG.MATCH.defaultMinutes === 15, 'and the default is 15');
+  ok(CFG.timeOptionsFor('ffa', 'urban').join(',') === '15,30' && CFG.timeOptionsFor('t4', 'urbansmall').join(',') === '15,30', 'Urban and Urban Small offer both');
+  ok(CFG.timeOptionsFor('zone', 'urban').join(',') === '15' && CFG.timeOptionsFor('zs', 'urbansmall').join(',') === '15', 'every zone mode is 15 only');
+  ok(CFG.timeOptionsFor('ffa', 'killhouse').join(',') === '15' && CFG.timeOptionsFor('sq2', 'sunsetrow').join(',') === '15', 'arenas are 15 only');
   ok(CFG.MATCH.timeOptions.every(n => n > 0), 'no zero duration: every match can end');
   /* THE PAIRING RULE. Unlimited kills is only survivable because the clock is
      always finite. If a no-limit duration is ever added, this fails loudly

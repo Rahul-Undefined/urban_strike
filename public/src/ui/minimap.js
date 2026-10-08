@@ -478,7 +478,7 @@ var Minimap = (function () {
       g.beginPath(); g.arc(sx(zc.cx), sz(zc.cz), Math.max(1, zc.r * S), 0, Math.PI * 2);
       g.strokeStyle = 'rgba(70,230,110,0.95)'; g.lineWidth = 2.5; g.stroke();
       g.fillStyle = 'rgba(70,230,110,0.07)'; g.fill();
-      if (zc.next && !zc.shrinking) {
+      if (zc.next && (!zc.shrinking || (Zone.schedule() || {}).free)) {   /* v2.4: the free roll keeps the destination on the map while the wall moves */
         g.beginPath(); g.arc(sx(zc.next.cx), sz(zc.next.cz), Math.max(1, zc.next.r * S), 0, Math.PI * 2);
         g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 1.5; g.setLineDash([6, 4]); g.stroke(); g.setLineDash([]);
       }

@@ -71,5 +71,18 @@
       AIRDROP_POINTS: ((C.AIRDROP && C.AIRDROP.points) || []).filter(function (p) { return inCore(p[0], p[1]); })
     };
   })();
+  /* ===== v2.5 - WHICH DURATIONS A ROOM MAY PICK =====
+     The one resolver both server clamps (rooms.js create, server.js
+     updateSettings) and the lobby select read. A zone mode is ALWAYS the
+     default 15 — its circle schedule is cut to that clock. Otherwise a
+     `longMatch` map (Urban, Urban Small) offers the whole MATCH.timeOptions
+     list (15, 30); every arena offers the default only. */
+  C.timeOptionsFor = function (modeId, mapId) {
+    var M = C.MATCH || {}, def = M.defaultMinutes || 15, all = M.timeOptions || [def];
+    var mode = C.MODES && C.MODES[modeId], map = C.MAPS && C.MAPS[mapId];
+    if (mode && mode.zone) return [def];
+    if (map && map.longMatch) return all.slice();
+    return [def];
+  };
   return C;
 });

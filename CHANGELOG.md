@@ -1,3 +1,202 @@
+# v2.6.0 (build 36) — ZONE: FIVE FRAGS, LOOT-ONLY REFILL; A ZONE DEATH COSTS A POINT (2026-10-08)
+
+Rahul: "in the zone mode max 5 grenades are pre-equipped with the player,
+next they can take it from the loot drop; and the player who dies in the zone
+loses a point on the team level, -1 each time."
+
+## Frags in a zone match (system.js `resetLoadout`, loot.js, loot.config.js)
+
+- Five frags are issued ONCE, at the match's first spawn, and carried across
+  deaths — no respawn refill in a zone match. The client identifies the
+  match by the zone schedule the server shipped: a new schedule, a new
+  match, five again. Every other mode is unchanged (refill on respawn).
+- A new crate item, **Frag Bundle ×5** (`frags`, gear/frag, crate-only,
+  rare), rides in EVERY zone crate beside the exotic draw. Picking it up
+  tops the stock back to five, never above ("Frags already full" when it
+  would). It never rolls on the floor (`drop: 1`) and never in an ordinary
+  crate (added only when `room.zone`). Rendered as five bodies on a strap.
+
+## A zone death costs a point (combat.js)
+
+On a `weapon === 'zone'` death: team and squad modes take one from the
+victim's side's score; solo takes one from the victim's own kill count
+(floored at zero — a negative kill count reads as a bug). Killfeed row and
+the death card both say "−1". `victim.zoneDeaths` is counted for later use.
+
+## Gates
+
+`verify-zone` 78/0, `verify-endscreen` 58/0, `verify-client` 65/0,
+`verify-fingerprint` 64/0, `verify-spawns` 36/0, `verify-menu` 18/0.
+
+# v2.5.0 (build 35) — WAR-GRADE TYPE, THE WELCOME SCREEN, THE ANIMATED SCORECARD, 15 OR 30 (2026-10-08)
+
+Rahul: "the welcome screen needs modification — war level fonts style
+design; the end score card should show an animated scorecard; think how we
+can make the home screen, the code plate and other areas stylish. Also a
+30-minute option: only 15 and 30, only on Urban and Urban Small; the zone
+modes stay 15."
+
+## Type (index.html font link, style.css `:root`)
+
+Two faces join the set, nothing else moves:
+- **BLACK OPS ONE** (`--stencil`) — the military stencil, for the three
+  things that should look painted on a crate: the wordmark, the room-code
+  plate, the result title (and the countdown, the K.I.A. title, the theatre
+  name on the intel card, the featured-loadout name).
+- **TEKO** (`--head`) — tall, condensed, for every heading, button, label,
+  select caption, the rail, the deploy sheet, the announcements, the
+  scoreboard headers.
+Rajdhani keeps the body copy; IBM Plex Mono keeps every number (the clock
+stays mono on purpose — Teko's digits are proportional and the top stack
+would jitter every second).
+
+## The welcome screen
+
+- The wordmark in stencil, with a red **LIVE OPS** inspection stamp hung off
+  its corner (stamps in on load).
+- A **theatre ticker** under the masthead: every theatre, then every mode
+  category, filled from CFG by ui.js (never typed into the markup — the same
+  rule as the selects), rolling as a seamless conveyor.
+- The rail: a MISSION SELECT head, chamfered buttons (clip-path), a hazard
+  edge on PLAY, a light sweep on hover, a hazard tape under the two.
+- The hero: chamfered frame, a scanline pass over the live operator, a
+  hazard mark top-right; the loadout plate in stencil.
+- The backdrop: two slow searchlights crossing the skyline (CSS only).
+- The deploy sheet: the join code in stencil amber on black; the lobby's
+  room-code plate in stencil, chamfered, amber on steel.
+- Every `.btn`, `.panel-head`, field caption and the profile chip take the
+  new voice; nothing in the layout grid changed except one new row (the
+  ticker). Reduced-motion users get none of the motion.
+
+## The animated scorecard (ui.js `showEnd`, `countUp`)
+
+- The title **stamps** in (2.6× → 1, a half-degree of settle) in stencil.
+- An **MVP plate** under the subtitle: top kills (damage breaks a tie), the
+  callsign with its colour, KILLS / K/D / DAMAGE as big Teko numbers.
+- Every row carries a **rank chip** (gold / silver / bronze / steel, by
+  overall placement whatever the team grouping) and a **kill bar** — the
+  row's share of the top killer's count, `--kb` set per row, grown by CSS
+  after the row lands.
+- Every number on the board and the plate **counts up from zero** (1.1 s,
+  eased out, each row 70 ms behind the last; K/D keeps two decimals). The
+  final text is written synchronously and the count only ever lands back on
+  it, so a gate or a screenshot taken the instant the board exists sees the
+  real numbers. Your own row is lit. The insight cards reveal after the
+  board, staggered. `prefers-reduced-motion` skips the count.
+- The row dots, which the markup always carried and no rule ever sized, are
+  now visible on the end board and the TAB board.
+
+## 15 or 30 minutes (`CFG.timeOptionsFor(mode, map)`)
+
+`MATCH.timeOptions` is `[15, 30]` — the universe. Which of them a room may
+pick is one resolver in config/index.js, read by both server clamps
+(rooms.js create, server.js updateSettings) and the lobby select:
+- a **zone mode** → `[15]` always (its schedule is cut to the 15:00 clock);
+- a `longMatch` map (**Urban, Urban Small**) in any other mode → `[15, 30]`;
+- every **arena** → `[15]`.
+updateSettings now re-applies the map lock and re-clamps the duration AFTER
+the mode has moved (the v12 lock ran before the mode assignment, so a switch
+into a locked mode left the old map on the room until the next push). A
+30-minute Urban room that switches to a zone mode or an arena drops to 15;
+back on Urban it may be set to 30 again. The lobby select shows one locked
+option with a title ("Zone matches are always 15 minutes") where only one
+applies. Proven live: ffa/urban 30 → 30; urbansmall 30; killhouse → 15;
+zone → 15 on urban; zs → 15 on urbansmall; t4/urbansmall 30.
+
+## Gates
+
+`verify-endscreen` 58/0, `verify-menu` 18/0, `verify-client` 65/0,
+`verify-fingerprint` 64/0, `verify-flow` 3/0, `verify-zone` 78/0,
+`verify-fullmap` 53/0. test.js: 261 PASS / 0 FAIL through phase 18 (the
+duration/lock phase included) — the sandbox's clock cut the run there; the
+later phases are the heli flight and the zone room, both covered by their
+own gates. `verify-arch` / `verify-protect` reds are pre-existing.
+
+# v2.4.0 (build 34) — URBAN SMALL ZONE (2026-10-08)
+
+Rahul: "add a map Urban Small Zone — the map gets shorter every 2 min, a
+player in the closed part loses 50% life every 10 seconds, so players must
+spawn in the active location only, never where it has already shortened; and
+the sinking zone must be random — not always closing on one spot, it can be
+anywhere on the map."
+
+## Where it is
+
+The Urban Zone category now carries three more setups, map-locked to Urban
+Small (no train, no heli, the core's tables, eight players):
+
+- `zs` — **Urban Small Zone · Solo** (8)
+- `zssq2` — **Urban Small Zone · Duos 4 × 2** (8)
+- `zssq4` — **Urban Small Zone · Squads 2 × 4** (8)
+
+It is a mode, not a new map id: a new map id would have touched the eleven
+places that key geometry, lifts, lighting and derived tables on `urbansmall`,
+for no gain the player can see. The lobby's map select shows Urban Small,
+locked, with the title saying why.
+
+## The profile (`CFG.ZONE_PROFILES.small`, resolved by `CFG.zoneParams(mode)`)
+
+| | Urban Zone | Urban Small Zone |
+|---|---|---|
+| open | 2:00 | 2:00 |
+| phases | 10 × 60 s (30 s hold) | 6 × 120 s (45 s hold, 75 s moving) |
+| final circle stands | 12:00 | 14:00 |
+| radii | 335 → 42 m | 155 (half-diagonal) → 32 m |
+| bleed | 10% / 1 s | **50% / 10 s** |
+| placement | nested, toward one random final centre | **free: anywhere on the map** |
+
+Nothing of Urban Zone's numbers changed; it reads the same defaults through
+the same resolver (gate-checked).
+
+## The free roll (`zoneSchedule(rnd, bound, mapId, params)` with `free`)
+
+Each circle's centre is drawn uniformly from the box in which it fits inside
+the walls — no nesting in the circle before, so the safe ground can jump
+across the map and the wall slides there over the phase's 75 s. A big early
+circle may hang over the wall by `freeOverhang` (0.5) × (r − rFinal), so the
+early phases also cut a random SIDE instead of always sitting in the middle;
+the overhang is zero for the final circle, which is therefore always wholly
+inside the walls. 300 rolls: 250+ distinct final spots in 5 m bins.
+
+## The bleed is counted per player (`server/lib/zone.js`)
+
+One room-wide metronome was fine at 1 s and wrong at 10 s (a player who
+stepped out a second before the beat would lose half their life at once).
+Each player now carries `zoneOutAt`: the first hit lands `tickSec` after they
+leave the circle, the next every `tickSec`, beat-locked; stepping back inside
+clears it. Urban's 1 s tick is unchanged in effect — 10 s outside is death.
+The 50% hit flashes the screen harder (net.js).
+
+## Spawns: safe now AND still safe (`Zone.spawnFilter`)
+
+A respawn tile must be inside the current circle and, when the next circle
+is known (the hold, or the wall on its way), inside that too — with the free
+roll the next circle can be across the map, and a tile that is merely inside
+today's wall is a tile the wall walks away from. No such tile: open ground
+inside the circle is found through the map's colliders (the crates' finder,
+now shared as `Zone.openGround`), kept 3 m off the walls. The old
+"nearest two tiles" fallback — which could hand back a tile in the red — is
+now the last resort only, for a dead collider harness.
+
+## The client (`environment/zone.js`)
+
+Reads the name, the bleed and `free` from the schedule the server ships —
+"URBAN SMALL ZONE · the circle closes at 2:00", "50% health every 10 s" —
+nothing typed. While a next circle is known and you are not already in it,
+the banner adds its distance and an arrow ("next circle 120 m →"); the wall
+phase reads ZONE MOVING on the free profile, and the destination ring (ground
+and M map) stays visible while the wall moves, not only during the hold.
+
+## Gates
+
+`verify-zone` 78/0 (+34: the profile, 300 free rolls, the 14:00 clock, the
+50/10 bleed to the second, three spawn scenarios, the open-ground check);
+`verify-fullmap` 53/0 (the three ids classified hidden, like every zone
+mode); `verify-menu`, `verify-flow`, `verify-spawns`, `verify-client`,
+`verify-build`, `verify-spawn-geometry`, `verify-intel`, `verify-fingerprint`,
+`verify-endscreen` unchanged green. `verify-arch` and `verify-protect` carry
+their documented pre-existing reds.
+
 # v2.3.0 (build 33) — ENHANCERS, THE HUNTER, RECON, THE PRONE SHAKE (2026-09-28)
 
 Tagged `v2.3.0`. Rahul: "drops are full of guns — add things that enhance

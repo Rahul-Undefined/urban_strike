@@ -120,7 +120,30 @@
     zsq2: { label: 'Urban Zone \u00b7 Duos 7 \u00d7 2', vlabel: '7 squads of 2 \u00b7 respawns',
             cat: 'zone', teams: true, squads: true, teamCount: 7, squadSize: 2, maxPlayers: 14, zone: true, mapLock: 'urban', fullMapContacts: false },
     zsq3: { label: 'Urban Zone \u00b7 Squads 5 \u00d7 3', vlabel: '5 squads of 3 \u00b7 respawns',
-            cat: 'zone', teams: true, squads: true, teamCount: 5, squadSize: 3, maxPlayers: 15, zone: true, mapLock: 'urban', fullMapContacts: false }
+            cat: 'zone', teams: true, squads: true, teamCount: 5, squadSize: 3, maxPlayers: 15, zone: true, mapLock: 'urban', fullMapContacts: false },
+
+    /* ===== v2.4 - URBAN SMALL ZONE (Rahul: "a map Urban Small Zone — the map
+       gets shorter every 2 min, a player left in the closed part loses 50%
+       life every 10 seconds, spawns only in the active part; the sinking zone
+       must be random, anywhere on the map, not always closing on one spot").
+       Same category, same client, same server module; three things differ,
+       all carried by `zoneProfile: 'small'` (ZONE_PROFILES below):
+         - the clock: 2 open minutes, then a NEW circle every 2 minutes
+           (4:00 6:00 8:00 10:00 12:00 14:00 on the fixed 15:00 match),
+         - the bleed: 50% of max HP per 10 s outside — two hits and you are
+           dead; the server counts each player's own time outside,
+         - the roll: `free` — every circle is placed at random anywhere it
+           fits inside the walls, NOT nested in the one before, so the safe
+           ground can jump across the map; the next circle is shown on the
+           ground and the maps for the whole hold before the wall moves.
+       Locked to Urban Small (no train, no heli, the core's tables). Eight
+       players, like the map. */
+    zs:    { label: 'Urban Small Zone \u00b7 Solo', vlabel: 'URBAN SMALL \u00b7 Solo \u00b7 a new circle every 2 min',
+             cat: 'zone', teams: false, teamCount: 0, maxPlayers: 8, zone: true, zoneProfile: 'small', mapLock: 'urbansmall', fullMapContacts: false },
+    zssq2: { label: 'Urban Small Zone \u00b7 Duos 4 \u00d7 2', vlabel: 'URBAN SMALL \u00b7 4 squads of 2',
+             cat: 'zone', teams: true, squads: true, teamCount: 4, squadSize: 2, maxPlayers: 8, zone: true, zoneProfile: 'small', mapLock: 'urbansmall', fullMapContacts: false },
+    zssq4: { label: 'Urban Small Zone \u00b7 Squads 2 \u00d7 4', vlabel: 'URBAN SMALL \u00b7 2 squads of 4',
+             cat: 'zone', teams: true, squads: true, teamCount: 2, squadSize: 4, maxPlayers: 8, zone: true, zoneProfile: 'small', mapLock: 'urbansmall', fullMapContacts: false }
   };
 
   /* ===== v1.0j - THE ZONE SCHEDULE =====
@@ -142,6 +165,29 @@
     r0: 335, rFinal: 42, finalCenterMax: 110, boundPad: 2,
     dmgPct: 10, tickSec: 1, wallHeight: 40   /* v1.0u: 60 -> 40, less transparent overdraw in the small final circle */
   };
+  /* ===== v2.4 - ZONE PROFILES =====
+     A mode may name a profile (`zoneProfile`); its keys are laid over ZONE.
+     zoneParams(modeId) is the one resolver — the server rolls and bleeds by
+     it, and the numbers the client needs (label, bleed) ride in the schedule
+     it ships, so nothing is hardcoded on either side.
+       small — URBAN SMALL ZONE. 2 open minutes; six 120 s phases (a 45 s hold
+               with the next circle shown, then 75 s of the wall moving); the
+               final circle stands from 14:00. r0 is the map's half-diagonal
+               (zoneSchedule clamps it), rFinal 32 — a 64 m arena for eight.
+               50% of max HP every 10 s outside, counted per player from the
+               moment they are outside. `free`: every circle lands at random
+               anywhere it fits inside the walls, not inside the one before. */
+  var ZONE_PROFILES = {
+    small: { label: 'URBAN SMALL ZONE', fullMinutes: 2, shrinkPhases: 6, phaseSec: 120, holdSec: 45,
+             rFinal: 32, dmgPct: 50, tickSec: 10, free: true }
+  };
+  function zoneParams(modeId) {
+    var m = MODES[modeId], P = m && m.zoneProfile ? ZONE_PROFILES[m.zoneProfile] : null, out = {}, k;
+    for (k in ZONE) out[k] = ZONE[k];
+    if (P) for (k in P) out[k] = P[k];
+    if (!out.label) out.label = 'URBAN ZONE';
+    return out;
+  }
   function zoneCircleAt(sched, tSec) {
     var C = sched.circles, F = sched.fullSec, P = sched.phaseSec, H = sched.holdSec;
     if (tSec < F) return { cx: C[0].cx, cz: C[0].cz, r: C[0].r, phase: 0, next: C[1] || null, shrinking: false, holdLeft: F - tSec };
@@ -153,8 +199,8 @@
     return { cx: a.cx + (b.cx - a.cx) * f, cz: a.cz + (b.cz - a.cz) * f, r: a.r + (b.r - a.r) * f, phase: k, next: b, shrinking: true, holdLeft: 0 };
   }
   /* Roll a schedule. `rnd` is Math.random on the server; the client never rolls. */
-  function zoneSchedule(rnd, bound, mapId) {
-    var Z = ZONE, n = Z.shrinkPhases;
+  function zoneSchedule(rnd, bound, mapId, params) {
+    var Z = params || ZONE, n = Z.shrinkPhases;
     /* v2.0: the playable box — the map's ext when present, else the +/-bound square (v2.2: per map) */
     var MM = (typeof MAPS !== 'undefined' && MAPS[mapId || 'urban']) || null;
     var E = (MM && MM.ext) || null;
@@ -164,9 +210,35 @@
     var cornerR = Math.hypot((X1 - X0) / 2, (Z1 - Z0) / 2) + 2;
     var r0 = (mapId && mapId !== 'urban') ? Math.min(Z.r0, cornerR) : Z.r0;
     var circles = [{ cx: mx, cz: mz, r: r0 }];
+    var pad = Z.boundPad;
+    /* ===== v2.4 - THE FREE ROLL (Urban Small Zone) =====
+       Rahul: "random, anywhere on the map, not always closing on one spot."
+       Each circle's centre is drawn uniformly from the box in which the circle
+       fits inside the walls (pad kept): a big early circle can only sit near
+       the middle, a small late one can land in any corner. Nothing ties it to
+       the circle before it — the wall slides there over the phase. Radii still
+       step geometrically from the opening circle to rFinal, so the ground
+       always gets smaller even when it moves. The last circle is never the
+       same spot twice in a hundred matches. */
+    if (Z.free) {
+      /* A big circle only "fits" at the middle, which would make the early
+         phases predictable. So a circle may hang over the wall by
+         freeOverhang x (r - rFinal): the safe ground is then the circle cut by
+         the wall — still a random side of the map goes first. The overhang
+         shrinks with the radius and is ZERO for the final circle, so the
+         last arena is always wholly inside the walls. */
+      var ov = Z.freeOverhang === undefined ? 0.5 : Z.freeOverhang;
+      for (var kf = 1; kf <= n; kf++) {
+        var rf = r0 * Math.pow(Z.rFinal / r0, kf / n);
+        var over = Math.max(0, rf - Z.rFinal) * ov;
+        var hx = Math.max(0, (X1 - X0) / 2 - pad - rf + over), hz = Math.max(0, (Z1 - Z0) / 2 - pad - rf + over);
+        circles.push({ cx: mx + (rnd() * 2 - 1) * hx, cz: mz + (rnd() * 2 - 1) * hz, r: rf });
+      }
+      return { circles: circles, fullSec: Z.fullMinutes * 60, phaseSec: Z.phaseSec, holdSec: Z.holdSec,
+               label: Z.label, dmgPct: Z.dmgPct, tickSec: Z.tickSec, free: true };
+    }
     var fa = rnd() * Math.PI * 2, fd = Math.sqrt(rnd()) * Z.finalCenterMax;
     var fx = mx + Math.cos(fa) * fd, fz = mz + Math.sin(fa) * fd;
-    var pad = Z.boundPad;
     for (var k = 1; k <= n; k++) {
       var prev = circles[k - 1];
       var r = Z.r0 * Math.pow(Z.rFinal / Z.r0, k / n);
@@ -188,7 +260,8 @@
       if (dd > mD && dd > 1e-9) { cx = prev.cx + ddx / dd * mD; cz = prev.cz + ddz / dd * mD; }
       circles.push({ cx: cx, cz: cz, r: r });
     }
-    return { circles: circles, fullSec: Z.fullMinutes * 60, phaseSec: Z.phaseSec, holdSec: Z.holdSec };
+    return { circles: circles, fullSec: Z.fullMinutes * 60, phaseSec: Z.phaseSec, holdSec: Z.holdSec,
+             label: Z.label || 'URBAN ZONE', dmgPct: Z.dmgPct, tickSec: Z.tickSec, free: false };   /* v2.4: the client reads the bleed and the name from here */
   }
   function zoneInside(c, x, z) { var dx = x - c.cx, dz = z - c.cz; return dx * dx + dz * dz <= c.r * c.r; }
 
@@ -218,7 +291,7 @@
     { id: 'last',   label: 'Last Stand',
       blurb: 'One life. No respawn. No clock. Last one breathing wins.' },
     { id: 'zone',   label: 'Urban Zone',
-      blurb: 'The circle closes minute by minute. Outside it you bleed. Respawns inside it. Urban only.' }
+      blurb: 'The circle closes and you bleed outside it; respawns land inside. Urban (a circle a minute) or Urban Small (a new circle anywhere every 2 min, 50% per 10 s).' }
   ];
   /* v10.9: `hidden` takes a mode out of the PICKER without taking it out of
      the table. Deleting a mode id breaks every gate that reads MODES, the
@@ -280,7 +353,7 @@
        `bound` (120) remains the core square the spawn balancer and the old
        symmetric readers use; anything that needs the whole map reads `ext`
        (server st bounds, minimap, zone, helicopter route, gates). */
-    urban: { label: 'Urban', ready: true, bound: 120, ext: { x0: -280, x1: 220, z0: -220, z1: 220 } },
+    urban: { label: 'Urban', ready: true, bound: 120, ext: { x0: -280, x1: 220, z0: -220, z1: 220 }, longMatch: true },   /* v2.5: may run 30 min */
     /* ===== v2.2 - URBAN SMALL (Rahul: "a copy of the urban map, small, good
        for 8 people — just this portion (the core inside the ring boulevard),
        no train and no helicopter"). The same builder (World.build with
@@ -291,7 +364,7 @@
        crates. Spawn / loot / drop tables are Urban's, filtered to the core
        (config/index.js derives MAPS_URBANSMALL). Heli is `map === 'urban'`
        only and TRAINS has no entry for it — so neither exists here. */
-    urbansmall: { label: 'Urban Small', ready: true, bound: 108, ext: { x0: -108, x1: 108, z0: -108, z1: 108 }, core: 'urban' },
+    urbansmall: { label: 'Urban Small', ready: true, bound: 108, ext: { x0: -108, x1: 108, z0: -108, z1: 108 }, core: 'urban', longMatch: true },   /* v2.5: may run 30 min */
     /* v15.0 (fix 14): RURAL REMOVED. Rahul: "it is of no use now, remove it
        completely." Builder, config table, script tags, harness lists and gate
        budgets all deleted in the same commit — the entry is not hidden, it is
@@ -620,7 +693,7 @@
 
   return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams, TRAIN: TRAIN, TRAINS: TRAINS, trainOffset: trainOffset,
     trainSchedule: trainSchedule, trainHeadAt: trainHeadAt, trainCars: trainCars, trainStops: trainStops,
-    ZONE: ZONE, zoneSchedule: zoneSchedule, zoneCircleAt: zoneCircleAt, zoneInside: zoneInside,
+    ZONE: ZONE, ZONE_PROFILES: ZONE_PROFILES, zoneParams: zoneParams, zoneSchedule: zoneSchedule, zoneCircleAt: zoneCircleAt, zoneInside: zoneInside,   /* v2.4: profiles */
     HELI: HELI, heliPoseAt: heliPoseAt, heliReturnPose: heliReturnPose, heliCrashPose: heliCrashPose, heliRoute: heliRoute, heliRouteBox: routeBox, heliDamageFor: heliDamageFor,
     spawnProtectFor: spawnProtectFor, isArena: isArena,
     MODE_CATS: VISIBLE_CATS, ALL_MODE_CATS: MODE_CATS, modesInCat: modesInCat, livesFor: livesFor, isElimination: isElimination,

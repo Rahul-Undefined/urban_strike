@@ -209,7 +209,14 @@
        by the same clampOpt that always guarded it. 5 and 10 go too — "only
        available duration" is the instruction, and a list of one also lets the
        lobby render the value as a fixed chip rather than a one-option select. */
-    timeOptions: [15],
+    /* ===== v2.5 - 15 OR 30 (Rahul: "add a 30-minute option — only 15 and 30,
+       only on Urban and Urban Small; the zone modes stay 15"). The list is
+       the UNIVERSE of durations; which of them a room may pick is decided by
+       CFG.timeOptionsFor(mode, map) (config/index.js): a `longMatch` map
+       (Urban, Urban Small) in a non-zone mode gets the whole list, every zone
+       mode and every arena gets [defaultMinutes] only. Both server clamps and
+       the lobby select read THAT resolver, never this list directly. */
+    timeOptions: [15, 30],
     /* ===== v13.0 - THE INTEL BLUR CONTRACT LIVES HERE (brief item 2) =====
        One source of truth read by all three consumers: server/lib/intel.js
        derives its error band from it, ui/minimap.js draws the circle from

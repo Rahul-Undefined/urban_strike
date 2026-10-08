@@ -149,7 +149,7 @@ function tryCollect(room, p) {
         p.c4 = Math.min(CFG.GEAR.c4.maxCarry, (p.c4 | 0) + it.n);
         grant = { t: 'gear', g: 'c4', n: p.c4 };
       } else {
-        grant = { t: 'gear', g: 'molotov', n: it.n };
+        grant = { t: 'gear', g: it.g, n: it.n };   /* molotov, and v2.6 the frag bundle — the stock lives on the client */
       }
     } else if (it.kind === 'ammo') {
       /* v9.3: an ammo pickup may name a WEAPON. The Quiver does, so it tops up
@@ -230,6 +230,9 @@ function dropCrate(room) {
       if (types.indexOf(pick) < 0) types.push(pick); else e--;   // the pool lists weapons twice; never two of one
       if (!pool.length) break;
     }
+    /* v2.6: a zone crate ALWAYS carries the Frag Bundle — it is the only way
+       to get grenades back in a zone match (no respawn refill there). */
+    if (room.zone && CFG.LOOT_ITEMS.frags && types.indexOf('frags') < 0) types.push('frags');
     if (!types.length) return;
     /* A ring, sized to the number of items, so six do not overlap the way four
        hardcoded offsets would. */

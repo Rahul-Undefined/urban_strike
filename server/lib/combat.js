@@ -212,6 +212,17 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
       victim.out = true;
       victim.respawnAt = Infinity;         // nothing will ever let them back in
     }
+    /* ===== v2.6 - A ZONE DEATH COSTS A POINT =====
+       Rahul: "the player when died in the zone will lose a point on the team
+       level, -1 each time died in the zone." Team and squad modes: the
+       victim's side loses one from its score. Solo: the score IS the kill
+       count, so the victim's own kills drop by one (never below zero on the
+       board — a negative kill count reads as a bug, not a penalty). */
+    if (weapon === 'zone') {
+      if (teams && victim.team && room.teamKills && victim.team in room.teamKills) room.teamKills[victim.team] = (room.teamKills[victim.team] | 0) - 1;
+      else if (!teams) victim.kills = Math.max(0, (victim.kills | 0) - 1);
+      victim.zoneDeaths = (victim.zoneDeaths | 0) + 1;
+    }
     let killerName = 'the world', killerStreak = 0;
     if (attacker) {
       if (attackerId === victim.id) { killerName = victim.name; }

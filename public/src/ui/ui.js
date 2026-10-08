@@ -27,7 +27,7 @@ var UI = (function () {
       'weapon-name', 'ammo-mag', 'ammo-reserve', 'tc-frag', 'tc-smoke', 'tc-flash', 'reload-hint',
       'scoreboard', 'sb-code', 'sb-body',
       'death-overlay', 'death-info', 'death-timer', 'death-title',
-      'end-overlay', 'end-title', 'end-sub', 'end-body', 'end-ins-left', 'end-ins-right', 'btn-back-lobby', 'end-hint',
+      'end-overlay', 'end-title', 'end-sub', 'end-mvp', 'end-body', 'end-ins-left', 'end-ins-right', 'btn-back-lobby', 'end-hint', 'mn-ticker',   /* v2.5: end-mvp, mn-ticker */
       'pause-overlay', 'sens-range', 'sens-val', 'vol-range', 'vol-val', 'quality-shadows',
       'btn-resume', 'btn-quit', 'click-to-play', 'toasts', 'loading',
       'announce', 'cook-bar', 'cook-fill', 'att-list',
@@ -92,8 +92,13 @@ var UI = (function () {
       return { v: n, t: n > 0 ? (String(n) + ' kills') : 'Unlimited kills' };
     });
   }
-  function timeItems() {
-    return CFG.MATCH.timeOptions.map(function (n) { return { v: n, t: n + ' min' }; });
+  /* v2.5: the durations the CURRENT mode on the CURRENT map may run — 15 only
+     for a zone mode or an arena, 15/30 on Urban and Urban Small. Read from the
+     same resolver the server clamps by, so the select never offers a value the
+     room would refuse. */
+  function timeItems(modeId, mapId) {
+    var opts = CFG.timeOptionsFor ? CFG.timeOptionsFor(modeId || CFG.MATCH.defaultMode, mapId || 'urban') : CFG.MATCH.timeOptions;
+    return opts.map(function (n) { return { v: n, t: n + ' min' }; });
   }
   function populateSelects() {
     var M = CFG.MATCH;
@@ -104,7 +109,7 @@ var UI = (function () {
     fillSelect(els['lobby-cat'], catItems(), catOf(M.defaultMode));
     syncVariants(els['lobby-cat'], els['lobby-mode'], els['lobby-var-field'], M.defaultMode);
     fillSelect(els['lobby-map'], mapItems(), 'urban');
-    fillSelect(els['lobby-time'], timeItems(), M.defaultMinutes);
+    fillSelect(els['lobby-time'], timeItems(M.defaultMode, 'urban'), M.defaultMinutes);
     /* v10.12: the build number on the menu comes from the same /version the
        cache stamp uses. A hardcoded one on a screen whose whole job is to say
        which build you are running would be the worst possible thing to let go
@@ -123,6 +128,16 @@ var UI = (function () {
        carries over unchanged. They are useful where a player is choosing a
        map; on the welcome screen they were furniture. */
     if (els['stat-maps']) els['stat-maps'].textContent = String(mapItems().length);
+    /* v2.5: the theatre ticker under the masthead — every theatre, then every
+       mode category, from CFG (the same rule as the selects: nothing about
+       maps or modes is typed into index.html). Doubled so the conveyor loops
+       seamlessly. */
+    if (els['mn-ticker']) {
+      var tkItems = mapItems().map(function (m) { return m.t; })
+        .concat(CFG.MODE_CATS.map(function (c) { return c.label; }));
+      var tkHtml = tkItems.map(function (t) { return '<span>' + t + '</span>'; }).join('<i></i>');
+      els['mn-ticker'].innerHTML = tkHtml + '<i></i>' + tkHtml + '<i></i>';
+    }
     if (els['stat-weapons']) {
       var playable = CFG.WEAPON_ORDER.filter(function (w) {
         var it = CFG.LOOT_ITEMS['wpn_' + w];
@@ -477,9 +492,16 @@ var UI = (function () {
          disabled so the host cannot pick what the server would refuse. */
       var mlMode = CFG.MODES[d.settings.mode] || {};
       els['lobby-map'].disabled = !!mlMode.mapLock || !isHost || counting;
-      els['lobby-map'].title = mlMode.mapLock ? 'Urban Zone is played on Urban' : '';
-    if (els['lobby-time'] && document.activeElement !== els['lobby-time'])
+      els['lobby-map'].title = mlMode.mapLock ? 'This mode is played on ' + ((CFG.MAPS[mlMode.mapLock] || {}).label || mlMode.mapLock) : '';   /* v2.4: Urban or Urban Small */
+    if (els['lobby-time'] && document.activeElement !== els['lobby-time']) {
+      /* v2.5: the option list follows the mode + map; one option renders locked */
+      var tItems = timeItems(d.settings.mode, d.settings.map);
+      var tKey = tItems.map(function (i) { return i.v; }).join(',');
+      if (els['lobby-time'].dataset.opts !== tKey) { fillSelect(els['lobby-time'], tItems, d.settings.minutes); els['lobby-time'].dataset.opts = tKey; }
       els['lobby-time'].value = String(d.settings.minutes);
+      if (tItems.length <= 1) { els['lobby-time'].disabled = true; els['lobby-time'].title = (CFG.MODES[d.settings.mode] || {}).zone ? 'Zone matches are always 15 minutes' : 'This theatre runs 15 minutes'; }
+      else if (isHost && !counting) { els['lobby-time'].disabled = false; els['lobby-time'].title = ''; }
+    }
     /* v1.0r: in a mode without sides the one dress colour applies to everyone */
     if (els['lobby-dress'] && els['lobby-dress-field']) {
       var mdT = (CFG.MODES[d.settings.mode] || {}).teams;
@@ -620,7 +642,7 @@ var UI = (function () {
     } else if (d.weapon === 'helifall') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">fell from the helicopter</span>' + (d.self ? '' : ' <span class="fw">(hit by</span> <b>' + d.killerName + '</b><span class="fw">)</span>');   /* v1.0l */
     } else if (d.weapon === 'zone') {
-      row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">bled out in the zone</span>';   /* v1.0j */
+      row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">bled out in the zone \u00b7 \u22121</span>';   /* v1.0j; v2.6: the point it cost */
     } else if (d.weapon === 'train') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">was run over by the train</span>' + (d.credit ? ' <span class="fw">\u00b7 +1</span> <b>' + d.credit + '</b>' : '');   /* v1.0f / v1.1.1 */
     } else if (d.self) {
@@ -732,7 +754,7 @@ var UI = (function () {
     /* v1.0o: the world's own causes say what happened; "explosives" is only
        for a grenade that came back. */
     var cause = d.weapon === 'train' ? 'Run over by the train.'
-      : d.weapon === 'zone' ? 'Bled out outside the zone.'
+      : d.weapon === 'zone' ? 'Bled out outside the zone. \u22121 point.'
       : d.weapon === 'helifall' ? (d.self ? 'You fell from the helicopter.' : 'Fell from the helicopter after ' + d.killerName + ' hit it.')
       : d.weapon === 'helidown' ? 'Shot down with the helicopter by ' + d.killerName + '.'
       : null;
@@ -773,8 +795,24 @@ var UI = (function () {
     var winner = d.players.find(function (p) { return p.id === d.winnerId; });
     var me = d.players.find(function (p) { return p.id === myId; });
     els['end-body'].innerHTML = '';
+    /* ===== v2.5 - THE ANIMATED SCORECARD =====
+       The board used to appear with its numbers already on it. Now: every row
+       carries a RANK chip and a kill bar (the row's share of the top killer's
+       count, as a custom property the CSS grows), and once the rows have
+       cascaded in every number on the board counts UP from zero to its value
+       over ~1.1 s, staggered by row. The final text is written synchronously
+       — the count-up only ever overwrites it on the way back to the same
+       value — so anything that reads the board the moment it is built (the
+       gates, a screenshot) sees the real numbers. prefers-reduced-motion skips
+       the count. */
+    var maxK = d.players.reduce(function (m, p) { return Math.max(m, p.kills | 0); }, 0) || 1;
+    var rankOf = {}, numCells = [], rowN = 0;
+    d.players.slice().sort(function (a, b) { return (b.kills - a.kills) || ((b.damage || 0) - (a.damage || 0)); })
+      .forEach(function (p, i) { rankOf[p.id] = i + 1; });   // overall placement, whatever the grouping
     function row(p) {
       var tr = document.createElement('tr');
+      var rankN = rankOf[p.id] || ++rowN; rowN++;
+      if (tr.style && tr.style.setProperty) tr.style.setProperty('--kb', Math.round((p.kills | 0) / maxK * 100) + '%');
       /* v8.29: STREAK and K/D added so this table matches the live one behind
          Tab. It was five columns against the live board's seven, which is why
          the two never looked like the same scoreboard. Ping is deliberately
@@ -783,8 +821,14 @@ var UI = (function () {
       var kd = p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : (p.kills > 0 ? p.kills.toFixed(2) : '0.00');
       /* v15.0 (fix 9): MINES column — kills scored with AP mines, a KPI the
          server counts per kill (combat.js) and ships in the roster payload. */
-      tr.innerHTML = '<td><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (p.assists || 0) + '</td><td>' + (p.damage || 0) + '</td><td>' + (p.bestStreak || p.streak || 0) + '</td><td>' + (p.mineKills || 0) + '</td><td>' + kd + '</td>';
+      tr.innerHTML = '<td><em class="rk r' + Math.min(rankN, 4) + '">' + rankN + '</em><i class="dot" style="background:' + p.color + '"></i>' + p.name + '</td><td>' + p.kills + '</td><td>' + p.deaths + '</td><td>' + (p.assists || 0) + '</td><td>' + (p.damage || 0) + '</td><td>' + (p.bestStreak || p.streak || 0) + '</td><td>' + (p.mineKills || 0) + '</td><td>' + kd + '</td>';
+      if (p.id === myId) tr.className = 'me';
       els['end-body'].appendChild(tr);
+      /* collect the numeric cells for the count-up (td 1..7); a harness without querySelectorAll simply gets no animation */
+      if (typeof tr.querySelectorAll === 'function') {
+        var tds = tr.querySelectorAll('td');
+        for (var ci = 1; ci < tds.length; ci++) numCells.push({ el: tds[ci], row: rowN, v: tds[ci].textContent });
+      }
     }
     if (d.winnerTeam) {
       var won = me && me.team === d.winnerTeam;
@@ -886,8 +930,54 @@ var UI = (function () {
     fill(els['end-ins-left'], L, true);
     fill(els['end-ins-right'], Rr, false);
 
+    /* v2.5: the MVP plate — top kills (damage breaks a tie); the numbers count up with the board */
+    if (els['end-mvp']) {
+      var mvp = d.players.slice().sort(function (a, b) { return (b.kills - a.kills) || ((b.damage || 0) - (a.damage || 0)); })[0];
+      if (mvp && (mvp.kills | 0) > 0) {
+        var mkd = mvp.deaths > 0 ? (mvp.kills / mvp.deaths).toFixed(2) : mvp.kills.toFixed(2);
+        els['end-mvp'].innerHTML = '<span class="mvp-tag">MVP</span>' +
+          '<span class="mvp-name"><i class="dot" style="background:' + (mvp.color || '#f0a232') + '"></i>' + mvp.name + (mvp.id === myId ? ' <em>(YOU)</em>' : '') + '</span>' +
+          '<span class="mvp-stat"><b class="cnt">' + mvp.kills + '</b>KILLS</span>' +
+          '<span class="mvp-stat"><b class="cnt">' + mkd + '</b>K/D</span>' +
+          '<span class="mvp-stat"><b class="cnt">' + (mvp.damage || 0) + '</b>DAMAGE</span>';
+        els['end-mvp'].style.display = '';
+        if (typeof els['end-mvp'].querySelectorAll === 'function') {
+          var mcs = els['end-mvp'].querySelectorAll('.cnt');
+          for (var mi = 0; mi < mcs.length; mi++) numCells.push({ el: mcs[mi], row: 0, v: mcs[mi].textContent });
+        }
+      } else { els['end-mvp'].innerHTML = ''; els['end-mvp'].style.display = 'none'; }
+    }
+    countUp(numCells);
+
     els['btn-back-lobby'].style.display = isHost ? '' : 'none';
     els['end-hint'].style.display = isHost ? 'none' : '';
+  }
+  /* v2.5: count every collected cell from 0 to its value. Integers tick as
+     integers, K/D keeps two decimals. Eased out, 1.1 s, each row 70 ms behind
+     the last so the board fills top-down with the cascade. One rAF loop for
+     the whole board; it ends by writing the exact original text. */
+  var _countToken = 0;
+  function countUp(cells) {
+    if (!cells || !cells.length || typeof requestAnimationFrame !== 'function') return;
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var token = ++_countToken, t0 = null, DUR = 1100, STAG = 70, LEAD = 420;
+    cells.forEach(function (c) { c.n = parseFloat(c.v); c.dec = c.v.indexOf('.') >= 0 ? 2 : 0; if (isNaN(c.n)) c.skip = true; else c.el.textContent = c.dec ? '0.00' : '0'; });
+    function frame(ts) {
+      if (token !== _countToken) return;
+      if (t0 === null) t0 = ts;
+      var done = true;
+      cells.forEach(function (c) {
+        if (c.skip) return;
+        var u = (ts - t0 - LEAD - c.row * STAG) / DUR;
+        if (u < 0) { done = false; return; }
+        if (u >= 1) { c.el.textContent = c.v; return; }
+        done = false;
+        var e = 1 - Math.pow(1 - u, 3);
+        c.el.textContent = c.dec ? (c.n * e).toFixed(2) : String(Math.round(c.n * e));
+      });
+      if (!done) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
   }
   function hideEnd() {
     els['end-overlay'].classList.add('hidden');

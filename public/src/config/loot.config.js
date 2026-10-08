@@ -29,6 +29,11 @@
     ammo:     { kind: 'ammo', rar: 'c', label: 'Ammo Cache' },
     mine:     { kind: 'gear', g: 'mine', n: 2, rar: 'c', label: 'AP Mines \u00d72' },
     molotov:  { kind: 'gear', g: 'molotov', n: 1, rar: 'c', label: 'Molotov' },
+    /* v2.6 (Rahul, zone modes): "max 5 grenades pre-equipped, next they can take
+       it from the loot drop." Frags do not refill on respawn in a zone match;
+       this bundle rides in every zone crate (loot.js adds it beside the exotic
+       draw — zone rooms only, never the floor, never an ordinary crate). */
+    frags:    { kind: 'gear', g: 'frag', n: 5, rar: 'r', drop: 1, zoneOnly: 1, label: 'Frag Bundle \u00d75' },
     armor1:   { kind: 'armor', lvl: 1, rar: 'c', label: 'L1 Vest' },
     armor2:   { kind: 'armor', lvl: 2, rar: 'r', label: 'L2 Vest' },
     armor3:   { kind: 'armor', lvl: 3, rar: 'l', label: 'L3 Vest' },

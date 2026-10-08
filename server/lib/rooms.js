@@ -75,20 +75,22 @@ function makeRoom(hostSocket, name, settings) {
      brief is about: hidden AND bot-fielding. */
   const _m = settings && CFG.MODES[settings.mode];
   const mode = _m ? settings.mode : CFG.MATCH.defaultMode;   /* v1.0d: no bot modes exist to refuse */
+  /* v12.0 (item 7): a bot mode carries mapLock — the room is coerced to it
+     at creation, so no client payload shape can start Overrun on Metro. */
+  /* v14.0: a botOnly map is refused to any mode that is not botmode —
+     the exclusivity is enforced in BOTH directions (bm modes are dragged
+     TO blacksite by mapLock below; everything else is kept OFF it here). */
+  const map = (CFG.MODES[mode] && CFG.MODES[mode].mapLock) ? CFG.MODES[mode].mapLock   /* v1.0j: Urban Zone is Urban */
+    : (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false) ? settings.map : 'urban';
   const room = {
     code,
     hostId: hostSocket.id,
     state: 'lobby', // lobby | playing | ended
     settings: {
-      /* v12.0 (item 7): a bot mode carries mapLock — the room is coerced to it
-         at creation, so no client payload shape can start Overrun on Metro. */
-      /* v14.0: a botOnly map is refused to any mode that is not botmode —
-         the exclusivity is enforced in BOTH directions (bm modes are dragged
-         TO blacksite by mapLock below; everything else is kept OFF it here). */
-      map: (CFG.MODES[mode] && CFG.MODES[mode].mapLock) ? CFG.MODES[mode].mapLock   /* v1.0j: Urban Zone is Urban */
-        : (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false) ? settings.map : 'urban',
+      map,
       killTarget: clampOpt(settings && settings.killTarget, CFG.MATCH.killOptions, CFG.MATCH.defaultKills),
-      minutes: clampOpt(settings && settings.minutes, CFG.MATCH.timeOptions, CFG.MATCH.defaultMinutes),
+      /* v2.5: the durations THIS mode on THIS map may run — 15 only in a zone mode or on an arena, 15/30 on Urban and Urban Small */
+      minutes: clampOpt(settings && settings.minutes, CFG.timeOptionsFor(mode, map), CFG.MATCH.defaultMinutes),
       enemyIntel: !!(settings && settings.enemyIntel),   // v12.0: M-map blobs, host toggle, default OFF
       airdropSec: settings && settings.airdropSec ? Math.max(5, Math.min(600, settings.airdropSec | 0)) : 0,
       mode,

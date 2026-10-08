@@ -1084,6 +1084,15 @@ io.on('connection', (socket) => {
         refreshTeamsAndColors(room);
       }
     }
+    /* ===== v2.5 - THE LAST WORD, AFTER THE MODE HAS MOVED =====
+       The map lock above ran before the mode assignment, so switching INTO a
+       locked mode left the old map on the room until the next push. It is
+       re-applied here, last; and the duration is clamped to what the final
+       mode + map may run (a 30-minute Urban room that switches to a zone
+       mode, or to an arena, drops to 15 — a zone's schedule is cut to the
+       15:00 clock and must not outlive it). */
+    { const ml2 = (CFG.MODES[room.settings.mode] || {}).mapLock; if (ml2) room.settings.map = ml2; }
+    room.settings.minutes = clampOpt(room.settings.minutes, CFG.timeOptionsFor(room.settings.mode, room.settings.map), CFG.MATCH.defaultMinutes);
     /* ===== v12.0 (item 7) - THE MAP LOCK RUNS LAST, AND THAT IS THE FIX =====
        First cut of this coercion sat ABOVE the `s.map` and `s.mode`
        assignments, so the payload overwrote the lock one line later — caught
