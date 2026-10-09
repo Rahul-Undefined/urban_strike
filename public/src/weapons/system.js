@@ -126,6 +126,7 @@ var Weapons = (function () {
     owned.drone = false;
     empCount = 0; owned.emp = false;   // v15.0: per match, like the drone
     c4Count = 0; owned.c4 = false;     // v1.0b
+    hunterCount = 0; reconCount = 0; adrenalineCount = 0;   /* v2.7: per match, like the drone — the server zeroes p.hunters at matchStart, this never did */
     if (UI.setShield) UI.setShield(0, 0);
     fires = [];
     cooking = null;
@@ -294,10 +295,13 @@ var Weapons = (function () {
   var hunterCount = 0, reconCount = 0, adrenalineCount = 0;
   function launchHunter() {
     if (!PlayerCtl.alive) return;
-    if (hunterCount <= 0) { UI.toast('No hunter drone \u2014 find one in an airdrop'); return; }
+    /* v2.7: the SERVER owns the stock. The old client-side refusal could
+       disagree with it (a reconnect, a missed grant, a stale count from the
+       last match) and then O did nothing at all — the "not working" report.
+       Always ask; the server's answer is the toast. */
     Net.launchHunter(function (res) {
-      if (res && res.ok) { hunterCount = res.left; UI.toast('Hunter away \u00b7 ' + res.left + ' left'); }
-      else UI.toast((res && res.err) || 'Cannot launch');
+      if (res && res.ok) { hunterCount = res.left; UI.toast('Hunter away \u00b7 hunting \u00b7 ' + res.left + ' left'); }
+      else { hunterCount = 0; UI.toast((res && res.err === 'No hunter drones left') ? 'No hunter drone \u2014 find one in an airdrop' : ((res && res.err) || 'Cannot launch')); }
     });
   }
   function launchRecon() {
@@ -545,7 +549,7 @@ var Weapons = (function () {
          stanceH * RIG.y, not symmetrically about the capsule centre. Centring
          the box on the centre left the top of a crouched torso outside it once
          the rig grew (verify-hitbox: 1 of 11 crouch rays missed). */
-      var stH = r.prone ? P.proneH : r.crouch ? P.crouchH : P.standH;
+      var stH = r.prone ? (P.proneHitH || P.proneH) : r.crouch ? P.crouchH : P.standH;   /* v2.7: the prone box is the body, not the capsule */
       var halfH = (stH * RG.y) / 2 + 0.03;              // +0.03: the boots' soles sit a hair under the capsule bottom
       var bcy = c.y - stH / 2 - 0.03 + halfH;
 

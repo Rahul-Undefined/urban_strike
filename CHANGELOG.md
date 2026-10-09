@@ -1,3 +1,46 @@
+# v2.7.0 (build 37) — THE HUNTER HUNTS; THE PRONE HITBOX IS THE BODY (2026-10-09)
+
+Rahul: "hunter drone is not working. Make it a little tougher to shoot when
+the avatar is lying down, all modes."
+
+## The hunter (drones.js, weapons.config `GEAR.hunter`, system.js)
+
+Three faults, all found, none a crash — which is why it read as "nothing
+happens":
+1. **It never left its owner.** It hovered 4 m off the owner's shoulder and
+   only engaged an enemy that walked into 55 m of that spot with a clear
+   line from 9 m up. On a 500 m map with six players it mostly flew its 30 s
+   and died having seen nobody. Now it HUNTS: the nearest enemy within 160 m
+   of its owner, sight or no sight; it flies there at 12 m/s and opens fire
+   the moment it has the line. A wall is cover, not an escape — it closes
+   past it. A roof is: close in and still blind for 4 s, it drops that
+   target, shuns them for 6 s, and picks another. 12 m cruise clears
+   two-storey eaves; 45 s in the air; 9 a round at 2 a second, 80% hit.
+   The owner is told "Hunter · tracking NAME · 48 m" on every acquisition.
+2. **The client could refuse the launch on its own count.** `hunterCount`
+   was never zeroed between matches (the server zeroes `p.hunters` at every
+   matchStart), and the client-side "no hunter drone" guard blocked the O
+   key whenever its count disagreed with the server's. The guard is gone:
+   O always asks the server, which owns the stock, and its answer is the
+   toast. Hunter, recon and adrenaline counts now reset per match.
+3. The launch toast said "Drone away · acquiring" for a hunter; it says
+   "Hunter away · hunting".
+
+## The prone hitbox (gameplay.config `PLAYER.proneHitH`, system.js)
+
+The prone BODY box was `proneH` (0.75 m) tall — the movement capsule — while
+the rendered prone body lies ~0.4 m off the floor, so a third of a metre of
+empty air above a prone operator took bullets. The box is now `proneHitH`
+0.46 m: the body, not the capsule. All modes. Headshots unchanged (the head
+box follows the rendered head). Movement collision untouched.
+
+## Gates
+
+`verify-drone` 44/0 (the wall scenario rewritten to the hunting contract:
+holds fire behind a wall, closes past it, fires; drops a roofed target),
+`verify-hitbox` 32/0 (prone: 0/11 head rays missed, 0/11 body rays missed),
+`verify-client` 65/0, `verify-fingerprint` 64/0, `verify-zone` 78/0.
+
 # v2.6.0 (build 36) — ZONE: FIVE FRAGS, LOOT-ONLY REFILL; A ZONE DEATH COSTS A POINT (2026-10-08)
 
 Rahul: "in the zone mode max 5 grenades are pre-equipped with the player,

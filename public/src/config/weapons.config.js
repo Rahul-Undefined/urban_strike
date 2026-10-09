@@ -393,8 +393,16 @@
        one. hp 60: a burst brings it down. */
     adrenaline: { label: 'Adrenaline', mult: 1.30, durSec: 45, maxCarry: 2 },
     recon:      { label: 'Recon Flare', maxCarry: 1, fuseSec: 3.0, height: 45 },
-    hunter:     { label: 'Hunter Drone', hp: 60, maxCarry: 2, lifeSec: 30, armSec: 1.0, climbSpeed: 7, cruiseY: 9, speed: 9,
-                  seekRange: 55, standoff: 12, fireSec: 0.5, dmg: 7, loseSec: 2.5 },
+    /* v2.7 (Rahul: "hunter drone is not working"): it hovered 4 m off its
+       owner's shoulder and only ever engaged an enemy that walked into 55 m
+       of THAT spot with a clear line from 9 m up — on a 500 m map with six
+       players it mostly flew its 30 s and died having seen nobody. Now it
+       HUNTS: it picks the nearest enemy within huntRange of its owner, sight
+       or no sight, flies there at 12 m/s, and opens fire once it has the
+       line. Higher cruise (12 m) clears two-storey eaves; 45 s in the air;
+       9 a round. seekRange is the firing range now, not the search range. */
+    hunter:     { label: 'Hunter Drone', hp: 60, maxCarry: 2, lifeSec: 45, armSec: 1.0, climbSpeed: 8, cruiseY: 12, speed: 12,
+                  seekRange: 60, huntRange: 160, standoff: 10, fireSec: 0.5, dmg: 9, loseSec: 4 },
     /* v1.0b: the drone bounty. Shooting a drone down is a KILL on the board and
        puts a Strike Drone in the shooter's bag (up to drone maxCarry). */
     droneBounty: { kill: 1, grantDrone: 1 },

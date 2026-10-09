@@ -1,5 +1,7 @@
 # URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
+**v2.7.0 — THE HUNTER HUNTS.** The hunter drone now flies to the nearest enemy within 160 m of its owner and fires once it has the line (45 s, 12 m cruise); the O key always asks the server. A prone operator's hitbox is the body (0.46 m), not the 0.75 m capsule — harder to hit, every mode.
+
 **v2.6.0 — ZONE RULES.** In a zone match the five frags are issued once and only the crate's Frag Bundle refills them; dying to the zone costs the team (or, solo, the player) one point.
 
 **v2.5.0 — WAR-GRADE.** Black Ops One stencil for the wordmark, the room-code plate and the result title; Teko for every heading and button; a LIVE OPS stamp, a theatre ticker, chamfered rails, searchlights over the skyline. The end screen stamps its title, names the MVP, ranks every row with a kill bar and counts every number up from zero. Urban and Urban Small may run 15 or 30 minutes; zone modes and arenas are always 15.

@@ -849,7 +849,8 @@ var Net = (function () {
        these are the discrete events: launched, destroyed, and the warning to
        the player being hunted. */
     socket.on('droneLaunch', function (d) {
-      UI.toast(d.owner === myIdV ? 'Drone away \u00b7 acquiring' : 'Drone in the air');
+      var hunterK = d && d.k === 'hunter';   /* v2.7 */
+      UI.toast(d.owner === myIdV ? (hunterK ? 'Hunter away \u00b7 hunting' : 'Drone away \u00b7 acquiring') : (hunterK ? 'Hunter drone in the air' : 'Drone in the air'));
     });
     socket.on('droneBoom', function (d) { Pickups.droneBoom(d); });
     socket.on('droneHit', function (d) { UI.droneHealth && UI.droneHealth(d.id, d.hp); });

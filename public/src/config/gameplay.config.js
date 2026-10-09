@@ -26,6 +26,13 @@
   var PLAYER = {
     hp: 100,
     standH: 1.92, crouchH: 1.28, proneH: 0.75, radius: 0.35,
+    /* v2.7 (Rahul: "tougher to shoot when the avatar is lying down"): the
+       PRONE HITBOX is this tall, not proneH. proneH is the movement capsule
+       (what fits under things); the rendered prone body lies ~0.4 m off the
+       floor, and the old 0.75 m box stood a third of a metre of air above it
+       that bullets could "hit". Every mode. Headshots are unchanged — the
+       head box follows the rendered head. */
+    proneHitH: 0.46,
     eyeStand: 0.768, eyeCrouch: 0.448, eyeProne: 0.192,
     headR: 0.203
   };

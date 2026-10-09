@@ -216,27 +216,46 @@ module.exports = function initDroneModule(ctx) {
       if (d.pos[1] >= S.cruiseY) { d.pos[1] = S.cruiseY; d.phase = 'patrol'; }
       return;
     }
+    /* ===== v2.7 - IT HUNTS =====
+       The target is the nearest enemy within huntRange of the OWNER (the
+       owner's fight is the one that matters), chosen with or without a line
+       of sight; the drone flies to it and fires once it can see it. A target
+       it cannot see for loseSec is dropped and the search runs again — but
+       only for a BETTER target: a visible one, or a nearer one. */
+    const anchor = (owner && owner.alive) ? owner.pos : d.pos;
     let tgt = d.target ? room.players.get(d.target) : null, seenNow = false;
-    if (tgt && (!tgt.alive || tgt.out)) { tgt = null; d.target = null; }
+    if (tgt && (!tgt.alive || tgt.out || Math.hypot(tgt.pos[0] - anchor[0], tgt.pos[2] - anchor[2]) > S.huntRange * 1.25)) { tgt = null; d.target = null; }
     if (tgt) {
       const dx = tgt.pos[0] - d.pos[0], dz = tgt.pos[2] - d.pos[2], dist = Math.hypot(dx, dz);
       seenNow = dist <= S.seekRange * 1.2 && canSee(room, d.pos, tgt);
-      if (seenNow) d.lastSeen = t; else if (t - d.lastSeen > S.loseSec * 1000) { tgt = null; d.target = null; }
+      if (seenNow) d.lastSeen = t;
+      else if (dist <= S.standoff * 1.5 && t - d.lastSeen > S.loseSec * 1000) {   // close, and still blind: a roof — drop them, try someone else
+        d.shun = d.shun || {}; d.shun[tgt.id] = t; tgt = null; d.target = null;
+      }
     }
     if (!tgt) {
       const pool = candidates(room, owner || { id: d.owner, team: d.team });
-      let best = null, bd = S.seekRange;
+      let best = null, bd = Infinity, bestSeen = false;
       for (const q of pool) {
+        const dOwner = Math.hypot(q.pos[0] - anchor[0], q.pos[2] - anchor[2]);
+        if (dOwner > (S.huntRange || S.seekRange)) continue;
+        if (d.shun && d.shun[q.id] && t - d.shun[q.id] < 6000) continue;   // it just lost this one under a roof; try someone else first
         const dq = Math.hypot(q.pos[0] - d.pos[0], q.pos[2] - d.pos[2]);
-        if (dq < bd && canSee(room, d.pos, q)) { bd = dq; best = q; }
+        const seen = dq <= S.seekRange && canSee(room, d.pos, q);
+        if ((seen && !bestSeen) || ((seen === bestSeen) && dq < bd)) { bd = dq; best = q; bestSeen = seen; }
       }
-      if (best) { tgt = best; d.target = best.id; d.lastSeen = t; seenNow = true; d.phase = 'engage'; io.to(best.id).emit('droneWarn', { id: d.id, d: Math.round(bd), k: 'hunter' }); }
-      else d.phase = 'patrol';
+      if (best) {
+        tgt = best; d.target = best.id; d.lastSeen = bestSeen ? t : t; seenNow = bestSeen; d.phase = 'engage';
+        io.to(best.id).emit('droneWarn', { id: d.id, d: Math.round(bd), k: 'hunter' });
+        if (owner && !owner.bot) io.to(owner.id).emit('toast', { msg: 'Hunter \u00b7 tracking ' + best.name + ' \u00b7 ' + Math.round(bd) + ' m' });
+      } else d.phase = 'patrol';
     }
     let gx, gz;
     if (tgt) {
       const dx = tgt.pos[0] - d.pos[0], dz = tgt.pos[2] - d.pos[2], dist = Math.hypot(dx, dz) || 0.001;
-      const want = Math.max(0, dist - S.standoff);
+      /* close to standoff when it can see; when it cannot, keep closing to half
+         that — a steep line from 12 m up opens over most street cover */
+      const want = Math.max(0, dist - (seenNow ? S.standoff : S.standoff * 0.5));
       gx = d.pos[0] + (dx / dist) * want; gz = d.pos[2] + (dz / dist) * want;
       if (seenNow && t - d.lastFire >= S.fireSec * 1000 && dist <= S.seekRange) {   // it fires only at what it can see THIS tick
         d.lastFire = t;

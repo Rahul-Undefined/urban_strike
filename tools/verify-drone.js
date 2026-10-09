@@ -195,11 +195,20 @@ console.log('--- the hunter drone ---');
   const d = room.drones[0];
   ok(Math.abs(d.pos[1] - H.cruiseY) < 0.5 && Math.hypot(d.pos[0] - b.pos[0], d.pos[2] - b.pos[2]) <= H.standoff + 2, 'it holds cruise height and stands off ~' + H.standoff + ' m [' + d.pos.map(v => v.toFixed(1)).join(',') + ']');
   ok(emitted.some(e => e.ev === 'droneWarn' && e.who === 'B' && e.d.k === 'hunter'), 'B was warned when it acquired them');
-  /* behind the wall: B moves to x 20 (the slab at x 10 between); the hunter stops firing and lets go after loseSec */
-  b.pos = [20, 0.95, 0]; d.pos = [0, H.cruiseY, 0]; damaged.length = 0; emitted.length = 0;
-  flyH(H.loseSec + 1.5);
-  ok(damaged.length === 0, 'with a wall between them it does not fire [' + damaged.length + ' hits]');
-  ok(d.target === null || d.phase === 'patrol', 'and after loseSec it has let the target go [' + d.phase + ']');
+  /* v2.7: behind the wall it HUNTS. B moves to x 20 (the 14 m slab at x 10
+     between); the hunter holds fire while the line is blocked, closes past
+     the slab, and fires once it has the line — a wall is cover, not an escape. */
+  b.pos = [20, 0.95, 0]; d.pos = [0, H.cruiseY, 0]; d.lastSeen = T; damaged.length = 0; emitted.length = 0;
+  flyH(0.4);
+  ok(damaged.length === 0 && d.target === 'B', 'with the wall between them it holds fire but keeps the target [' + damaged.length + ' hits, target ' + d.target + ']');
+  flyH(4);
+  ok(d.pos[0] > 10.3 && damaged.length > 0, 'it flies past the slab and opens fire once it has the line [x ' + d.pos[0].toFixed(1) + ', ' + damaged.length + ' hits]');
+  /* v2.7: a ROOF is different — close in and still blind for loseSec, it drops the target and shuns them for 6 s */
+  const roof = [15, 3, -6, 25, 4, 6, 0];
+  wallCols.push(roof); d.pos = [20, H.cruiseY, 0]; d.lastSeen = T; damaged.length = 0;
+  flyH(H.loseSec + 1);
+  ok(damaged.length === 0 && d.target === null && d.shun && d.shun.B, 'under a roof at close range: no fire, target dropped after loseSec and shunned [' + damaged.length + ' hits]');
+  wallCols.pop();
   /* the bounty: B shoots it down and is granted a HUNTER, not a strike drone */
   b.hunters = 0; b.drones = 0; T += 100;
   const res = DronesH.damage(room, d.id, 999, 'B');
