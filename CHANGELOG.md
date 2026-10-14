@@ -1,3 +1,10 @@
+# v2.10.1 (build 40) — HOTFIX: "revive: playing is not defined" (2026-10-14)
+
+The v2.9 revive loop (game.js `reviveTick`) read `playing`, a variable that
+exists only inside the key handler. It ran every frame, threw on the menu,
+and the error toast sat on the welcome screen. It now resolves the phase
+itself (`Net.getPhase() === 'playing'`). Nothing else changed.
+
 # v2.10.0 (build 39) — KILLHOUSE RAISED; DRONES FLY UNDER INDOOR ROOFS (2026-10-14)
 
 Rahul: "make the Killhouse walls a little higher so the head is not seen,

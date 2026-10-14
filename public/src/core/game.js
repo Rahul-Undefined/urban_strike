@@ -772,6 +772,7 @@ var Game = (function () {
      the prompt; while E is held, ping the server every 200 ms */
   var reviveTarget = null, reviveLastPing = 0, reviveHeld = false, crateNear = null;
   function reviveTick(dt) {
+    var playing = Net.getPhase && Net.getPhase() === 'playing';   /* v2.10.1: `playing` is local to the key handler — this ran every frame and threw on the menu */
     if (playing && PlayerCtl.alive && Net.isDown && Net.isDown() && UI.setDownBanner) {
       var rs0 = Net.reviveState ? Net.reviveState() : { f: 0 };
       UI.setDownBanner(rs0.f > 0 && rs0.by ? rs0.by + ' IS REVIVING YOU \u00b7 ' + Math.round(rs0.f * 100) + '%'
