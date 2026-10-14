@@ -33,6 +33,8 @@ module.exports = function initDroneModule(ctx) {
   const { io, now, applyDamage, modeInfo, CFG } = ctx;
 
   function spec(kind) { return kind === 'hunter' ? CFG.GEAR.hunter : CFG.GEAR.drone; }   /* v2.3: two kinds on one module */
+  /* v2.10: an indoor map (Killhouse) caps every drone under its roof — MAPS[map].droneCeil */
+  function cruiseFor(room, S) { const M = CFG.MAPS[room.settings.map || 'urban'] || {}; return M.droneCeil ? Math.min(S.cruiseY, M.droneCeil) : S.cruiseY; }
   function stockKey(kind) { return kind === 'hunter' ? 'hunters' : 'drones'; }
   /* line of sight from the drone to the target's chest, through the map's static colliders */
   function canSee(room, from, q) {
@@ -174,7 +176,7 @@ module.exports = function initDroneModule(ctx) {
 
       if (d.phase === 'climb') {
         d.pos[1] += S.climbSpeed * dt;
-        if (d.pos[1] >= S.cruiseY) { d.pos[1] = S.cruiseY; d.phase = 'hunt'; }
+        if (d.pos[1] >= cruiseFor(room, S)) { d.pos[1] = cruiseFor(room, S); d.phase = 'hunt'; }
       } else if (d.phase === 'hunt') {
         const dx = tgt.pos[0] - d.pos[0], dz = tgt.pos[2] - d.pos[2];
         const dist = Math.hypot(dx, dz);
@@ -215,7 +217,7 @@ module.exports = function initDroneModule(ctx) {
     const owner = room.players.get(d.owner);
     if (d.phase === 'climb') {
       d.pos[1] += S.climbSpeed * dt;
-      if (d.pos[1] >= S.cruiseY) { d.pos[1] = S.cruiseY; d.phase = 'patrol'; }
+      if (d.pos[1] >= cruiseFor(room, S)) { d.pos[1] = cruiseFor(room, S); d.phase = 'patrol'; }
       return;
     }
     /* ===== v2.7 - IT HUNTS =====
@@ -226,7 +228,7 @@ module.exports = function initDroneModule(ctx) {
        only for a BETTER target: a visible one, or a nearer one. */
     if (d.dash) {   /* v2.9: the getaway after a kill */
       const mx = d.dash.x - d.pos[0], mz = d.dash.z - d.pos[2], md = Math.hypot(mx, mz);
-      if (md > 1 && t < d.dash.until) { const step = Math.min(md, S.speed * (S.dashMult || 1.6) * dt); d.pos[0] += (mx / md) * step; d.pos[2] += (mz / md) * step; d.pos[1] += (S.cruiseY + 3 - d.pos[1]) * Math.min(1, dt * 2); return; }
+      if (md > 1 && t < d.dash.until) { const step = Math.min(md, S.speed * (S.dashMult || 1.6) * dt); d.pos[0] += (mx / md) * step; d.pos[2] += (mz / md) * step; d.pos[1] += (cruiseFor(room, S) + ((CFG.MAPS[room.settings.map || 'urban'] || {}).droneCeil ? 0 : 3) - d.pos[1]) * Math.min(1, dt * 2); return; }
       d.dash = null;
     }
     const anchor = (owner && owner.alive) ? owner.pos : d.pos;
@@ -284,7 +286,7 @@ module.exports = function initDroneModule(ctx) {
     } else { gx = d.pos[0]; gz = d.pos[2]; }
     const mx = gx - d.pos[0], mz = gz - d.pos[2], md = Math.hypot(mx, mz);
     if (md > 0.3) { const step = Math.min(md, S.speed * dt); d.pos[0] += (mx / md) * step; d.pos[2] += (mz / md) * step; }
-    d.pos[1] += (S.cruiseY - d.pos[1]) * Math.min(1, dt * 2);
+    d.pos[1] += (cruiseFor(room, S) - d.pos[1]) * Math.min(1, dt * 2);
   }
 
   /* Serialised into the normal snapshot so clients render and can shoot at

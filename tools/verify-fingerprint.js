@@ -294,7 +294,7 @@ const BASELINE = {
    2. tris/meshSig: orientation paint and trim (sector wall bands, lane
       chevrons, block brackets, muster pads) — all collide:false cast:false, so
       draws (22) and casters (10) hold and cover/dead-ground are untouched. */
-killhouse: { colliders: 608, draws: 25, tris: 9772, casters: 13, lights: 3, bound: 48, colSig: -413534604, meshSig: -430315578 /* v1.0w: taller cover — barriers 1.10->1.50, crates +0.3; counts unchanged */ },
+killhouse: { colliders: 608, draws: 25, tris: 9772, casters: 13, lights: 3, bound: 48, colSig: -2107516104, meshSig: 628737342 /* v1.0w taller cover; v2.10: partitions 2.4->3.0, roof 9->11 */ },
   /* v10.14: the three new small maps, asserted from their first version so any
      later edit has to justify itself. Filled in below from a measured run. */
 freightyard: { colliders: 229, draws: 25, tris: 14076, casters: 15, lights: 3, bound: 38, colSig: -1683568504, meshSig: -336526897 },

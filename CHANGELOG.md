@@ -1,3 +1,21 @@
+# v2.10.0 (build 39) — KILLHOUSE RAISED; DRONES FLY UNDER INDOOR ROOFS (2026-10-14)
+
+Rahul: "make the Killhouse walls a little higher so the head is not seen,
+and the drones visible and shootable — a little makeover so it is fun
+without the frag."
+
+- Partitions 2.4 -> 3.0 m: a crate-step or a block top no longer puts a
+  head over the breeze-block. Roof 9 -> 11 m (trusses, skylights follow).
+- `MAPS.killhouse.droneCeil: 9` — drones.js caps every drone's cruise (and
+  the hunter's dash height) under an indoor map's roof. Before, both drones
+  climbed to 12 / 26 m, ABOVE the 9 m roof: invisible inside, unshootable,
+  and the hunter's line of sight to anyone was blocked by the roof. Now they
+  hunt at 9 m under the trusses, in sight and in range.
+- Fingerprint re-baselined for Killhouse (geometry change, intentional).
+
+Gates: drone 45/0, build PASS, spawn-geometry 65/0, spawns 36/0,
+client 65/0, fingerprint 64/0.
+
 # v2.9.0 (build 38) — KNOCK & REVIVE, DEATH CRATES, RANDOM DROPS, PRONE RANGE, LETHAL DRONES (2026-10-14)
 
 Rahul's list, in his order, all in:

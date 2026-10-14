@@ -386,7 +386,7 @@
     /* v15.0 (fixes 11/12): 52 x 88 m, bound 48 (ring just outside the 44 m end
        walls), 15 players — the deck in the middle is what makes fifteen a fight
        rather than a blender. */
-    killhouse: { label: 'Killhouse', ready: true, bound: 48, maxPlayers: 15, indoor: true, smallMap: true },
+    killhouse: { label: 'Killhouse', ready: true, bound: 48, maxPlayers: 15, indoor: true, smallMap: true, droneCeil: 9.0 },   /* v2.10: drones fly under the 11 m roof */
     /* v10.12 SUNSET ROW. Two houses across a street, 64 x 40 m. Same rule set
        as killhouse — 8 players, nuke killstreak, visor in the crate pool, no
        sniper or RPG on the floor — but a different SHAPE: rooms and a street

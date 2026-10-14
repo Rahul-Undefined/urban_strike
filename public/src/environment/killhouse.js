@@ -29,7 +29,7 @@
 
    A training house, not a warehouse. Bare concrete with a painted inspection
    grid — his drawing shows a checkerboard and that IS the grid, so it is drawn
-   rather than implied. Unpainted breeze-block partitions at 2.4 m: high enough
+   rather than implied. Unpainted breeze-block partitions at 3.0 m (v2.10, was 2.4): high enough
    that nothing is seen over, low enough that the roof volume stays open.
    Numbered doorways, target silhouettes on stands, hazard tape at the corners,
    an observation catwalk overhead that cannot be reached.
@@ -63,7 +63,13 @@
        lane and shot at from the roofs of both blocks is what the middle of a
        shoot-house needed: a REASON to cross it, not a puzzle to solve in it.
        Cap 10 -> 15 (world.config.js), bound 38 -> 48. */
-    var HX = 26, HZ = 44, WALL_H = 9.0, PART_H = 2.4, TH = 0.30;
+    /* v2.10 (Rahul: "make the walls a little higher so the head is not seen,
+       and the drones visible and shootable"): partitions 2.4 -> 3.0 m — a
+       crate-step (0.42) or a block top no longer puts a head over them; the
+       roof 9 -> 11 m so a drone has air under it (drones.js caps every drone
+       to the map's droneCeil, so they fly UNDER this roof, in sight and in
+       range, instead of 26 m above it where nobody could see or hit them). */
+    var HX = 26, HZ = 44, WALL_H = 11.0, PART_H = 3.0, TH = 0.30;
     var NCAST = { cast: false };
     var NBOTH = { cast: false, collide: false };
     function segx(xa, xb, y0, y1, z0, z1, mat, o) {
