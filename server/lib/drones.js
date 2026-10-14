@@ -98,7 +98,9 @@ module.exports = function initDroneModule(ctx) {
         const dx = q.pos[0] - d.pos[0], dy = q.pos[1] - d.pos[1], dz = q.pos[2] - d.pos[2];
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (dist > S.radius) continue;
-        applyDamage(room, q, S.dmg, d.owner, 'drone', false, true);
+        /* v2.9 (Rahul): the blast kills EVERYONE in the circle — the target and
+           whoever stood next to them — outright, no knock */
+        applyDamage(room, q, 999, d.owner, 'drone', false, true, { noDown: true });
       }
     }
     const i = room.drones.indexOf(d);
@@ -222,6 +224,11 @@ module.exports = function initDroneModule(ctx) {
        of sight; the drone flies to it and fires once it can see it. A target
        it cannot see for loseSec is dropped and the search runs again — but
        only for a BETTER target: a visible one, or a nearer one. */
+    if (d.dash) {   /* v2.9: the getaway after a kill */
+      const mx = d.dash.x - d.pos[0], mz = d.dash.z - d.pos[2], md = Math.hypot(mx, mz);
+      if (md > 1 && t < d.dash.until) { const step = Math.min(md, S.speed * (S.dashMult || 1.6) * dt); d.pos[0] += (mx / md) * step; d.pos[2] += (mz / md) * step; d.pos[1] += (S.cruiseY + 3 - d.pos[1]) * Math.min(1, dt * 2); return; }
+      d.dash = null;
+    }
     const anchor = (owner && owner.alive) ? owner.pos : d.pos;
     let tgt = d.target ? room.players.get(d.target) : null, seenNow = false;
     if (tgt && (!tgt.alive || tgt.out || Math.hypot(tgt.pos[0] - anchor[0], tgt.pos[2] - anchor[2]) > S.huntRange * 1.25)) { tgt = null; d.target = null; }
@@ -259,9 +266,18 @@ module.exports = function initDroneModule(ctx) {
       gx = d.pos[0] + (dx / dist) * want; gz = d.pos[2] + (dz / dist) * want;
       if (seenNow && t - d.lastFire >= S.fireSec * 1000 && dist <= S.seekRange) {   // it fires only at what it can see THIS tick
         d.lastFire = t;
-        const hit = Math.random() < 0.8;   // the odd round misses; a hunter is pressure, not a laser
+        const hit = Math.random() < (S.hitChance || 0.7);
         io.to(room.code).emit('droneFire', { id: d.id, from: d.pos.slice(), to: [tgt.pos[0], tgt.pos[1] + 0.3, tgt.pos[2]], hit: hit });
-        if (hit) applyDamage(room, tgt, S.dmg, d.owner, 'hunter', false, false);
+        /* v2.9 (Rahul): ONE round, one kill, no knock — and then it is gone:
+           a dash to a random spot 25-40 m away at dashMult x speed, so the
+           squad that just lost someone has no time to put it down. */
+        if (hit) {
+          applyDamage(room, tgt, 999, d.owner, 'hunter', false, true, { noDown: true });
+          d.shun = d.shun || {}; d.shun[tgt.id] = t; d.target = null;
+          const a = Math.random() * Math.PI * 2, rr = 25 + Math.random() * 15;
+          d.dash = { x: d.pos[0] + Math.cos(a) * rr, z: d.pos[2] + Math.sin(a) * rr, until: t + 2500 };
+          return;
+        }
       }
     } else if (owner && owner.alive) {
       gx = owner.pos[0] + 4; gz = owner.pos[2] + 4;

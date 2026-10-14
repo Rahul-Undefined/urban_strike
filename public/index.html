@@ -29,6 +29,15 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
 #zone-banner{position:fixed;left:50%;top:calc(6% + 78px);transform:translateX(-50%);display:none;z-index:43;font-size:12px;letter-spacing:.16em;
   color:#dfe7f2;text-shadow:0 2px 4px #000;padding:4px 12px;border:1px solid rgba(255,255,255,.18);background:rgba(10,14,20,.55);border-radius:3px}
 #zone-banner.on{display:block}
+/* v2.8: the down HUD — the banner under the zone's, the down pool bar, the revive prompt */
+#down-banner{position:fixed;left:50%;top:calc(6% + 104px);transform:translateX(-50%);display:none;z-index:43;font:600 16px/1 'Teko',sans-serif;letter-spacing:.18em;color:#ffd0c8;text-shadow:0 2px 4px #000;padding:6px 14px;border:1px solid rgba(255,90,70,.5);background:rgba(40,10,10,.6)}
+#down-banner.on{display:block}#down-banner.urgent{color:#ff6a5a;border-color:#ff6a5a;animation:dbPulse .6s steps(2) infinite}
+@keyframes dbPulse{50%{opacity:.5}}
+#down-pool{position:fixed;left:50%;bottom:13%;transform:translateX(-50%);width:220px;height:6px;background:rgba(0,0,0,.6);border:1px solid rgba(255,90,70,.6);display:none;z-index:43}
+#down-pool.on{display:block}#down-pool i{display:block;height:100%;width:100%;background:#ff5a46}
+#revive-prompt{position:fixed;left:50%;top:58%;transform:translateX(-50%);display:none;z-index:43;text-align:center;font:600 20px/1 'Teko',sans-serif;letter-spacing:.2em;color:#f0a232;text-shadow:0 2px 4px #000}
+#revive-prompt.on{display:block}#revive-prompt i{display:block;height:5px;width:0;margin:6px auto 0;background:#f0a232;max-width:220px;transition:width .15s linear}
+#revive-prompt b{display:block;padding:6px 14px;border:1px solid rgba(240,162,50,.5);background:rgba(10,14,20,.6)}
 #zone-banner.urgent{color:#ff6b5a;border-color:rgba(255,80,60,.6);animation:hudPulse .6s ease-in-out infinite}
 /* v1.0l: helicopter health, top-right under the radar */
 #heli-hud{position:fixed;right:26px;top:230px;width:190px;display:none;z-index:43;font-size:10px;letter-spacing:.14em;color:#dfe7f2;text-shadow:0 2px 3px #000}
@@ -317,6 +326,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
   <div id="heli-rider"><div id="heli-rider-txt">HULL</div><div class="bar"><div id="heli-rider-fill"></div></div></div>
   <div id="heli-prompt"></div>
   <div id="zone-banner"></div>
+<div id="down-banner"></div><div id="down-pool"><i></i></div><div id="revive-prompt"><b></b><i></i></div>   <!-- v2.8 -->
   <!-- v11.0 compass strip — bearings for callouts, PUBG-style. Ticks are
        built once by UI.initCompass; per-frame cost is one transform. -->
   <!-- v12.0: compass and clock share ONE positioned stack. They used to be two

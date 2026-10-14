@@ -641,6 +641,10 @@ var UI = (function () {
       row.innerHTML = '<b>' + d.killerName + '</b> <span class="fw">shot down the helicopter with</span> <b>' + d.victimName + '</b> <span class="fw">aboard</span>';   /* v1.0o */
     } else if (d.weapon === 'helifall') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">fell from the helicopter</span>' + (d.self ? '' : ' <span class="fw">(hit by</span> <b>' + d.killerName + '</b><span class="fw">)</span>');   /* v1.0l */
+    } else if (d.knock) {   /* v2.8 */
+      row.innerHTML = '<b>' + d.killerName + '</b> <span class="fw">knocked</span> <b>' + d.victimName + '</b>' + (d.headshot ? ' <span class="fw">\u00b7 head</span>' : '');
+    } else if (d.revive) {
+      row.innerHTML = '<b>' + (d.killerName || 'A team-mate') + '</b> <span class="fw">revived</span> <b>' + d.victimName + '</b>';
     } else if (d.weapon === 'zone') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">bled out in the zone \u00b7 \u22121</span>';   /* v1.0j; v2.6: the point it cost */
     } else if (d.weapon === 'train') {
@@ -1049,6 +1053,26 @@ var UI = (function () {
   var heliHint = '';
   function setHeliHint(txt) { heliHint = txt || ''; }   /* v1.0u: the rider's one-line reminder lives in the HUD bar */
   /* v1.0j: the zone banner under the timer */
+  /* ===== v2.8 - THE DOWN HUD ===== */
+  function setDownBanner(text, urgent) {
+    var e = document.getElementById('down-banner'); if (!e) return;
+    e.textContent = text || ''; e.classList.toggle('on', !!text); e.classList.toggle('urgent', !!urgent);
+  }
+  function setDownPool(v, max) {
+    var e = document.getElementById('down-pool'); if (!e) return;
+    e.classList.toggle('on', max > 0);
+    var b = e.querySelector('i'); if (b) b.style.width = (max > 0 ? Math.max(0, Math.min(100, v / max * 100)) : 0) + '%';
+  }
+  function setRevivePrompt(name, err) {
+    var e = document.getElementById('revive-prompt'); if (!e) return;
+    e.classList.toggle('on', !!name);
+    if (name) e.querySelector('b').textContent = err ? err : 'HOLD E \u00b7 revive ' + name;
+  }
+  function setRevive(f, byName, isMe) {
+    var e = document.getElementById(isMe ? 'down-banner' : 'revive-prompt'); if (!e) return;
+    if (isMe) { if (byName && f > 0) { e.textContent = byName + ' is reviving you \u00b7 ' + Math.round(f * 100) + '%'; e.classList.add('on'); e.classList.remove('urgent'); } return; }
+    var bar = e.querySelector('i'); if (bar) bar.style.width = Math.round(f * 100) + '%';
+  }
   function setZoneBanner(text, urgent) {
     var e = document.getElementById('zone-banner');
     if (!e) return;
@@ -1473,6 +1497,7 @@ var UI = (function () {
     setQualityReadout: setQualityReadout,   /* v1.0c */
     setBreath: setBreath,                   /* v1.0e */
     setZoneBanner: setZoneBanner,           /* v1.0j */
+    setDownBanner: setDownBanner, setDownPool: setDownPool, setRevivePrompt: setRevivePrompt, setRevive: setRevive,   /* v2.8 */
     setHeliHud: setHeliHud,                 /* v1.0l */
     setHeliHint: setHeliHint,               /* v1.0u */
     aliveCount: function () {               /* v1.0k: operators still in it (Urban Zone's "N ALIVE") */

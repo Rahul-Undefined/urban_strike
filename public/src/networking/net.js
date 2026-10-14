@@ -45,6 +45,7 @@ var Net = (function () {
   var teamKills = {};
   var intel = [], intelAt = 0;          // v12.0: latest approximate-enemy list + arrival time                // v8.34: sized by the server, not assumed
   var myTeam = null;
+  var localDown = false, downUntil = 0, reviveF = 0, reviveBy = null;   /* v2.8 */
   var scene = null;
   var P = CFG.PLAYER;
 
@@ -346,6 +347,7 @@ var Net = (function () {
       snapCache = {}; slotToId = {};   // v9.8: never carry slots across a match
       Minimap.clearMarks();            // v9.10: markers do not survive a match
       match.mode = d.settings.mode || 'ffa';
+      match.map = d.settings.map || 'urban';   /* v2.8: the client needs the map for the arena frag rule */
       match.enemyIntel = !!d.settings.enemyIntel;   // v12.0 (item 10): the map reads this gate
       var me = d.players.find(function (p) { return p.id === myIdV; });
       myTeam = me ? (me.team || null) : myTeam;
@@ -403,6 +405,7 @@ var Net = (function () {
       snapCache = {}; slotToId = {};   // v9.8: never carry slots across a match
       Minimap.clearMarks();            // v9.10: markers do not survive a match
       match.mode = d.settings.mode || 'ffa';
+      match.map = d.settings.map || 'urban';   /* v2.8: the client needs the map for the arena frag rule */
       match.enemyIntel = !!d.settings.enemyIntel;   // v12.0 (item 10): the map reads this gate
       match.startedAt = d.startedAt;
       match.serverOffset = d.serverNow - Date.now();
@@ -648,6 +651,25 @@ var Net = (function () {
       }
     });
 
+    /* ===== v2.8 - KNOCKED / REVIVED ===== */
+    s.on('knocked', function (d) {
+      UI.addFeed({ knock: true, victimName: d.victimName, killerName: d.byName, killerId: d.byId, victimId: d.victimId, weapon: d.weapon, headshot: d.headshot }, myIdV);
+      if (d.victimId === myIdV) { localDown = true; downUntil = performance.now() + d.sec * 1000; Game.onLocalDown(d); }
+      else if (d.byId === myIdV) UI.announce('KNOCKED ' + d.victimName, true);
+      else if (myTeam && d.team === myTeam) { UI.toast(d.victimName + ' is DOWN \u2014 reach them and hold E', true); AudioSys.stinger && AudioSys.stinger(false); }
+    });
+    /* ===== v2.9 - DEATH CRATES ===== */
+    s.on('deathCrate', function (d) { if (typeof Pickups !== 'undefined' && Pickups.deathCrate) Pickups.deathCrate(d); });
+    s.on('crateGone', function (d) { if (typeof Pickups !== 'undefined' && Pickups.crateGone) Pickups.crateGone(d.id); if (d.byName && d.by !== myIdV) UI.toast(d.byName + ' looted ' + d.name + "'s kit"); });
+    s.on('downEnd', function (d) {
+      if (d.id === myIdV) { localDown = false; downUntil = 0; reviveF = 0; reviveBy = null; if (d.how === 'revived') Game.onLocalRevive(d); }
+      if (d.how === 'revived') UI.addFeed({ revive: true, victimName: d.name, killerName: d.byName, killerId: d.byId, victimId: d.id }, myIdV);
+    });
+    s.on('downHit', function (d) {
+      FX.damageFlash(0.3); if (d.fromPos) UI.hitDirection && UI.hitDirection(d.fromPos);
+      UI.setDownPool && UI.setDownPool(d.pool, d.max);
+    });
+    s.on('reviveProg', function (d) { reviveF = d.f || 0; reviveBy = d.by || null; });
     s.on('death', function (d) {
       UI.addFeed(d, myIdV);
       if (d.killerId === myIdV && !d.self) {
@@ -656,7 +678,7 @@ var Net = (function () {
       }
       if (d.assistIds && d.assistIds.indexOf(myIdV) !== -1) UI.announce('+ ASSIST', true);
       if (d.victimId === myIdV) {
-        killTimes = [];
+        killTimes = []; localDown = false; downUntil = 0;   /* v2.8 */
         /* v10.10: both streak rewards die with you. The server clears its own
            copy of each (spawnPlayer for the visor, nuke.js clearArmed for the
            nuke) — these two calls are the client catching up immediately
@@ -781,6 +803,7 @@ var Net = (function () {
       p: [PlayerCtl.pos.x, PlayerCtl.pos.y, PlayerCtl.pos.z],
       ry: PlayerCtl.yaw, rx: PlayerCtl.pitch,
       cr: PlayerCtl.prone ? 2 : (PlayerCtl.crouch ? 1 : 0),
+      fr: (typeof Weapons !== 'undefined' && Weapons.fragCount) ? Weapons.fragCount() : 0,   /* v2.9: for the death crate */
       mv: PlayerCtl.moveState,
       ln: PlayerCtl.lean,
       wp: Math.max(0, CFG.WEAPON_ORDER.indexOf(Weapons.currentName())),
@@ -1065,7 +1088,8 @@ var Net = (function () {
       r.rx = a.rx + (b.rx - a.rx) * f;
       var stc = b.cr | 0;
       r.crouch = stc === 1;
-      r.prone = stc === 2;
+      r.prone = stc === 2 || stc === 3;   /* v2.8: 3 = knocked — flat on the ground */
+      r.down = stc === 3;
       r.mv = b.mv;
       r.ln = a.ln + (b.ln - a.ln) * f;
 
@@ -1252,6 +1276,10 @@ var Net = (function () {
     bindGameplayEvents: bindGameplayEvents,
     updateRemotes: updateRemotes,
     eachRemote: eachRemote,
+    isDown: function () { return localDown; }, downLeft: function () { return Math.max(0, downUntil - performance.now()) / 1000; },   /* v2.8 */
+    revive: function (id, cb) { if (socket) socket.emit('revive', { id: id }, cb); },
+    reviveState: function () { return { f: reviveF, by: reviveBy }; },
+    myTeam: function () { return myTeam; },
     myId: function () { return myIdV; },
     getPhase: function () { return phase; },
     setPhase: function (p) { phase = p; },

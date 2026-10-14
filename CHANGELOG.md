@@ -1,3 +1,65 @@
+# v2.9.0 (build 38) — KNOCK & REVIVE, DEATH CRATES, RANDOM DROPS, PRONE RANGE, LETHAL DRONES (2026-10-14)
+
+Rahul's list, in his order, all in:
+
+## 1. Frags off the small maps (arenas) — crate-only there
+Nobody spawns with a frag on an arena; the Frag Bundle ×5 rides in every
+arena crate (the zone rule, now on arenas too) and the carried stock
+survives the respawn. Urban / Urban Small unchanged.
+
+## 2. Random drops on Urban and Urban Small (loot.js `randomDropPoint`)
+The crate lands on a random spot of open ground with clear sky anywhere
+inside the walls (inside the circle in a zone match) — 200 draws, 188
+distinct spots on Urban, none on a roof or under cover. The hand-placed list
+is the fallback if 60 draws find nothing. Arenas keep their points.
+
+## 3. Knock & revive, PUBG-style (team and squad modes) — combat.js, server.js, client
+- A lethal hit KNOCKS: hp 1, flat on the ground (wire posture 3), a 20 s
+  clock. The knocker gets no kill yet. Last of the side standing dies
+  outright; so does the zone, the train and a heli fall. Bots die outright.
+- Down: crawl, throw frags, place mines, shoot the pistol — nothing else
+  (server drops every other claim; client refuses the switch; X cannot
+  stand). HUD: KNOCKED · 17 s banner, "B IS REVIVING YOU 60%".
+- Revive: a team-mate within 2.6 m holds **E** for 4 s (E leans only when
+  no downed team-mate is in reach). Up on 30 hp with 1.5 s of grace.
+- No revive in 20 s → death, kill and point to the knocker.
+- **Any further hit while down finishes them at once** (the "pool" is gone —
+  Rahul's follow-up), kill to the finisher.
+- Feed: "X knocked Y", "B revived A". `knocks` / `revives` on the roster.
+
+## 4. Prone = half range, every gun (combat.js `weaponServerDamage`)
+Lying down, a round past 50% of the weapon's range does nothing. No popup,
+no warning — the number only. Standing or crouched, the whole range.
+
+## 5. Hunter drone: one shot, one kill, then it is gone
+16 m/s, one round every 1.4 s at 80%, a hit kills outright (no knock), then a
+2.5 s dash at 1.7× to a random spot 25-40 m away before it hunts again.
+## 6. Strike drone: faster, the blast kills everyone in it
+Climb 20, hunt 26, dive 40 m/s. The blast kills every enemy inside the 4.2 m
+circle outright — the target and whoever stood beside them.
+
+## 7. A frag in the air outlives its thrower (server.js 'hit')
+A dead thrower's frag / molotov / rocket claim is honoured for 8 s after the
+death. Guns still need a living shooter.
+
+## 8. Advanced Recon Visor (loot: `visoradv`, legendary, crates only)
+Through-wall vision for the WHOLE match, every life — re-granted on each
+respawn. The plain visor is still per life.
+
+## 9. Death crates (Urban / Urban Small) — server.js `dropDeathCrate`
+When a player dies their kit — drones, hunters, recons, adrenaline, C4, EMP,
+visor (advanced or plain), exclusive weapons, and the frag stock outside
+zone/arena — drops as a crate with a red beacon for 10 s. Anyone within
+2.8 m presses **Z** to loot it (caps respected, duplicates become ammo);
+the dead player's counts are zeroed. Prompt line: "Z · loot NAME's kit · 7 s".
+
+## Gates and tests
+Harness 16/16 (knock, revive, bleed-out, finish, last-standing, zone,
+solo, prone range); live 3-client run: knock → AK refused → revive on 30 hp
+→ re-knock → pistol finish credited. `verify-drone` 45/0 (one-shot + dash
+contract), client 65/0, fingerprint 64/0, zone 78/0, hitbox 32/0,
+endscreen 58/0. test.js 261/0 through phase 18.
+
 # v2.7.0 (build 37) — THE HUNTER HUNTS; THE PRONE HITBOX IS THE BODY (2026-10-09)
 
 Rahul: "hunter drone is not working. Make it a little tougher to shoot when

@@ -34,6 +34,7 @@
        this bundle rides in every zone crate (loot.js adds it beside the exotic
        draw — zone rooms only, never the floor, never an ordinary crate). */
     frags:    { kind: 'gear', g: 'frag', n: 5, rar: 'r', drop: 1, zoneOnly: 1, label: 'Frag Bundle \u00d75' },
+    visoradv: { kind: 'gear', g: 'visoradv', n: 1, rar: 'l', drop: 1, label: 'Advanced Recon Visor' },   /* v2.9: the whole match, every life */
     armor1:   { kind: 'armor', lvl: 1, rar: 'c', label: 'L1 Vest' },
     armor2:   { kind: 'armor', lvl: 2, rar: 'r', label: 'L2 Vest' },
     armor3:   { kind: 'armor', lvl: 3, rar: 'l', label: 'L3 Vest' },
@@ -208,7 +209,7 @@
        five draws: expect ~1.8 guns and ~3.2 enhancers. */
     exoticPool: ['wpn_kar98', 'wpn_awm', 'wpn_scarh', 'wpn_akm', 'wpn_aug', 'wpn_mk14', 'wpn_p90', 'wpn_ump9', 'wpn_mp5',
       'wpn_m249', 'wpn_vector', 'wpn_famas', 'wpn_aa12', 'wpn_rocket', 'wpn_seeker', 'wpn_flamer',
-      'drone', 'drone', 'hunter', 'hunter', 'visor', 'visor', 'recon', 'recon', 'adrenaline', 'adrenaline', 'adrenaline',
+      'drone', 'drone', 'hunter', 'hunter', 'visor', 'visor', 'visoradv', 'recon', 'recon', 'adrenaline', 'adrenaline', 'adrenaline',
       'c4', 'emp', 'emp', 'shield', 'armor3', 'helm_3',
       'att_x8', 'att_x6', 'att_x4', 'att_supp', 'att_quick', 'att_comp', 'att_reddot'],
     /* kept for old readers; loot.js draws from exoticPool only */

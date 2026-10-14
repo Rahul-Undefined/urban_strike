@@ -38,9 +38,13 @@ module.exports = function initCombatModule(ctx) {
 
   const { io, now, modeInfo, pushLobby, endMatch } = ctx;
 
-function weaponServerDamage(weapon, part, pellets, dist) {
+function weaponServerDamage(weapon, part, pellets, dist, prone) {
   const w = CFG.WEAPONS[weapon];
   if (!w) return 0;
+  /* v2.9 (Rahul): lying down, every gun reaches HALF its range and not a metre
+     more — no warning, no popup, just the number. Standing or crouched, the
+     whole range. So the prone hitbox cut (v2.7) buys cover, not a sniper nest. */
+  if (prone && w.range > 0 && dist > w.range * 0.5) return 0;
   let dmg = w.dmg;
   if (w.pellets) dmg *= Math.max(1, Math.min(pellets || 1, w.pellets));
   if (part === 'head') dmg *= (w.head || 1);
@@ -66,7 +70,7 @@ function riderShielded(room, victim, weapon) {
   }
   return false;
 }
-function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank) {
+function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank, opts) {
   if (riderShielded(room, victim, weapon)) return;   /* v1.0v */
   if (!victim.alive) return;
   const attacker = room.players.get(attackerId);
@@ -75,6 +79,10 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
   if (teams && attacker && attackerId !== victim.id && attacker.team === victim.team) return;
   // spawn protection (attacking others still allowed; being hit is not)
   if (victim.protUntil > now() && attackerId !== victim.id) return;
+  /* v2.8: a DOWNED player has no vest, no shield, no hp — only the down pool.
+     Every hit drains it; empty, they are finished by whoever emptied it. The
+     bleed-out and the finish come back in through `opts.noDown`. */
+  if (victim.down && !(opts && opts.noDown)) { hitDown(room, victim, dmg, attackerId, weapon, headshot); return; }
 
   /* ===== v15.0 - THE SHIELD TAKES IT FIRST (fix 5) =====
      Server-owned hp on the victim, spent before helmet-cut damage reaches
@@ -194,8 +202,19 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
   }
 
   if (victim.hp <= 0) {
+    /* ===== v2.8 - KNOCKED, NOT KILLED (team and squad modes) =====
+       Rahul: "take inspiration from PUBG — the avatar is knocked out first,
+       a team-mate can revive them within 20 seconds; no revive by then and
+       it is a death and a point to the opponent; revived, they continue on
+       low health." The knock happens here, at the only place hp reaches
+       zero, and the death path below is skipped until the bleed-out or a
+       finish brings the victim back through with opts.noDown. */
+    if (!(opts && opts.noDown) && shouldDown(room, victim, attackerId, weapon)) { knock(room, victim, attackerId, weapon, headshot); return; }
     victim.alive = false;
+    victim.down = false; victim.crouch = victim.crouch === 3 ? 2 : victim.crouch;
+    victim.diedAt = now();   /* v2.9: a frag already in the air still counts (server.js 'hit') */
     victim.deaths++;
+    if (ctx.onDeathCrate) { try { ctx.onDeathCrate(room, victim); } catch (e) { console.error('deathCrate', e); } }   /* v2.9 */
     /* v1.0d: arenas climb the redeploy ladder with each death; big maps keep
        the flat delay. The number is computed HERE and shipped in the death
        payload below, so the client counts down what the server will accept. */
@@ -368,5 +387,99 @@ function fireRateOk(shooter, weapon) {
 
 // ---------- sockets ----------
 
-  return { weaponServerDamage, applyDamage, positionPlausible, fireRateOk };
+  /* ===== v2.8 - THE DOWN STATE =====
+     shouldDown: team or squad mode, a human, not already down, not the zone
+     (a bleed outside the circle is a death — nobody revives you in the red),
+     and at least one team-mate still standing (the last one standing dies
+     outright, as in PUBG — there is nobody left to come).
+     knock: hp pinned at 1 and `alive` kept TRUE (they move, crawl, throw,
+     place, shoot the pistol — server.js gates the rest), posture 3 on the
+     wire so every client lays them down, a 20 s clock, the down pool full.
+     hitDown: hits drain the pool; empty, the shooter finishes them.
+     tick: the clock runs out, the knocker gets the kill. revive: a team-mate
+     within reach pings every ~200 ms while holding the key; reviveSec of
+     continuous pings (a gap of 700 ms resets) stands them up on lowHp. */
+  const D = () => CFG.DOWN || (CFG.MATCH && CFG.MATCH.DOWN) || { sec: 20, pool: 100, reviveSec: 4, reviveRange: 2.6, reviveHp: 30 };
+  function standingMates(room, p) {
+    let n = 0;
+    for (const q of room.players.values()) if (q.id !== p.id && q.alive && !q.down && !q.out && q.team && q.team === p.team) n++;
+    return n;
+  }
+  function shouldDown(room, victim, attackerId, weapon) {
+    if (!modeInfo(room).teams || !victim.team || victim.bot || victim.down) return false;
+    if (weapon === 'zone' || weapon === 'helifall' || weapon === 'train') return false;
+    return standingMates(room, victim) > 0;
+  }
+  function knock(room, victim, attackerId, weapon, headshot) {
+    const attacker = room.players.get(attackerId);
+    victim.down = true; victim.hp = 1; victim.downHp = D().pool;
+    victim.downAt = now(); victim.downUntil = now() + D().sec * 1000;
+    victim.downBy = attackerId; victim.downWeapon = weapon; victim.downHead = !!headshot;
+    victim.reviveProg = 0; victim.reviveLast = 0; victim.reviveBy = null;
+    victim.crouch = 3;   /* wire posture: down — every client lays the avatar flat */
+    victim.lastHitAt = now();
+    if (attacker && attacker.id !== victim.id) attacker.knocks = (attacker.knocks | 0) + 1;
+    io.to(room.code).emit('knocked', { victimId: victim.id, victimName: victim.name, byId: attackerId, byName: attacker ? attacker.name : 'the world',
+      weapon, headshot: !!headshot, sec: D().sec, team: victim.team });
+    io.to(victim.id).emit('vitals', { hp: 1, lv: victim.armorLvl, du: Math.round(victim.armorDur), sh: 0 });
+  }
+  function hitDown(room, victim, dmg, attackerId, weapon, headshot) {
+    const attacker = room.players.get(attackerId);
+    if (attacker && attackerId !== victim.id) {
+      attacker.damage += dmg;
+      const rec = victim.rd[attackerId] || (victim.rd[attackerId] = { d: 0, t: 0 });
+      rec.d += dmg; rec.t = now();
+    }
+    /* v2.9 (Rahul): "if the opponent still shoots the knocked player, the
+       player dies" — any hit while down is the finish. The pool is gone. */
+    victim.downHp = 0;
+    victim.lastHitAt = now();
+    io.to(victim.id).emit('downHit', { dmg: Math.round(dmg), pool: 0, max: D().pool, from: attackerId,
+      fromPos: attacker && attacker.pos ? [attacker.pos[0], attacker.pos[1], attacker.pos[2]] : null });
+    finishDown(room, victim, attackerId, weapon, headshot, 'finished');
+  }
+  function finishDown(room, victim, byId, weapon, headshot, how) {
+    if (!victim.down) return;
+    victim.down = false; victim.downHow = how;
+    io.to(room.code).emit('downEnd', { id: victim.id, how: how, byId: byId });
+    applyDamage(room, victim, 999, byId, weapon, headshot, true, { noDown: true });
+  }
+  function reviveNow(room, victim, by) {
+    if (!victim.down) return;
+    victim.down = false; victim.hp = D().reviveHp; victim.downHow = 'revived';
+    victim.crouch = 2; victim.reviveProg = 0; victim.reviveBy = null;
+    victim.protUntil = now() + 1500;   // a moment to get off the floor
+    if (by) by.revives = (by.revives | 0) + 1;
+    io.to(room.code).emit('downEnd', { id: victim.id, how: 'revived', byId: by ? by.id : null, byName: by ? by.name : null, name: victim.name });
+    io.to(victim.id).emit('vitals', { hp: Math.round(victim.hp), lv: victim.armorLvl, du: Math.round(victim.armorDur), sh: Math.round(victim.shieldHp || 0) });
+  }
+  function tickDown(room) {
+    if (room.state !== 'playing') return;
+    const t = now();
+    for (const p of room.players.values()) {
+      if (!p.down) continue;
+      if (!p.alive) { p.down = false; continue; }
+      if (p.reviveProg > 0 && t - p.reviveLast > 700) { p.reviveProg = 0; p.reviveBy = null; io.to(p.id).emit('reviveProg', { f: 0, by: null }); }
+      if (standingMates(room, p) === 0) { finishDown(room, p, p.downBy, p.downWeapon, p.downHead, 'squad'); continue; }   // nobody left to come
+      if (t >= p.downUntil) finishDown(room, p, p.downBy, p.downWeapon, p.downHead, 'bleed');
+    }
+  }
+  function revive(room, reviver, targetId) {
+    const v = room.players.get(targetId);
+    if (!v || !v.down || !v.alive) return { ok: false, err: 'Nobody to revive' };
+    if (!reviver.alive || reviver.down) return { ok: false, err: 'You cannot revive now' };
+    if (!reviver.team || reviver.team !== v.team) return { ok: false, err: 'Not your team' };
+    const dist = Math.hypot(reviver.pos[0] - v.pos[0], reviver.pos[1] - v.pos[1], reviver.pos[2] - v.pos[2]);
+    if (dist > D().reviveRange) return { ok: false, err: 'Get closer' };
+    const t = now();
+    if (v.reviveBy && v.reviveBy !== reviver.id && t - v.reviveLast < 700) return { ok: false, err: 'Someone is already reviving them' };
+    const step = v.reviveLast ? Math.min(300, t - v.reviveLast) : 0;
+    v.reviveProg = (v.reviveBy === reviver.id ? v.reviveProg : 0) + step;
+    v.reviveBy = reviver.id; v.reviveLast = t;
+    const f = Math.min(1, v.reviveProg / (D().reviveSec * 1000));
+    io.to(v.id).emit('reviveProg', { f: f, by: reviver.name });
+    if (f >= 1) { reviveNow(room, v, reviver); return { ok: true, f: 1, done: true }; }
+    return { ok: true, f: f };
+  }
+  return { weaponServerDamage, applyDamage, positionPlausible, fireRateOk, tickDown, revive };
 };

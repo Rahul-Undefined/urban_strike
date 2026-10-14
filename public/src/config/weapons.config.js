@@ -401,8 +401,11 @@
        or no sight, flies there at 12 m/s, and opens fire once it has the
        line. Higher cruise (12 m) clears two-storey eaves; 45 s in the air;
        9 a round. seekRange is the firing range now, not the search range. */
-    hunter:     { label: 'Hunter Drone', hp: 60, maxCarry: 2, lifeSec: 45, armSec: 1.0, climbSpeed: 8, cruiseY: 12, speed: 12,
-                  seekRange: 60, huntRange: 160, standoff: 10, fireSec: 0.5, dmg: 9, loseSec: 4 },
+    /* v2.9 (Rahul): faster, one round kills outright (no knock), then a dash
+       to a new spot at 1.7x so it is hard to put down. One shot every 1.4 s,
+       70% hit. */
+    hunter:     { label: 'Hunter Drone', hp: 70, maxCarry: 2, lifeSec: 45, armSec: 1.0, climbSpeed: 10, cruiseY: 12, speed: 16, dashMult: 1.7,
+                  seekRange: 60, huntRange: 160, standoff: 12, fireSec: 1.4, hitChance: 0.8, dmg: 999, loseSec: 4 },
     /* v1.0b: the drone bounty. Shooting a drone down is a KILL on the board and
        puts a Strike Drone in the shooter's bag (up to drone maxCarry). */
     droneBounty: { kill: 1, grantDrone: 1 },
@@ -454,7 +457,7 @@
       dmg: 140, radius: 4.2,         // lethal, but a much tighter circle than a frag
       hp: 110,                       // v1.0z: 45 -> 110 — a burst, not a tap; shooting it down is a contest (Rahul)
       cruiseY: 26,                   // climbs above rooftops before it hunts
-      climbSpeed: 17, hunt: 19, dive: 32,   /* v1.0z: quicker in every phase (Rahul) */
+      climbSpeed: 20, hunt: 26, dive: 40,   /* v1.0z quicker; v2.9 (Rahul) faster again */
       armSec: 1.2,                   // cannot be shot down before it has left your hands
       lockSec: 0.6,                  // v1.0z: 0.9 -> 0.6 — the kill comes sooner (Rahul)
       maxLifeSec: 22,                // never loiters forever

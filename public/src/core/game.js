@@ -230,6 +230,9 @@ var Game = (function () {
       ShiftLeft: 'sprint', ShiftRight: 'sprint', Space: 'jump',
       KeyC: 'crouch', KeyQ: 'leanL', KeyE: 'leanR'
     };
+    /* v2.8: E held next to a downed team-mate REVIVES (the lean is suppressed while a target is in reach) */
+    window.addEventListener('keydown', function (e) { if (e.code === 'KeyE' && reviveTarget) { reviveHeld = true; Input.leanR = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+    window.addEventListener('keyup', function (e) { if (e.code === 'KeyE') { reviveHeld = false; } }, true);
     /* Lifts: teleport the player between derived floor stops. Chosen over a
        moving platform because carrying a capsule on a moving collider is exactly
        the kind of marginal physics that made the tower stairs unreliable. */
@@ -356,7 +359,7 @@ var Game = (function () {
       if (map[e.code]) { Input[map[e.code]] = true; if (e.code === 'Space') e.preventDefault(); return; }
       if (e.code === 'KeyR') { Weapons.startReload(); return; }
       if (e.code === 'KeyG') { Weapons.startCook(); return; } // hold to cook, release to throw
-      if (e.code === 'KeyX') { PlayerCtl.toggleProne(); return; }
+      if (e.code === 'KeyX') { if (Net.isDown && Net.isDown()) { UI.toast('Knocked \u2014 you cannot get up until a team-mate revives you'); return; } PlayerCtl.toggleProne(); return; }   /* v2.8 */
       if (e.code === 'KeyH') { Weapons.throwGrenade('molotov'); return; }
       if (e.code === 'KeyV') { Weapons.placeMine(); return; }
       /* v9.4 STRIKE DRONE on KeyT.
@@ -745,7 +748,59 @@ var Game = (function () {
     return true;
   }
 
+  /* ===== v2.8 - KNOCKED (team and squad modes) =====
+     The server knocked us: lie down (and stay down — X is refused above), the
+     pistol comes out, the HUD counts the 20 s. A team-mate within reach who
+     holds E stands us up on low health (onLocalRevive). While down we crawl,
+     throw frags, place mines and shoot the pistol; everything else is refused
+     by the weapon system and by the server. */
+  function onLocalDown(d) {
+    if (!PlayerCtl.prone) PlayerCtl.toggleProne();
+    Weapons.forcePistol();
+    UI.announce('KNOCKED', true);
+    UI.setDownPool && UI.setDownPool(CFG.MATCH.DOWN ? CFG.MATCH.DOWN.pool : 100, CFG.MATCH.DOWN ? CFG.MATCH.DOWN.pool : 100);
+    UI.toast('Knocked by ' + (d.byName || 'the world') + ' \u2014 crawl to cover; a team-mate must revive you in ' + d.sec + ' s', true);
+  }
+  function onLocalRevive(d) {
+    if (PlayerCtl.prone) PlayerCtl.toggleProne();
+    UI.setDownBanner && UI.setDownBanner('');
+    UI.setDownPool && UI.setDownPool(0, 0);
+    UI.announce('REVIVED', true);
+    UI.toast('Revived by ' + (d.byName || 'a team-mate') + ' \u2014 low health, find cover');
+  }
+  /* the revive loop: each frame, if a downed team-mate is within reach, show
+     the prompt; while E is held, ping the server every 200 ms */
+  var reviveTarget = null, reviveLastPing = 0, reviveHeld = false, crateNear = null;
+  function reviveTick(dt) {
+    if (playing && PlayerCtl.alive && Net.isDown && Net.isDown() && UI.setDownBanner) {
+      var rs0 = Net.reviveState ? Net.reviveState() : { f: 0 };
+      UI.setDownBanner(rs0.f > 0 && rs0.by ? rs0.by + ' IS REVIVING YOU \u00b7 ' + Math.round(rs0.f * 100) + '%'
+        : 'KNOCKED \u00b7 ' + Math.ceil(Net.downLeft()) + ' s \u00b7 crawl to cover \u00b7 pistol, frags, mines', rs0.f <= 0 && Net.downLeft() < 6);
+      if (!PlayerCtl.prone) PlayerCtl.toggleProne();   // stay down
+    }
+    if (!playing || !PlayerCtl.alive || (Net.isDown && Net.isDown())) { if (reviveTarget) { reviveTarget = null; UI.setRevivePrompt && UI.setRevivePrompt(null); } return; }
+    var best = null, bd = (CFG.MATCH.DOWN ? CFG.MATCH.DOWN.reviveRange : 2.6) + 0.4, mt = Net.myTeam ? Net.myTeam() : null;
+    if (mt) Net.eachRemote(function (id, r) {
+      if (!r.down || !r.alive || r.team !== mt || !r.renderPos) return;
+      var d = r.renderPos.distanceTo(PlayerCtl.pos);
+      if (d < bd) { bd = d; best = { id: id, name: r.name }; }
+    });
+    if ((best && best.id) !== (reviveTarget && reviveTarget.id)) { reviveTarget = best; UI.setRevivePrompt && UI.setRevivePrompt(best ? best.name : null); if (!best) UI.setRevive && UI.setRevive(0, null, false); }
+    /* v2.9: no team-mate to revive — is a death crate at our feet? the same prompt line says so (Z loots it) */
+    if (!best && typeof Pickups !== 'undefined' && Pickups.nearestCrate) {
+      var cr = Pickups.nearestCrate(PlayerCtl.pos, 2.8);
+      if (cr !== crateNear) { crateNear = cr; UI.setRevivePrompt && UI.setRevivePrompt(cr ? cr.name : null, cr ? 'Z \u00b7 loot ' + cr.name + "'s kit \u00b7 " + Math.ceil((cr.until - performance.now()) / 1000) + ' s' : null); }
+      else if (cr) UI.setRevivePrompt && UI.setRevivePrompt(cr.name, 'Z \u00b7 loot ' + cr.name + "'s kit \u00b7 " + Math.ceil((cr.until - performance.now()) / 1000) + ' s');
+    }
+    if (best && reviveHeld && performance.now() - reviveLastPing > 200) {
+      reviveLastPing = performance.now();
+      Net.revive(best.id, function (res) { if (res && res.ok) UI.setRevive && UI.setRevive(res.f, null, false); else if (res && res.err) UI.setRevivePrompt && UI.setRevivePrompt(best.name, res.err); });
+    }
+    if (!reviveHeld) UI.setRevive && UI.setRevive(0, null, false);
+  }
   function onLocalDeath(d) {
+    if (UI.setDownBanner) UI.setDownBanner('');
+    if (UI.setDownPool) UI.setDownPool(0, 0);
     PlayerCtl.alive = false;
     clearInput();
     UI.setCrosshair(false);
@@ -865,6 +920,7 @@ var Game = (function () {
 
     if (window.Train && World.isBuilt()) step('train', function () { Train.update(dt); });   /* v1.0e: the train runs in the lobby too (deterministic clock) */
     if (window.Zone && World.isBuilt()) step('zone', function () { Zone.update(dt); });      /* v1.0j: the circle */
+    step('revive', function () { reviveTick(dt); });   /* v2.8: the down clock and the revive prompt */
     if (window.Heli && World.isBuilt()) step('heli', function () { Heli.update(dt); });      /* v1.0l: the helicopter */
     if (playing && World.isBuilt()) {
       if (Weapons.setBreath) Weapons.setBreath(Input.sprint);   /* v1.0e: Shift while scoped = hold breath */
@@ -1133,6 +1189,7 @@ var Game = (function () {
     onRecovered: onRecovered,         // v11.0: transport-recovery resume
     onLocalSpawn: onLocalSpawn,
     onLocalDeath: onLocalDeath,
+    onLocalDown: onLocalDown, onLocalRevive: onLocalRevive,   /* v2.8 */
     cycleSpectate: cycleSpectate,
     stopSpectating: stopSpectating,
     onMatchEnd: onMatchEnd,

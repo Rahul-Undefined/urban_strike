@@ -254,6 +254,30 @@ var Pickups = (function () {
   }
   /* Exposed so the weapon system can ray-test against drones without owning
      their meshes: returns id + world position + radius for each live drone. */
+  /* ===== v2.9 - DEATH CRATES =====
+     A fallen player's kit, a dark crate with a red beacon, 10 s on the map.
+     Z within reach loots it (the server's 'pickup' handler checks crates
+     first). */
+  var crates = {};
+  function deathCrate(d) {
+    if (!scene || !d) return;
+    var L = [];
+    boxP(L, 0.7, 0.42, 0.5, 0x2e3328, 0, 0.21, 0); boxP(L, 0.74, 0.06, 0.54, 0x1b1e18, 0, 0.42, 0);
+    boxP(L, 0.1, 0.44, 0.52, 0x8a7a50, -0.22, 0.21, 0); boxP(L, 0.1, 0.44, 0.52, 0x8a7a50, 0.22, 0.21, 0);
+    var grp = new THREE.Group(); grp.add(new THREE.Mesh(mergeParts(L), ITEM_MAT));
+    var led = new THREE.Mesh(DRONE_LED_GEO, new THREE.MeshBasicMaterial({ color: 0xff3a2a })); led.position.y = 0.5; grp.add(led);
+    grp.position.set(d.p[0], d.p[1], d.p[2]); scene.add(grp);
+    crates[d.id] = { grp: grp, led: led, name: d.name, until: performance.now() + (d.sec || 10) * 1000, items: d.items || [] };
+  }
+  function crateGone(id) { var c = crates[id]; if (!c) return; scene.remove(c.grp); c.led.material.dispose(); delete crates[id]; }
+  function nearestCrate(pos, range) {
+    var best = null, bd = range || 2.8, t = performance.now();
+    for (var k in crates) { var c = crates[k]; if (t > c.until) { crateGone(k); continue; }
+      c.led.visible = Math.floor(t / 250) % 2 === 0;
+      var dx = c.grp.position.x - pos.x, dz = c.grp.position.z - pos.z, d = Math.sqrt(dx * dx + dz * dz);
+      if (d < bd && Math.abs(c.grp.position.y - pos.y) < 3) { bd = d; best = c; } }
+    return best;
+  }
   function droneTargets() {
     var out = [];
     for (var k in drones) out.push({ id: Number(k), pos: drones[k].grp.position, r: 0.42 });
@@ -430,6 +454,7 @@ var Pickups = (function () {
   }
 
   return {
+    deathCrate: deathCrate, crateGone: crateGone, nearestCrate: nearestCrate,   /* v2.9 */
     build: build, init: init, onAdd: onAdd,
     bombPlanted: bombPlanted, bombBoom: bombBoom, bombReset: bombReset,   /* v1.0b */
     onCollected: onCollected, onSpawn: onSpawn,

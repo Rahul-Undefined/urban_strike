@@ -190,22 +190,24 @@ console.log('--- the hunter drone ---');
   const flyH = (sec) => { const dt = 1 / 20; for (let i = 0; i < sec * 20; i++) { T += dt * 1000; DronesH.tick(room, dt); } };
   flyH(6);
   const fires = emitted.filter(e => e.ev === 'droneFire').length, dmgB = damaged.filter(x => x.v === 'B' && x.w === 'hunter').reduce((s, x) => s + x.dmg, 0);
-  ok(fires >= 6 && dmgB >= 3 * H.dmg, 'in six seconds over open ground it has fired ' + fires + ' times and done ' + dmgB + ' to B (tag hunter, credited to A)');
+  /* v2.9: one round, one kill (999, point-blank, no knock), then the dash away */
+  ok(fires >= 1 && damaged.length >= 1 && damaged[0].dmg === 999, 'over open ground it fires and the first hit is a 999 kill, no knock [' + fires + ' fired, ' + JSON.stringify(damaged[0]) + ']');
   ok(damaged.every(x => x.by === 'A' && x.w === 'hunter'), 'every hit is the owner\'s kill, tagged hunter');
   const d = room.drones[0];
-  ok(Math.abs(d.pos[1] - H.cruiseY) < 0.5 && Math.hypot(d.pos[0] - b.pos[0], d.pos[2] - b.pos[2]) <= H.standoff + 2, 'it holds cruise height and stands off ~' + H.standoff + ' m [' + d.pos.map(v => v.toFixed(1)).join(',') + ']');
+  ok(Math.hypot(d.pos[0] - b.pos[0], d.pos[2] - b.pos[2]) > 15, 'after the kill it dashed well away from the body [' + Math.hypot(d.pos[0] - b.pos[0], d.pos[2] - b.pos[2]).toFixed(1) + ' m]');
+  ok(d.shun && d.shun.B, 'and will not re-engage that target for a while (the harness never buries B)');
   ok(emitted.some(e => e.ev === 'droneWarn' && e.who === 'B' && e.d.k === 'hunter'), 'B was warned when it acquired them');
   /* v2.7: behind the wall it HUNTS. B moves to x 20 (the 14 m slab at x 10
      between); the hunter holds fire while the line is blocked, closes past
      the slab, and fires once it has the line — a wall is cover, not an escape. */
-  b.pos = [20, 0.95, 0]; d.pos = [0, H.cruiseY, 0]; d.lastSeen = T; damaged.length = 0; emitted.length = 0;
+  b.pos = [20, 0.95, 0]; d.pos = [0, H.cruiseY, 0]; d.lastSeen = T; d.shun = {}; d.dash = null; d.target = 'B'; d.lastFire = T; damaged.length = 0; emitted.length = 0;
   flyH(0.4);
   ok(damaged.length === 0 && d.target === 'B', 'with the wall between them it holds fire but keeps the target [' + damaged.length + ' hits, target ' + d.target + ']');
   flyH(4);
-  ok(d.pos[0] > 10.3 && damaged.length > 0, 'it flies past the slab and opens fire once it has the line [x ' + d.pos[0].toFixed(1) + ', ' + damaged.length + ' hits]');
+  ok(damaged.length > 0, 'it flies past the slab and opens fire once it has the line (then dashes away) [' + damaged.length + ' hits]');
   /* v2.7: a ROOF is different — close in and still blind for loseSec, it drops the target and shuns them for 6 s */
   const roof = [15, 3, -6, 25, 4, 6, 0];
-  wallCols.push(roof); d.pos = [20, H.cruiseY, 0]; d.lastSeen = T; damaged.length = 0;
+  wallCols.push(roof); d.pos = [20, H.cruiseY, 0]; d.lastSeen = T; d.shun = {}; d.dash = null; d.target = 'B'; damaged.length = 0;
   flyH(H.loseSec + 1);
   ok(damaged.length === 0 && d.target === null && d.shun && d.shun.B, 'under a roof at close range: no fire, target dropped after loseSec and shunned [' + damaged.length + ' hits]');
   wallCols.pop();
