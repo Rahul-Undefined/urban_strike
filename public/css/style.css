@@ -1162,7 +1162,7 @@ select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; p
 .showcase.hero { border-radius: 0; border-color: rgba(240,162,50,0.28);
   clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 22px 100%, 0 calc(100% - 22px)); }
 .showcase.hero::after { content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0 1px, transparent 1px 3px); opacity: 0.45; mix-blend-mode: multiply; }
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0 1px, transparent 1px 3px); opacity: 0.45; }
 .showcase.hero::before { content: ''; position: absolute; right: 14px; top: 12px; width: 120px; height: 10px; pointer-events: none;
   background: var(--hazard); opacity: 0.5; z-index: 1; }
 .showcase.hero .sc-meta { border-radius: 0; border-left-width: 4px;
@@ -1174,7 +1174,7 @@ select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; p
 .bd-beams { position: absolute; inset: -20% 0 0 0; pointer-events: none; mix-blend-mode: screen; opacity: 0.55; }
 .bd-beams i { position: absolute; bottom: 36%; width: 180px; height: 120vmax; left: 22%; transform-origin: 50% 100%;
   background: linear-gradient(0deg, rgba(255,214,140,0.16), rgba(255,214,140,0.04) 55%, transparent);
-  clip-path: polygon(44% 100%, 56% 100%, 100% 0, 0 0); animation: beamA 19s ease-in-out infinite alternate; filter: blur(2px); }
+  clip-path: polygon(44% 100%, 56% 100%, 100% 0, 0 0); animation: beamA 19s ease-in-out infinite alternate; }   /* v2.11.1: no blur filter — a GPU cost on weak machines */
 .bd-beams i:last-child { left: 66%; width: 140px; animation: beamB 23s ease-in-out infinite alternate; animation-delay: -7s; }
 @keyframes beamA { from { transform: rotate(-34deg); } to { transform: rotate(18deg); } }
 @keyframes beamB { from { transform: rotate(26deg); } to { transform: rotate(-22deg); } }

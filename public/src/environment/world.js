@@ -2318,6 +2318,7 @@ World.buildMap = function (sceneRef, map) {
                    bazaar: World._buildBazaar,
                    substation: World._buildSubstation,
                    riverside: World._buildRiverside,
+                   oldport: World._buildOldPort,   /* v2.11 */
                    airfield: World._buildAirfield })[map] || null;
   if (map === 'urbansmall') {        /* v2.2: the core of Urban, walled at +/-108 */
     World.build(sceneRef, { small: true });

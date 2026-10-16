@@ -387,13 +387,17 @@
        walls), 15 players — the deck in the middle is what makes fifteen a fight
        rather than a blender. */
     killhouse: { label: 'Killhouse', ready: true, bound: 48, maxPlayers: 15, indoor: true, smallMap: true, droneCeil: 9.0 },   /* v2.10: drones fly under the 11 m roof */
+    /* v2.11 (Rahul): "another Urban Small type map with a different world" —
+       OLD PORT, a whitewashed harbour town, 160 x 160, eight players. Not an
+       arena: loot, drops, death crates, 10/15/30 all as on Urban Small. */
+    oldport: { label: 'Old Port', ready: true, bound: 80, ext: { x0: -80, x1: 80, z0: -80, z1: 80 }, maxPlayers: 8, longMatch: true },
     /* v10.12 SUNSET ROW. Two houses across a street, 64 x 40 m. Same rule set
        as killhouse — 8 players, nuke killstreak, visor in the crate pool, no
        sniper or RPG on the floor — but a different SHAPE: rooms and a street
        rather than three parallel lanes. `smallMap: true` is what carries the
        shared rules, so a third small map inherits them by setting one flag
        instead of by someone remembering four separate places. */
-    sunsetrow: { label: 'Sunset Row', ready: true, bound: 46, maxPlayers: 15, smallMap: true },   /* v15.0 (fix 12): 64 x 84 m */
+    sunsetrow: { label: 'Sunset Row', ready: false /* v2.11: retired from the picker (Rahul) */, bound: 46, maxPlayers: 15, smallMap: true },   /* v15.0 (fix 12): 64 x 84 m */
     /* v10.14: three more small maps, replacing Outbreak. Each is a SHAPE the
        roster did not have — see maps-small.config.js for why these three.
        All carry `smallMap`, which is what grants the nuke killstreak, the
@@ -402,15 +406,15 @@
     /* v15.0 (fix 12): every small map grew for a 15-player room — an outer
        ring of the same vocabulary around each untouched core. Bounds sit just
        outside the new fences (HX + 4). */
-    freightyard: { label: 'Freightyard', ready: true, bound: 38, maxPlayers: 15, smallMap: true },
-    bazaar:      { label: 'Bazaar',      ready: true, bound: 46, maxPlayers: 15, smallMap: true },
-    substation:  { label: 'Substation',  ready: true, bound: 40, maxPlayers: 15, smallMap: true },
+    freightyard: { label: 'Freightyard', ready: false /* v2.11: retired from the picker (Rahul) */, bound: 38, maxPlayers: 15, smallMap: true },
+    bazaar:      { label: 'Bazaar',      ready: false /* v2.11: retired from the picker (Rahul) */, bound: 46, maxPlayers: 15, smallMap: true },
+    substation:  { label: 'Substation',  ready: false /* v2.11: retired from the picker (Rahul) */, bound: 40, maxPlayers: 15, smallMap: true },
     /* v10.21 MEDIUM TIER. `arena: true` without `smallMap` — they carry the
        arena RULES (nuke killstreak, 1 s spawn protection, crate visor) at a
        size where a sniper is a real weapon rather than a liability. Twelve
        players: between the arenas' 8-10 and the theatres' 15. */
-    riverside:   { label: 'Riverside',   ready: true, bound: 66, maxPlayers: 12, arena: true },
-    airfield:    { label: 'Airfield',    ready: true, bound: 70, maxPlayers: 12, arena: true },
+    riverside:   { label: 'Riverside',   ready: false /* v2.11: retired from the picker (Rahul) */, bound: 66, maxPlayers: 12, arena: true },
+    airfield:    { label: 'Airfield',    ready: false /* v2.11: retired from the picker (Rahul) */, bound: 70, maxPlayers: 12, arena: true },
     /* v14.0 BLACKSITE — the bot-mode-only map. `botOnly` is enforced
        server-side at create/updateSettings (a non-bot mode asking for it is
        coerced away) and client-side in the map picker; the three bm_ modes

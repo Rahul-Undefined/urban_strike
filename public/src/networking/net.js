@@ -46,6 +46,8 @@ var Net = (function () {
   var intel = [], intelAt = 0;          // v12.0: latest approximate-enemy list + arrival time                // v8.34: sized by the server, not assumed
   var myTeam = null;
   var localDown = false, downUntil = 0, reviveF = 0, reviveBy = null;   /* v2.8 */
+  var downedIds = {};   /* v2.11.1: who is knocked right now, by id */
+  function clearDown() { localDown = false; downUntil = 0; reviveF = 0; reviveBy = null; downedIds = {}; }
   var scene = null;
   var P = CFG.PLAYER;
 
@@ -395,6 +397,7 @@ var Net = (function () {
     });
 
     s.on('matchStart', function (d) {
+      clearDown();   /* v2.11.1: a knock never survives into a new match (the stale flag locked the weapons and spammed the "pistol only" toast) */
 
       reconOn = false;   /* v2.3: recon is per match */
       if (typeof Zone !== 'undefined') Zone.set(d && d.zone ? d.zone : null);   /* v1.0j: the circle schedule, or none */
@@ -589,6 +592,7 @@ var Net = (function () {
     s.on('lootAdd', function (d) { Pickups.onAdd(d.items); });
 
     s.on('spawn', function (d) {
+      if (!d || !d.id || d.id === myIdV) { localDown = false; downUntil = 0; reviveF = 0; reviveBy = null; }   /* v2.11.1: our own spawn is never a knocked one */
       if (d.id === myIdV) {
         Game.onLocalSpawn(d.pos, d.ry, d.prot);
         /* ===== v11.0 - THE REFILL FINALLY REACHES THE HUD =====
@@ -653,6 +657,7 @@ var Net = (function () {
 
     /* ===== v2.8 - KNOCKED / REVIVED ===== */
     s.on('knocked', function (d) {
+      downedIds[d.victimId] = true;
       UI.addFeed({ knock: true, victimName: d.victimName, killerName: d.byName, killerId: d.byId, victimId: d.victimId, weapon: d.weapon, headshot: d.headshot }, myIdV);
       if (d.victimId === myIdV) { localDown = true; downUntil = performance.now() + d.sec * 1000; Game.onLocalDown(d); }
       else if (d.byId === myIdV) UI.announce('KNOCKED ' + d.victimName, true);
@@ -662,6 +667,7 @@ var Net = (function () {
     s.on('deathCrate', function (d) { if (typeof Pickups !== 'undefined' && Pickups.deathCrate) Pickups.deathCrate(d); });
     s.on('crateGone', function (d) { if (typeof Pickups !== 'undefined' && Pickups.crateGone) Pickups.crateGone(d.id); if (d.byName && d.by !== myIdV) UI.toast(d.byName + ' looted ' + d.name + "'s kit"); });
     s.on('downEnd', function (d) {
+      delete downedIds[d.id];
       if (d.id === myIdV) { localDown = false; downUntil = 0; reviveF = 0; reviveBy = null; if (d.how === 'revived') Game.onLocalRevive(d); }
       if (d.how === 'revived') UI.addFeed({ revive: true, victimName: d.name, killerName: d.byName, killerId: d.byId, victimId: d.id }, myIdV);
     });
@@ -671,6 +677,7 @@ var Net = (function () {
     });
     s.on('reviveProg', function (d) { reviveF = d.f || 0; reviveBy = d.by || null; });
     s.on('death', function (d) {
+      delete downedIds[d.victimId];   /* v2.11.1 */
       UI.addFeed(d, myIdV);
       if (d.killerId === myIdV && !d.self) {
         var SPREE = { 3: 'KILLING SPREE', 5: 'RAMPAGE', 7: 'UNSTOPPABLE', 10: 'GODLIKE' };
@@ -694,6 +701,7 @@ var Net = (function () {
     });
 
     s.on('matchEnd', function (d) {
+      clearDown();   /* v2.11.1 */
       phase = 'ended';
       roster = d.players;
       Game.onMatchEnd(d, myIdV, isHost);
@@ -1088,8 +1096,8 @@ var Net = (function () {
       r.rx = a.rx + (b.rx - a.rx) * f;
       var stc = b.cr | 0;
       r.crouch = stc === 1;
-      r.prone = stc === 2 || stc === 3;   /* v2.8: 3 = knocked — flat on the ground */
-      r.down = stc === 3;
+      r.prone = stc === 2;
+      r.down = !!downedIds[id];   /* v2.11.1: from the knocked/downEnd events, never a posture code */
       r.mv = b.mv;
       r.ln = a.ln + (b.ln - a.ln) * f;
 
@@ -1277,6 +1285,7 @@ var Net = (function () {
     updateRemotes: updateRemotes,
     eachRemote: eachRemote,
     isDown: function () { return localDown; }, downLeft: function () { return Math.max(0, downUntil - performance.now()) / 1000; },   /* v2.8 */
+    isDownId: function (id) { return !!downedIds[id]; },
     revive: function (id, cb) { if (socket) socket.emit('revive', { id: id }, cb); },
     reviveState: function () { return { f: reviveF, by: reviveBy }; },
     myTeam: function () { return myTeam; },

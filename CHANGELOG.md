@@ -1,3 +1,73 @@
+# v2.11.1 (build 42) — HOTFIXES AFTER THE FIRST LIVE SESSION (2026-10-15)
+
+Rahul: "lots of bugs: the knocked avatar is not shown; the minimap is not
+showing; the minimap should show the knocked player; drops are not coming;
+no points until the kill is confirmed; lag; lots of popups at match start."
+
+What was found and changed:
+- **A knock carried into the next match.** The client's `localDown` flag
+  was only cleared by a death. A match that ended while you were knocked
+  left you "down" in the next one: weapons locked to the pistol, the
+  "pistol only" toast on every weapon switch (the popup flood), the forced
+  prone every frame (the avatar that never got up). Cleared on matchStart,
+  matchEnd and your own spawn; the server clears every player at match end.
+- **Posture 3 is gone from the wire.** A knocked player is sent as PRONE
+  (2) — the one value every pose table knows; "down" rides on the
+  knocked/downEnd events and the roster. The avatar lies down the way a
+  prone avatar always has.
+- **Minimap: a knocked team-mate is a pulsing amber ring labelled DOWN.**
+- **Knock rule in respawn modes.** "Last of the side standing dies
+  outright" was wrong where team-mates respawn in seconds: a mate who is
+  dead *right now* still counts, so the knock always happens (points only
+  on the confirmed kill — bleed-out or finish). One-life modes keep the
+  outright death.
+- **Toasts de-duplicated**: the same line within 1.5 s is one toast.
+- **Perf**: the hunter's line-of-sight search runs 5x a second instead of
+  15x; the revive/crate prompt and the KNOCKED banner write the DOM only
+  on change; the menu's searchlight blur filter and the hero's blend-mode
+  scanlines are dropped (GPU cost on weak machines; the menu is
+  display:none in a match, so in-match lag is not from the menu).
+- Q-tap drop-attachment handler read an undefined `playing` (pre-existing;
+  threw on every Q release).
+
+Drops: verified live on Urban Small — the crate fires at 60 s with a random
+landing point and lands. If a crate still does not appear in your session,
+the next thing I need is the F12 console (red lines) — see the README note.
+
+Harness 17/17, live 3-client knock/revive/finish run green, 7 gates green.
+
+# v2.11.0 (build 41) — OLD PORT; SIX MAPS RETIRED; A 10-MINUTE MATCH (2026-10-14)
+
+Rahul: "remove these maps (Sunset Row, Freightyard, Bazaar, Substation,
+Riverside, Airfield); instead add another Urban-Small-type map with a
+different world, name, architecture, style and design; core gameplay the
+same. Add a 10-minute match mode."
+
+## OLD PORT (`oldport`, environment/oldport.js, config/maps-oldport.config.js)
+A whitewashed harbour town, 160 x 160, eight players, the Urban Small
+weight class on a different continent. Four blocks of hollow plaster houses
+(cream, ochre, terracotta, dusty pink) with doorways and shutters you shoot
+through, every roof reached by a crate stair (0.40 m rises); a piazza with
+a fountain and market stalls; a belfry landmark; a north terrace; a quay
+with bollards, crate stacks, a barge you can board and a customs shed whose
+roof watches the waterfront. 588 colliders, 32 draws. Not an arena: loot,
+random drops, death crates, knock/revive and 10/15/30 all as on Urban
+Small. Spawns tagged town (a) / quay (b) for team modes. Fingerprint
+baselined.
+
+## Retired from the picker
+Sunset Row, Freightyard, Bazaar, Substation, Riverside, Airfield are
+`ready: false` — hidden from the lobby and refused by the server, code and
+data kept (one flag each to bring one back). The roster is Urban, Urban
+Small, Killhouse, Old Port.
+
+## 10 minutes
+`MATCH.timeOptions` is 10 / 15 / 30. Urban, Urban Small and Old Port offer
+all three; Killhouse (and any arena) 10 / 15; every zone mode stays 15.
+
+Gates: build PASS, spawns 40/0, spawn-geometry 30/0, intel 11/0,
+client 65/0, menu 18/0, fingerprint 64/0 (+ Old Port baseline).
+
 # v2.10.1 (build 40) — HOTFIX: "revive: playing is not defined" (2026-10-14)
 
 The v2.9 revive loop (game.js `reviveTick`) read `playing`, a variable that

@@ -698,6 +698,15 @@ var Minimap = (function () {
       else if (!(ally ? showAllies : showEnemies)) return;
       if (ally) {
         if (!r.alive) return;
+        /* v2.11.1 (Rahul): a knocked team-mate is the one pin that matters — a
+           pulsing amber ring, labelled DOWN, so the squad can find them in time */
+        if (r.down) {
+          g.save(); g.globalAlpha = 0.55 + 0.45 * Math.abs(Math.sin(nowMs / 180));
+          marker(r.renderPos.x, r.renderPos.z, 8, '#ffb020', false, 'DOWN \u00b7 ' + (r.name || ''));
+          g.restore();
+          marker(r.renderPos.x, r.renderPos.z, 4, '#ffb020', true, '');
+          return;
+        }
         marker(r.renderPos.x, r.renderPos.z, 5, r.color || '#63d968', true, r.name || '');
         return;
       }

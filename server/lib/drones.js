@@ -242,7 +242,9 @@ module.exports = function initDroneModule(ctx) {
         d.shun = d.shun || {}; d.shun[tgt.id] = t; tgt = null; d.target = null;
       }
     }
-    if (!tgt) {
+    if (!tgt && d.nextSearch && t < d.nextSearch) { d.phase = 'patrol'; }   /* v2.11.1: the search runs 5x a second, not 15 — a line-of-sight test per candidate per tick was the hunter's whole cost */
+    else if (!tgt) {
+      d.nextSearch = t + 200;
       const pool = candidates(room, owner || { id: d.owner, team: d.team });
       let best = null, bd = Infinity, bestSeen = false;
       for (const q of pool) {

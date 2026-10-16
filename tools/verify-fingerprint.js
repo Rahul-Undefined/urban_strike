@@ -45,10 +45,10 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
 
 /* Keep this list identical to index.html — see the v8.9 note in verify-lifts. */
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js",
+ "public/src/config/world.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js","public/src/config/maps-oldport.config.js",
  "public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
- "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/medium.js","public/src/environment/access.js"]
+ "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/medium.js","public/src/environment/oldport.js","public/src/environment/access.js"]
  .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 function fingerprint(map) {
@@ -297,6 +297,7 @@ const BASELINE = {
 killhouse: { colliders: 608, draws: 25, tris: 9772, casters: 13, lights: 3, bound: 48, colSig: -2107516104, meshSig: 628737342 /* v1.0w taller cover; v2.10: partitions 2.4->3.0, roof 9->11 */ },
   /* v10.14: the three new small maps, asserted from their first version so any
      later edit has to justify itself. Filled in below from a measured run. */
+oldport: { colliders: 588, draws: 32, tris: 11476, casters: 18, lights: 3, bound: 80, colSig: -1000834059, meshSig: -1456194605 /* v2.11: Old Port, first baseline */ },
 freightyard: { colliders: 229, draws: 25, tris: 14076, casters: 15, lights: 3, bound: 38, colSig: -1683568504, meshSig: -336526897 },
 /* v1.0d: bazaar's caravanserai court filled (four stalls, two carts, pallets,
    drums, two screens, cloth lines) after Rahul's "wasting space" screenshot.

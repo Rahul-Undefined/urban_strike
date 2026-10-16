@@ -211,7 +211,7 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
        finish brings the victim back through with opts.noDown. */
     if (!(opts && opts.noDown) && shouldDown(room, victim, attackerId, weapon)) { knock(room, victim, attackerId, weapon, headshot); return; }
     victim.alive = false;
-    victim.down = false; victim.crouch = victim.crouch === 3 ? 2 : victim.crouch;
+    victim.down = false;
     victim.diedAt = now();   /* v2.9: a frag already in the air still counts (server.js 'hit') */
     victim.deaths++;
     if (ctx.onDeathCrate) { try { ctx.onDeathCrate(room, victim); } catch (e) { console.error('deathCrate', e); } }   /* v2.9 */
@@ -405,10 +405,19 @@ function fireRateOk(shooter, weapon) {
     for (const q of room.players.values()) if (q.id !== p.id && q.alive && !q.down && !q.out && q.team && q.team === p.team) n++;
     return n;
   }
+  /* v2.11.1: in a mode WITH respawns a team-mate who is dead right now is
+     back in seconds, so the knock always happens if the side has anyone else
+     at all; only a one-life mode (Last Stand squads) kills the last one
+     standing outright. */
+  function anyMates(room, p) {
+    for (const q of room.players.values()) if (q.id !== p.id && !q.out && q.team && q.team === p.team) return true;
+    return false;
+  }
+  function oneLife(room) { const m = CFG.MODES[room.settings.mode] || {}; return !!m.lives; }
   function shouldDown(room, victim, attackerId, weapon) {
     if (!modeInfo(room).teams || !victim.team || victim.bot || victim.down) return false;
     if (weapon === 'zone' || weapon === 'helifall' || weapon === 'train') return false;
-    return standingMates(room, victim) > 0;
+    return oneLife(room) ? standingMates(room, victim) > 0 : anyMates(room, victim);
   }
   function knock(room, victim, attackerId, weapon, headshot) {
     const attacker = room.players.get(attackerId);
@@ -416,7 +425,7 @@ function fireRateOk(shooter, weapon) {
     victim.downAt = now(); victim.downUntil = now() + D().sec * 1000;
     victim.downBy = attackerId; victim.downWeapon = weapon; victim.downHead = !!headshot;
     victim.reviveProg = 0; victim.reviveLast = 0; victim.reviveBy = null;
-    victim.crouch = 3;   /* wire posture: down — every client lays the avatar flat */
+    victim.crouch = 2;   /* wire posture: PRONE (v2.11.1: 3 was a value no client pose table knew — the flat body is the prone body; `down` rides on the roster and the knocked/downEnd events) */
     victim.lastHitAt = now();
     if (attacker && attacker.id !== victim.id) attacker.knocks = (attacker.knocks | 0) + 1;
     io.to(room.code).emit('knocked', { victimId: victim.id, victimName: victim.name, byId: attackerId, byName: attacker ? attacker.name : 'the world',
@@ -460,7 +469,7 @@ function fireRateOk(shooter, weapon) {
       if (!p.down) continue;
       if (!p.alive) { p.down = false; continue; }
       if (p.reviveProg > 0 && t - p.reviveLast > 700) { p.reviveProg = 0; p.reviveBy = null; io.to(p.id).emit('reviveProg', { f: 0, by: null }); }
-      if (standingMates(room, p) === 0) { finishDown(room, p, p.downBy, p.downWeapon, p.downHead, 'squad'); continue; }   // nobody left to come
+      if (oneLife(room) && standingMates(room, p) === 0) { finishDown(room, p, p.downBy, p.downWeapon, p.downHead, 'squad'); continue; }   // one-life modes only: nobody left to come
       if (t >= p.downUntil) finishDown(room, p, p.downBy, p.downWeapon, p.downHead, 'bleed');
     }
   }

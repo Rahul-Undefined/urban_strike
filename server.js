@@ -666,6 +666,7 @@ function startMatch(room) {
    Looted through the one interact key: 'pickup' checks for a crate within
    reach first. Mines are left out — they refill on respawn anyway. */
 const DEATH_CRATE_SEC = 10;
+function clearDownAll(room) { for (const q of room.players.values()) { q.down = false; q.reviveProg = 0; q.reviveBy = null; } }   /* v2.11.1 */
 function dropDeathCrate(room, v) {
   const M = CFG.MAPS[room.settings.map || 'urban'] || {};
   if (!M.longMatch || v.bot) return;
@@ -946,6 +947,7 @@ function stopSnapshots(room) {
 }
 
 function endMatch(room, winnerId, reason) {
+  clearDownAll(room);   /* v2.11.1: nobody carries a knock into the next match */
   if (room.state !== 'playing') return;
   room.state = 'ended';
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
@@ -1659,7 +1661,7 @@ io.on('connection', (socket) => {
     p.lastStAt = tSt;
     p.pos = [nx, ny, nz]; p.posAt = now();   /* v2.1: when this position was reported — heli.js judges a fall only on a FRESH position */
     p.ry = num(s.ry); p.rx = num(s.rx);
-    p.crouch = p.down ? 3 : Math.max(0, Math.min(2, (s.cr | 0))); p.mv = s.mv | 0; p.wp = s.wp | 0; p.ln = num(s.ln); // cr: 0 stand, 1 crouch, 2 prone, 3 down (v2.8, server-set)
+    p.crouch = p.down ? 2 : Math.max(0, Math.min(2, (s.cr | 0))); p.mv = s.mv | 0; p.wp = s.wp | 0; p.ln = num(s.ln); // cr: 0 stand, 1 crouch, 2 prone (a knocked player is held prone, v2.11.1)
     p.rl = s.rl ? 1 : 0;                       // reloading — cosmetic only, never trusted for anything
     if (typeof s.fr === 'number') p.fr = Math.max(0, Math.min(20, s.fr | 0));   /* v2.9: the frag stock, for the death crate only */
     if (typeof s.ping === 'number') p.ping = Math.max(0, Math.min(999, s.ping | 0));

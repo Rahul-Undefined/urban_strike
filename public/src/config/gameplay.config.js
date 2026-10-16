@@ -223,7 +223,7 @@
        (Urban, Urban Small) in a non-zone mode gets the whole list, every zone
        mode and every arena gets [defaultMinutes] only. Both server clamps and
        the lobby select read THAT resolver, never this list directly. */
-    timeOptions: [15, 30],
+    timeOptions: [10, 15, 30],   /* v2.11: a 10-minute match (Rahul) */
     /* ===== v13.0 - THE INTEL BLUR CONTRACT LIVES HERE (brief item 2) =====
        One source of truth read by all three consumers: server/lib/intel.js
        derives its error band from it, ui/minimap.js draws the circle from

@@ -420,7 +420,7 @@ var Game = (function () {
     });
     document.addEventListener('keyup', function (e) {
       if (e.code === 'Tab') { UI.showScoreboard(false); return; }
-      if (e.code === 'KeyQ' && qDownAt && performance.now() - qDownAt < 220 && playing && !(window.Heli && Heli.isRiding && Heli.isRiding())) { qDownAt = 0; if (Weapons.dropAttachment) Weapons.dropAttachment(); }   /* v1.0v */
+      if (e.code === 'KeyQ' && qDownAt && performance.now() - qDownAt < 220 && Net.getPhase() === 'playing' && !(window.Heli && Heli.isRiding && Heli.isRiding())) { qDownAt = 0; if (Weapons.dropAttachment) Weapons.dropAttachment(); }   /* v1.0v */
       if (e.code === 'KeyQ') qDownAt = 0;
       if (e.code === 'KeyG') { Weapons.releaseCook(); return; }
       if (e.code === 'KeyY' && pingWheel) { pingWheel = false; UI.setPingWheel(false); sendPing('enemy'); return; }
@@ -770,13 +770,14 @@ var Game = (function () {
   }
   /* the revive loop: each frame, if a downed team-mate is within reach, show
      the prompt; while E is held, ping the server every 200 ms */
-  var reviveTarget = null, reviveLastPing = 0, reviveHeld = false, crateNear = null;
+  var reviveTarget = null, reviveLastPing = 0, reviveHeld = false, crateNear = null, crateSec = -1, lastDownBanner = '';
   function reviveTick(dt) {
     var playing = Net.getPhase && Net.getPhase() === 'playing';   /* v2.10.1: `playing` is local to the key handler — this ran every frame and threw on the menu */
     if (playing && PlayerCtl.alive && Net.isDown && Net.isDown() && UI.setDownBanner) {
       var rs0 = Net.reviveState ? Net.reviveState() : { f: 0 };
-      UI.setDownBanner(rs0.f > 0 && rs0.by ? rs0.by + ' IS REVIVING YOU \u00b7 ' + Math.round(rs0.f * 100) + '%'
-        : 'KNOCKED \u00b7 ' + Math.ceil(Net.downLeft()) + ' s \u00b7 crawl to cover \u00b7 pistol, frags, mines', rs0.f <= 0 && Net.downLeft() < 6);
+      var bt = rs0.f > 0 && rs0.by ? rs0.by + ' IS REVIVING YOU \u00b7 ' + Math.round(rs0.f * 100) + '%'
+        : 'KNOCKED \u00b7 ' + Math.ceil(Net.downLeft()) + ' s \u00b7 crawl to cover \u00b7 pistol, frags, mines';
+      if (bt !== lastDownBanner) { lastDownBanner = bt; UI.setDownBanner(bt, rs0.f <= 0 && Net.downLeft() < 6); }
       if (!PlayerCtl.prone) PlayerCtl.toggleProne();   // stay down
     }
     if (!playing || !PlayerCtl.alive || (Net.isDown && Net.isDown())) { if (reviveTarget) { reviveTarget = null; UI.setRevivePrompt && UI.setRevivePrompt(null); } return; }
@@ -791,7 +792,7 @@ var Game = (function () {
     if (!best && typeof Pickups !== 'undefined' && Pickups.nearestCrate) {
       var cr = Pickups.nearestCrate(PlayerCtl.pos, 2.8);
       if (cr !== crateNear) { crateNear = cr; UI.setRevivePrompt && UI.setRevivePrompt(cr ? cr.name : null, cr ? 'Z \u00b7 loot ' + cr.name + "'s kit \u00b7 " + Math.ceil((cr.until - performance.now()) / 1000) + ' s' : null); }
-      else if (cr) UI.setRevivePrompt && UI.setRevivePrompt(cr.name, 'Z \u00b7 loot ' + cr.name + "'s kit \u00b7 " + Math.ceil((cr.until - performance.now()) / 1000) + ' s');
+      else if (cr) { var secLeft = Math.ceil((cr.until - performance.now()) / 1000); if (secLeft !== crateSec) { crateSec = secLeft; UI.setRevivePrompt && UI.setRevivePrompt(cr.name, 'Z \u00b7 loot ' + cr.name + "'s kit \u00b7 " + secLeft + ' s'); } }
     }
     if (best && reviveHeld && performance.now() - reviveLastPing > 200) {
       reviveLastPing = performance.now();

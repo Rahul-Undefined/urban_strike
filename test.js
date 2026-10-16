@@ -772,11 +772,11 @@ function configGates() {
      the lobby cannot render a choice that does not exist. */
   /* v2.5 SUPERSESSION: 15 or 30, by map and mode (Rahul: "add a 30-minute
      option — only 15 and 30, only on Urban and Urban Small, zone always 15"). */
-  ok(CFG.MATCH.timeOptions.join(',') === '15,30', 'the durations are 15 and 30 [' + CFG.MATCH.timeOptions.join(',') + ']');
+  ok(CFG.MATCH.timeOptions.join(',') === '10,15,30', 'the durations are 10, 15 and 30 [' + CFG.MATCH.timeOptions.join(',') + ']');
   ok(CFG.MATCH.defaultMinutes === 15, 'and the default is 15');
-  ok(CFG.timeOptionsFor('ffa', 'urban').join(',') === '15,30' && CFG.timeOptionsFor('t4', 'urbansmall').join(',') === '15,30', 'Urban and Urban Small offer both');
+  ok(CFG.timeOptionsFor('ffa', 'urban').join(',') === '10,15,30' && CFG.timeOptionsFor('t4', 'urbansmall').join(',') === '10,15,30' && CFG.timeOptionsFor('ffa', 'oldport').join(',') === '10,15,30', 'Urban, Urban Small and Old Port offer 10/15/30');
   ok(CFG.timeOptionsFor('zone', 'urban').join(',') === '15' && CFG.timeOptionsFor('zs', 'urbansmall').join(',') === '15', 'every zone mode is 15 only');
-  ok(CFG.timeOptionsFor('ffa', 'killhouse').join(',') === '15' && CFG.timeOptionsFor('sq2', 'sunsetrow').join(',') === '15', 'arenas are 15 only');
+  ok(CFG.timeOptionsFor('ffa', 'killhouse').join(',') === '10,15', 'arenas are 10 or 15');
   ok(CFG.MATCH.timeOptions.every(n => n > 0), 'no zero duration: every match can end');
   /* THE PAIRING RULE. Unlimited kills is only survivable because the clock is
      always finite. If a no-limit duration is ever added, this fails loudly

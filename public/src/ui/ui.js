@@ -992,7 +992,13 @@ var UI = (function () {
   function showPause(on) { els['pause-overlay'].classList.toggle('hidden', !on); }
   function showClickToPlay(on) { els['click-to-play'].classList.toggle('hidden', !on); }
 
+  var lastToastMsg = '', lastToastAt = 0;
   function toast(msg, isErr) {
+    /* v2.11.1: the same line within 1.5 s is one toast, not a stack — a refused
+       action held down (a locked weapon switch, a key repeat) was flooding the screen */
+    var tnow = performance.now();
+    if (msg === lastToastMsg && tnow - lastToastAt < 1500) return;
+    lastToastMsg = msg; lastToastAt = tnow;
     var t = document.createElement('div');
     t.className = 'toast' + (isErr ? ' err' : '');
     t.textContent = msg;

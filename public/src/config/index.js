@@ -11,7 +11,8 @@
       require('./maps-killhouse.config.js'),
       require('./maps-sunsetrow.config.js'),
       require('./maps-small.config.js'),
-      require('./maps-medium.config.js')
+      require('./maps-medium.config.js'),
+      require('./maps-oldport.config.js')   /* v2.11 */
     ]);
   } else {
     root.CFG = factory(root.__CFG_PARTS || []);
@@ -81,8 +82,8 @@
     var M = C.MATCH || {}, def = M.defaultMinutes || 15, all = M.timeOptions || [def];
     var mode = C.MODES && C.MODES[modeId], map = C.MAPS && C.MAPS[mapId];
     if (mode && mode.zone) return [def];
-    if (map && map.longMatch) return all.slice();
-    return [def];
+    if (map && map.longMatch) return all.slice();            // Urban, Urban Small, Old Port: 10 / 15 / 30
+    return all.filter(function (n) { return n <= def; });    // v2.11: arenas 10 / 15
   };
   return C;
 });
