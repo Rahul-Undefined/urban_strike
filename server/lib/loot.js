@@ -20,6 +20,9 @@ function initPickups(room) {
   for (const t in items) {
     if (items[t].drop || items[t].retired || items[t].special) continue;
     if (items[t].bigOnly && arena) continue;
+    /* v2.8: an Assault room rolls no non-AR gun; a map's crateExclude list
+       is honoured here too (one rule, CFG.lootAllowed, for floor and crate). */
+    if (CFG.lootAllowed && !CFG.lootAllowed(room.settings.mode, room.settings.map || 'urban', t)) continue;
     byRar[items[t].rar].push(t);
   }
   room.nextLootId = 0;
@@ -118,11 +121,6 @@ function tryCollect(room, p) {
         if ((p[K] | 0) >= cap) continue;
         p[K] = Math.min(cap, (p[K] | 0) + it.n);
         grant = { t: 'gear', g: it.g, n: p[K] };
-      } else if (it.g === 'visoradv') {
-        /* v2.9: the Advanced Recon Visor — through walls for the WHOLE match, every life */
-        if (p.visorMatch) continue;
-        p.visor = true; p.visorMatch = true;
-        grant = { t: 'gear', g: 'visor', n: 1, adv: 1 };
       } else if (it.g === 'visor') {
         /* v10.10: a boolean, not a count. Picking up a second visor while
            wearing one must not stack or refresh anything — there is nothing to
@@ -132,8 +130,10 @@ function tryCollect(room, p) {
         p.visor = true;
         grant = { t: 'gear', g: 'visor', n: 1 };
       } else if (it.g === 'mine') {
-        if ((p.mines | 0) >= CFG.GEAR.mine.maxCarry) continue;
-        p.mines = Math.min(CFG.GEAR.mine.maxCarry, (p.mines | 0) + it.n);
+        /* v2.8: the carry cap is the map's — 3 on an arena (CFG.mineCapFor) */
+        const mcap = CFG.mineCapFor ? CFG.mineCapFor(room.settings.map || 'urban') : CFG.GEAR.mine.maxCarry;
+        if ((p.mines | 0) >= mcap) continue;
+        p.mines = Math.min(mcap, (p.mines | 0) + it.n);
         grant = { t: 'gear', g: 'mine', n: p.mines };
       } else if (it.g === 'emp') {
         /* v15.0 (fix 1): a carried count, like drones — per match, never
@@ -208,32 +208,6 @@ function clearAirdrop(room) {
   if (room.dropTimer) { clearInterval(room.dropTimer); room.dropTimer = null; }
   if (room.dropFall) { clearTimeout(room.dropFall); room.dropFall = null; }
 }
-/* v2.8: a random landing spot — open ground (nothing standing within 2 m up
-   to 8 m high), clear sky (no collider over the spot at any height), 4 m off
-   the walls; in a zone match inside the circle as it will stand at landing. */
-function randomDropPoint(room, MAPdef) {
-  const mapId = room.settings.map || 'urban';
-  const cols = ctx.colliders(mapId) || [];
-  const E = MAPdef.ext || { x0: -(MAPdef.bound || 120), x1: MAPdef.bound || 120, z0: -(MAPdef.bound || 120), z1: MAPdef.bound || 120 };
-  const circle = ctx.zoneCircleIn ? ctx.zoneCircleIn(room, CFG.AIRDROP.fallSec) : null;
-  const clear = (x, z) => {
-    if (x < E.x0 + 4 || x > E.x1 - 4 || z < E.z0 + 4 || z > E.z1 - 4) return false;
-    for (const k of cols) {
-      if (k[3] - k[0] > 200) continue;                                   // the ground slab
-      const over = x + 2 > k[0] && x - 2 < k[3] && z + 2 > k[2] && z - 2 < k[5];
-      if (!over) continue;
-      if (k[4] > 0.2) return false;                                      // anything standing or hanging over the spot, any height
-    }
-    return true;
-  };
-  for (let i = 0; i < 60; i++) {
-    let x, z;
-    if (circle) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * Math.max(2, circle.r - 3); x = circle.cx + Math.cos(a) * d; z = circle.cz + Math.sin(a) * d; }
-    else { x = E.x0 + Math.random() * (E.x1 - E.x0); z = E.z0 + Math.random() * (E.z1 - E.z0); }
-    if (clear(x, z)) return [Math.round(x * 10) / 10, Math.round(z * 10) / 10];
-  }
-  return null;
-}
 function dropCrate(room) {
   if (room.state !== 'playing') return;
   /* v8.18: guard. A map shipping the wrong key name should degrade to "no
@@ -244,19 +218,7 @@ function dropCrate(room) {
   /* v1.0j: in Urban Zone the crate lands inside the circle as it will stand when
      the crate arrives — a drop outside the zone is a drop nobody can take. */
   if (room.zone && ctx.zoneCratePoints) pts = ctx.zoneCratePoints(room, pts, CFG.AIRDROP.fallSec) || pts;
-  let pt = pts[Math.floor(Math.random() * pts.length)];
-  /* ===== v2.8 - RANDOM DROPS ON THE BIG MAPS =====
-     Rahul: "the drop locations are specific points, not random — make them
-     random on the map." On a `longMatch` map (Urban, Urban Small) the crate
-     now lands on a random spot of open ground with clear sky, anywhere inside
-     the walls — inside the circle in a zone match. The hand-placed list is
-     the fallback only when 60 random draws find nothing clear. Arenas keep
-     their points (small, verified by hand, every one of them matters). */
-  const MAPdef = CFG.MAPS[room.settings.map || 'urban'] || {};
-  if (MAPdef.longMatch && ctx.colliders) {
-    const rp = randomDropPoint(room, MAPdef);
-    if (rp) pt = rp;
-  }
+  const pt = pts[Math.floor(Math.random() * pts.length)];
   io.to(room.code).emit('airdrop', { x: pt[0], z: pt[1], landAt: now() + CFG.AIRDROP.fallSec * 1000 });
   room.dropFall = setTimeout(() => {
     if (room.state !== 'playing') return;
@@ -265,8 +227,11 @@ function dropCrate(room) {
        in the game lives here now, plus the drone, visor, C4, EMP, shield, the
        L3/H3 and the big sights. bigOnly stays off arena crates. */
     const arenaC = !!(CFG.isArena && CFG.isArena(room.settings.map || 'urban'));
+    /* v2.8: CFG.lootAllowed drops a non-AR gun in an Assault room and a
+       map's crateExclude items (the Killhouse: drones, hunter, recon, visor). */
     const pool = (CFG.AIRDROP.exoticPool || []).filter(t => CFG.LOOT_ITEMS[t]
-      && !CFG.LOOT_ITEMS[t].retired && !(CFG.LOOT_ITEMS[t].bigOnly && arenaC) && !CFG.LOOT_ITEMS[t].special);
+      && !CFG.LOOT_ITEMS[t].retired && !(CFG.LOOT_ITEMS[t].bigOnly && arenaC) && !CFG.LOOT_ITEMS[t].special
+      && (!CFG.lootAllowed || CFG.lootAllowed(room.settings.mode, room.settings.map || 'urban', t)));
     const types = [];
     for (let e = 0; e < (CFG.AIRDROP.count || 5) && pool.length; e++) {
       const pick = pool.splice((Math.random() * pool.length) | 0, 1)[0];
@@ -275,7 +240,7 @@ function dropCrate(room) {
     }
     /* v2.6: a zone crate ALWAYS carries the Frag Bundle — it is the only way
        to get grenades back in a zone match (no respawn refill there). */
-    if ((room.zone || arenaC) && CFG.LOOT_ITEMS.frags && types.indexOf('frags') < 0) types.push('frags');   /* v2.8: arenas too — frags are crate-only there */
+    if (room.zone && CFG.LOOT_ITEMS.frags && types.indexOf('frags') < 0) types.push('frags');
     if (!types.length) return;
     /* A ring, sized to the number of items, so six do not overlap the way four
        hardcoded offsets would. */
@@ -297,6 +262,6 @@ function dropCrate(room) {
 
 // ---------- match lifecycle ----------
 
-  return { initPickups, pickupList, tryCollect, respawnPickups, _randomDropPoint: randomDropPoint,
+  return { initPickups, pickupList, tryCollect, respawnPickups,
     scheduleAirdrop, clearAirdrop, dropCrate , expireDrops: (room) => expireDrops(room, io, now) };
 };

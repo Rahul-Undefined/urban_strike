@@ -315,7 +315,10 @@
        damage keeps the OLD 7 m falloff (`selfRadius`), or every throw would be
        a suicide. `fxRadius` sizes the fireball; a 50 m sphere is not a visual. */
     frag:  { label: 'Frag',  dmg: 100, radius: 50.0, killRadius: 20.0, outerDmg: 50, selfRadius: 7.0, fxRadius: 9.0,
-             fuse: 2.8, count: 5, throwVel: 16, cook: true, impact: true, flatDamage: true },   /* v1.0z: 2 -> 5 (Rahul) */
+             fuse: 2.8, count: 5, throwVel: 16, cook: true, impact: true, flatDamage: true,
+             /* v2.8 (Rahul: "max 1 frag ... in the small maps, every new life"): the per-life
+                stock AND the carry cap on an arena (CFG.fragCountFor). 5 elsewhere. */
+             countArena: 1 },   /* v1.0z: 2 -> 5 (Rahul) */
     smoke: { label: 'Smoke', dur: 12, radius: 5.5, fuse: 1.4, count: 1, throwVel: 14 },
     molotov: { label: 'Molotov', dmg: 95, burnDps: 12, burnSec: 5, radius: 4.6, tickSec: 0.45, fuse: 99, count: 3, maxCarry: 6, throwVel: 13, impact: true },
     flash: { label: 'Flash', radius: 15, blind: 3.2, fuse: 1.4, count: 1, throwVel: 16 }
@@ -331,7 +334,12 @@
          player by respawn refills on a smallMap; each refill hands out
          min(start, remaining). Loot pickups (AP Mines x2) are not rationed —
          they are a place you had to walk to. 0/absent = unlimited (big maps). */
-      lifetimeSmall: 20 },
+      /* v2.8 (Rahul: "max ... 3 mines in the small maps, every new life"): on an
+         arena every life starts with `startArena` and can carry no more than
+         `maxCarryArena`, pickups included (CFG.mineStartFor / mineCapFor). The
+         20-per-match ration is OFF (0) — "every new life" means the third
+         and the thirtieth life alike get three. */
+      lifetimeSmall: 0, startArena: 3, maxCarryArena: 3 },
     /* ===== v15.0 - RECON VISOR SHOWS THE ENEMY, NOT YOUR OWN SQUAD (fix 2) =====
        Rahul: the visor "shows both enemy and teams location, it should only
        show [the other] team's locations." The through-wall box was one red
@@ -401,11 +409,8 @@
        or no sight, flies there at 12 m/s, and opens fire once it has the
        line. Higher cruise (12 m) clears two-storey eaves; 45 s in the air;
        9 a round. seekRange is the firing range now, not the search range. */
-    /* v2.9 (Rahul): faster, one round kills outright (no knock), then a dash
-       to a new spot at 1.7x so it is hard to put down. One shot every 1.4 s,
-       70% hit. */
-    hunter:     { label: 'Hunter Drone', hp: 70, maxCarry: 2, lifeSec: 45, armSec: 1.0, climbSpeed: 10, cruiseY: 12, speed: 16, dashMult: 1.7,
-                  seekRange: 60, huntRange: 160, standoff: 12, fireSec: 1.4, hitChance: 0.8, dmg: 999, loseSec: 4 },
+    hunter:     { label: 'Hunter Drone', hp: 60, maxCarry: 2, lifeSec: 45, armSec: 1.0, climbSpeed: 8, cruiseY: 12, speed: 12,
+                  seekRange: 60, huntRange: 160, standoff: 10, fireSec: 0.5, dmg: 9, loseSec: 4 },
     /* v1.0b: the drone bounty. Shooting a drone down is a KILL on the board and
        puts a Strike Drone in the shooter's bag (up to drone maxCarry). */
     droneBounty: { kill: 1, grantDrone: 1 },
@@ -457,7 +462,7 @@
       dmg: 140, radius: 4.2,         // lethal, but a much tighter circle than a frag
       hp: 110,                       // v1.0z: 45 -> 110 — a burst, not a tap; shooting it down is a contest (Rahul)
       cruiseY: 26,                   // climbs above rooftops before it hunts
-      climbSpeed: 20, hunt: 26, dive: 40,   /* v1.0z quicker; v2.9 (Rahul) faster again */
+      climbSpeed: 17, hunt: 19, dive: 32,   /* v1.0z: quicker in every phase (Rahul) */
       armSec: 1.2,                   // cannot be shot down before it has left your hands
       lockSec: 0.6,                  // v1.0z: 0.9 -> 0.6 — the kill comes sooner (Rahul)
       maxLifeSec: 22,                // never loiters forever
@@ -480,5 +485,14 @@
   };
 
 
-  return { WEAPONS: WEAPONS, WEAPON_ORDER: WEAPON_ORDER, THROWS: THROWS, ATTACH: ATTACH, GEAR: GEAR };
+  /* ===== v2.8 - ASSAULT MODE'S GUNS =====
+     The assault rifles, and only those: the two base rifles and the four crate
+     ARs. Not the M249 (an LMG), not the MK-14 (a marksman rifle), not a sniper,
+     SMG, shotgun or pistol. The knife is not a gun and stays (ASSAULT_KIT).
+     Read by CFG.gunAllowed(mode, w): the client's spawn kit, the server's loot
+     roll and crate draw, and the server's hit gate. */
+  var ASSAULT_GUNS = ['ak47', 'm4a1', 'scarh', 'akm', 'aug', 'famas'];
+  var ASSAULT_KIT = ['ak47', 'm4a1', 'knife'];
+  return { WEAPONS: WEAPONS, WEAPON_ORDER: WEAPON_ORDER, THROWS: THROWS, ATTACH: ATTACH, GEAR: GEAR,
+           ASSAULT_GUNS: ASSAULT_GUNS, ASSAULT_KIT: ASSAULT_KIT };
 });

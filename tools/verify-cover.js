@@ -39,8 +39,7 @@ vm.createContext(ctx);
      CFG.MAPS_RURAL undefined and produced 510 colliders where the browser
      produces 525 -- 15 objects short, on the gate whose entire job is to
      reproduce the browser build. Keep this list identical to index.html. */
-  "public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js",
-  "public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
+  "public/src/config/maps-killhouse.config.js","public/src/config/maps-kasbah.config.js","public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
   "public/src/environment/deco.js", /* v10.12: killhouse and sunsetrow were MISSING from this list while both were
@@ -49,8 +48,7 @@ vm.createContext(ctx);
      the 0.2% dead-ground figure reported for killhouse in v10.10 was urban's.
      Section 4.1 again, in its worst form: not a gate that never looked, a gate
      that looked at the wrong thing and said so confidently. */
-  "public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js",
-  "public/src/environment/access.js"
+  "public/src/environment/killhouse.js","public/src/environment/kasbah.js","public/src/environment/access.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(f, "utf8"), ctx, { filename: f }));
 
 /* v10.12: BOUND is now PER MAP, and CELL scales with it.
@@ -150,7 +148,7 @@ let fail = 0;
    v9.0, but metro was never in this loop, so the budget was never applied to
    anything. Metro had no dead-ground measurement of any kind — the gate that
    exists to prove a map is fightable had never looked at it. */
-for (const map of ["urban", "killhouse", "sunsetrow", "freightyard", "bazaar", "substation", "riverside", "airfield"]) {
+for (const map of ["urban", "killhouse", "kasbah"]) {   /* v2.8: the six small/medium maps removed, Kasbah measured */
   const r = analyse(map);
   const land = r.n * r.n - r.skipped;
   const pct = (r.dead.length / land * 100).toFixed(1);
@@ -200,7 +198,9 @@ const DEAD_BUDGET = { urban: 0.06, metro: 0.06, killhouse: 0.02,
     /* v10.12: set from the honest measurement, not guessed ahead of it.
        sunsetrow reads 0.9% and killhouse 0.0%, so 0.02 is a real ratchet on
        both rather than slack. */
-    sunsetrow: 0.02 };
+    sunsetrow: 0.02,
+    /* v2.8: Kasbah is a walled town on Urban Small's scale — Urban's budget. */
+    kasbah: 0.06 };
   const budget = DEAD_BUDGET[map] !== undefined ? DEAD_BUDGET[map] : 0.06;
   const landCells = r.n * r.n - r.skipped;   // v9.0: match the figure printed above
   if (r.dead.length / landCells > budget) {

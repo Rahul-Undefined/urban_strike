@@ -2313,13 +2313,7 @@ World.buildMap = function (sceneRef, map) {
   World._buildingMap = map;   /* v1.0d: the id is needed DURING the build (minimap shape filter); builtMap is only set after */
   var builder = ({                             /* v2.0: metro removed; v15.0: rural removed */
                    killhouse: World._buildKillhouse,
-                   sunsetrow: World._buildSunsetRow,
-                   freightyard: World._buildFreightyard,
-                   bazaar: World._buildBazaar,
-                   substation: World._buildSubstation,
-                   riverside: World._buildRiverside,
-                   oldport: World._buildOldPort,   /* v2.11 */
-                   airfield: World._buildAirfield })[map] || null;
+                   kasbah: World._buildKasbah })[map] || null;   /* v2.8: the six small/medium maps removed; Kasbah added */
   if (map === 'urbansmall') {        /* v2.2: the core of Urban, walled at +/-108 */
     World.build(sceneRef, { small: true });
     World.builtMap = 'urbansmall';

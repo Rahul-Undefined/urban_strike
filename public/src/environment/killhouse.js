@@ -29,7 +29,7 @@
 
    A training house, not a warehouse. Bare concrete with a painted inspection
    grid — his drawing shows a checkerboard and that IS the grid, so it is drawn
-   rather than implied. Unpainted breeze-block partitions at 3.0 m (v2.10, was 2.4): high enough
+   rather than implied. Unpainted breeze-block partitions at 2.4 m: high enough
    that nothing is seen over, low enough that the roof volume stays open.
    Numbered doorways, target silhouettes on stands, hazard tape at the corners,
    an observation catwalk overhead that cannot be reached.
@@ -63,13 +63,25 @@
        lane and shot at from the roofs of both blocks is what the middle of a
        shoot-house needed: a REASON to cross it, not a puzzle to solve in it.
        Cap 10 -> 15 (world.config.js), bound 38 -> 48. */
-    /* v2.10 (Rahul: "make the walls a little higher so the head is not seen,
-       and the drones visible and shootable"): partitions 2.4 -> 3.0 m — a
-       crate-step (0.42) or a block top no longer puts a head over them; the
-       roof 9 -> 11 m so a drone has air under it (drones.js caps every drone
-       to the map's droneCeil, so they fly UNDER this roof, in sight and in
-       range, instead of 26 m above it where nobody could see or hit them). */
-    var HX = 26, HZ = 44, WALL_H = 11.0, PART_H = 3.0, TH = 0.30;
+    /* ===== v2.8 - THE PARTITIONS GO TO 3.5 m (Rahul: "the walls need to be a
+       little bigger, currently the avatar height is bigger than the walls") =====
+       Measured, not guessed: the rendered operator stands ~2.28 m (RIG.y 1.62)
+       and his NAME TAG sits on the tag holder at 1.16 x RIG.y above the capsule
+       centre — 2.63 to 3.05 m above the floor. At 2.4 m the tag cleared every
+       partition, so a player behind a wall was announced over it even when
+       the head was hidden. 3.5 m puts the top of the tag 0.45 m under the
+       wall's top edge for anyone standing on the floor. Why 3.5 and not more:
+       verify-cover counts a collider topping at 0.5-3.5 m as COVER, and a
+       partition that stops counting as cover would read the shoot-house as
+       dead ground — 3.5 is the tallest wall that is still cover by the
+       project's own definition.
+       What does NOT move: the solid blocks (2.6 m, climbable by their crate
+       step), the deck (2.6 m) and the container corridors — the high ground
+       is unchanged, so the deck still looks over every partition (eye at
+       ~4.3 m) and is still the place worth fighting for. Colliders follow the
+       visuals (one box per straight partition, the stepped chain on angled
+       ones), so cover and collision move together. */
+    var HX = 26, HZ = 44, WALL_H = 9.0, PART_H = 3.5, TH = 0.30;
     var NCAST = { cast: false };
     var NBOTH = { cast: false, collide: false };
     function segx(xa, xb, y0, y1, z0, z1, mat, o) {

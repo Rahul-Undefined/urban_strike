@@ -245,7 +245,7 @@ function phase15() {
        states, keyed on the same switch the server reads. */
     /* v1.0d: bot modes no longer exist, so a request naming one is simply an
        UNKNOWN mode and falls to the default — the same door a typo takes. */
-    A.emit('createRoom', { name: 'Cfg', settings: { mode: 'co2', map: 'riverside', minutes: 60, killTarget: 0 } }, (res) => {
+    A.emit('createRoom', { name: 'Cfg', settings: { mode: 'co2', map: 'kasbah', minutes: 60, killTarget: 0 } }, (res) => {
       ok(res && res.ok, 'the room is created (whatever the mode request resolved to)');
       code = res.code;
       B.emit('joinRoom', { name: 'CfgB', code: code }, () => {});
@@ -255,7 +255,7 @@ function phase15() {
         ok(L.settings.minutes === 15, 'sixty requested minutes clamped to a legal duration [' + L.settings.minutes + ']');
         ok(L.settings.mode === CFG.MATCH.defaultMode,
           'a removed bot mode id at create falls to the default — no bot matchmaking exists [' + L.settings.mode + ']');
-        ok(L.settings.map === 'riverside', 'and the map request stands — nothing drags a room anywhere [' + L.settings.map + ']');
+        ok(L.settings.map === 'kasbah', 'and the map request stands — nothing drags a room anywhere [' + L.settings.map + ']');
         A.emit('updateSettings', { mode: 'bm_solo' });
         setTimeout(() => {
           const L2 = lobbies[lobbies.length - 1];
@@ -363,9 +363,10 @@ function phase18() {
     const Mines = require('./server/lib/mines.js')({ io: { to: () => ({ emit() {} }) }, now: Date.now, applyDamage() {}, modeInfo: () => ({ teams: false }) });
     const small = { settings: { map: 'killhouse' } }, big = { settings: { map: 'urban' } };
     const p = {}, q = {};
-    const grants = [1, 2, 3, 4, 5].map(() => Mines.refillFor(small, p));
-    ok(grants.join(',') === '5,5,5,5,0', 'small map: five per life, four lives, then none [' + grants.join(',') + ']');
-    ok(p.mineIssued === 20, 'the per-match budget is exactly ' + CFG.GEAR.mine.lifetimeSmall + ' [' + p.mineIssued + ']');
+    /* v2.8 SUPERSESSION (Rahul: "max 1 frag and 3 mines in the small maps,
+       every new life"): three a life, every life — the 20-a-match ration is off. */
+    const grants = [1, 2, 3, 4, 5, 6, 7, 8].map(() => Mines.refillFor(small, p));
+    ok(grants.every(g => g === 3), 'small map: three per life, every life — the eighth as the first [' + grants.join(',') + ']');
     const bigGrants = [1, 2, 3, 4, 5, 6].map(() => Mines.refillFor(big, q));
     ok(bigGrants.every(g => g === CFG.GEAR.mine.start), 'big map: the refill is unconditional, every life [' + bigGrants.join(',') + ']');
   }
@@ -569,8 +570,8 @@ function phase19() {
     const r = d => CFG.respawnDelayFor('killhouse', d);
     ok([1, 3, 4, 10, 13, 20, 60].every(d => r(d) === 5), 'v1.0w: the arena redeploy is a flat 5 s at every death — the ladder is one rung [' + [1, 4, 13, 60].map(r).join(',') + ']');
     ok(CFG.MATCH.respawnLadder.length === 1 && CFG.MATCH.respawnLadder[0][1] === 5, 'the ladder is [[Infinity, 5]]');
-    ok(CFG.respawnDelayFor('riverside', 20) === 5 && CFG.respawnDelayFor('bazaar', 5) === 5, 'medium and small maps alike');
-    ok(CFG.respawnDelayFor('urban', 20) === CFG.MATCH.respawnDelay && CFG.respawnDelayFor('riverside', 20) === CFG.MATCH.respawnDelay,
+    ok(CFG.respawnDelayFor('kasbah', 20) === 5 && CFG.respawnDelayFor('killhouse', 5) === 5, 'theatres and arenas alike');
+    ok(CFG.respawnDelayFor('urban', 20) === CFG.MATCH.respawnDelay && CFG.respawnDelayFor('kasbah', 20) === CFG.MATCH.respawnDelay,
       'Urban and Metro keep the flat ' + CFG.MATCH.respawnDelay + ' s at any death count');
     const combat = require('fs').readFileSync('./server/lib/combat.js', 'utf8');
     ok(/respawnSec = CFG\.respawnDelayFor/.test(combat) && /respawnSec: victim\.out \? 0 : respawnSec/.test(combat),
@@ -598,7 +599,7 @@ function phase19() {
     Az.on('matchStart', d => { startZ = d; });
     [Az, Bz].forEach(s2 => s2.on('connect', () => { if (++upz === 2) goZ(); }));
     function goZ() {
-      Az.emit('createRoom', { name: 'Zh', settings: { mode: 'zone', map: 'bazaar', killTarget: 0, minutes: 15 } }, (res) => {
+      Az.emit('createRoom', { name: 'Zh', settings: { mode: 'zone', map: 'killhouse', killTarget: 0, minutes: 15 } }, (res) => {
         ok(res && res.ok, 'an Urban Zone room is created');
         Bz.emit('joinRoom', { name: 'Zj', code: res.code }, () => {});
         setTimeout(() => {
@@ -772,11 +773,14 @@ function configGates() {
      the lobby cannot render a choice that does not exist. */
   /* v2.5 SUPERSESSION: 15 or 30, by map and mode (Rahul: "add a 30-minute
      option — only 15 and 30, only on Urban and Urban Small, zone always 15"). */
+  /* v2.8 SUPERSESSION: 10 joins (Rahul: "add a 10 mins match mode as well").
+     10 and 15 everywhere outside a zone; 30 on the longMatch theatres; zone 15. */
   ok(CFG.MATCH.timeOptions.join(',') === '10,15,30', 'the durations are 10, 15 and 30 [' + CFG.MATCH.timeOptions.join(',') + ']');
   ok(CFG.MATCH.defaultMinutes === 15, 'and the default is 15');
-  ok(CFG.timeOptionsFor('ffa', 'urban').join(',') === '10,15,30' && CFG.timeOptionsFor('t4', 'urbansmall').join(',') === '10,15,30' && CFG.timeOptionsFor('ffa', 'oldport').join(',') === '10,15,30', 'Urban, Urban Small and Old Port offer 10/15/30');
+  ok(CFG.timeOptionsFor('ffa', 'urban').join(',') === '10,15,30' && CFG.timeOptionsFor('t4', 'urbansmall').join(',') === '10,15,30'
+     && CFG.timeOptionsFor('aff', 'kasbah').join(',') === '10,15,30', 'Urban, Urban Small and Kasbah offer all three');
   ok(CFG.timeOptionsFor('zone', 'urban').join(',') === '15' && CFG.timeOptionsFor('zs', 'urbansmall').join(',') === '15', 'every zone mode is 15 only');
-  ok(CFG.timeOptionsFor('ffa', 'killhouse').join(',') === '10,15', 'arenas are 10 or 15');
+  ok(CFG.timeOptionsFor('ffa', 'killhouse').join(',') === '10,15' && CFG.timeOptionsFor('at2', 'killhouse').join(',') === '10,15', 'the Killhouse offers 10 and 15');
   ok(CFG.MATCH.timeOptions.every(n => n > 0), 'no zero duration: every match can end');
   /* THE PAIRING RULE. Unlimited kills is only survivable because the clock is
      always finite. If a no-limit duration is ever added, this fails loudly
@@ -809,8 +813,33 @@ function configGates() {
   ok(typeof CFG.MATCH.startCountdown === 'number' && CFG.MATCH.startCountdown > 0, 'launch countdown is configured');
   ok(!!CFG.MODES.t2 && CFG.MODES.t2.teams === true && CFG.MODES.t2.maxPlayers === 4, '2v2 mode exists (teams, 4 players)');
   ['ffa', 't2', 't3', 't5'].forEach(k => ok(!!CFG.MODES[k], 'mode registered: ' + k));
-  ['urban', 'urbansmall', 'riverside', 'killhouse'].forEach(k =>
+  ['urban', 'urbansmall', 'kasbah', 'killhouse'].forEach(k =>
     ok(CFG.MAPS[k] && CFG.MAPS[k].ready !== false, 'map selectable in registry: ' + k));
+  /* ===== v2.8 - THE ROSTER, THE SMALL-MAP STOCK, ASSAULT, THE KILLHOUSE RADAR ===== */
+  ok(Object.keys(CFG.MAPS).join(',') === 'urban,urbansmall,killhouse,kasbah', 'v2.8: the roster is exactly Urban, Urban Small, Killhouse, Kasbah [' + Object.keys(CFG.MAPS).join(',') + ']');
+  ['sunsetrow', 'freightyard', 'bazaar', 'substation', 'riverside', 'airfield'].forEach(k =>
+    ok(!CFG.MAPS[k] && !CFG['MAPS_' + k.toUpperCase()], 'v2.8: ' + k + ' is gone from the registry and its table'));
+  ok(CFG.MAPS_KASBAH && CFG.MAPS_KASBAH.SPAWNS.length >= 40 && CFG.MAPS_KASBAH.LOOT_POINTS.length >= 80 && CFG.MAPS_KASBAH.AIRDROP_POINTS.length >= 10,
+    'v2.8: Kasbah has its own generated tables [' + CFG.MAPS_KASBAH.SPAWNS.length + ' spawns, ' + CFG.MAPS_KASBAH.LOOT_POINTS.length + ' loot, ' + CFG.MAPS_KASBAH.AIRDROP_POINTS.length + ' drops]');
+  ok(['a', 'b', 'n'].every(t => CFG.MAPS_KASBAH.SPAWNS.filter(s => s[3] === t).length >= 10), 'v2.8: Kasbah spawns cover both team bands and the neutral middle');
+  ok(!CFG.isArena('kasbah') && CFG.MAPS.kasbah.longMatch, 'v2.8: Kasbah is a theatre (full loot rules, 30 min allowed), not an arena');
+  ok(CFG.fragCountFor('killhouse') === 1 && CFG.mineStartFor('killhouse') === 3 && CFG.mineCapFor('killhouse') === 3,
+    'v2.8: the Killhouse issues 1 frag and 3 mines a life, and caps them there');
+  ok(CFG.fragCountFor('urban') === CFG.THROWS.frag.count && CFG.fragCountFor('kasbah') === CFG.THROWS.frag.count
+     && CFG.mineStartFor('urbansmall') === CFG.GEAR.mine.start, 'v2.8: the theatres keep their stock');
+  ok((CFG.GEAR.mine.lifetimeSmall | 0) === 0, 'v2.8: no per-match mine ration — "every new life" gets three');
+  ok(CFG.modesInCat('assault').join(',') === 'aff,at2,at3,at4' && CFG.MODE_CATS.some(c => c.id === 'assault'), 'v2.8: the Assault category lists FFA, 2v2, 3v3, 4v4');
+  ok(CFG.gunAllowed('aff', 'ak47') && CFG.gunAllowed('at3', 'famas') && CFG.gunAllowed('at3', 'knife') && CFG.gunAllowed('aff', 'frag'),
+    'v2.8: Assault allows rifles, the knife and throwables');
+  ok(['sniper', 'awm', 'kar98', 'uzi', 'shotgun', 'pistol', 'm249', 'mk14', 'p90', 'rocket'].every(w => !CFG.gunAllowed('aff', w)),
+    'v2.8: Assault refuses every sniper, SMG, shotgun, pistol, LMG, DMR and the rocket');
+  ok(CFG.gunAllowed('ffa', 'sniper'), 'v2.8: outside Assault every gun is allowed');
+  ok(!CFG.lootAllowed('aff', 'urban', 'wpn_awm') && CFG.lootAllowed('aff', 'urban', 'wpn_scarh') && CFG.lootAllowed('ffa', 'urban', 'wpn_awm'),
+    'v2.8: an Assault crate draws ARs only');
+  ok(['drone', 'hunter', 'recon', 'visor'].every(t => !CFG.lootAllowed('ffa', 'killhouse', t)) && CFG.lootAllowed('ffa', 'urban', 'hunter'),
+    'v2.8: Killhouse crates carry no drone, hunter, recon flare or visor');
+  ok(CFG.radarFor('killhouse').alwaysShowPlayers === false && CFG.radarFor('killhouse').proximity === 8 && CFG.radarFor('urban').alwaysShowPlayers === true,
+    'v2.8: the Killhouse radar hides enemies until they fire or close to 8 m; every other map is unchanged');
   /* v2.2: Urban Small — the core's tables, no train, no helicopter, not an arena */
   ok(CFG.MAPS_URBANSMALL && CFG.MAPS_URBANSMALL.SPAWNS.length >= 30 && CFG.MAPS_URBANSMALL.LOOT_POINTS.length >= 80 && CFG.MAPS_URBANSMALL.AIRDROP_POINTS.length >= 8,
     'Urban Small has its own derived tables [' + CFG.MAPS_URBANSMALL.SPAWNS.length + ' spawns, ' + CFG.MAPS_URBANSMALL.LOOT_POINTS.length + ' loot, ' + CFG.MAPS_URBANSMALL.AIRDROP_POINTS.length + ' drops]');
@@ -1387,9 +1416,9 @@ function phase6(done) {
   console.log('--- Phase 6: metro map selection + per-map spawns (v15.0: rural removed) ---');
   const A = io(URL), B = io(URL);
   A.on('connect', () => {
-    A.emit('createRoom', { name: 'Am', settings: { map: 'riverside' } }, (res) => {
+    A.emit('createRoom', { name: 'Am', settings: { map: 'kasbah' } }, (res) => {
       B.once('lobby', (lb) => {
-        ok(lb.settings && lb.settings.map === 'riverside',
+        ok(lb.settings && lb.settings.map === 'kasbah',
           'lobby carries the selected map to joiners');
         launch([A, B]);
       });
@@ -1399,13 +1428,13 @@ function phase6(done) {
   let msSeen = false;
   B.on('matchStart', (d) => {
     if (msSeen) return; msSeen = true;
-    ok(d.settings && d.settings.map === 'riverside', 'matchStart payload names the map');
+    ok(d.settings && d.settings.map === 'kasbah', 'matchStart payload names the map');
   });
   B.on('spawn', (d) => {
     if (d.id !== B.id) return;
-    const S = CFG.MAPS_RIVERSIDE.SPAWNS;   /* v2.0: riverside stands in for the removed metro */
+    const S = CFG.MAPS_KASBAH.SPAWNS;   /* v2.8: Kasbah stands in for the removed riverside */
     const near = S.some(s => Math.abs(s[0] - d.pos[0]) < 0.6 && Math.abs(s[1] - d.pos[2]) < 0.6);
-    ok(near, 'spawn position comes from the RIVERSIDE spawn set [got ' + d.pos[0] + ',' + d.pos[2] + ']');
+    ok(near, 'spawn position comes from the KASBAH spawn set [got ' + d.pos[0] + ',' + d.pos[2] + ']');
     [A, B].forEach(s => s.disconnect());
     setTimeout(done, 300);
   });

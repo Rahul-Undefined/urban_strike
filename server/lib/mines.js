@@ -24,8 +24,9 @@ module.exports = function initMinesModule(ctx) {
      they cost a walk, and the ration exists to stop the free refill turning a
      40 m room into a minefield. Returns what the spawn should carry. */
   function refillFor(room, p) {
-    const start = G.start | 0;
     const m = room && room.settings && room.settings.map;
+    /* v2.8: the per-life stock is the map's (3 on an arena, CFG.mineStartFor) */
+    const start = (CFG.mineStartFor ? CFG.mineStartFor(m || 'urban') : G.start) | 0;
     const small = !!(m && CFG.MAPS && CFG.MAPS[m] && CFG.MAPS[m].smallMap);
     const cap = small ? (G.lifetimeSmall | 0) : 0;
     if (!cap) return start;

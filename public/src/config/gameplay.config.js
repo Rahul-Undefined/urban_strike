@@ -223,7 +223,12 @@
        (Urban, Urban Small) in a non-zone mode gets the whole list, every zone
        mode and every arena gets [defaultMinutes] only. Both server clamps and
        the lobby select read THAT resolver, never this list directly. */
-    timeOptions: [10, 15, 30],   /* v2.11: a 10-minute match (Rahul) */
+    /* ===== v2.8 - 10, 15 OR 30 (Rahul: "add a 10 mins match mode as well").
+       10 joins the universe; timeOptionsFor() decides who may pick it: every
+       non-zone room may run 10 or 15, a longMatch map (Urban, Urban Small,
+       Kasbah) also 30, and every zone mode stays 15 (its circles are cut to
+       that clock). The default stays 15. */
+    timeOptions: [10, 15, 30],
     /* ===== v13.0 - THE INTEL BLUR CONTRACT LIVES HERE (brief item 2) =====
        One source of truth read by all three consumers: server/lib/intel.js
        derives its error band from it, ui/minimap.js draws the circle from
@@ -234,14 +239,6 @@
        from ever being a pinpoint in a costume. */
     INTEL: { radiusM: 50, minErr: 10 },
     startCountdown: 5,    // seconds between the host pressing START and the match beginning
-    /* v2.8 (Rahul, PUBG-style): in team and squad modes a lethal hit KNOCKS
-       the avatar instead of killing them. sec: the clock a team-mate has to
-       revive them; pool: how much more damage finishes them meanwhile;
-       reviveSec: how long the team-mate holds the key within reviveRange;
-       reviveHp: the health they stand up with. Solo modes, the zone, the
-       train and a fall from the heli kill outright; so does being the last
-       of your side standing. */
-    DOWN: { sec: 20, pool: 100, reviveSec: 4, reviveRange: 2.6, reviveHp: 30 },
     /* ===== v15.0 - FIVE SECONDS DOWN (fix 6) =====
        Rahul: "when a player is killed, add a respawn timer of 5 seconds ...
        so that it reduces the load on the server, it applies to the big maps

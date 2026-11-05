@@ -14,8 +14,14 @@ var Weapons = (function () {
      every spawn. */
   function baseWeapons() {
     var m = (typeof Net !== 'undefined' && Net.getMatch && Net.getMatch()) || {};
+    /* v2.8 ASSAULT: rifles and the knife, nothing else (CFG.ASSAULT_KIT). */
+    if (CFG.isAssault && CFG.isAssault(m.mode)) return ASSAULT_WEAPONS;
     return BASE_WEAPONS;
   }
+  /* v2.8: the map the loadout is for — frags and mines are per-life counts
+     that depend on it (CFG.fragCountFor / mineStartFor). World.builtMap is set
+     by buildMap, which Game.onMatchStart runs before matchReset. */
+  function loadoutMap() { return (typeof World !== 'undefined' && World.builtMap) || 'urban'; }
   var ammo = {};                  // name -> {mag, reserve}
   var throwsLeft = { frag: 2, smoke: 1, flash: 1 };
   var zoneFragSched = null;   /* v2.6: the zone schedule the current frag stock was issued for */
@@ -46,6 +52,7 @@ var Weapons = (function () {
   var owned = {};                                        // weapon name -> true
   var cooking = null;                                    // { end, beeped } while holding a live frag
   var BASE_WEAPONS = CFG.WEAPON_ORDER.filter(function (n) { return !CFG.WEAPONS[n].ex; });
+  var ASSAULT_WEAPONS = (CFG.ASSAULT_KIT || ['ak47', 'm4a1', 'knife']).filter(function (n) { return !!CFG.WEAPONS[n]; });
 
   // Effective stats = base weapon modified by equipped attachments.
   function eff(name) {
@@ -118,7 +125,7 @@ var Weapons = (function () {
     baseWeapons().forEach(function (n) { owned[n] = true; });
     current = baseWeapons()[0];   /* v14.0: never boot a Blacksite spawn holding an id it does not own */
     atts = { sight: null, muzzle: null, mag: null };
-    mineCount = CFG.GEAR.mine.start;
+    mineCount = CFG.mineStartFor ? CFG.mineStartFor(loadoutMap()) : CFG.GEAR.mine.start;   /* v2.8: 3 on an arena */
     /* v9.4: drones are per-MATCH. The server decides the real number (zero in
        bot modes) and corrects this on the first grant; starting at the config
        value keeps the HUD honest for the first second. */
@@ -133,8 +140,6 @@ var Weapons = (function () {
     UI.setAttachments(atts);
   }
   // Per-spawn refill: keep exclusives + attachments earned this match.
-  /* v2.8: knocked — the pistol comes out (every operator owns one); the rest is refused by setWeapon until the revive */
-  function forcePistol() { if (owned.pistol) setWeapon('pistol', true); }
   function resetLoadout() {
     if (!owned[baseWeapons()[0]]) matchReset();   /* v14.0: sentinel by product, not by 'ak47' */
     for (var n in owned) {
@@ -149,16 +154,11 @@ var Weapons = (function () {
        schedule object the server shipped identifies the match: a new one
        means a new match, and the five are issued again. */
     var zSched = (typeof Zone !== 'undefined' && Zone.schedule) ? Zone.schedule() : null;
-    var keepFrag = zSched && zoneFragSched === zSched ? (throwsLeft.frag | 0) : CFG.THROWS.frag.count;
+    /* v2.8 (Rahul: "max 1 frag ... in the small maps, every new life"): the
+       per-life stock is the MAP's — one on an arena, five elsewhere. */
+    var fragStock = CFG.fragCountFor ? CFG.fragCountFor(loadoutMap()) : CFG.THROWS.frag.count;
+    var keepFrag = zSched && zoneFragSched === zSched ? Math.min(fragStock, throwsLeft.frag | 0) : fragStock;
     zoneFragSched = zSched;
-    /* v2.8 (Rahul: "remove frags from the small maps, keep them in the drops —
-       they wreck the gameplay"): on an arena nobody spawns with a frag; the
-       crate's Frag Bundle is the only source. The stock carried from a crate
-       survives the respawn there, like the zone. */
-    var mArena = (typeof Net !== 'undefined' && Net.getMatch) ? Net.getMatch() : null;
-    var onArena = !!(mArena && mArena.map && CFG.isArena && CFG.isArena(mArena.map));
-    if (onArena) keepFrag = zoneFragSched === 'arena:' + mArena.startedAt ? (throwsLeft.frag | 0) : 0;
-    if (onArena) zoneFragSched = 'arena:' + mArena.startedAt;
     throwsLeft = { frag: keepFrag, smoke: CFG.THROWS.smoke.count, flash: CFG.THROWS.flash.count, molotov: CFG.THROWS.molotov.count };
     cooking = null; UI.setCooking(false, 0);
     setWeapon(owned[current] ? current : 'ak47', true);
@@ -229,7 +229,7 @@ var Weapons = (function () {
            lasts until death. Net.setVisor drives the through-wall render; this
            branch only confirms the pickup to the player. */
         Net.setVisor(true);
-        UI.toast(d.adv ? 'ADVANCED Recon Visor \u00b7 enemies through walls for the whole match, every life' : 'Recon Visor \u00b7 enemies visible through walls');
+        UI.toast('Recon Visor \u00b7 enemies visible through walls');
       }
       else if (d.g === 'emp') {
         /* v15.0 (fix 1): the slot appears with the first charge, exactly as the
@@ -259,17 +259,15 @@ var Weapons = (function () {
       }
       else if (d.g === 'frag') {   /* v2.6: the zone crate's bundle — back to the full five, never above */
         var before = throwsLeft.frag | 0;
-        throwsLeft.frag = Math.min(CFG.THROWS.frag.count, before + (d.n | 0));
+        throwsLeft.frag = Math.min(CFG.fragCountFor ? CFG.fragCountFor(loadoutMap()) : CFG.THROWS.frag.count, before + (d.n | 0));
         UI.toast(throwsLeft.frag > before ? 'Frags +' + (throwsLeft.frag - before) + ' \u00b7 ' + throwsLeft.frag + ' carried' : 'Frags already full');
       }
     }
     refreshHud();
   }
 
-  function isDown() { return typeof Net !== 'undefined' && Net.isDown && Net.isDown(); }   /* v2.8 */
   function setWeapon(name, instant) {
     if (!CFG.WEAPONS[name] || !owned[name]) return;
-    if (isDown() && name !== 'pistol') { UI.toast('Knocked \u2014 pistol, frags and mines only'); return; }   /* v2.8 */
     if (name === current && !instant) return;
     if (models[current]) models[current].visible = false;
     current = name;
@@ -829,7 +827,6 @@ var Weapons = (function () {
   }
   function throwGrenade(type) {
     if (!PlayerCtl.alive || throwsLeft[type] <= 0 || cooking) return;
-    if (isDown() && type !== 'frag') { UI.toast('Knocked \u2014 only a frag'); return; }   /* v2.8 */
     if (type === 'frag' && CFG.THROWS.frag.cook) { startCook(); return; }
     throwsLeft[type]--;
     AudioSys.pinPull(null);
@@ -1341,8 +1338,6 @@ var Weapons = (function () {
   function setFirstPerson(v) { firstPerson = !!v; }
 
   return {
-    forcePistol: forcePistol,   /* v2.8 */
-    fragCount: function () { return throwsLeft.frag | 0; },   /* v2.9 */
     setFirstPerson: setFirstPerson, aiming: aiming, scoped: scoped, adsFov: (scoped && zoomFov) ? zoomFov : E.adsFov, speedMult: w.speed, crossGap: crossGap };
   }
 

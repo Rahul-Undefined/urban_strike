@@ -45,10 +45,9 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
 
 /* Keep this list identical to index.html — see the v8.9 note in verify-lifts. */
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js","public/src/config/maps-oldport.config.js",
- "public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
+ "public/src/config/world.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-kasbah.config.js","public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
- "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/medium.js","public/src/environment/oldport.js","public/src/environment/access.js"]
+ "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/killhouse.js","public/src/environment/kasbah.js","public/src/environment/access.js"]
  .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 function fingerprint(map) {
@@ -284,7 +283,6 @@ const BASELINE = {
      map did not otherwise carry (sage, maroon, roadPaint); swapping them for
      palette entries already present brought it back to 39. On this axis a new
      MATERIAL is expensive and geometry is nearly free. */
-  sunsetrow: { colliders: 288, draws: 41, tris: 7084, casters: 19, lights: 3, bound: 46, colSig: 520756720, meshSig: -437825621 },
 /* v11.0 REBASELINE — deliberate, two changes, both documented in killhouse.js:
    1. colSig: the v10.22 angled-wall collider chains were stepped along
       (cos, +sin) where three.js rotY places the drawn wall along (cos, -sin).
@@ -294,20 +292,16 @@ const BASELINE = {
    2. tris/meshSig: orientation paint and trim (sector wall bands, lane
       chevrons, block brackets, muster pads) — all collide:false cast:false, so
       draws (22) and casters (10) hold and cover/dead-ground are untouched. */
-killhouse: { colliders: 608, draws: 25, tris: 9772, casters: 13, lights: 3, bound: 48, colSig: -2107516104, meshSig: 628737342 /* v1.0w taller cover; v2.10: partitions 2.4->3.0, roof 9->11 */ },
-  /* v10.14: the three new small maps, asserted from their first version so any
-     later edit has to justify itself. Filled in below from a measured run. */
-oldport: { colliders: 588, draws: 32, tris: 11476, casters: 18, lights: 3, bound: 80, colSig: -1000834059, meshSig: -1456194605 /* v2.11: Old Port, first baseline */ },
-freightyard: { colliders: 229, draws: 25, tris: 14076, casters: 15, lights: 3, bound: 38, colSig: -1683568504, meshSig: -336526897 },
-/* v1.0d: bazaar's caravanserai court filled (four stalls, two carts, pallets,
-   drums, two screens, cloth lines) after Rahul's "wasting space" screenshot.
-   +36 colliders, +1 draw (the cart tyres' material), +1 caster. */
-bazaar     : { colliders: 359, draws: 25, tris: 11764, casters: 11, lights: 3, bound: 46, colSig: -1074009172, meshSig: 1691668726 },
-substation : { colliders: 254, draws: 24, tris: 10392, casters: 14, lights: 3, bound: 40, colSig: -9101380, meshSig: -768507913 },
-  /* v10.21 MEDIUM TIER, asserted from their first version so any later edit has
-     to justify itself. Filled in from a measured run. */
-  riverside  : { colliders: 383, draws: 34, tris: 10572, casters: 24, lights: 3, bound: 66, colSig: -61579834, meshSig: 40011342 },
-  airfield   : { colliders: 312, draws: 34, tris: 8740, casters: 19, lights: 3, bound: 70, colSig: 1289989088, meshSig: -1116298994 }
+/* v2.8 REBASELINE — deliberate: partitions 2.4 -> 3.5 m (killhouse.js, the name
+   tag cleared the old walls). Same boxes, taller: colliders, draws, tris,
+   casters and lights all unchanged; only the two signatures move. */
+killhouse: { colliders: 608, draws: 25, tris: 9772, casters: 13, lights: 3, bound: 48, colSig: 1499390470, meshSig: -631098334 /* v1.0w: taller cover — barriers 1.10->1.50, crates +0.3; counts unchanged */ },
+  /* v2.8: sunsetrow, freightyard, bazaar, substation, riverside and airfield
+     REMOVED with their maps. KASBAH asserted from its first version. */
+  /* 4,498 colliders, 29 draws, 107k triangles — a third of Urban's triangles
+     and a quarter of its draws for a map 40% of its floor. (+10 colliders on
+     the first build: cover in the lanes behind the citadel plinth.) */
+  kasbah: { colliders: 4498, draws: 29, tris: 107232, casters: 17, lights: 3, bound: 100, colSig: -601691901, meshSig: -184419953 }
 };
 
 let pass = 0, fail = 0;

@@ -232,14 +232,10 @@ const { makeCode, cleanName, cleanTeamName, num, clampOpt, modeInfo, makeRoom, z
    probe, the Intel line-of-sight check and hazards.js. It fields nothing. */
 const Bots = require('./server/lib/bots.js')({});
 const Loot = require('./server/lib/loot.js')({ io, now, mapData,
-  zoneCratePoints: (room, pts, landInSec) => Zone.cratePoints(room, pts, landInSec),   /* v1.0j */
-  /* v2.8: random drops on Urban / Urban Small — open ground with clear sky, anywhere on the map (inside the circle in a zone match) */
-  colliders: (mapId) => Bots.buildColliders(mapId),
-  zoneCircleIn: (room, sec) => (room.zone && room.startedAt) ? CFG.zoneCircleAt(room.zone.sched, (now() - room.startedAt) / 1000 + (sec || 0)) : null });
+  zoneCratePoints: (room, pts, landInSec) => Zone.cratePoints(room, pts, landInSec) });   /* v1.0j */
 const { initPickups, pickupList, tryCollect, respawnPickups,
   scheduleAirdrop, clearAirdrop, dropCrate } = Loot;
 const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
-  onDeathCrate: (room, v) => dropDeathCrate(room, v),   /* v2.9 */
   endMatch: (...a) => endMatch(...a),
   /* v10.10: late-bound on purpose. Nuke needs applyDamage, which Combat
      returns, so Nuke cannot exist yet at this line. Arrow functions defer the
@@ -511,14 +507,12 @@ function spawnPlayer(room, p) {
 
      Cleared before the vitals emit further down, so the client is told in the
      same message that brings it back to life. */
-  p.visor = !!p.visorMatch;   /* v2.9: the Advanced Recon Visor lasts the whole match */
-  if (p.visorMatch && !p.bot) setTimeout(() => { if (p.alive) io.to(p.id).emit('grant', { t: 'gear', g: 'visor', n: 1, adv: 1 }); }, 300);
+  p.visor = false;
   p.trainAboardAt = 0;   /* v1.0g: a fresh life was never on the train */
   /* v15.0 (fix 5): the shield is PER LIFE like the visor. Cleared here, and the
      room told, so the slab on this operator's avatar drops with the body. */
   if ((p.shieldHp | 0) > 0) io.to(room.code).emit('shield', { id: p.id, hp: 0, max: CFG.GEAR.shield.hp });
   p.shieldHp = 0;
-  p.down = false; p.downHp = 0; p.reviveProg = 0; p.reviveBy = null;   /* v2.8 */
   /* ===== v10.15 - EVERY EXPENDABLE REFILLS ON RESPAWN =====
 
      Rahul: "mines are only 5 in the game per player, once those are utilised
@@ -542,6 +536,7 @@ function spawnPlayer(room, p) {
      the throw. */
   /* v15.0 (fix 8): the refill is rationed on small maps — see Mines.refillFor. */
   p.mines = Mines.refillFor(room, p);
+  p.fragThrows = 0;   /* v2.8: frags thrown THIS life — counted against CFG.fragCountFor on an arena */
   if (p.mines === 0 && CFG.GEAR.mine.start > 0 && !p.bot) {
     io.to(p.id).emit('toast', { msg: 'Mine ration spent \u2014 ' + CFG.GEAR.mine.lifetimeSmall + ' per match on small maps' });
   }
@@ -592,7 +587,7 @@ function startMatch(room) {
     p.out = false;                    // v8.37: Last Stand elimination flag, cleared per match
     room.insights = null;   // v8.29: insights are per match, never cumulative
     p.att = { sight: null, muzzle: null, mag: null }; p.exW = {}; p.rd = {};
-    p.ready = false; p.mines = CFG.GEAR.mine.start; p.lastMolo = {};
+    p.ready = false; p.mines = CFG.mineStartFor(room.settings.map || 'urban'); p.lastMolo = {};   /* v2.8: per map */
     p.mineIssued = 0; p.mineKills = 0;   /* v15.0: fix 8 ration budget, fix 9 KPI — both per match */
     /* v9.4: drones are per-MATCH, not per-life. Refilling them on respawn
        would mean an unlimited supply for anybody willing to die. */
@@ -657,66 +652,6 @@ function startMatch(room) {
   }
 }
 
-/* ===== v2.9 - THE DEATH CRATE (Urban, Urban Small) =====
-   Rahul: "when a player is killed his items — visor, mines, grenades, drones
-   and whatever else he carried — stay on the map as a crate for 10 seconds;
-   anyone can press Z and loot them." Everything the server knows the player
-   carried goes in; the frag stock is what the client last reported. The dead
-   player's counts are zeroed (what is in the crate is no longer in the bag).
-   Looted through the one interact key: 'pickup' checks for a crate within
-   reach first. Mines are left out — they refill on respawn anyway. */
-const DEATH_CRATE_SEC = 10;
-function clearDownAll(room) { for (const q of room.players.values()) { q.down = false; q.reviveProg = 0; q.reviveBy = null; } }   /* v2.11.1 */
-function dropDeathCrate(room, v) {
-  const M = CFG.MAPS[room.settings.map || 'urban'] || {};
-  if (!M.longMatch || v.bot) return;
-  const items = {};
-  const take = (k, n) => { if ((n | 0) > 0) items[k] = n | 0; };
-  take('drones', v.drones); take('hunters', v.hunters); take('recons', v.recons); take('adrenalines', v.adrenalines);
-  take('c4', v.c4); take('emps', v.emps);
-  if (v.visorMatch) items.visoradv = 1; else if (v.visor) items.visor = 1;
-  const zoneOrArena = !!room.zone || !!(CFG.isArena && CFG.isArena(room.settings.map));
-  if (!zoneOrArena) take('frags', v.fr);
-  const exW = Object.keys(v.exW || {}); if (exW.length) items.exW = exW;
-  if (!Object.keys(items).length) return;
-  v.drones = 0; v.hunters = 0; v.recons = 0; v.adrenalines = 0; v.c4 = 0; v.emps = 0; v.visorMatch = false; v.visor = false; v.exW = {};
-  room.deathCrates = room.deathCrates || [];
-  const c = { id: room.nextCrateId = (room.nextCrateId || 0) + 1, pos: [v.pos[0], Math.max(0, v.pos[1] - 0.7), v.pos[2]], name: v.name, items, until: now() + DEATH_CRATE_SEC * 1000 };
-  room.deathCrates.push(c);
-  io.to(room.code).emit('deathCrate', { id: c.id, p: c.pos, name: c.name, sec: DEATH_CRATE_SEC, items: Object.keys(items) });
-}
-function tickDeathCrates(room) {
-  if (!room.deathCrates || !room.deathCrates.length) return;
-  const t = now();
-  for (let i = room.deathCrates.length - 1; i >= 0; i--) {
-    if (t >= room.deathCrates[i].until) { io.to(room.code).emit('crateGone', { id: room.deathCrates[i].id }); room.deathCrates.splice(i, 1); }
-  }
-}
-function lootDeathCrate(room, p) {
-  if (!room.deathCrates || !room.deathCrates.length) return false;
-  let best = null, bd = 2.8;
-  for (const c of room.deathCrates) {
-    const d = Math.hypot(c.pos[0] - p.pos[0], c.pos[2] - p.pos[2]);
-    if (d < bd && Math.abs(c.pos[1] - p.pos[1]) < 3) { bd = d; best = c; }
-  }
-  if (!best) return false;
-  const it = best.items, got = [];
-  const addN = (key, g, cap, n) => { const before = p[key] | 0; p[key] = Math.min(cap, before + n); if (p[key] > before) { io.to(p.id).emit('grant', { t: 'gear', g, n: p[key] }); got.push(g); } };
-  if (it.drones) addN('drones', 'drone', CFG.GEAR.drone.maxCarry, it.drones);
-  if (it.hunters) addN('hunters', 'hunter', CFG.GEAR.hunter.maxCarry, it.hunters);
-  if (it.recons) addN('recons', 'recon', CFG.GEAR.recon.maxCarry, it.recons);
-  if (it.adrenalines) addN('adrenalines', 'adrenaline', CFG.GEAR.adrenaline.maxCarry, it.adrenalines);
-  if (it.c4) addN('c4', 'c4', CFG.GEAR.c4.maxCarry, it.c4);
-  if (it.emps) addN('emps', 'emp', (CFG.GEAR.emp && CFG.GEAR.emp.maxCarry) || 2, it.emps);
-  if (it.visoradv) { p.visor = true; p.visorMatch = true; io.to(p.id).emit('grant', { t: 'gear', g: 'visor', n: 1, adv: 1 }); got.push('visor'); }
-  else if (it.visor && !p.visor) { p.visor = true; io.to(p.id).emit('grant', { t: 'gear', g: 'visor', n: 1 }); got.push('visor'); }
-  if (it.frags) { io.to(p.id).emit('grant', { t: 'gear', g: 'frag', n: it.frags }); got.push('frags'); }
-  if (it.exW) for (const w of it.exW) { if (!CFG.WEAPONS[w]) continue; if (p.exW[w]) io.to(p.id).emit('grant', { t: 'ammoFor', w }); else { p.exW[w] = 1; io.to(p.id).emit('grant', { t: 'weapon', w }); } got.push(w); }
-  room.deathCrates.splice(room.deathCrates.indexOf(best), 1);
-  io.to(room.code).emit('crateGone', { id: best.id, by: p.id, byName: p.name, name: best.name });
-  io.to(p.id).emit('toast', { msg: 'Looted ' + best.name + "'s kit \u00b7 " + (got.length ? got.join(', ') : 'nothing new') });
-  return true;
-}
 /* v4.9 out-of-combat health regeneration. Server-authoritative like all other
    HP changes; the client just receives the higher hp in the next snapshot, so
    no new message type and no trust change. Armor does NOT regenerate. */
@@ -729,7 +664,7 @@ function regenTick(room) {
   room.lastRegenAt = t;
   const cap = CFG.PLAYER.hp * (R.maxFrac || 1);
   for (const p of room.players.values()) {
-    if (!p.alive || p.down || p.hp >= cap) continue;   /* v2.8: a downed player does not regenerate */
+    if (!p.alive || p.hp >= cap) continue;
     if (t - (p.lastHitAt || 0) < R.delaySec * 1000) continue;
     p.hp = Math.min(cap, p.hp + R.perSec * dt);
   }
@@ -769,10 +704,8 @@ function startSnapshots(room) {
     Hazards.tick(room);                      // v1.0b fire zones + C4 fuses
     Zone.tick(room);                         // v1.0j the circle
     Loot.expireDrops(room);                  // v1.0u untaken crate loot expires
-    tickDeathCrates(room);                   // v2.9
     Heli.tick(room);                         // v1.0l the helicopter
     regenTick(room);
-    Combat.tickDown(room);                   /* v2.8: the 20 s down clock, the revive gaps */
     if (++room.snapN % 60 === 0) pushLobby(room); // live K/D/assists/damage refresh (~4 s)
 
     /* ===== v9.8 DELTA SNAPSHOTS — see public/src/networking/snapcodec.js =====
@@ -947,7 +880,6 @@ function stopSnapshots(room) {
 }
 
 function endMatch(room, winnerId, reason) {
-  clearDownAll(room);   /* v2.11.1: nobody carries a knock into the next match */
   if (room.state !== 'playing') return;
   room.state = 'ended';
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
@@ -1017,7 +949,6 @@ io.on('connection', (socket) => {
         startedAt: room.startedAt, serverNow: now(),
         team: p.team || null, mines: p.mines | 0,
         emps: p.emps | 0, shield: p.shieldHp | 0, c4: p.c4 | 0, hunters: p.hunters | 0, recons: p.recons | 0, adrenalines: p.adrenalines | 0,   /* v15.0 / v1.0b */
-        down: !!p.down, knocks: p.knocks | 0, revives: p.revives | 0,   /* v2.8 */
         zone: room.zone ? room.zone.sched : null,   /* v1.0j */
         heli: Heli.snapshot(room),   /* v1.0l */
         respawnSec: p.respawnSec || CFG.MATCH.respawnDelay
@@ -1194,7 +1125,6 @@ io.on('connection', (socket) => {
   /* ===== v2.3 - ADRENALINE / RECON FLARE / HUNTER ===== */
   socket.on('useAdrenaline', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};
-    { const rd = getRoom(socket), pd = rd && rd.players.get(socket.id); if (pd && pd.down) return (typeof cb === 'function' ? cb : () => {})({ ok: false, err: 'Not while down' }); }   /* v2.8 */
     const room = getRoom(socket); if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
     const p = room.players.get(socket.id); if (!p || !p.alive) return ack({ ok: false, err: 'Down' });
     if ((p.adrenalines | 0) <= 0) return ack({ ok: false, err: 'No adrenaline' });
@@ -1205,7 +1135,6 @@ io.on('connection', (socket) => {
   });
   socket.on('launchRecon', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};
-    { const rd = getRoom(socket), pd = rd && rd.players.get(socket.id); if (pd && pd.down) return (typeof cb === 'function' ? cb : () => {})({ ok: false, err: 'Not while down' }); }   /* v2.8 */
     const room = getRoom(socket); if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
     const p = room.players.get(socket.id); if (!p || !p.alive) return ack({ ok: false, err: 'Down' });
     if ((p.recons | 0) <= 0) return ack({ ok: false, err: 'No recon flare' });
@@ -1230,7 +1159,6 @@ io.on('connection', (socket) => {
   });
   socket.on('launchHunter', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};
-    { const rd = getRoom(socket), pd = rd && rd.players.get(socket.id); if (pd && pd.down) return (typeof cb === 'function' ? cb : () => {})({ ok: false, err: 'Not while down' }); }   /* v2.8 */
     const room = getRoom(socket); if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
     const p = room.players.get(socket.id); if (!p) return ack({ ok: false, err: 'Not in a room' });
     if (modeInfo(room).bots) return ack({ ok: false, err: 'Not in this mode' });
@@ -1238,7 +1166,6 @@ io.on('connection', (socket) => {
   });
   socket.on('launchDrone', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};
-    { const rd = getRoom(socket), pd = rd && rd.players.get(socket.id); if (pd && pd.down) return (typeof cb === 'function' ? cb : () => {})({ ok: false, err: 'Not while down' }); }   /* v2.8 */
     const room = getRoom(socket);
     if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
     const p = room.players.get(socket.id);
@@ -1422,23 +1349,11 @@ io.on('connection', (socket) => {
     if (!p || !p.alive) return ack({ ok: false, err: 'Not alive' });
     ack(Mines.place(room, p, d && d.p));
   });
-  /* ===== v2.8 - REVIVE =====
-     The reviver's client pings this every ~200 ms while the key is held next
-     to a downed team-mate. combat.js owns the progress and the stand-up. */
-  socket.on('revive', (d, cb) => {
-    const ack = typeof cb === 'function' ? cb : () => {};
-    const room = getRoom(socket);
-    if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
-    const p = room.players.get(socket.id);
-    if (!p) return ack({ ok: false, err: 'Not in a room' });
-    ack(Combat.revive(room, p, d && d.id));
-  });
   /* ===== v15.0 - EMP (fix 1) =====
      The client sends nothing but the request. Whether it has a charge, which
      mines are hostile and whether anything happened is decided in Mines.emp. */
   socket.on('useEmp', (d, cb) => {
     const ack = typeof cb === 'function' ? cb : () => {};
-    { const rd = getRoom(socket), pd = rd && rd.players.get(socket.id); if (pd && pd.down) return (typeof cb === 'function' ? cb : () => {})({ ok: false, err: 'Not while down' }); }   /* v2.8 */
     const room = getRoom(socket);
     if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
     const p = room.players.get(socket.id);
@@ -1661,9 +1576,8 @@ io.on('connection', (socket) => {
     p.lastStAt = tSt;
     p.pos = [nx, ny, nz]; p.posAt = now();   /* v2.1: when this position was reported — heli.js judges a fall only on a FRESH position */
     p.ry = num(s.ry); p.rx = num(s.rx);
-    p.crouch = p.down ? 2 : Math.max(0, Math.min(2, (s.cr | 0))); p.mv = s.mv | 0; p.wp = s.wp | 0; p.ln = num(s.ln); // cr: 0 stand, 1 crouch, 2 prone (a knocked player is held prone, v2.11.1)
+    p.crouch = Math.max(0, Math.min(2, (s.cr | 0))); p.mv = s.mv | 0; p.wp = s.wp | 0; p.ln = num(s.ln); // cr: 0 stand, 1 crouch, 2 prone
     p.rl = s.rl ? 1 : 0;                       // reloading — cosmetic only, never trusted for anything
-    if (typeof s.fr === 'number') p.fr = Math.max(0, Math.min(20, s.fr | 0));   /* v2.9: the frag stock, for the death crate only */
     if (typeof s.ping === 'number') p.ping = Math.max(0, Math.min(999, s.ping | 0));
     p.history.push({ t: now(), pos: p.pos });
     const cutoff = now() - CFG.NET.historyMs;
@@ -1689,7 +1603,6 @@ io.on('connection', (socket) => {
     const t = now();
     if (p.lastPickAt && t - p.lastPickAt < 120) return;
     p.lastPickAt = t;
-    if (lootDeathCrate(room, p)) return;   /* v2.9: a fallen player's kit at your feet comes first */
     tryCollect(room, p);
   });
 
@@ -1708,28 +1621,39 @@ io.on('connection', (socket) => {
 
   socket.on('throw', (d) => {
     const room = getRoom(socket); if (!room || room.state !== 'playing') return;
-    { const pt = room.players.get(socket.id); if (pt && pt.down && d && d.type !== 'frag') return; }   /* v2.8: down, only the frag */
+    /* ===== v2.8 - ONE FRAG A LIFE ON THE SMALL MAPS =====
+       The frag stock lives on the client (Weapons.throwsLeft), which issues
+       CFG.fragCountFor(map) per life. The server counts the throws it relays
+       so a client that ignores its own stock gets nothing past the cap: the
+       extra throw is not relayed and its blast claims are refused ('hit'). */
+    if (d && d.type === 'frag' && CFG.isArena(room.settings.map || 'urban')) {
+      const tp = room.players.get(socket.id);
+      if (tp) {
+        tp.fragThrows = (tp.fragThrows | 0) + 1;
+        if (tp.fragThrows > CFG.fragCountFor(room.settings.map || 'urban')) return;
+      }
+    }
     socket.to(room.code).emit('throw', { id: socket.id, type: d && d.type, o: d && d.o, v: d && d.v });
   });
 
   // Damage claim from the shooting client — validated here.
   socket.on('hit', (d) => {
     const room = getRoom(socket); if (!room || room.state !== 'playing') return;
-    const shooter = room.players.get(socket.id); if (!shooter) return;
+    const shooter = room.players.get(socket.id); if (!shooter || !shooter.alive) return;
+    shooter.protUntil = 0;
     if (!d || !CFG.WEAPONS[d.w] && d.w !== 'frag' && d.w !== 'molotov') return;
-    /* v2.9 (Rahul): "A throws a frag, B kills A before it lands — the frag
-       still has to hurt B." A dead shooter's claim is kept for the 8 s a
-       thrown thing can still be in the air or burning; guns need a live one. */
-    const thrown = d.w === 'frag' || d.w === 'molotov' || d.w === 'rocket';
-    if (!shooter.alive && !(thrown && shooter.diedAt && now() - shooter.diedAt < 8000)) return;
-    if (shooter.alive) shooter.protUntil = 0;
+    /* ===== v2.8 - ASSAULT: RIFLES ONLY, AND THE SERVER SAYS SO =====
+       The client never deals an Assault room anything but CFG.ASSAULT_KIT and
+       the crates never draw a non-AR gun; this is the authoritative half — a
+       hit claimed with any other firearm is not a hit. Knife, throwables and
+       gear pass (CFG.gunAllowed answers true for anything that is not a gun). */
+    if (!CFG.gunAllowed(room.settings.mode, d.w)) return;
+    /* v2.8: a frag past this life's arena stock (see 'throw') deals nothing */
+    if (d.w === 'frag' && CFG.isArena(room.settings.map || 'urban')
+        && (shooter.fragThrows | 0) > CFG.fragCountFor(room.settings.map || 'urban')) return;
     const victim = room.players.get(d.victim); if (!victim || !victim.alive) return;
 
     const explosive = d.w === 'frag' || d.w === 'rocket' || d.w === 'molotov';
-    /* v2.8 (Rahul): knocked, the avatar can only throw a frag, place mines and
-       use the pistol. Every other weapon's claim is dropped here, whatever the
-       client shows. */
-    if (shooter.down && d.w !== 'pistol' && d.w !== 'frag' && d.w !== 'mine') return;
     if (!explosive && d.victim === socket.id) return;
     if (!explosive && !fireRateOk(shooter, d.w)) return;
     if (!positionPlausible(victim, d.vp)) return;
@@ -1768,7 +1692,7 @@ io.on('connection', (socket) => {
     } else {
       const dx = shooter.pos[0] - victim.pos[0], dy = shooter.pos[1] - victim.pos[1], dz = shooter.pos[2] - victim.pos[2];
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      dmg = weaponServerDamage(d.w, d.part, d.pellets, dist, shooter.crouch === 2);   /* v2.9: prone = half range */
+      dmg = weaponServerDamage(d.w, d.part, d.pellets, dist);
     }
     if (dmg <= 0) return;
     applyDamage(room, victim, dmg, socket.id, d.w, d.part === 'head', pointBlank);

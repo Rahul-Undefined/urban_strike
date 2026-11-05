@@ -76,10 +76,12 @@ vm.createContext(ctx);
 [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/districts.config.js", "public/src/config/index.js",
+  "public/src/config/districts.config.js", "public/src/config/maps-killhouse.config.js",
+  "public/src/config/maps-kasbah.config.js", "public/src/config/index.js",
   "public/src/environment/merge.js", "public/src/environment/world.js",
   "public/src/environment/districts-south.js", "public/src/environment/districts-north.js",
   "public/src/environment/districts-outer.js", "public/src/environment/deco.js",
+  "public/src/environment/killhouse.js", "public/src/environment/kasbah.js",
   "public/src/environment/access.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
@@ -194,9 +196,15 @@ function ok(c, label) { if (c) { pass++; if (VERBOSE) console.log('  PASS  ' + l
    written AFTER the measurement records the defect as normal and the gate can
    never see it again. 20 is the acceptance criterion for Milestone A, not the
    allowance. Drive it down. Never raise it. */
-const BUDGET = { urban: 0, metro: 0 };
+/* v2.8: KASBAH is walked too, and it starts at 0 — every flight on the new
+   map is a straight outdoor flight on 0.50 m treads, built to the run/rise rule
+   from the start, so there is no legacy number to ratchet down from.
+   `node tools/verify-climb.js kasbah` walks only the new map (seconds, not
+   the ~100 s Urban takes). */
+const BUDGET = { urban: 0, metro: 0, kasbah: 0 };
+const ONLY = process.argv.slice(2).filter(a => a[0] !== '-');
 
-for (const map of ["urban"]) {
+for (const map of (ONLY.length ? ONLY : ["urban", "kasbah"])) {
   ctx.__m = map; ctx.__sc = new THREE.Scene();
   vm.runInContext("World.reset && World.isBuilt() && World.reset(); World.buildMap(__sc, __m);", ctx);
   const cols = ctx.World._colliders();
@@ -219,7 +227,7 @@ for (const map of ["urban"]) {
     const good = r.peak >= f.topY - STEP;
     if (good) continue;
     if (EXPECTED[key]) { console.log('        EXPECTED  ' + key + ' — ' + EXPECTED[key]); continue; }
-    const where = DIST ? DIST.nameAt(f.sx, f.sz) : '';
+    const where = (DIST && map === 'urban') ? DIST.nameAt(f.sx, f.sz) : map;
     bad.push({ i, f, r, where, why: diagnose(cols, f, r.peak) });
   }
 

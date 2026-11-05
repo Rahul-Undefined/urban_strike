@@ -118,7 +118,7 @@ console.log('\n--- v10.22: ONE nuke per five kills, not one per kill after five 
 {
   /* Dying resets the count: five more kills after a death must earn one, not
      require ten. */
-  const room = mkRoom('sunsetrow');
+  const room = mkRoom('killhouse');
   const p = mkP('N3', 'a', 0, 0);
   room.players.set(p.id, p);
   for (let k = 1; k <= 6; k++) { p.streak = k; Nuke.onKill(room, p); }
@@ -210,7 +210,7 @@ console.log('\n--- v10.15: the server aims, the client does not ---');
   /* No enemies alive: it must still fire. A spent killstreak that produces
      nothing reads as the button being broken, which is the defect this whole
      change exists to fix. */
-  const room = mkRoom('sunsetrow');
+  const room = mkRoom('killhouse');
   const p = mkP('P2', 'a', 0, 0); p.yaw = 0;
   room.players.set(p.id, p);
   p.streak = 5; Nuke.onKill(room, p);

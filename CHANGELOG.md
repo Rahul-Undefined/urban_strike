@@ -1,159 +1,128 @@
-# v2.11.1 (build 42) — HOTFIXES AFTER THE FIRST LIVE SESSION (2026-10-15)
+# v2.8.0 (build 38) — KASBAH; ASSAULT; THE KILLHOUSE GETS HARDER; 10 MINUTES (2026-11-05)
 
-Rahul: "lots of bugs: the knocked avatar is not shown; the minimap is not
-showing; the minimap should show the knocked player; drops are not coming;
-no points until the kill is confirmed; lag; lots of popups at match start."
+Built on **v2.7.0 (build 37)** — the last stable build. Every later build was
+set aside at Rahul's request; nothing from them is in here.
 
-What was found and changed:
-- **A knock carried into the next match.** The client's `localDown` flag
-  was only cleared by a death. A match that ended while you were knocked
-  left you "down" in the next one: weapons locked to the pistol, the
-  "pistol only" toast on every weapon switch (the popup flood), the forced
-  prone every frame (the avatar that never got up). Cleared on matchStart,
-  matchEnd and your own spawn; the server clears every player at match end.
-- **Posture 3 is gone from the wire.** A knocked player is sent as PRONE
-  (2) — the one value every pose table knows; "down" rides on the
-  knocked/downEnd events and the roster. The avatar lies down the way a
-  prone avatar always has.
-- **Minimap: a knocked team-mate is a pulsing amber ring labelled DOWN.**
-- **Knock rule in respawn modes.** "Last of the side standing dies
-  outright" was wrong where team-mates respawn in seconds: a mate who is
-  dead *right now* still counts, so the knock always happens (points only
-  on the confirmed kill — bleed-out or finish). One-life modes keep the
-  outright death.
-- **Toasts de-duplicated**: the same line within 1.5 s is one toast.
-- **Perf**: the hunter's line-of-sight search runs 5x a second instead of
-  15x; the revive/crate prompt and the KNOCKED banner write the DOM only
-  on change; the menu's searchlight blur filter and the hero's blend-mode
-  scanlines are dropped (GPU cost on weak machines; the menu is
-  display:none in a match, so in-match lag is not from the menu).
-- Q-tap drop-attachment handler read an undefined `playing` (pre-existing;
-  threw on every Q release).
+Rahul: "remove these maps [Sunset Row, Freightyard, Bazaar, Substation,
+Riverside, Airfield], instead add another 'urban small' type map with a
+different world and name it something different, with good architecture,
+style and design, core gameplay remains the same. Add a 10 mins match mode.
+In killhouse make the walls a little bigger — the avatar is taller than the
+walls. Max 1 frag and 3 mines in the small maps, every new life. Make the kill
+house more competitive and challenging. Add a mode Assault where only assault
+guns are used, no sniper."
 
-Drops: verified live on Urban Small — the crate fires at 60 s with a random
-landing point and lands. If a crate still does not appear in your session,
-the next thing I need is the F12 console (red lines) — see the README note.
+## 1. The roster (world.config.js, world.js, index.html, server/lib/bots.js, every gate)
 
-Harness 17/17, live 3-client knock/revive/finish run green, 7 gates green.
+- REMOVED: Sunset Row, Freightyard, Bazaar, Substation, Riverside, Airfield —
+  their builders (`sunsetrow.js`, `smallmaps.js`, `medium.js`), config tables
+  (`maps-sunsetrow`, `maps-small`, `maps-medium`), script tags, harness lists
+  and gate budgets. A stale room setting naming one falls to Urban at
+  makeRoom, as Rural and Metro did. **Delete those six files from the repo**
+  (`cleanup-v2.8.0.bat`) — unzipping over the folder cannot remove them.
+- ADDED: **Kasbah** (`environment/kasbah.js`, `config/maps-kasbah.config.js`).
+  The roster is Urban, Urban Small, Killhouse, Kasbah.
 
-# v2.11.0 (build 41) — OLD PORT; SIX MAPS RETIRED; A 10-MINUTE MATCH (2026-10-14)
+## 2. Kasbah — a walled sandstone old town, 200 x 200 m
 
-Rahul: "remove these maps (Sunset Row, Freightyard, Bazaar, Substation,
-Riverside, Airfield); instead add another Urban-Small-type map with a
-different world, name, architecture, style and design; core gameplay the
-same. Add a 10-minute match mode."
+Urban Small's rules (not an arena: full loot, a crate a minute, 2.5 s spawn
+protection, the 50 m frag; no train, no helicopter), a different world:
 
-## OLD PORT (`oldport`, environment/oldport.js, config/maps-oldport.config.js)
-A whitewashed harbour town, 160 x 160, eight players, the Urban Small
-weight class on a different continent. Four blocks of hollow plaster houses
-(cream, ochre, terracotta, dusty pink) with doorways and shutters you shoot
-through, every roof reached by a crate stair (0.40 m rises); a piazza with
-a fountain and market stalls; a belfry landmark; a north terrace; a quay
-with bollards, crate stacks, a barge you can board and a customs shed whose
-roof watches the waterfront. 588 colliders, 32 draws. Not an arena: loot,
-random drops, death crates, knock/revive and 10/15/30 all as on Urban
-Small. Spawns tagged town (a) / quay (b) for team modes. Fingerprint
-baselined.
+- **Souk square** (60 m): fountain, eight market stalls, palms, four screen
+  walls that break the avenue-to-avenue lines, four arches at the avenue
+  mouths, a kiosk with a terrace in each corner.
+- **Four 12 m avenues** to four great gates in a 12 m rampart (merlons,
+  buttresses as cover, four corner bastions), lined both sides by row houses
+  — one-storey with roof terraces and rooftop rooms, two-storey tall houses.
+- **NW Medina**: a tight grid of tall and short houses round a well court.
+- **NE Citadel**: a 36 m plinth, 3 m high, two grand stairs, crenellations,
+  the keep (roof 7.6 m), barracks, armoury, cannon on the corners; stables
+  and a ruined wall below.
+- **SE Caravanserai**: a courtyard ring of rooms whose roof is ONE continuous
+  walkway (the four gates are bridged at roof level), two flights up from the
+  courtyard, a trough, carts, bales.
+- **SW Garden and Tannery**: turf, a long walkable pool, palms, a pavilion,
+  the hammam with its dome; the dye-pit yard (15 vats — crouch cover) and
+  two-storey tannery houses whose terraces look over it.
+- Every height is reachable from the ground by an OUTSIDE stair (64 flights,
+  0.50 m treads, rise <= 0.36 m). Every quarter has a high place (7.6 m in
+  the medina, the citadel and the tannery; the 5.0 m caravanserai ring).
+- Points are GENERATED from the geometry (`tools/gen-kasbah-points.js
+  --write`): 58 spawns (17 north 'a', 17 south 'b', 24 middle 'n'), 155 loot
+  points (13 signature), 19 airdrop points.
+- Weight: 4,498 colliders, 29 draws, 107k triangles (Urban: 11,778 / 109 /
+  332k). No dead ground anywhere inside the rampart (verify-cover: no cell
+  more than 14 m from cover once the lanes behind the plinth got theirs).
 
-## Retired from the picker
-Sunset Row, Freightyard, Bazaar, Substation, Riverside, Airfield are
-`ready: false` — hidden from the lobby and refused by the server, code and
-data kept (one flag each to bring one back). The roster is Urban, Urban
-Small, Killhouse, Old Port.
+## 3. Ten minutes (gameplay.config `MATCH.timeOptions`, config/index.js `timeOptionsFor`)
 
-## 10 minutes
-`MATCH.timeOptions` is 10 / 15 / 30. Urban, Urban Small and Old Port offer
-all three; Killhouse (and any arena) 10 / 15; every zone mode stays 15.
+`[10, 15, 30]`. Urban, Urban Small, Kasbah: 10 / 15 / 30. Killhouse: 10 / 15.
+Every zone mode: 15 (its circles are cut to that clock). Default 15. Both
+server clamps and the lobby select read the one resolver.
 
-Gates: build PASS, spawns 40/0, spawn-geometry 30/0, intel 11/0,
-client 65/0, menu 18/0, fingerprint 64/0 (+ Old Port baseline).
+## 4. Killhouse walls (killhouse.js `PART_H`)
 
-# v2.10.1 (build 40) — HOTFIX: "revive: playing is not defined" (2026-10-14)
+2.4 -> 3.5 m (the tallest wall verify-cover still counts as cover). Measured: the operator renders ~2.28 m and his NAME TAG sits at
+2.63-3.05 m — at 2.4 m the tag cleared every partition. Blocks, the deck and
+the container corridors are unchanged, so the high ground still looks over
+the maze.
 
-The v2.9 revive loop (game.js `reviveTick`) read `playing`, a variable that
-exists only inside the key handler. It ran every frame, threw on the menu,
-and the error toast sat on the welcome screen. It now resolves the phase
-itself (`Net.getPhase() === 'playing'`). Nothing else changed.
+## 5. 1 frag and 3 mines a life on the small maps (config/index.js, system.js, server.js, mines.js, loot.js)
 
-# v2.10.0 (build 39) — KILLHOUSE RAISED; DRONES FLY UNDER INDOOR ROOFS (2026-10-14)
+Small maps = the arenas = the Killhouse after this roster (Urban Small and
+Kasbah are theatres and keep 5 frags / 5 mines). `THROWS.frag.countArena` 1,
+`GEAR.mine.startArena` 3 / `maxCarryArena` 3, resolved by
+`CFG.fragCountFor` / `mineStartFor` / `mineCapFor` — read by the client
+loadout, the server's spawn refill and the pickup cap. The 20-a-match mine
+ration is OFF (`lifetimeSmall` 0): every life gets three. The server counts
+frag throws per life on an arena; a throw past the stock is not relayed and
+its blast claim is refused.
 
-Rahul: "make the Killhouse walls a little higher so the head is not seen,
-and the drones visible and shootable — a little makeover so it is fun
-without the frag."
+## 6. The Killhouse, competitive (world.config `radar`, `crateExclude`; minimap.js; loot.js)
 
-- Partitions 2.4 -> 3.0 m: a crate-step or a block top no longer puts a
-  head over the breeze-block. Roof 9 -> 11 m (trusses, skylights follow).
-- `MAPS.killhouse.droneCeil: 9` — drones.js caps every drone's cruise (and
-  the hunter's dash height) under an indoor map's roof. Before, both drones
-  climbed to 12 / 26 m, ABOVE the 9 m roof: invisible inside, unshootable,
-  and the hunter's line of sight to anyone was blocked by the roof. Now they
-  hunt at 9 m under the trusses, in sight and in range.
-- Fingerprint re-baselined for Killhouse (geometry change, intentional).
+- **Radar**: enemies are no longer always on the dial or the M map here. They
+  show for `NET.detectMs` after an unsuppressed shot, or inside 8 m.
+  Team-mates are always shown. Every other map is unchanged
+  (`CFG.radarFor`).
+- **Crates**: no Strike Drone, Hunter Drone, Recon Flare or Recon Visor —
+  map-vision and auto-kill gear decided fights the gun should decide (and the
+  hunter's 12 m cruise was above the 9 m roof, so it could not work there).
+- The 3.5 m walls (item 4) and 1 frag a life (item 5) are the other half.
 
-Gates: drone 45/0, build PASS, spawn-geometry 65/0, spawns 36/0,
-client 65/0, fingerprint 64/0.
+## 7. Assault (world.config `MODES` aff/at2/at3/at4, `MODE_CATS`; weapons.config `ASSAULT_GUNS`)
 
-# v2.9.0 (build 38) — KNOCK & REVIVE, DEATH CRATES, RANDOM DROPS, PRONE RANGE, LETHAL DRONES (2026-10-14)
+A new lobby category: Free For All, 2 vs 2, 3 vs 3, 4 vs 4; any map. The
+spawn kit is the AK-47, the M4A1 and the knife (`ASSAULT_KIT`). Crate guns
+are assault rifles only — SCAR-H, AKM, AUG, FAMAS (`CFG.lootAllowed`). The
+server refuses a hit claimed with any other firearm (`CFG.gunAllowed`).
+Throwables, mines and crate gear are untouched — they are not guns.
 
-Rahul's list, in his order, all in:
+## Gates
 
-## 1. Frags off the small maps (arenas) — crate-only there
-Nobody spawns with a frag on an arena; the Frag Bundle ×5 rides in every
-arena crate (the zone rule, now on arenas too) and the carried stock
-survives the respawn. Urban / Urban Small unchanged.
-
-## 2. Random drops on Urban and Urban Small (loot.js `randomDropPoint`)
-The crate lands on a random spot of open ground with clear sky anywhere
-inside the walls (inside the circle in a zone match) — 200 draws, 188
-distinct spots on Urban, none on a roof or under cover. The hand-placed list
-is the fallback if 60 draws find nothing. Arenas keep their points.
-
-## 3. Knock & revive, PUBG-style (team and squad modes) — combat.js, server.js, client
-- A lethal hit KNOCKS: hp 1, flat on the ground (wire posture 3), a 20 s
-  clock. The knocker gets no kill yet. Last of the side standing dies
-  outright; so does the zone, the train and a heli fall. Bots die outright.
-- Down: crawl, throw frags, place mines, shoot the pistol — nothing else
-  (server drops every other claim; client refuses the switch; X cannot
-  stand). HUD: KNOCKED · 17 s banner, "B IS REVIVING YOU 60%".
-- Revive: a team-mate within 2.6 m holds **E** for 4 s (E leans only when
-  no downed team-mate is in reach). Up on 30 hp with 1.5 s of grace.
-- No revive in 20 s → death, kill and point to the knocker.
-- **Any further hit while down finishes them at once** (the "pool" is gone —
-  Rahul's follow-up), kill to the finisher.
-- Feed: "X knocked Y", "B revived A". `knocks` / `revives` on the roster.
-
-## 4. Prone = half range, every gun (combat.js `weaponServerDamage`)
-Lying down, a round past 50% of the weapon's range does nothing. No popup,
-no warning — the number only. Standing or crouched, the whole range.
-
-## 5. Hunter drone: one shot, one kill, then it is gone
-16 m/s, one round every 1.4 s at 80%, a hit kills outright (no knock), then a
-2.5 s dash at 1.7× to a random spot 25-40 m away before it hunts again.
-## 6. Strike drone: faster, the blast kills everyone in it
-Climb 20, hunt 26, dive 40 m/s. The blast kills every enemy inside the 4.2 m
-circle outright — the target and whoever stood beside them.
-
-## 7. A frag in the air outlives its thrower (server.js 'hit')
-A dead thrower's frag / molotov / rocket claim is honoured for 8 s after the
-death. Guns still need a living shooter.
-
-## 8. Advanced Recon Visor (loot: `visoradv`, legendary, crates only)
-Through-wall vision for the WHOLE match, every life — re-granted on each
-respawn. The plain visor is still per life.
-
-## 9. Death crates (Urban / Urban Small) — server.js `dropDeathCrate`
-When a player dies their kit — drones, hunters, recons, adrenaline, C4, EMP,
-visor (advanced or plain), exclusive weapons, and the frag stock outside
-zone/arena — drops as a crate with a red beacon for 10 s. Anyone within
-2.8 m presses **Z** to loot it (caps respected, duplicates become ammo);
-the dead player's counts are zeroed. Prompt line: "Z · loot NAME's kit · 7 s".
-
-## Gates and tests
-Harness 16/16 (knock, revive, bleed-out, finish, last-standing, zone,
-solo, prone range); live 3-client run: knock → AK refused → revive on 30 hp
-→ re-knock → pistol finish credited. `verify-drone` 45/0 (one-shot + dash
-contract), client 65/0, fingerprint 64/0, zone 78/0, hitbox 32/0,
-endscreen 58/0. test.js 261/0 through phase 18.
+- `test.js` **353/0** (v2.7.0: 325/0) — roster, durations, stock, Assault and
+  radar asserted; the phases that used Riverside / Bazaar as a stand-in map
+  use Kasbah / the Killhouse.
+- NEW `tools/verify-v28.js` (live, **16/0**): Assault refuses sniper, SMG,
+  pistol, shotgun, AWM and M249 hits and lands the AK; Assault crate guns are
+  ARs; a Killhouse life has 3 mines; the second frag of a life is neither
+  relayed nor damaging; no drone / hunter / recon / visor in Killhouse crates;
+  a Kasbah room starts, spawns on its table and keeps 30 minutes.
+- NEW `tools/gen-kasbah-points.js`: 64/64 flights deliver onto their terrace.
+- `verify-climb` walks Kasbah too: **64/64** climbable (budget 0).
+  `node tools/verify-climb.js kasbah` runs it alone.
+- `verify-map` 1742/0 (Kasbah: 155 loot, 58 spawns, 19 drops).
+- `verify-cover`: Kasbah 0.1% dead ground (budget 6%), Killhouse 0.2%.
+- `verify-fingerprint` 24/0: Urban and Urban Small UNCHANGED; Killhouse
+  signatures only (counts identical); Kasbah baselined.
+- `verify-fullmap` (Assault classified with FFA/Team), `verify-collision`
+  (Kasbah sealed, budget 0), `verify-floaters`, `verify-lighting`,
+  `verify-zfight`, `verify-undeclared`, `verify-nuke` (Killhouse as the
+  stand-in arena) updated for the roster — all as green as before.
+- Still red, IDENTICAL to v2.7.0 and untouched by this build:
+  `verify-access` (north block A), `verify-arch`, `verify-climb` on Urban
+  (7 of 223 flights), `verify-nuke` (2), `verify-protect` (nuke.js /
+  rocket.js still on disk), `verify-botmode` / `verify-bots` /
+  `verify-models` (test removed systems).
 
 # v2.7.0 (build 37) — THE HUNTER HUNTS; THE PRONE HITBOX IS THE BODY (2026-10-09)
 

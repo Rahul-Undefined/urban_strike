@@ -56,6 +56,15 @@ var Minimap = (function () {
   }
   var lastDraw = 0;
   var ready = false;
+  /* ===== v2.8 - THE RADAR RULE IS THE MAP'S =====
+     CFG.radarFor(map) lays the map's own `radar` over MINIMAP. Every map but
+     the Killhouse resolves to MINIMAP itself (enemies always shown); the
+     Killhouse shows an enemy only after an unsuppressed shot or inside 8 m.
+     Team-mates are drawn by their own branch and are never hidden. */
+  function radar() {
+    var m = (typeof World !== 'undefined' && World.builtMap) || 'urban';
+    return CFG.radarFor ? CFG.radarFor(m) : CFG.MINIMAP;
+  }
 
   function init() {
     canvas = document.getElementById('minimap');
@@ -178,8 +187,9 @@ var Minimap = (function () {
         dot(rx, rz, 4, r.color || '#63d968', true);
       } else {
         var dist = Math.sqrt((r.renderPos.x - px) * (r.renderPos.x - px) + (r.renderPos.z - pz) * (r.renderPos.z - pz));
-        var detected = CFG.MINIMAP.alwaysShowPlayers || (Net.reconActive && Net.reconActive()) ||   /* v2.3: recon shows every enemy */
-          (now - r.lastShotAt) < CFG.NET.detectMs || dist < CFG.MINIMAP.proximity;
+        var RD = radar();   /* v2.8: per map — the Killhouse hides enemies until they fire or close in */
+        var detected = RD.alwaysShowPlayers || (Net.reconActive && Net.reconActive()) ||   /* v2.3: recon shows every enemy */
+          (now - r.lastShotAt) < CFG.NET.detectMs || dist < RD.proximity;
         if (detected) dot(rx, rz, 4.2, '#e8563e', true);
       }
     });
@@ -698,22 +708,14 @@ var Minimap = (function () {
       else if (!(ally ? showAllies : showEnemies)) return;
       if (ally) {
         if (!r.alive) return;
-        /* v2.11.1 (Rahul): a knocked team-mate is the one pin that matters — a
-           pulsing amber ring, labelled DOWN, so the squad can find them in time */
-        if (r.down) {
-          g.save(); g.globalAlpha = 0.55 + 0.45 * Math.abs(Math.sin(nowMs / 180));
-          marker(r.renderPos.x, r.renderPos.z, 8, '#ffb020', false, 'DOWN \u00b7 ' + (r.name || ''));
-          g.restore();
-          marker(r.renderPos.x, r.renderPos.z, 4, '#ffb020', true, '');
-          return;
-        }
         marker(r.renderPos.x, r.renderPos.z, 5, r.color || '#63d968', true, r.name || '');
         return;
       }
       var dx = r.renderPos.x - PlayerCtl.pos.x, dz = r.renderPos.z - PlayerCtl.pos.z;
       var dist = Math.sqrt(dx * dx + dz * dz);
-      var detected = r.alive && (CFG.MINIMAP.alwaysShowPlayers ||
-        (nowMs - r.lastShotAt) < CFG.NET.detectMs || dist < CFG.MINIMAP.proximity);
+      var RD2 = radar();   /* v2.8 */
+      var detected = r.alive && (RD2.alwaysShowPlayers ||
+        (nowMs - r.lastShotAt) < CFG.NET.detectMs || dist < RD2.proximity);
       if (detected) {
         lastSeen[id] = { x: r.renderPos.x, z: r.renderPos.z, t: nowMs };
         marker(r.renderPos.x, r.renderPos.z, 5.5, '#e8563e', true, r.name || '');

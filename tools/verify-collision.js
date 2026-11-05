@@ -62,10 +62,10 @@ vm.createContext(ctx);
 [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/maps-killhouse.config.js","public/src/config/maps-sunsetrow.config.js","public/src/config/maps-small.config.js","public/src/config/maps-medium.config.js","public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
+  "public/src/config/maps-killhouse.config.js","public/src/config/maps-kasbah.config.js","public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
-  "public/src/environment/deco.js", "public/src/environment/killhouse.js","public/src/environment/sunsetrow.js","public/src/environment/smallmaps.js","public/src/environment/access.js",
+  "public/src/environment/deco.js", "public/src/environment/killhouse.js","public/src/environment/kasbah.js","public/src/environment/access.js",
   "public/src/player/controller.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
@@ -230,25 +230,11 @@ const ESCAPE_BUDGET = { urban: 8, metro: 8,
      a hole in it, which is why this is the only map on the list with a budget
      of 0 rather than a tolerance. */
   killhouse: 0,
-  /* v10.12: sunsetrow is outdoors but fully walled — brick on the long sides,
-     fence across the street ends. Same reasoning as killhouse: any escape at
-     all means the boundary has a hole in it. */
-  sunsetrow: 0,
-  /* v10.14: all three new small maps are fully fenced, same as the two before
-     them. Zero, not a tolerance — an escape means the shell has a hole. */
-  freightyard: 0, bazaar: 0, substation: 0,   /* v10.21: 8, matching urban and metro rather than the arenas' 0.
-
-     The arenas are sealed buildings, so any escape there means a hole in the
-     shell. These two are OUTDOOR compounds with a fence, and the probe walks
-     off at the same rate it does on urban and metro — 8 of 48 bearings, which
-     on those maps has been the accepted tolerance since v8.
-
-     It is a tolerance, not a clean bill: the note the gate prints says
-     "walkable ground ends without a boundary wall - map defect, not resolver",
-     and that is worth chasing on all four maps together rather than
-     special-casing two new ones. Logged as open. */
-  riverside: 8, airfield: 8 };
-const MAPS = ["urban", "killhouse", "sunsetrow", "freightyard", "bazaar", "substation", "riverside", "airfield"];
+  /* v2.8: the six small/medium maps are gone. KASBAH is walled all round by a
+     12 m rampart with no openings (the four gates are doors, not holes), so it
+     takes the sealed-map budget: any escape at all means a hole in the wall. */
+  kasbah: 0 };
+const MAPS = ["urban", "killhouse", "kasbah"];   /* v2.8 */
 
 for (const map of MAPS) {
   console.log(`\n--- B: ${map} ---`);

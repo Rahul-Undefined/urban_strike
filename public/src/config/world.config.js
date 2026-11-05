@@ -143,7 +143,20 @@
     zssq2: { label: 'Urban Small Zone \u00b7 Duos 4 \u00d7 2', vlabel: 'URBAN SMALL \u00b7 4 squads of 2',
              cat: 'zone', teams: true, squads: true, teamCount: 4, squadSize: 2, maxPlayers: 8, zone: true, zoneProfile: 'small', mapLock: 'urbansmall', fullMapContacts: false },
     zssq4: { label: 'Urban Small Zone \u00b7 Squads 2 \u00d7 4', vlabel: 'URBAN SMALL \u00b7 2 squads of 4',
-             cat: 'zone', teams: true, squads: true, teamCount: 2, squadSize: 4, maxPlayers: 8, zone: true, zoneProfile: 'small', mapLock: 'urbansmall', fullMapContacts: false }
+             cat: 'zone', teams: true, squads: true, teamCount: 2, squadSize: 4, maxPlayers: 8, zone: true, zoneProfile: 'small', mapLock: 'urbansmall', fullMapContacts: false },
+
+    /* ===== v2.8 - ASSAULT (Rahul: "a mode Assault where only assault guns are
+       being used, no sniper") =====
+       FFA and team shapes with one rule on top, carried by `assault: true`:
+       the only guns in the match are assault rifles — CFG.ASSAULT_GUNS
+       (weapons.config.js). The spawn kit is the AK-47, the M4A1 and the knife;
+       a crate's gun is an AR or nothing; the server refuses any other gun's
+       hit claim. Throwables, mines and crate gear are untouched — they are
+       not guns. Any map. */
+    aff: { label: 'Assault \u00b7 Free For All', vlabel: 'Free For All \u00b7 rifles only', cat: 'assault', teams: false, teamCount: 0, maxPlayers: 15, assault: true },
+    at2: { label: 'Assault \u00b7 2 vs 2', vlabel: '2 vs 2 \u00b7 rifles only', cat: 'assault', teams: true, teamCount: 2, maxPlayers: 4, assault: true },
+    at3: { label: 'Assault \u00b7 3 vs 3', vlabel: '3 vs 3 \u00b7 rifles only', cat: 'assault', teams: true, teamCount: 2, maxPlayers: 6, assault: true },
+    at4: { label: 'Assault \u00b7 4 vs 4', vlabel: '4 vs 4 \u00b7 rifles only', cat: 'assault', teams: true, teamCount: 2, maxPlayers: 8, assault: true }
   };
 
   /* ===== v1.0j - THE ZONE SCHEDULE =====
@@ -290,6 +303,8 @@
       blurb: 'Many small squads, one sector. Your squad\u2019s kills are your score.' },
     { id: 'last',   label: 'Last Stand',
       blurb: 'One life. No respawn. No clock. Last one breathing wins.' },
+    { id: 'assault', label: 'Assault',
+      blurb: 'Assault rifles only. No snipers, no SMGs, no shotguns \u2014 AK, M4 and whatever rifle the crate brings.' },
     { id: 'zone',   label: 'Urban Zone',
       blurb: 'The circle closes and you bleed outside it; respawns land inside. Urban (a circle a minute) or Urban Small (a new circle anywhere every 2 min, 50% per 10 s).' }
   ];
@@ -386,35 +401,40 @@
     /* v15.0 (fixes 11/12): 52 x 88 m, bound 48 (ring just outside the 44 m end
        walls), 15 players — the deck in the middle is what makes fifteen a fight
        rather than a blender. */
-    killhouse: { label: 'Killhouse', ready: true, bound: 48, maxPlayers: 15, indoor: true, smallMap: true, droneCeil: 9.0 },   /* v2.10: drones fly under the 11 m roof */
-    /* v2.11 (Rahul): "another Urban Small type map with a different world" —
-       OLD PORT, a whitewashed harbour town, 160 x 160, eight players. Not an
-       arena: loot, drops, death crates, 10/15/30 all as on Urban Small. */
-    oldport: { label: 'Old Port', ready: true, bound: 80, ext: { x0: -80, x1: 80, z0: -80, z1: 80 }, maxPlayers: 8, longMatch: true },
-    /* v10.12 SUNSET ROW. Two houses across a street, 64 x 40 m. Same rule set
-       as killhouse — 8 players, nuke killstreak, visor in the crate pool, no
-       sniper or RPG on the floor — but a different SHAPE: rooms and a street
-       rather than three parallel lanes. `smallMap: true` is what carries the
-       shared rules, so a third small map inherits them by setting one flag
-       instead of by someone remembering four separate places. */
-    sunsetrow: { label: 'Sunset Row', ready: false /* v2.11: retired from the picker (Rahul) */, bound: 46, maxPlayers: 15, smallMap: true },   /* v15.0 (fix 12): 64 x 84 m */
-    /* v10.14: three more small maps, replacing Outbreak. Each is a SHAPE the
-       roster did not have — see maps-small.config.js for why these three.
-       All carry `smallMap`, which is what grants the nuke killstreak, the
-       8-player cap and the crate-only visor without anyone remembering four
-       separate places. */
-    /* v15.0 (fix 12): every small map grew for a 15-player room — an outer
-       ring of the same vocabulary around each untouched core. Bounds sit just
-       outside the new fences (HX + 4). */
-    freightyard: { label: 'Freightyard', ready: false /* v2.11: retired from the picker (Rahul) */, bound: 38, maxPlayers: 15, smallMap: true },
-    bazaar:      { label: 'Bazaar',      ready: false /* v2.11: retired from the picker (Rahul) */, bound: 46, maxPlayers: 15, smallMap: true },
-    substation:  { label: 'Substation',  ready: false /* v2.11: retired from the picker (Rahul) */, bound: 40, maxPlayers: 15, smallMap: true },
-    /* v10.21 MEDIUM TIER. `arena: true` without `smallMap` — they carry the
-       arena RULES (nuke killstreak, 1 s spawn protection, crate visor) at a
-       size where a sniper is a real weapon rather than a liability. Twelve
-       players: between the arenas' 8-10 and the theatres' 15. */
-    riverside:   { label: 'Riverside',   ready: false /* v2.11: retired from the picker (Rahul) */, bound: 66, maxPlayers: 12, arena: true },
-    airfield:    { label: 'Airfield',    ready: false /* v2.11: retired from the picker (Rahul) */, bound: 70, maxPlayers: 12, arena: true },
+    /* ===== v2.8 - KILLHOUSE, COMPETITIVE (Rahul: "make the kill house more
+       competitive and challenging") =====
+       `radar`  — enemies are NOT always on the radar here. They show only for
+                  CFG.NET.detectMs after an unsuppressed shot, or inside
+                  `proximity` metres (8 m: through one partition, the distance
+                  you would hear them). Team-mates are always shown. Every other
+                  map keeps MINIMAP.alwaysShowPlayers. Read through
+                  CFG.radarFor(mapId), by the dial and the M map alike.
+       `crateExclude` — loot-item ids a crate on this map never carries. The
+                  strike drone, hunter drone, recon flare and recon visor are
+                  map-vision and auto-kill gear: in a 52 x 88 m shoot-house they
+                  decide fights the gun should decide (and the hunter's 12 m
+                  cruise is above the 9 m roof here, so it could not work).
+       The partitions themselves are 3.5 m now (killhouse.js) — the head AND
+       the name tag stay behind them. */
+    killhouse: { label: 'Killhouse', ready: true, bound: 48, maxPlayers: 15, indoor: true, smallMap: true,
+                 radar: { alwaysShowPlayers: false, proximity: 8 },
+                 crateExclude: ['drone', 'hunter', 'recon', 'visor'] },
+    /* ===== v2.8 - THE ROSTER (Rahul): Sunset Row, Freightyard, Bazaar,
+       Substation, Riverside and Airfield are REMOVED — builders, config tables,
+       script tags and gate lists all gone in one commit, so a stale room
+       setting naming one falls to urban at makeRoom, exactly as rural and
+       metro did. In their place, KASBAH: an Urban-Small-type theatre with a
+       world of its own (a walled sandstone old town, 200 x 200 m). Not an
+       arena: full loot rules, crates, 2.5 s protection, the 50 m frag — the
+       core gameplay of Urban Small, a different city. No train, no helicopter
+       (heli is `map === 'urban'` only and TRAINS has no entry for it).
+       `render` is a warm desert afternoon: colours and intensities only, the
+       light COUNT is untouched (verify-batch). */
+    kasbah: { label: 'Kasbah', ready: true, bound: 100, ext: { x0: -100, x1: 100, z0: -100, z1: 100 }, longMatch: true,
+              render: { sky: 0x6f9fd0, fogColor: 0xd9c6a2, fogDensity: 0.0042,
+                        hemiSky: 0xfff0d6, hemiGround: 0x8a6a44, hemiIntensity: 0.92,
+                        ambColor: 0x6a5a48, ambIntensity: 0.30,
+                        sunColor: 0xffd9a8, sunIntensity: 1.50, sunPos: [60, 90, -40] } },
     /* v14.0 BLACKSITE — the bot-mode-only map. `botOnly` is enforced
        server-side at create/updateSettings (a non-bot mode asking for it is
        coerced away) and client-side in the map picker; the three bm_ modes

@@ -33,8 +33,6 @@ module.exports = function initDroneModule(ctx) {
   const { io, now, applyDamage, modeInfo, CFG } = ctx;
 
   function spec(kind) { return kind === 'hunter' ? CFG.GEAR.hunter : CFG.GEAR.drone; }   /* v2.3: two kinds on one module */
-  /* v2.10: an indoor map (Killhouse) caps every drone under its roof — MAPS[map].droneCeil */
-  function cruiseFor(room, S) { const M = CFG.MAPS[room.settings.map || 'urban'] || {}; return M.droneCeil ? Math.min(S.cruiseY, M.droneCeil) : S.cruiseY; }
   function stockKey(kind) { return kind === 'hunter' ? 'hunters' : 'drones'; }
   /* line of sight from the drone to the target's chest, through the map's static colliders */
   function canSee(room, from, q) {
@@ -100,9 +98,7 @@ module.exports = function initDroneModule(ctx) {
         const dx = q.pos[0] - d.pos[0], dy = q.pos[1] - d.pos[1], dz = q.pos[2] - d.pos[2];
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (dist > S.radius) continue;
-        /* v2.9 (Rahul): the blast kills EVERYONE in the circle — the target and
-           whoever stood next to them — outright, no knock */
-        applyDamage(room, q, 999, d.owner, 'drone', false, true, { noDown: true });
+        applyDamage(room, q, S.dmg, d.owner, 'drone', false, true);
       }
     }
     const i = room.drones.indexOf(d);
@@ -176,7 +172,7 @@ module.exports = function initDroneModule(ctx) {
 
       if (d.phase === 'climb') {
         d.pos[1] += S.climbSpeed * dt;
-        if (d.pos[1] >= cruiseFor(room, S)) { d.pos[1] = cruiseFor(room, S); d.phase = 'hunt'; }
+        if (d.pos[1] >= S.cruiseY) { d.pos[1] = S.cruiseY; d.phase = 'hunt'; }
       } else if (d.phase === 'hunt') {
         const dx = tgt.pos[0] - d.pos[0], dz = tgt.pos[2] - d.pos[2];
         const dist = Math.hypot(dx, dz);
@@ -217,7 +213,7 @@ module.exports = function initDroneModule(ctx) {
     const owner = room.players.get(d.owner);
     if (d.phase === 'climb') {
       d.pos[1] += S.climbSpeed * dt;
-      if (d.pos[1] >= cruiseFor(room, S)) { d.pos[1] = cruiseFor(room, S); d.phase = 'patrol'; }
+      if (d.pos[1] >= S.cruiseY) { d.pos[1] = S.cruiseY; d.phase = 'patrol'; }
       return;
     }
     /* ===== v2.7 - IT HUNTS =====
@@ -226,11 +222,6 @@ module.exports = function initDroneModule(ctx) {
        of sight; the drone flies to it and fires once it can see it. A target
        it cannot see for loseSec is dropped and the search runs again — but
        only for a BETTER target: a visible one, or a nearer one. */
-    if (d.dash) {   /* v2.9: the getaway after a kill */
-      const mx = d.dash.x - d.pos[0], mz = d.dash.z - d.pos[2], md = Math.hypot(mx, mz);
-      if (md > 1 && t < d.dash.until) { const step = Math.min(md, S.speed * (S.dashMult || 1.6) * dt); d.pos[0] += (mx / md) * step; d.pos[2] += (mz / md) * step; d.pos[1] += (cruiseFor(room, S) + ((CFG.MAPS[room.settings.map || 'urban'] || {}).droneCeil ? 0 : 3) - d.pos[1]) * Math.min(1, dt * 2); return; }
-      d.dash = null;
-    }
     const anchor = (owner && owner.alive) ? owner.pos : d.pos;
     let tgt = d.target ? room.players.get(d.target) : null, seenNow = false;
     if (tgt && (!tgt.alive || tgt.out || Math.hypot(tgt.pos[0] - anchor[0], tgt.pos[2] - anchor[2]) > S.huntRange * 1.25)) { tgt = null; d.target = null; }
@@ -242,9 +233,7 @@ module.exports = function initDroneModule(ctx) {
         d.shun = d.shun || {}; d.shun[tgt.id] = t; tgt = null; d.target = null;
       }
     }
-    if (!tgt && d.nextSearch && t < d.nextSearch) { d.phase = 'patrol'; }   /* v2.11.1: the search runs 5x a second, not 15 — a line-of-sight test per candidate per tick was the hunter's whole cost */
-    else if (!tgt) {
-      d.nextSearch = t + 200;
+    if (!tgt) {
       const pool = candidates(room, owner || { id: d.owner, team: d.team });
       let best = null, bd = Infinity, bestSeen = false;
       for (const q of pool) {
@@ -270,25 +259,16 @@ module.exports = function initDroneModule(ctx) {
       gx = d.pos[0] + (dx / dist) * want; gz = d.pos[2] + (dz / dist) * want;
       if (seenNow && t - d.lastFire >= S.fireSec * 1000 && dist <= S.seekRange) {   // it fires only at what it can see THIS tick
         d.lastFire = t;
-        const hit = Math.random() < (S.hitChance || 0.7);
+        const hit = Math.random() < 0.8;   // the odd round misses; a hunter is pressure, not a laser
         io.to(room.code).emit('droneFire', { id: d.id, from: d.pos.slice(), to: [tgt.pos[0], tgt.pos[1] + 0.3, tgt.pos[2]], hit: hit });
-        /* v2.9 (Rahul): ONE round, one kill, no knock — and then it is gone:
-           a dash to a random spot 25-40 m away at dashMult x speed, so the
-           squad that just lost someone has no time to put it down. */
-        if (hit) {
-          applyDamage(room, tgt, 999, d.owner, 'hunter', false, true, { noDown: true });
-          d.shun = d.shun || {}; d.shun[tgt.id] = t; d.target = null;
-          const a = Math.random() * Math.PI * 2, rr = 25 + Math.random() * 15;
-          d.dash = { x: d.pos[0] + Math.cos(a) * rr, z: d.pos[2] + Math.sin(a) * rr, until: t + 2500 };
-          return;
-        }
+        if (hit) applyDamage(room, tgt, S.dmg, d.owner, 'hunter', false, false);
       }
     } else if (owner && owner.alive) {
       gx = owner.pos[0] + 4; gz = owner.pos[2] + 4;
     } else { gx = d.pos[0]; gz = d.pos[2]; }
     const mx = gx - d.pos[0], mz = gz - d.pos[2], md = Math.hypot(mx, mz);
     if (md > 0.3) { const step = Math.min(md, S.speed * dt); d.pos[0] += (mx / md) * step; d.pos[2] += (mz / md) * step; }
-    d.pos[1] += (cruiseFor(room, S) - d.pos[1]) * Math.min(1, dt * 2);
+    d.pos[1] += (S.cruiseY - d.pos[1]) * Math.min(1, dt * 2);
   }
 
   /* Serialised into the normal snapshot so clients render and can shoot at

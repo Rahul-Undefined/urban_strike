@@ -1,10 +1,6 @@
 # URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
-**v2.11.0 — OLD PORT.** A new eight-player harbour town (whitewashed houses, piazza, belfry, quay) joins Urban, Urban Small and Killhouse; six old maps retired from the picker; a 10-minute match option.
-
-**v2.10.0 — KILLHOUSE RAISED.** Partitions 3.0 m, roof 11 m; drones fly under the roof on indoor maps (9 m), so they can be seen and shot.
-
-**v2.9.0 — KNOCK & REVIVE.** Team modes knock before they kill: 20 s for a team-mate to hold E and revive (pistol, frags, mines while down; any hit finishes). Death crates on Urban/Urban Small (Z to loot, 10 s). Random airdrop spots. Prone = half gun range. Hunter one-shots and dashes; strike drone blast kills all in it. Frags outlive their thrower. Advanced Recon Visor (whole match). Arenas: frags crate-only.
+**v2.8.0 — KASBAH, ASSAULT, A HARDER KILLHOUSE.** Built on v2.7.0. The roster is now Urban, Urban Small, Killhouse and **Kasbah** — a new 200 × 200 m walled sandstone old town (souk square, citadel and keep, caravanserai roof ring, medina, tannery and garden; every rooftop reached by an outside stair) with Urban Small's rules. Sunset Row, Freightyard, Bazaar, Substation, Riverside and Airfield are removed. A **10-minute** match joins 15 and 30 (30 on Urban, Urban Small and Kasbah; zone modes stay 15). New **Assault** category (FFA, 2v2, 3v3, 4v4): assault rifles and the knife only, ARs only in crates, the server refuses any other gun. **Killhouse**: partitions 2.4 → 3.5 m (heads and name tags stay hidden), enemies show on the radar only when they fire or come within 8 m, no drones / hunter / recon flare / visor in its crates, and every life gets 1 frag and 3 mines.
 
 **v2.7.0 — THE HUNTER HUNTS.** The hunter drone now flies to the nearest enemy within 160 m of its owner and fires once it has the line (45 s, 12 m cruise); the O key always asks the server. A prone operator's hitbox is the body (0.46 m), not the 0.75 m capsule — harder to hit, every mode.
 
