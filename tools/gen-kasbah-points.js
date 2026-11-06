@@ -145,7 +145,7 @@ const loot = [];
 function addLoot(x, y, z, cls) {
   y = +(y + 0.55).toFixed(2);
   if (!inExt(x, z, 1) || !supportAt(x, y, z) || !itemClear(x, y, z)) return false;
-  if (loot.some(q => Math.hypot(q[0] - x, q[2] - z) < 8 && Math.abs(q[1] - y) < 1)) return false;
+  if (loot.some(q => Math.hypot(q[0] - x, q[2] - z) < 5 && Math.abs(q[1] - y) < 1)) return false;   /* v2.10: 8 -> 5 m, more loot */
   loot.push([+x.toFixed(1), y, +z.toFixed(1), cls]); return true;
 }
 /* signature points: the keep roof, the plinth, the caravanserai court and
@@ -156,16 +156,26 @@ function addLoot(x, y, z, cls) {
 META.rooms.forEach(r => {
   const p = r.offX || [r.x, r.z];
   if (!addLoot(p[0], r.y, p[1], 'h')) addLoot(r.x + 1.6, r.y, r.z + 1.6, 'h');
+  /* v2.10: a second spot in every room big enough to hold one 5 m away */
+  if (p) addLoot(2 * r.x - p[0], r.y, 2 * r.z - p[1], 'h');
 });
-META.roofs.forEach((r, i) => { if (r.reach && i % 2 === 0) addLoot(r.x, r.y, r.z, 'h'); });
+/* v2.10: street loot — the avenues, the alleys, the square and the courts
+   carry ground loot too (Urban's rule: rooms, roofs AND streets) */
+META.open.forEach(o => {
+  if (o.y) { for (let x = o.x0 + 3; x < o.x1 - 2; x += 9) for (let z = o.z0 + 3; z < o.z1 - 2; z += 9) addLoot(x, o.y, z, 'h'); return; }
+  for (let x = o.x0 + 4; x < o.x1 - 3; x += 20) for (let z = o.z0 + 4; z < o.z1 - 3; z += 20) addLoot(x, 0, z, 'h');
+});
+META.roofs.forEach((r, i) => { if (r.reach) addLoot(r.x, r.y, r.z, 'h'); });   /* v2.10: every reachable terrace */
 console.log('LOOT: ' + loot.length + ' (' + loot.filter(l => l[3] === 's').length + ' signature)');
 
 /* ---- AIRDROPS ---- */
 const air = [];
 const airCand = [];
 META.open.forEach(o => { if (o.y) return; for (let x = o.x0 + 3; x < o.x1 - 2; x += 8) for (let z = o.z0 + 3; z < o.z1 - 2; z += 8) airCand.push([x, z]); });
+/* v2.10: the ring alley and back lanes are drop zones too when the sky is clear */
+for (let u = -88; u <= 88; u += 12) [[u, -30], [u, 30], [-30, u], [30, u]].forEach(p => airCand.push(p));
 airCand.filter(p => inExt(p[0], p[1], 6) && landingClear(p[0], p[1]) && skyClear(p[0], p[1], 2.4))
-  .forEach(p => { if (air.every(q => Math.hypot(q[0] - p[0], q[1] - p[1]) >= 28)) air.push([+p[0].toFixed(1), +p[1].toFixed(1)]); });
+  .forEach(p => { if (air.every(q => Math.hypot(q[0] - p[0], q[1] - p[1]) >= 13)) air.push([+p[0].toFixed(1), +p[1].toFixed(1)]); });   /* v2.10: 28 -> 13 m, more drop points */
 console.log('AIRDROPS: ' + air.length);
 
 if (WRITE) {
@@ -185,8 +195,10 @@ if (WRITE) {
      LOOT_POINTS [x, y, z, class]: every room floor, every reachable terrace,
      the rooftop rooms; 's' the landmarks (keep roof, plinth, caravanserai,
      tannery terraces, hammam, fountain, well court, pavilion).
-     AIRDROP_POINTS [x, z]: open ground with clear sky, 28 m apart. */
+     AIRDROP_POINTS [x, z]: open ground with clear sky, 13 m apart. */
   var MAPS_KASBAH = {
+    /* the quarters, written from the builder (environment/kasbah.js) */
+    DISTRICTS: ${JSON.stringify(META.districts)},
     LOOT_POINTS: [${fmt(loot, 4)}
     ],
     SPAWNS: [${fmt(SP, 4)}
@@ -197,7 +209,7 @@ if (WRITE) {
   return { MAPS_KASBAH: MAPS_KASBAH };
 });
 `;
-  fs.writeFileSync(path.join(ROOT, 'public/src/config/maps-kasbah.config.js'), src);
-  console.log('wrote public/src/config/maps-kasbah.config.js');
+  fs.writeFileSync(path.join(ROOT, 'public/src/config/maps-kasbah.config.js', 'public/src/config/maps-urbansmall2.config.js'), src);
+  console.log('wrote public/src/config/maps-kasbah.config.js', 'wrote public/src/config/maps-urbansmall2.config.js');
 }
 process.exit(stranded.length ? 1 : 0);

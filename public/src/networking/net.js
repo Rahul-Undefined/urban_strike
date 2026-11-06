@@ -275,6 +275,9 @@ var Net = (function () {
   }
   var reconOn = false;   /* v2.3: this side has recon — enemies drawn on both maps until the match ends */
   function reconActive() { return reconOn; }
+  /* v2.9.1: the L2 visor puts every enemy on the radar and the M map */
+  var visor2On = false;
+  function setVisor2(on) { visor2On = !!on; }
   function setVisor(on) {
     visorOn = !!on;
     for (var id in remotes) {
@@ -508,7 +511,12 @@ var Net = (function () {
       }
     });
 
-    s.on('vitals', function (d) { UI.setVitals(d.hp, d.lv, d.du); if (d.sh !== undefined && UI.setShield) UI.setShield(d.sh, CFG.GEAR.shield.hp); });
+    s.on('vitals', function (d) {
+      UI.setVitals(d.hp, d.lv, d.du);
+      if (d.sh !== undefined && UI.setShield) UI.setShield(d.sh, (d.shl === 2 ? CFG.GEAR.shield2 : CFG.GEAR.shield).hp);
+      if (d.shl !== undefined && PlayerCtl.setShieldLevel) PlayerCtl.setShieldLevel(d.sh > 0 ? d.shl : 0);   /* v2.9: the shield slows its carrier */
+      if (d.hl !== undefined && UI.setHelmet) UI.setHelmet(d.hl, d.hs);   /* v2.9 */
+    });
     /* v10.10 NUKE — killhouse killstreak. The client is told it HAS one; it
        never decides that for itself. See server/lib/nuke.js. */
     /* ===== v15.0 - SHIELD STATE (fix 5) =====
@@ -579,6 +587,14 @@ var Net = (function () {
     s.on('pickup', function (d) { Pickups.onCollected(d, d.by === myIdV); });
     s.on('pickupSpawn', function (d) { Pickups.onSpawn(d.id); });
     s.on('grant', function (d) { Weapons.applyGrant(d); });
+    /* v2.9: removed from the staging area by the host. Leave cleanly — the
+       saved session is cleared so the client does not try to rejoin. */
+    s.on('kicked', function (d) {
+      leaveRoom();
+      UI.showScreen('screen-main');
+      try { if (window.Showcase) window.Showcase.start(); } catch (e) { }
+      UI.toast('Removed from the room by ' + ((d && d.by) || 'the host'), true);
+    });
     s.on('airdrop', function (d) {
       Pickups.airdrop(d.x, d.z, d.landAt);
       UI.toast('SUPPLY DROP INBOUND');
@@ -620,7 +636,10 @@ var Net = (function () {
 
     s.on('damaged', function (d) {
       UI.setVitals(d.hp, d.lv, d.du);
-      if (d.sh !== undefined && UI.setShield) UI.setShield(d.sh, CFG.GEAR.shield.hp);   // v15.0 (fix 5)
+      if (d.sh !== undefined && UI.setShield) UI.setShield(d.sh, (PlayerCtl.shieldLevel && PlayerCtl.shieldLevel() === 2 ? CFG.GEAR.shield2 : CFG.GEAR.shield).hp);   // v15.0 (fix 5)
+      if (d.sh !== undefined && d.sh <= 0 && PlayerCtl.setShieldLevel) PlayerCtl.setShieldLevel(0);   /* v2.9: a broken shield no longer slows */
+      if (d.hl !== undefined && UI.setHelmet) UI.setHelmet(d.hl, d.hs);   /* v2.9 */
+      if (d.helmStop) UI.toast('HELMET STOPPED A SNIPER ROUND' + (d.hs > 0 ? ' \u00b7 ' + d.hs + ' left' : ' \u00b7 helmet broken'));
       FX.damageFlash(d.zone ? (d.dmg >= 25 ? 0.4 : 0.18) : d.dmg === 0 ? 0.12 : 0.3);   // a shield hit stings less; the zone bleeds (v2.4: Urban Small Zone's 50% hit flashes hard)
       if (d.zone && AudioSys.zoneTick) AudioSys.zoneTick();          /* v1.0k: the heartbeat */
       FX.shake(0.12);
@@ -1246,6 +1265,9 @@ var Net = (function () {
     dropItem: function (d, cb) { if (socket) socket.emit('dropItem', d, cb); },
     droneHit: function (id, dmg) { if (socket) socket.emit('droneHit', { id: id, dmg: dmg }); },
     setPlayerTeam: function (id, team) { if (socket) socket.emit('setPlayerTeam', { id: id, team: team }); },
+    /* v2.9: the host removes a player from the staging area */
+    setVisor2: setVisor2, visor2On: function () { return visor2On; },   /* v2.9.1 */
+    kickPlayer: function (id) { if (socket) socket.emit('kickPlayer', { id: id }, function (r) { if (r && !r.ok && r.err) UI.toast(r.err, true); }); },
     shuffleTeams: function () { if (socket) socket.emit('shuffleTeams'); },   // v8.37
     setReady: function (v) { if (socket) socket.emit('setReady', { v: !!v }); },
     peerName: function (id) { var r = remotes[id]; return (r && r.name) || 'Player'; },

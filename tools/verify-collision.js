@@ -62,10 +62,10 @@ vm.createContext(ctx);
 [
   "public/src/config/weapons.config.js", "public/src/config/gameplay.config.js",
   "public/src/config/loot.config.js", "public/src/config/world.config.js",
-  "public/src/config/maps-killhouse.config.js","public/src/config/maps-kasbah.config.js","public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
+  "public/src/config/maps-killhouse.config.js","public/src/config/maps-kasbah.config.js", "public/src/config/maps-urbansmall2.config.js","public/src/config/districts.config.js", "public/src/config/index.js", "public/src/environment/merge.js",
   "public/src/environment/world.js", "public/src/environment/districts-south.js",
   "public/src/environment/districts-north.js", "public/src/environment/districts-outer.js",
-  "public/src/environment/deco.js", "public/src/environment/killhouse.js","public/src/environment/kasbah.js","public/src/environment/access.js",
+  "public/src/environment/deco.js", "public/src/environment/killhouse.js","public/src/environment/kasbah.js", "public/src/environment/urbansmall2.js","public/src/environment/access.js",
   "public/src/player/controller.js"
 ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
@@ -233,8 +233,11 @@ const ESCAPE_BUDGET = { urban: 8, metro: 8,
   /* v2.8: the six small/medium maps are gone. KASBAH is walled all round by a
      12 m rampart with no openings (the four gates are doors, not holes), so it
      takes the sealed-map budget: any escape at all means a hole in the wall. */
-  kasbah: 0 };
-const MAPS = ["urban", "killhouse", "kasbah"];   /* v2.8 */
+  kasbah: 0,
+  /* v2.11: Urban Small 2 is Urban Small's walled core turned a quarter — the
+     same box set, so Urban's budget. */
+  urbansmall2: 8 };
+const MAPS = ["urban", "killhouse", "kasbah", "urbansmall2"];   /* v2.8; v2.11 */
 
 for (const map of MAPS) {
   console.log(`\n--- B: ${map} ---`);

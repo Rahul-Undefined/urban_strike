@@ -156,7 +156,26 @@
     }
     return { d: best, dist: Math.sqrt(bd) };
   }
-  function listFor(map) { return (!map || map === 'urban' || map === 'urbansmall') ? D : null; }   /* v2.2: Urban Small shares the core's districts */
+  var D2 = null;   /* v2.11: Urban Small 2's districts, made once */
+  function listFor(map) {
+    if (!map || map === 'urban' || map === 'urbansmall') return D;   /* v2.2: Urban Small shares the core's districts */
+    /* v2.10: Kasbah's quarters live in its generated config (written from the
+       builder by tools/gen-kasbah-points.js), so the dial label, the M map and
+       the gates name the same place. Read lazily: CFG exists by draw time. */
+    var C = (typeof CFG !== 'undefined') ? CFG : null;
+    if (map === 'kasbah' && C && C.MAPS_KASBAH && C.MAPS_KASBAH.DISTRICTS) return C.MAPS_KASBAH.DISTRICTS;
+    /* v2.11: Urban Small 2 is Urban turned a quarter, (x, z) -> (z, -x): its
+       districts are Urban's, turned with it, same names */
+    if (map === 'urbansmall2') {
+      return D2 || (D2 = D.map(function (d) {
+        var o = {}; for (var k in d) o[k] = d[k];
+        o.x0 = d.z0; o.x1 = d.z1; o.z0 = -d.x1; o.z1 = -d.x0;
+        if (d.sign) o.sign = [d.sign[1], -d.sign[0], d.sign[2] + Math.PI / 2];
+        return o;
+      }));
+    }
+    return null;
+  }
 
   /* Rural is deliberately absent. Hollow Ridge is a valley with landmarks, not
      a grid of districts, and inventing rectangles for it would produce names

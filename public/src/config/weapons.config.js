@@ -349,6 +349,18 @@
        visor's whole value is the side you cannot otherwise see. `showAllies`
        is the one-word reversal if the reading was wrong. */
     visor: { label: 'Recon Visor', showAllies: false },
+    /* ===== v2.9 - THE VISOR, LEVEL 2 =====
+       Rahul: "visor level 2 ... shoot kare toh bullet auto locate karke enemy
+       ko hit kar de upto 50m ... opponent ko pata bhi nahi chalega ... jab
+       tak player dead na ho." Crate-only, per life. While worn, a shot from
+       a GUN is steered onto the nearest enemy inside `range` that the
+       shooter has a line of sight to and that sits within `coneDeg` of the
+       crosshair; the round lands on the chest. Nothing is shown to the target.
+       Not on the Killhouse (its crateExclude). */
+    /* v2.9.1 (Rahul: "visor l2 ko aur powerful banao"): range 50 -> 80 m,
+       cone 70 -> 120 deg, the steered round goes to the HEAD (`head`), and
+       while it is worn every enemy is on your radar and M map (`radar`). */
+    visor2: { label: 'Visor L2', range: 80, coneDeg: 120, head: true, radar: true },
     /* v15.0 (fix 1): the EMP. `maxCarry` bounds the slot; a charge is spent
        only when it clears at least one enemy mine — an EMP fired at an empty
        minefield is refused and kept, the same courtesy the drone shows a room
@@ -363,7 +375,16 @@
        shield is cover against rifles, not against the class the map exists
        to justify. Per life, like the visor. bigOnly keeps it off every arena
        (small AND medium) at both loot doors (floor roll + crate pool). */
-    shield: { label: 'Ballistic Shield', hp: 260, sniperBreaks: true, sniperPass: 0.5 },
+    /* ===== v2.9 - SHIELDS, LEVEL 1 AND 2 =====
+       Rahul: "sheild ... 2 sniper shots to completely break, aur sheild se
+       walking thora slow ... level 2 wala sheild drop mei aana chahiye jo 5
+       sniper shots aur multiple assault shots le le ... lekin slow kar de."
+       A scoped round no longer shatters the slab: it is ABSORBED and costs one
+       of `sniperHits`; the round that spends the last one breaks the shield
+       and `sniperPass` of it lands. Everything else drains hp as before.
+       `speed` is the carrier's movement multiplier while the shield stands. */
+    shield:  { label: 'Ballistic Shield', hp: 260, sniperHits: 2, sniperPass: 0.5, speed: 0.88 },
+    shield2: { label: 'Heavy Shield L2', hp: 650, sniperHits: 5, sniperPass: 0.5, speed: 0.74 },
     /* v2.0: the Strike Remote and its Air Strike are GONE with the kill-streak strikes (see §1 of the handoff). */
     train: { label: 'Train' },   /* v1.0f: the kill-feed tag for being run over */
     zone: { label: 'The Zone' },  /* v1.0j: the kill-feed tag for bleeding out outside the circle */
@@ -399,7 +420,11 @@
        closes to `standoff` and fires `dmg` every `fireSec` (armour applies).
        Shoot it down and, as with the strike drone, the shooter is granted
        one. hp 60: a burst brings it down. */
-    adrenaline: { label: 'Adrenaline', mult: 1.30, durSec: 45, maxCarry: 2 },
+    /* v2.9: AUTO on pickup (no key — N is free). mult 1.30 -> 1.22 because the
+       base speeds went up: adrenaline sprint is 7.6 x 1.22 = 9.3 m/s (was
+       6.7 x 1.30 = 8.7). A second pickup while one runs EXTENDS it by durSec,
+       up to maxStackSec left. */
+    adrenaline: { label: 'Adrenaline', mult: 1.22, durSec: 45, maxCarry: 2, maxStackSec: 90 },
     recon:      { label: 'Recon Flare', maxCarry: 1, fuseSec: 3.0, height: 45 },
     /* v2.7 (Rahul: "hunter drone is not working"): it hovered 4 m off its
        owner's shoulder and only ever engaged an enemy that walked into 55 m
@@ -409,8 +434,18 @@
        or no sight, flies there at 12 m/s, and opens fire once it has the
        line. Higher cruise (12 m) clears two-storey eaves; 45 s in the air;
        9 a round. seekRange is the firing range now, not the search range. */
-    hunter:     { label: 'Hunter Drone', hp: 60, maxCarry: 2, lifeSec: 45, armSec: 1.0, climbSpeed: 8, cruiseY: 12, speed: 12,
-                  seekRange: 60, huntRange: 160, standoff: 10, fireSec: 0.5, dmg: 9, loseSec: 4 },
+    /* ===== v2.9 - THE HUNTER IS A 20-SECOND EXECUTIONER =====
+       Rahul: "Hunter Drone J se activate ... instant kill for 20 seconds, one
+       shot kill, bahot durr se bhi marega, ghar ke andar ghus ke bhi marega,
+       ek kill mei enemy khatam, bahot speed se urega [than] the normal drone."
+       J launches it (the recon flare moves to O). It lives 20 s; it hunts the
+       nearest enemy ANYWHERE on the map (huntRange 600), flies at 36 m/s
+       (the strike drone hunts at 19 and dives at 32), passes through roofs and walls — it
+       comes down INTO the room — and one shot from within `seekRange` is a
+       kill (`oneShot`: armour, helmet and shield do not save you). Then it
+       turns to the next enemy. Shot down: the normal bounty. */
+    hunter:     { label: 'Hunter Drone', hp: 60, maxCarry: 2, lifeSec: 20, armSec: 0.6, climbSpeed: 14, cruiseY: 10, speed: 36,
+                  seekRange: 9, huntRange: 600, standoff: 3, fireSec: 0.35, dmg: 999, loseSec: 4, oneShot: true, ghost: true },
     /* v1.0b: the drone bounty. Shooting a drone down is a KILL on the board and
        puts a Strike Drone in the shooter's bag (up to drone maxCarry). */
     droneBounty: { kill: 1, grantDrone: 1 },

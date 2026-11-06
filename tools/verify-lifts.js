@@ -15,9 +15,11 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
      reproduce the browser build. Keep this list identical to index.html. */
  "public/src/config/districts.config.js", "public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
- "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/access.js"].forEach(f=>vm.runInContext(fs.readFileSync(f,"utf8"),ctx,{filename:f}));
+ "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/access.js",
+ "public/src/environment/urbansmall2.js"   /* v2.11: Urban Small 2's lifts are Urban's, turned — proved on the turned build */
+].forEach(f=>vm.runInContext(fs.readFileSync(f,"utf8"),ctx,{filename:f}));
 const byMap={};
-["urban"].forEach(m=>{vm.runInContext(`World.reset&&World.isBuilt()&&World.reset();World.buildMap(__s,"${m}");`,Object.assign(ctx,{__s:new THREE.Scene()}));byMap[m]=ctx.World._colliders().slice();});
+["urban","urbansmall2"].forEach(m=>{vm.runInContext(`World.reset&&World.isBuilt()&&World.reset();World.buildMap(__s,"${m}");`,Object.assign(ctx,{__s:new THREE.Scene()}));byMap[m]=ctx.World._colliders().slice();});
 const P = ctx.CFG.PLAYER, R = P.radius, H = P.standH;
 let pass=0, fail=0;
 const ok=(c,m)=>{c?(pass++,console.log("  PASS  "+m)):(fail++,console.log("  FAIL  "+m));};

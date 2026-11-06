@@ -58,6 +58,70 @@
 
     var WALLS = [M.paperWhite, M.cream, M.paleYellow, M.ochre, M.dustyPink, M.paperWhite, M.cream];
     var ACCENT = [M.doorPaint, M.mint, M.doorPaint, M.terracotta, M.maroon];
+
+    /* ===== v2.10 - EVERY QUARTER HAS ITS OWN COLOUR =====
+       Rahul: "map bahot yellow sided hai, usko thora colourful karo ghar, like
+       every area is somewhat different colour." The shared palette (M) is
+       Urban's — muted sands and creams — so Kasbah gets its own wall colours,
+       made once and cached on World (materials survive World.reset; only
+       geometry is disposed). One palette per DISTRICT, picked by where the
+       house stands, so a quarter reads as one place and its neighbour as
+       another: the Blue Medina is blue and white, Spice Row saffron and
+       paprika, Lantern Lane lilac and turquoise, and so on. ~30 colours cost
+       ~30 draw calls (Kasbah 29 -> ~65; Urban is 109). */
+    var PALC = World._kasbahPal || (World._kasbahPal = {});
+    function pm(hex) { return PALC[hex] || (PALC[hex] = new THREE.MeshLambertMaterial({ color: hex })); }
+    /* The districts. ORDER MATTERS only where rectangles touch: first match
+       wins. The same list is written to config (gen-kasbah-points) so
+       DISTRICTS.nameAt, the minimap label and the gates all name the same
+       place. tint is the M-map wash; walls/acc the house palette. */
+    var DISTRICTS_K = [
+      { id: 'souk',   name: 'SOUK SQUARE',     x0: -30, x1: 30,  z0: -30, z1: 30,  tint: '#e9c46a',
+        walls: [0xf0ece4, 0x46b7b0, 0xe07a5f, 0xf2c14e], acc: [0x1f5fb0, 0xa8322a] },
+      { id: 'spice',  name: 'SPICE ROW',       x0: -30, x1: 30,  z0: -97, z1: -30, tint: '#e08a2e',
+        walls: [0xe0a030, 0xd9732e, 0xc94f2c, 0xe8c66a], acc: [0x1f5fb0, 0x2e7d4f] },
+      { id: 'lantern', name: 'LANTERN LANE',   x0: -30, x1: 30,  z0: 30,  z1: 97,  tint: '#9b7fd1',
+        walls: [0x8e72c4, 0x5fb7b0, 0xd9798a, 0xeae3f0], acc: [0xe0b030, 0x1f5fb0] },
+      { id: 'weavers', name: 'WEAVERS ROW',    x0: -97, x1: -30, z0: -30, z1: 30,  tint: '#3e9b8f',
+        walls: [0x3e9b8f, 0xe7e2d6, 0x7fbf6a, 0xd8b04a], acc: [0xa8322a, 0x1f5fb0] },
+      { id: 'copper', name: 'COPPER STREET',   x0: 30,  x1: 97,  z0: -30, z1: 30,  tint: '#c0613d',
+        walls: [0xb85a3a, 0xc97b4f, 0xa0482f, 0xd89a6a], acc: [0x2a8f8a, 0x1f5fb0] },
+      { id: 'medina', name: 'BLUE MEDINA',     x0: -97, x1: -30, z0: -97, z1: -30, tint: '#3f7fc8',
+        walls: [0x3f7fc8, 0x6fa6dc, 0xe9edf2, 0x2f6db0], acc: [0xf2f2f2, 0xe0b030] },
+      { id: 'citadel', name: 'THE CITADEL',    x0: 30,  x1: 97,  z0: -97, z1: -30, tint: '#b4643f',
+        walls: [0xb4643f, 0xc98a5a, 0xa65438], acc: [0x2f4a5c, 0xe0b030] },
+      { id: 'caravan', name: 'CARAVANSERAI',   x0: 30,  x1: 97,  z0: 30,  z1: 97,  tint: '#d98a8a',
+        walls: [0xd98a8a, 0xe0a59b, 0xc96f6f], acc: [0x1f5fb0, 0x2e7d4f] },
+      { id: 'tannery', name: 'TANNERY GARDENS', x0: -97, x1: -30, z0: 30, z1: 97,  tint: '#5aa36b',
+        walls: [0x5aa36b, 0x3f8f8a, 0xe9e4d8, 0xd9b44a], acc: [0xa8322a, 0x1f5fb0] }
+    ];
+    /* where each name is printed on the M map: in open ground, never over a
+       house number — the strip names run ALONG their avenue */
+    var LAB = { souk: [0, -18, 0], spice: [0, -62, -Math.PI / 2], lantern: [0, 64, -Math.PI / 2], weavers: [-64, 0, 0],
+                copper: [64, 0, 0], medina: [-61, -64, 0], citadel: [67, -54.5, 0], caravan: [63, 65, 0], tannery: [-63, 39, 0] };
+    META.districts = DISTRICTS_K.map(function (d) { return { id: d.id, name: d.name, x0: d.x0, x1: d.x1, z0: d.z0, z1: d.z1, tint: d.tint, lab: LAB[d.id] }; });
+    function districtAt(x, z) {
+      for (var i = 0; i < DISTRICTS_K.length; i++) {
+        var d = DISTRICTS_K[i];
+        if (x >= d.x0 && x <= d.x1 && z >= d.z0 && z <= d.z1) return d;
+      }
+      var best = DISTRICTS_K[0], bd = 1e9;
+      DISTRICTS_K.forEach(function (d) {
+        var dx = Math.max(d.x0 - x, 0, x - d.x1), dz = Math.max(d.z0 - z, 0, z - d.z1);
+        if (dx + dz < bd) { bd = dx + dz; best = d; }
+      });
+      return best;
+    }
+    var dCount = {};
+    function districtMat(x, z, tall) {
+      var d = districtAt(x, z), k = dCount[d.id] = (dCount[d.id] || 0) + 1;
+      var w = d.walls[(k + (tall ? 1 : 0)) % d.walls.length];
+      return { d: d, wall: pm(w), hex: w, acc: pm(d.acc[k % d.acc.length]) };
+    }
+    /* Every building with a front door, for the house numbers and the M map:
+       { x0,z0,x1,z1 footprint, cx,cz, door [x, z, nx, nz], y0, hex, d } */
+    var HOUSES = META.houses = [];
+    var BLOCKS = META.blocks = [];     // other footprints for the map (plinth, wings, landmarks)
     var RUGS = [M.maroon, M.terracotta, M.doorPaint, M.mint, M.ochre];
 
     /* ============ A LOCAL FRAME ============
@@ -145,7 +209,11 @@
       o = o || {};
       var F = frame(ox, oz, r, W, D);
       var y0 = o.y0 || 0, H = o.H || 4.2, top = y0 + H, tall = H > 6;
-      var mat = o.mat || pick(WALLS), acc = o.acc || pick(ACCENT);
+      /* v2.10: the district's palette unless the caller fixed a material */
+      var c0 = F.P(0, 0), c1 = F.P(W, D);
+      var DM = districtMat((c0[0] + c1[0]) / 2, (c0[1] + c1[1]) / 2, (o.H || 4.2) > 6);
+      var mat = o.mat || DM.wall, acc = o.acc || DM.acc;
+      var hexOf = o.mat ? (o.mat.color ? o.mat.color.getHex() : 0xcccccc) : DM.hex;
       var roofMat = o.roofMat || M.stair;
       var ceil = tall ? y0 + 3.8 : top;            // ground-room ceiling (slab top)
       var doors = o.doors || [['n', W / 2]];
@@ -276,6 +344,21 @@
       }
       var rc = F.P(o.pent ? W * 0.3 : W * 0.45, D * 0.55);
       META.roofs.push({ x: rc[0], z: rc[1], y: top, reach: !!o.stair || !!o.reach });
+      /* v2.10: register the house and its MAIN door (doors[0]) for the number
+         plate and the M map. The plate goes on the outside face, so the door
+         point is on the wall face and the normal points out. */
+      if (!o.noNumber && doors.length) {
+        var md = doors[0], dl, dn;
+        if (md[0] === 'n') { dl = [md[1], 0]; dn = [0, -1]; }
+        else if (md[0] === 's') { dl = [md[1], D]; dn = [0, 1]; }
+        else if (md[0] === 'w') { dl = [0, md[1]]; dn = [-1, 0]; }
+        else { dl = [W, md[1]]; dn = [1, 0]; }
+        var dw = F.P(dl[0], dl[1]), nv = (function () {
+          var a = F.P(dl[0] + dn[0], dl[1] + dn[1]); return [a[0] - dw[0], a[1] - dw[1]];
+        })();
+        HOUSES.push({ x0: Math.min(c0[0], c1[0]), x1: Math.max(c0[0], c1[0]), z0: Math.min(c0[1], c1[1]), z1: Math.max(c0[1], c1[1]),
+          cx: (c0[0] + c1[0]) / 2, cz: (c0[1] + c1[1]) / 2, door: [dw[0], dw[1], nv[0], nv[1]], y0: y0, hex: hexOf, d: DM.d.id, kind: o.kind || 'house' });
+      }
       return { F: F, top: top, pent: pent };
     }
 
@@ -317,7 +400,10 @@
 
     /* ============ GROUND, STREETS, THE RAMPART ============ */
     var B = 97;                                         // inner face of the rampart
-    seg(-100, 100, -0.40, 0, -100, 100, M.seatSand, NCAST);
+    /* v2.10: the rampart, gates, plinth and fort walls in RED EARTH (pise, the
+       Marrakech wall colour) instead of yellow ochre; the arches a lighter clay */
+    var EARTH = pm(0xb4643f), EARTH2 = pm(0xc98a5a);
+    seg(-100, 100, -0.40, 0, -100, 100, pm(0xb3aa9a), NCAST);
     /* streets: packed earth (minimap brown). N/S at y .004, E/W at .010 and
        the square paving at .016 — three heights, so no two overlays ever
        share a plane. */
@@ -335,35 +421,36 @@
 
     /* the rampart: 12 m sandstone, a terracotta band, merlons on top */
     var RH = 12;
-    seg(-99.5, 99.5, 0, RH, -99.5, -B, M.ochre); seg(-99.5, 99.5, 0, RH, B, 99.5, M.ochre);
-    seg(-99.5, -B, 0, RH, -B, B, M.ochre); seg(B, 99.5, 0, RH, -B, B, M.ochre);
+    seg(-99.5, 99.5, 0, RH, -99.5, -B, EARTH); seg(-99.5, 99.5, 0, RH, B, 99.5, EARTH);
+    seg(-99.5, -B, 0, RH, -B, B, EARTH); seg(B, 99.5, 0, RH, -B, B, EARTH);
     seg(-B, B, RH - 1.1, RH - 0.8, -B, -B + 0.08, M.terracotta, NBOTH); seg(-B, B, RH - 1.1, RH - 0.8, B - 0.08, B, M.terracotta, NBOTH);
     seg(-B, -B + 0.08, RH - 1.1, RH - 0.8, -B + 0.08, B - 0.08, M.terracotta, NBOTH); seg(B - 0.08, B, RH - 1.1, RH - 0.8, -B + 0.08, B - 0.08, M.terracotta, NBOTH);
     for (var m = -96; m <= 96; m += 4) {
-      seg(m - 0.9, m + 0.9, RH, RH + 1.3, -99.3, -97.2, M.ochre, NBOTH); seg(m - 0.9, m + 0.9, RH, RH + 1.3, 97.2, 99.3, M.ochre, NBOTH);
-      seg(-99.3, -97.2, RH, RH + 1.3, m - 0.9, m + 0.9, M.ochre, NBOTH); seg(97.2, 99.3, RH, RH + 1.3, m - 0.9, m + 0.9, M.ochre, NBOTH);
+      seg(m - 0.9, m + 0.9, RH, RH + 1.3, -99.3, -97.2, EARTH, NBOTH); seg(m - 0.9, m + 0.9, RH, RH + 1.3, 97.2, 99.3, EARTH, NBOTH);
+      seg(-99.3, -97.2, RH, RH + 1.3, m - 0.9, m + 0.9, EARTH, NBOTH); seg(97.2, 99.3, RH, RH + 1.3, m - 0.9, m + 0.9, EARTH, NBOTH);
     }
     /* buttresses: cover along the rampart lane (the lane stays 2 m clear) */
     [-80, -60, -42, 42, 60, 80].forEach(function (u) {
-      seg(u - 0.7, u + 0.7, 0, 7, -B, -B + 1.0, M.ochre); seg(u - 0.7, u + 0.7, 0, 7, B - 1.0, B, M.ochre);
-      seg(-B, -B + 1.0, 0, 7, u - 0.7, u + 0.7, M.ochre); seg(B - 1.0, B, 0, 7, u - 0.7, u + 0.7, M.ochre);
+      seg(u - 0.7, u + 0.7, 0, 7, -B, -B + 1.0, EARTH); seg(u - 0.7, u + 0.7, 0, 7, B - 1.0, B, EARTH);
+      seg(-B, -B + 1.0, 0, 7, u - 0.7, u + 0.7, EARTH); seg(B - 1.0, B, 0, 7, u - 0.7, u + 0.7, EARTH);
     });
     /* corner bastions — landmarks you navigate by, not places you climb */
     [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (c) {
-      segx(c[0] * B, c[0] * 91, 0, 15, c[1] * B, c[1] * 91, M.ochre);
+      segx(c[0] * B, c[0] * 91, 0, 15, c[1] * B, c[1] * 91, EARTH);
+      BLOCKS.push([Math.min(c[0] * B, c[0] * 91), Math.min(c[1] * B, c[1] * 91), Math.max(c[0] * B, c[0] * 91), Math.max(c[1] * B, c[1] * 91), '#8e4a30']);
       segx(c[0] * B, c[0] * 90.6, 15, 15.4, c[1] * B, c[1] * 90.6, M.terracotta, NCAST);
     });
     /* the four gates: a great blue door between two pylons, an arch over */
     function gate(ax) {             // ax: 'n','s','w','e'
       var s = (ax === 'n' || ax === 'w') ? -1 : 1;
       if (ax === 'n' || ax === 's') {
-        segx(-7.2, -4.4, 0, 14, s * B, s * (B - 2.6), M.ochre); segx(4.4, 7.2, 0, 14, s * B, s * (B - 2.6), M.ochre);
-        segx(-4.4, 4.4, 7.2, 9.6, s * B, s * (B - 2.2), M.ochre);
+        segx(-7.2, -4.4, 0, 14, s * B, s * (B - 2.6), EARTH); segx(4.4, 7.2, 0, 14, s * B, s * (B - 2.6), EARTH);
+        segx(-4.4, 4.4, 7.2, 9.6, s * B, s * (B - 2.2), EARTH);
         segx(-4.4, 4.4, 0, 7.2, s * B, s * (B - 0.18), M.doorPaint, NCAST);
         segx(-7.4, 7.4, 13.6, 14.2, s * (B + 0.1), s * (B - 2.8), M.terracotta, NCAST);
       } else {
-        segx(s * B, s * (B - 2.6), 0, 14, -7.2, -4.4, M.ochre); segx(s * B, s * (B - 2.6), 0, 14, 4.4, 7.2, M.ochre);
-        segx(s * B, s * (B - 2.2), 7.2, 9.6, -4.4, 4.4, M.ochre);
+        segx(s * B, s * (B - 2.6), 0, 14, -7.2, -4.4, EARTH); segx(s * B, s * (B - 2.6), 0, 14, 4.4, 7.2, EARTH);
+        segx(s * B, s * (B - 2.2), 7.2, 9.6, -4.4, 4.4, EARTH);
         segx(s * B, s * (B - 0.18), 0, 7.2, -4.4, 4.4, M.doorPaint, NCAST);
         segx(s * (B + 0.1), s * (B - 2.8), 13.6, 14.2, -7.4, 7.4, M.terracotta, NCAST);
       }
@@ -374,7 +461,7 @@
     /* the fountain: an eight-metre basin, a column, a bowl */
     cyl(0, 0.4, 0, 3.4, 0.8, M.paperWhite);
     cyl(0, 0.83, 0, 3.05, 0.04, M.steelBlue, NBOTH);
-    cyl(0, 2.1, 0, 0.42, 2.6, M.ochre);
+    cyl(0, 2.1, 0, 0.42, 2.6, EARTH2);
     cyl(0, 3.45, 0, 1.25, 0.28, M.paperWhite, NCAST);
     [[-10, -10], [10, -10], [-10, 10], [10, 10]].forEach(function (p) { palm(p[0], p[1], 7.5); });
     /* the stalls: a ring of eight, leaving the four avenue mouths open */
@@ -391,21 +478,21 @@
     function arch(ax) {
       var s = (ax === 'n' || ax === 'w') ? -1 : 1;
       if (ax === 'n' || ax === 's') {
-        segx(-6.2, -3.8, 0, 6.6, s * 29, s * 31, M.ochre); segx(3.8, 6.2, 0, 6.6, s * 29, s * 31, M.ochre);
-        segx(-3.8, 3.8, 4.8, 6.6, s * 29.2, s * 30.8, M.ochre);
+        segx(-6.2, -3.8, 0, 6.6, s * 29, s * 31, EARTH2); segx(3.8, 6.2, 0, 6.6, s * 29, s * 31, EARTH2);
+        segx(-3.8, 3.8, 4.8, 6.6, s * 29.2, s * 30.8, EARTH2);
         segx(-6.4, 6.4, 6.6, 7.0, s * 28.8, s * 31.2, M.terracotta, NCAST);
       } else {
-        segx(s * 29, s * 31, 0, 6.6, -6.2, -3.8, M.ochre); segx(s * 29, s * 31, 0, 6.6, 3.8, 6.2, M.ochre);
-        segx(s * 29.2, s * 30.8, 4.8, 6.6, -3.8, 3.8, M.ochre);
+        segx(s * 29, s * 31, 0, 6.6, -6.2, -3.8, EARTH2); segx(s * 29, s * 31, 0, 6.6, 3.8, 6.2, EARTH2);
+        segx(s * 29.2, s * 30.8, 4.8, 6.6, -3.8, 3.8, EARTH2);
         segx(s * 28.8, s * 31.2, 6.6, 7.0, -6.4, 6.4, M.terracotta, NCAST);
       }
     }
     ['n', 's', 'w', 'e'].forEach(arch);
     /* kiosks in the square's corners: one-storey shops with terraces */
-    house(-29, -29, 0, 10, 7.4, { stair: true, doors: [['n', 7.2], ['e', 3.7]], shop: false, mat: M.paperWhite });
-    house(19, -29, 0, 10, 7.4, { stair: true, doors: [['n', 7.2], ['w', 3.7]], mat: M.cream });
-    house(-29, 20, 2, 10, 7.4, { stair: true, doors: [['n', 7.2], ['e', 3.7]], mat: M.paleYellow });
-    house(19, 20, 2, 10, 7.4, { stair: true, doors: [['n', 7.2], ['w', 3.7]], mat: M.dustyPink });
+    house(-29, -29, 0, 10, 7.4, { stair: true, doors: [['n', 7.2], ['e', 3.7]], shop: false });
+    house(19, -29, 0, 10, 7.4, { stair: true, doors: [['n', 7.2], ['w', 3.7]] });
+    house(-29, 20, 2, 10, 7.4, { stair: true, doors: [['n', 7.2], ['e', 3.7]] });
+    house(19, 20, 2, 10, 7.4, { stair: true, doors: [['n', 7.2], ['w', 3.7]] });
 
     /* ============ THE STRIPS: ROW HOUSES ALONG THE AVENUES ============
        Each strip is two rows: one fronting the avenue (stairs on the avenue
@@ -482,8 +569,9 @@
        corners. Below it, stables and a ruined wall to fight round. */
     (function () {
       var PX0 = 50, PX1 = 86, PZ0 = -86, PZ1 = -50, PY = 3.0;
-      seg(PX0, PX1, 0, PY, PZ0, PZ1, M.ochre);
-      seg(PX0 - 0.3, PX1 + 0.3, 0, 0.6, PZ0 - 0.3, PZ1 + 0.3, M.seatSand, NCAST);          // base course
+      seg(PX0, PX1, 0, PY, PZ0, PZ1, EARTH);
+      BLOCKS.push([PX0, PZ0, PX1, PZ1, '#8e4a30']);   /* v2.10: the plinth on the M map (its houses draw over it) */
+      seg(PX0 - 0.3, PX1 + 0.3, 0, 0.6, PZ0 - 0.3, PZ1 + 0.3, pm(0x8e5a40), NCAST);          // base course
       seg(PX0 - 0.08, PX1 + 0.08, PY - 0.35, PY - 0.2, PZ0 - 0.08, PZ1 + 0.08, M.terracotta, NBOTH);
       /* grand stairs: 10 x 0.30, 0.50 treads, 4 m wide */
       stairFlight(PX0 - 5.0, 0, -68, 1, 0, 10, 0.30, 0.5, 4.0, M.stair, { landing: false });
@@ -492,11 +580,11 @@
       META.flights.push([68, 0, PZ1 + 5.0, 0, -1, 10, 0.30, 0.5]);
       /* crenellated parapet with the two stair gaps */
       function crenel(x0, x1, z0, z1) {
-        seg(x0, x1, PY, PY + 1.0, z0, z1, M.ochre);
+        seg(x0, x1, PY, PY + 1.0, z0, z1, EARTH);
         var alongX = (x1 - x0) > (z1 - z0), L = alongX ? x1 - x0 : z1 - z0;
         for (var t = 0.8; t < L - 0.5; t += 2.4) {
-          if (alongX) seg(x0 + t, x0 + t + 1.0, PY + 1.0, PY + 1.6, z0, z1, M.ochre, NBOTH);
-          else seg(x0, x1, PY + 1.0, PY + 1.6, z0 + t, z0 + t + 1.0, M.ochre, NBOTH);
+          if (alongX) seg(x0 + t, x0 + t + 1.0, PY + 1.0, PY + 1.6, z0, z1, EARTH, NBOTH);
+          else seg(x0, x1, PY + 1.0, PY + 1.6, z0 + t, z0 + t + 1.0, EARTH, NBOTH);
         }
       }
       crenel(PX0, PX1, PZ0, PZ0 + 0.4);                       // north
@@ -506,13 +594,13 @@
       overlay(PX0 + 0.4, PX1 - 0.4, PZ0 + 0.4, PZ1 - 0.4, PY + 0.004, M.sidewalk);
       META.open.push({ kind: 'plinth', x0: PX0 + 1.5, x1: PX1 - 1.5, z0: PZ0 + 1.5, z1: PZ1 - 1.5, y: PY });
       /* THE KEEP: 14 x 12, on the plinth, front (stair) facing south */
-      house(60, -76, 0, 14, 11, { y0: PY, H: 4.6, stair: true, mat: M.ochre, acc: M.doorPaint,
+      house(60, -76, 0, 14, 11, { y0: PY, H: 4.6, stair: true, mat: pm(0xa65438), acc: pm(0x2f4a5c), kind: 'keep',
         doors: [['n', 7], ['w', 5.5], ['e', 5.5]], windows: true });
       /* keep merlons on its parapet top, paint */
-      for (var kx = 60.6; kx < 73.6; kx += 2.2) { seg(kx, kx + 0.9, PY + 4.6 + 1.05, PY + 4.6 + 1.5, -76, -75.72, M.ochre, NBOTH); }
+      for (var kx = 60.6; kx < 73.6; kx += 2.2) { seg(kx, kx + 0.9, PY + 4.6 + 1.05, PY + 4.6 + 1.5, -76, -75.72, EARTH, NBOTH); }
       /* barracks along the north edge, and the armoury on the east */
-      house(52, -84, 0, 13, 6.5, { y0: PY, H: 3.8, doors: [['s', 6.5], ['e', 3.2]], mat: M.cream, bare: true });
-      house(77, -72, 1, 12, 6.5, { y0: PY, H: 3.8, doors: [['s', 6], ['n', 6]], mat: M.paleYellow, bare: true });
+      house(52, -84, 0, 13, 6.5, { y0: PY, H: 3.8, doors: [['s', 6.5], ['e', 3.2]], kind: 'barracks', bare: true });
+      house(77, -72, 1, 12, 6.5, { y0: PY, H: 3.8, doors: [['s', 6], ['n', 6]], kind: 'armoury', bare: true });
       /* cannon on the plinth corners: barrel + carriage, cover */
       [[53, -53, 1], [83, -53, 1], [53, -82, -1], [83, -82, -1]].forEach(function (c) {
         box(c[0], PY + 0.45, c[1], 1.6, 0.9, 1.1, M.wood);
@@ -520,17 +608,17 @@
       });
       crates(56, -60, PY); jars(78, -58, 4, PY); crates(55, -70, PY);
       /* below: stables (open front), a ruined wall, palms, a dry trough */
-      house(34, -92, 0, 14, 8, { H: 4.2, shop: true, doors: [['n', 7]], mat: M.paleYellow });
-      seg(34, 46, 0, 2.2, -64, -63.4, M.ochre); seg(34, 34.6, 0, 1.6, -63.4, -56, M.ochre);
-      seg(40, 46, 0, 1.2, -46, -45.4, M.ochre);
+      house(34, -92, 0, 14, 8, { H: 4.2, shop: true, doors: [['n', 7]], kind: 'stables' });
+      seg(34, 46, 0, 2.2, -64, -63.4, EARTH); seg(34, 34.6, 0, 1.6, -63.4, -56, EARTH);
+      seg(40, 46, 0, 1.2, -46, -45.4, EARTH);
       palm(38, -72); palm(44, -52); palm(88, -40); palm(54, -40); palm(72, -40);
       box(40, 0.4, -78, 4.0, 0.8, 1.0, M.paperWhite);
       cart(88, -60, Math.PI / 2); crates(86, -44);
       /* the lanes behind the plinth (north and east of it): a broken wall,
          stacked crates and jars, so the long run under the rampart is not a
          shooting gallery (verify-cover's worst cell there was 35 m) */
-      seg(60, 66, 0, 1.2, -92, -91.4, M.ochre); crates(72, -92.5); jars(83, -93.5, 3);
-      seg(90, 90.6, 0, 1.4, -88, -80, M.ochre); crates(92.5, -74); seg(88.5, 94, 0, 1.1, -68, -67.4, M.ochre);
+      seg(60, 66, 0, 1.2, -92, -91.4, EARTH); crates(72, -92.5); jars(83, -93.5, 3);
+      seg(90, 90.6, 0, 1.4, -88, -80, EARTH); crates(92.5, -74); seg(88.5, 94, 0, 1.1, -68, -67.4, EARTH);
       META.open.push({ kind: 'yard', x0: 34, x1: 48, z0: -80, z1: -66 }, { kind: 'yard', x0: 52, x1: 92, z0: -46, z1: -36 });
     })();
 
@@ -540,7 +628,7 @@
        bridged at roof level, so the roof is ONE continuous ring. Two flights
        up from the courtyard. */
     (function () {
-      var X0 = 38, X1 = 88, Z0 = 40, Z1 = 90, Dp = 7, H = 5.0, CM = M.paleYellow;
+      var X0 = 38, X1 = 88, Z0 = 40, Z1 = 90, Dp = 7, H = 5.0, CM = pm(0xd98a8a);
       var GX = 63, GZ = 65, GH = 2.2;       // gate centres, half-width
       function wing(x0, x1, z0, z1, doorsAt, doorSide) {
         /* hollow wing: outer wall with windows, inner wall with one door per
@@ -562,6 +650,17 @@
           }
           var rc = alongX ? [c, (z0 + z1) / 2] : [(x0 + x1) / 2, c];
           META.rooms.push({ x: rc[0] + (alongX ? 1.6 : 0), z: rc[1] + (alongX ? 0 : 1.6), y: 0, kind: 'room' });
+          /* v2.10: each caravanserai room is numbered too — plate over its
+             courtyard door, its own footprint on the M map */
+          var rx0, rx1, rz0, rz1, door;
+          if (alongX) {
+            rx0 = t > 0 ? (c + doorsAt[t - 1]) / 2 : x0; rx1 = t < doorsAt.length - 1 ? (c + doorsAt[t + 1]) / 2 : x1; rz0 = z0; rz1 = z1;
+            door = doorSide > 0 ? [c, z1, 0, 1] : [c, z0, 0, -1];
+          } else {
+            rz0 = t > 0 ? (c + doorsAt[t - 1]) / 2 : z0; rz1 = t < doorsAt.length - 1 ? (c + doorsAt[t + 1]) / 2 : z1; rx0 = x0; rx1 = x1;
+            door = doorSide > 0 ? [x1, c, 1, 0] : [x0, c, -1, 0];
+          }
+          HOUSES.push({ x0: rx0, x1: rx1, z0: rz0, z1: rz1, cx: (rx0 + rx1) / 2, cz: (rz0 + rz1) / 2, door: door, y0: 0, hex: 0xd98a8a, d: 'caravan', kind: 'room' });
           F.seg(rc[0] - 1.1, rc[0] + 1.1, 0.006, 0.014, rc[1] - 1.1, rc[1] + 1.1, pick(RUGS), NBOTH);
         });
         if (alongX) {
@@ -578,7 +677,7 @@
       }
       /* corner blocks: solid, roofed at H — the ring stays continuous */
       [[X0, X0 + Dp, Z0, Z0 + Dp], [X1 - Dp, X1, Z0, Z0 + Dp], [X0, X0 + Dp, Z1 - Dp, Z1], [X1 - Dp, X1, Z1 - Dp, Z1]]
-        .forEach(function (c) { seg(c[0], c[1], 0, H, c[2], c[3], CM); });
+        .forEach(function (c) { seg(c[0], c[1], 0, H, c[2], c[3], CM); BLOCKS.push([c[0], c[2], c[1], c[3], '#b86f6f']); });
       /* the wings between them. Doors face the courtyard and stay clear of
          the two flights (A on the north-west run x 46.6..55.1, B on the
          south-east run x 70.9..79.4). */
@@ -633,16 +732,16 @@
       box(-87, 0.25, 46, 1.0, 0.5, 4.0, M.wood);
       /* the hammam: a long bath-house on the garden's south edge, a dome-ish
          stack on its roof (stepped cylinders), one flight up */
-      house(-74, 58, 2, 16, 10, { H: 4.2, stair: true, mat: M.paperWhite, acc: M.mint, doors: [['n', 8], ['e', 5]], bare: true });
+      house(-74, 58, 2, 16, 10, { H: 4.2, stair: true, mat: pm(0xf0ece4), acc: pm(0x2a8f8a), kind: 'hammam', doors: [['n', 8], ['e', 5]], bare: true });
       cyl(-66, 4.2 + 0.6, 63, 2.6, 1.2, M.paperWhite, NCAST);
       cyl(-66, 4.2 + 1.5, 63, 1.8, 0.6, M.paperWhite, NBOTH);
       cyl(-66, 4.2 + 2.0, 63, 0.9, 0.4, M.mint, NBOTH);
       /* THE TANNERY: x -90..-56, z 72..90 — a low-walled yard of dye pits,
          gaps north (x -78..-74), east (z 79..83) and south (x -79..-73) */
-      seg(-90, -78, 0, 1.2, 72, 72.4, M.ochre); seg(-74, -56, 0, 1.2, 72, 72.4, M.ochre);
-      seg(-90, -79, 0, 1.2, 89.6, 90, M.ochre); seg(-73, -56, 0, 1.2, 89.6, 90, M.ochre);
-      seg(-90, -89.6, 0, 1.2, 72.4, 89.6, M.ochre);
-      seg(-56.4, -56, 0, 1.2, 72.4, 79, M.ochre); seg(-56.4, -56, 0, 1.2, 83, 89.6, M.ochre);
+      seg(-90, -78, 0, 1.2, 72, 72.4, EARTH); seg(-74, -56, 0, 1.2, 72, 72.4, EARTH);
+      seg(-90, -79, 0, 1.2, 89.6, 90, EARTH); seg(-73, -56, 0, 1.2, 89.6, 90, EARTH);
+      seg(-90, -89.6, 0, 1.2, 72.4, 89.6, EARTH);
+      seg(-56.4, -56, 0, 1.2, 72.4, 79, EARTH); seg(-56.4, -56, 0, 1.2, 83, 89.6, EARTH);
       META.open.push({ kind: 'pits', x0: -88, x1: -58, z0: 74, z1: 88 });
       var DYES = [M.maroon, M.ochre, M.mint, M.doorPaint, M.dustyPink, M.paleYellow, M.terracotta];
       for (var vx = -85; vx <= -61; vx += 6) {
@@ -652,15 +751,124 @@
         }
       }
       /* tannery houses with terraces over the pits — the viewing roofs */
-      house(-52, 62, 3, 14, 9, { H: 7.6, stair: true, mat: M.dustyPink, doors: [['s', 12], ['n', 7]] });
-      house(-52, 79, 3, 12, 9, { H: 4.2, stair: true, pent: true, mat: M.cream, doors: [['s', 10.4], ['n', 6]] });
-      house(-38, 62, 1, 12, 6, { H: 4.2, stair: true, mat: M.paleYellow, doors: [['s', 10.4], ['n', 6]] });
-      house(-38, 77, 1, 14, 6, { H: 7.6, stair: true, mat: M.ochre, doors: [['s', 12.4], ['n', 7]] });
+      house(-52, 62, 3, 14, 9, { H: 7.6, stair: true, doors: [['s', 12], ['n', 7]] });
+      house(-52, 79, 3, 12, 9, { H: 4.2, stair: true, pent: true, doors: [['s', 10.4], ['n', 6]] });
+      house(-38, 62, 1, 12, 6, { H: 4.2, stair: true, doors: [['s', 10.4], ['n', 6]] });
+      house(-38, 77, 1, 14, 6, { H: 7.6, stair: true, doors: [['s', 12.4], ['n', 7]] });
       jars(-90, 60, 6); crates(-55.5, 60);
     })();
 
     /* ============ THE RAMPART LANE: a little cover where it opens out ============ */
     crates(-88, 0 - 14); crates(88, 14); crates(14, -88); crates(-14, 88);
     jars(-88, 18, 3); jars(86, -20, 3);
+
+    /* ===== v2.10 - EVERY HOUSE HAS A NUMBER =====
+       Rahul: "every room on the map should have a number 01, jaise normal ghar
+       mei hota h, aur harr ghar ke main gate ke upar ache se show ho ... player
+       bolega ghar number 23 ke samne enemy hai, toh big map open kare toh
+       waha ghar number 23 dhunda ja sake."
+       Numbering runs DISTRICT BY DISTRICT (the order of DISTRICTS_K), and
+       inside a district in rows north to south, west to east — so a quarter
+       owns a block of numbers (Souk 01-04, Spice Row 05-...), and a number
+       tells you the quarter before you open the map. Caravanserai rooms are
+       numbered with their quarter. The SAME number is drawn over the main door
+       (a blue zellige tile, white digits, readable across a street) and on
+       the house's footprint on the M map and the dial. */
+    var dOrder = {}; DISTRICTS_K.forEach(function (d, i) { dOrder[d.id] = i; });
+    HOUSES.sort(function (a, b) {
+      if (dOrder[a.d] !== dOrder[b.d]) return dOrder[a.d] - dOrder[b.d];
+      var ra = Math.round(a.cz / 9), rb = Math.round(b.cz / 9);
+      if (ra !== rb) return ra - rb;
+      return a.cx - b.cx;
+    });
+    HOUSES.forEach(function (h, i) { h.n = i + 1; h.label = (h.n < 10 ? '0' : '') + h.n; });
+
+    /* the plates: one atlas texture, one merged mesh, one draw call */
+    var COLS = 16, ROWS = 8, CW = 128, CH = 64;
+    var numMat = World._kasbahNumMat;
+    if (!numMat) {
+      var cv = document.createElement('canvas'); cv.width = COLS * CW; cv.height = ROWS * CH;
+      var g = cv.getContext('2d');
+      for (var ci = 0; ci < COLS * ROWS; ci++) {
+        var gx = (ci % COLS) * CW, gy = Math.floor(ci / COLS) * CH, lab = (ci + 1 < 10 ? '0' : '') + (ci + 1);
+        g.fillStyle = '#f4efe2'; g.fillRect(gx, gy, CW, CH);                 // white glazed rim
+        g.fillStyle = '#1d4f9c'; g.fillRect(gx + 5, gy + 5, CW - 10, CH - 10);   // zellige blue
+        g.strokeStyle = '#e0b030'; g.lineWidth = 3; g.strokeRect(gx + 9, gy + 9, CW - 18, CH - 18);
+        g.fillStyle = '#ffffff'; g.font = 'bold 44px Arial, sans-serif';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(lab, gx + CW / 2, gy + CH / 2 + 2);
+      }
+      var tex = new THREE.CanvasTexture(cv);
+      if (THREE.LinearMipmapLinearFilter) tex.minFilter = THREE.LinearMipmapLinearFilter;
+      numMat = World._kasbahNumMat = new THREE.MeshBasicMaterial({ map: tex });
+    }
+    var pos = [], uv = [], nrm = [], idx = [];
+    HOUSES.forEach(function (h) {
+      if (h.n > COLS * ROWS) return;
+      var nx = h.door[2], nz = h.door[3], tx = -nz, tz = nx;          // outward normal, wall tangent
+      var tall = h.kind === 'barracks' || h.kind === 'armoury';      // 3.8 m walls: the plate sits beside the door
+      var cx = h.door[0] + nx * 0.07, cz = h.door[1] + nz * 0.07, cy = h.y0 + 3.46;
+      if (tall) { cx += tx * (DW / 2 + 0.75); cz += tz * (DW / 2 + 0.75); cy = h.y0 + 2.2; }
+      var hw = 0.44, hh = 0.22, base = pos.length / 3;
+      /* corners: left-bottom, right-bottom, right-top, left-top as seen from outside */
+      [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (k) {
+        pos.push(cx - tx * hw * k[0], cy + hh * k[1], cz - tz * hw * k[0]);
+        nrm.push(nx, 0, nz);
+      });
+      var ci2 = h.n - 1, u0 = (ci2 % COLS) / COLS, u1 = u0 + 1 / COLS;
+      var v1 = 1 - Math.floor(ci2 / COLS) / ROWS, v0 = v1 - 1 / ROWS;
+      uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      /* a dark backing board, so the tile reads as fixed to the wall */
+      segx(cx - tx * (hw + 0.05) - nx * 0.05, cx + tx * (hw + 0.05) - nx * 0.02, cy - hh - 0.05, cy + hh + 0.05,
+           cz - tz * (hw + 0.05) - nz * 0.05, cz + tz * (hw + 0.05) - nz * 0.02, M.dark, NBOTH);
+    });
+    /* the gate harness (tools/_three-stub.js) has no BufferAttribute — the
+       plates are paint, so a stub build simply goes without them */
+    if (idx.length && THREE.Float32BufferAttribute) {
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      geo.setIndex(idx);
+      var plates = new THREE.Mesh(geo, numMat);
+      plates.name = 'kasbahHouseNumbers'; plates.matrixAutoUpdate = false; plates.updateMatrix();
+      plates.userData.noMerge = true;
+      T.scene.add(plates);
+    }
+
+    /* ===== v2.10 - THE PLAN THE MAPS ARE DRAWN FROM =====
+       Rahul: "mini map and big map ko ache se design karo, taki waha area bhi
+       dikhe, roads sahi se aaye, kyunki bahot congested hai." The generic bake
+       draws every collider that crosses chest height — on Kasbah that is every
+       window jamb, crate, jar and cart: noise. Kasbah hands minimap.js a PLAN
+       instead: quarters as colour washes with names, streets as streets,
+       every house as one solid footprint in its own wall colour with its
+       number, and the landmarks by name. */
+    function hx(n) { return '#' + ('000000' + (n >>> 0).toString(16)).slice(-6); }
+    World.mapPlan = {
+      bg: '#2a2620',
+      districts: META.districts,
+      roads: [
+        [-6, -B, 6, -30], [-6, 30, 6, B], [-B, -6, -30, 6], [30, -6, B, 6],              // the four avenues
+        [-32, -94, -28, -30], [28, -94, 32, -30], [-32, 30, -28, 94], [28, 30, 32, 94],  // ring alley N/S runs
+        [-94, -32, -30, -28], [30, -32, 94, -28], [-94, 28, -30, 32], [30, 28, 94, 32],  // ring alley E/W runs
+        [-19.4, -94, -16.3, -30], [16.3, -94, 19.4, -30], [-19.4, 30, -16.3, 94], [16.3, 30, 19.4, 94],   // back lanes
+        [-94, -19.4, -30, -16.3], [30, -19.4, 94, -16.3], [-94, 16.3, -30, 19.4], [30, 16.3, 94, 19.4],
+        [-B, -B, B, -94], [-B, 94, B, B], [-B, -94, -94, 94], [94, -94, B, 94]             // the rampart lane
+      ],
+      plazas: [[-30, -30, 30, 30], [-74.5, -75, -46, -48.5], [45, 47, 81, 83], [50, -86, 86, -50]],
+      green: [[-92, 36, -36, 56]],
+      water: [[-79.6, 43.4, -46.4, 48.6], [-3.1, -3.1, 3.1, 3.1]],
+      walls: [[-99.5, -99.5, 99.5, -B], [-99.5, B, 99.5, 99.5], [-99.5, -B, -B, B], [B, -B, 99.5, B]],
+      blocks: META.blocks.concat(HOUSES.map(function (h) { return [h.x0, h.z0, h.x1, h.z1, hx(h.hex)]; })),
+      houses: HOUSES.map(function (h) { return { n: h.n, label: h.label, x: h.cx, z: h.cz, d: h.d }; }),
+      labels: [
+        { t: 'FOUNTAIN', x: 0, z: 5.5 }, { t: 'THE KEEP', x: 67, z: -79 }, { t: 'WELL', x: -60, z: -58.5 },
+        { t: 'HAMMAM', x: -66, z: 70.5 }, { t: 'DYE PITS', x: -73, z: 81.5 }, { t: 'POOL', x: -63, z: 46 },
+        { t: 'PAVILION', x: -87, z: 53.8 },
+        { t: 'N GATE', x: 0, z: -92 }, { t: 'S GATE', x: 0, z: 92 }, { t: 'W GATE', x: -91, z: 0 }, { t: 'E GATE', x: 91, z: 0 }
+      ]
+    };
   };
 })();

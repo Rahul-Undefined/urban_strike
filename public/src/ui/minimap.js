@@ -75,6 +75,60 @@ var Minimap = (function () {
     ready = true;
   }
 
+  /* ===== v2.10 - A MAP DRAWN FROM A PLAN =====
+     A builder may hand over World.mapPlan (Kasbah does): quarters, streets,
+     open squares, water, green, and every building as ONE footprint in its own
+     colour. drawPlan paints it at any scale — the dial's bake (SCALE px/m) and
+     the M map at full screen resolution, so the big map is crisp instead of an
+     upscaled 600 px bake. `opt.text` adds quarter names, landmark labels and
+     house numbers (the M map); the dial draws its numbers live (update). */
+  function drawPlan(g, P, S, ox, oz, opt) {
+    opt = opt || {};
+    function X(x) { return ox + (x - WX0) * S; }
+    function Z(z) { return oz + (z - WZ0) * S; }
+    function rect(r, fill) { g.fillStyle = fill; g.fillRect(X(r[0]), Z(r[1]), Math.max(1, (r[2] - r[0]) * S), Math.max(1, (r[3] - r[1]) * S)); }
+    g.fillStyle = P.bg || '#22262c'; g.fillRect(X(WX0), Z(WZ0), WW * S, WH * S);
+    (P.districts || []).forEach(function (d) {
+      g.globalAlpha = 0.22; rect([d.x0, d.z0, d.x1, d.z1], d.tint || '#888'); g.globalAlpha = 1;
+    });
+    (P.plazas || []).forEach(function (r) { rect(r, '#6a5d4b'); });
+    (P.green || []).forEach(function (r) { rect(r, '#3f6e47'); });
+    (P.roads || []).forEach(function (r) { rect(r, '#8a7a62'); });
+    (P.water || []).forEach(function (r) { rect(r, '#2f78b8'); });
+    (P.walls || []).forEach(function (r) { rect(r, '#6e3624'); });
+    (P.blocks || []).forEach(function (b) {
+      g.fillStyle = b[4] || '#8a96a4'; g.globalAlpha = 0.92;
+      g.fillRect(X(b[0]), Z(b[1]), Math.max(1, (b[2] - b[0]) * S), Math.max(1, (b[3] - b[1]) * S));
+      g.globalAlpha = 1;
+      if (S >= 2.5) { g.strokeStyle = 'rgba(10,10,12,0.75)'; g.lineWidth = S >= 5 ? 1.5 : 1; g.strokeRect(X(b[0]) + 0.5, Z(b[1]) + 0.5, Math.max(1, (b[2] - b[0]) * S) - 1, Math.max(1, (b[3] - b[1]) * S) - 1); }
+    });
+    if (!opt.text) return;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    /* house numbers: white on a dark pill, sized to the scale, on the footprint */
+    var fs = Math.max(9, Math.min(15, S * 2.6));
+    g.font = 'bold ' + fs + 'px Rajdhani, Arial, sans-serif';
+    (P.houses || []).forEach(function (h) {
+      var x = X(h.x), z = Z(h.z), w = g.measureText(h.label).width + 6;
+      g.fillStyle = 'rgba(14,22,44,0.82)'; g.fillRect(x - w / 2, z - fs / 2 - 1, w, fs + 2);
+      g.fillStyle = '#ffffff'; g.fillText(h.label, x, z + 1);
+    });
+    /* landmarks */
+    g.font = 'italic bold ' + Math.max(9, Math.min(13, S * 2.2)) + 'px Rajdhani, Arial, sans-serif';
+    (P.labels || []).forEach(function (l) {
+      g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.strokeText(l.t, X(l.x), Z(l.z));
+      g.fillStyle = '#ffe6a8'; g.fillText(l.t, X(l.x), Z(l.z));
+    });
+    /* quarter names last, large, so they sit over everything */
+    g.font = 'bold ' + Math.max(12, Math.min(22, S * 3.6)) + 'px Teko, Rajdhani, Arial, sans-serif';
+    (P.districts || []).forEach(function (d) {
+      var L = d.lab || [(d.x0 + d.x1) / 2, (d.z0 + d.z1) / 2, 0];
+      g.save(); g.translate(X(L[0]), Z(L[1])); if (L[2]) g.rotate(L[2]);
+      g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.strokeText(d.name, 0, 0);
+      g.fillStyle = d.tint || '#fff'; g.fillText(d.name, 0, 0);
+      g.restore();
+    });
+  }
+
   function bakeStatic() {
     /* v10.13: resolve the extent HERE, immediately before the bake that
        depends on it. bakeStatic is called from init() (before any map exists),
@@ -88,6 +142,7 @@ var Minimap = (function () {
     var g = off.getContext('2d');
     g.fillStyle = 'rgba(18,22,28,0.92)';
     g.fillRect(0, 0, px, px);
+    if (World.mapPlan) { drawPlan(g, World.mapPlan, SCALE, 0, 0, { text: false }); return; }   /* v2.10 */
     /* roads hinted as slightly lighter strips — URBAN'S avenue cross only.
        v1.0d: this was drawn on every map, which put a 14 m cross of road
        through the middle of the Killhouse and the arenas that have no roads. */
@@ -163,6 +218,21 @@ var Minimap = (function () {
     ctx.translate(cx, cy);
     ctx.rotate(-yaw);
     ctx.drawImage(off, (-px - (-WX0)) * SCALE, (-pz - (-WZ0)) * SCALE);
+    /* v2.10: house numbers on the dial — the nearby ones, upright whatever
+       way you face, so "23 ke samne" can be read off the radar too */
+    if (World.mapPlan && World.mapPlan.houses) {
+      var reach = R / SCALE;
+      ctx.font = 'bold 10px Rajdhani, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      World.mapPlan.houses.forEach(function (h) {
+        var dx = h.x - px, dz = h.z - pz;
+        if (dx * dx + dz * dz > reach * reach) return;
+        ctx.save(); ctx.translate(dx * SCALE, dz * SCALE); ctx.rotate(yaw);
+        var w = ctx.measureText(h.label).width + 4;
+        ctx.fillStyle = 'rgba(14,22,44,0.8)'; ctx.fillRect(-w / 2, -6, w, 12);
+        ctx.fillStyle = '#fff'; ctx.fillText(h.label, 0, 0.5);
+        ctx.restore();
+      });
+    }
 
     /* v1.0j: the zone on the radar — red outside the circle, the edge in green,
        in the same rotated frame as the world layer. */
@@ -189,6 +259,7 @@ var Minimap = (function () {
         var dist = Math.sqrt((r.renderPos.x - px) * (r.renderPos.x - px) + (r.renderPos.z - pz) * (r.renderPos.z - pz));
         var RD = radar();   /* v2.8: per map — the Killhouse hides enemies until they fire or close in */
         var detected = RD.alwaysShowPlayers || (Net.reconActive && Net.reconActive()) ||   /* v2.3: recon shows every enemy */
+          (Net.visor2On && Net.visor2On()) ||   /* v2.9.1: so does the L2 visor */
           (now - r.lastShotAt) < CFG.NET.detectMs || dist < RD.proximity;
         if (detected) dot(rx, rz, 4.2, '#e8563e', true);
       }
@@ -470,7 +541,8 @@ var Minimap = (function () {
     g.clearRect(0, 0, W, W);
     g.save();
     g.globalAlpha = 0.97;
-    g.drawImage(off, OX, OZ, WW * S, WH * S);      // north-up, whole world — the extent's own aspect, centred (v1.1)
+    if (World.mapPlan) drawPlan(g, World.mapPlan, S, OX, OZ, { text: true });   /* v2.10: drawn at screen resolution, with names and house numbers */
+    else g.drawImage(off, OX, OZ, WW * S, WH * S);      // north-up, whole world — the extent's own aspect, centred (v1.1)
     g.restore();
 
     var mapNow = (World.builtMap || 'urban');
@@ -530,7 +602,7 @@ var Minimap = (function () {
        blank grid on Metro, which reads as the feature being broken. */
     var dList = (typeof DISTRICTS !== 'undefined' && DISTRICTS.listFor)
       ? DISTRICTS.listFor(mapNow) : (mapNow === 'urban' ? DISTRICTS.list : null);
-    if (dList && dList.length) {
+    if (dList && dList.length && !World.mapPlan) {   /* v2.10: a plan draws its own quarter names */
       g.lineWidth = 1;
       dList.forEach(function (d) {
         g.strokeStyle = 'rgba(240,162,50,0.32)';
@@ -638,7 +710,7 @@ var Minimap = (function () {
        gets what the toggle promises: OFF, the map shows only you and the
        ground; ON, the ~50 m Intel rings below. Allies are untouched: a squad
        can always see itself. */
-    var showEnemies = !!(modeCfg && modeCfg.fullMapContacts);
+    var showEnemies = !!(modeCfg && modeCfg.fullMapContacts) || !!(Net.visor2On && Net.visor2On());   /* v2.9.1: the L2 visor puts enemies on the M map too */
 
     var myTeam = Net.getMyTeam();
     var nowMs = performance.now();
@@ -714,7 +786,7 @@ var Minimap = (function () {
       var dx = r.renderPos.x - PlayerCtl.pos.x, dz = r.renderPos.z - PlayerCtl.pos.z;
       var dist = Math.sqrt(dx * dx + dz * dz);
       var RD2 = radar();   /* v2.8 */
-      var detected = r.alive && (RD2.alwaysShowPlayers ||
+      var detected = r.alive && (RD2.alwaysShowPlayers || (Net.visor2On && Net.visor2On()) ||
         (nowMs - r.lastShotAt) < CFG.NET.detectMs || dist < RD2.proximity);
       if (detected) {
         lastSeen[id] = { x: r.renderPos.x, z: r.renderPos.z, t: nowMs };

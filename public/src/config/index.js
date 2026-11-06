@@ -9,7 +9,8 @@
       require('./loot.config.js'),
       require('./world.config.js'),
       require('./maps-killhouse.config.js'),
-      require('./maps-kasbah.config.js')   /* v2.8: sunsetrow, small and medium tables removed with their maps */
+      require('./maps-kasbah.config.js'),  /* v2.8: sunsetrow, small and medium tables removed with their maps */
+      require('./maps-urbansmall2.config.js')   /* v2.11 */
     ]);
   } else {
     root.CFG = factory(root.__CFG_PARTS || []);
@@ -53,6 +54,18 @@
       SPAWNS: (C.SPAWNS || []).filter(function (s) { return inCore(s[0], s[1]); }),
       LOOT_POINTS: (C.LOOT_POINTS || []).filter(function (p) { return inCore(p[0], p[2]); }),
       AIRDROP_POINTS: ((C.AIRDROP && C.AIRDROP.points) || []).filter(function (p) { return inCore(p[0], p[1]); })
+    };
+    /* ===== v2.11 - URBAN SMALL 2's TABLES =====
+       Urban Small's, turned the same quarter the world is turned —
+       (x, z) -> (z, -x), facing + 90 deg — plus the EXTRA points generated
+       from the turned geometry (tools/gen-urbansmall2-points.js ->
+       config/maps-urbansmall2.config.js). */
+    var X2 = C.MAPS_URBANSMALL2_EXTRA || { LOOT_POINTS: [], AIRDROP_POINTS: [], SPAWNS: [] };
+    var S = C.MAPS_URBANSMALL;
+    C.MAPS_URBANSMALL2 = {
+      SPAWNS: S.SPAWNS.map(function (s) { return [s[1], -s[0], s[2] + Math.PI / 2, s[3]]; }).concat(X2.SPAWNS || []),
+      LOOT_POINTS: S.LOOT_POINTS.map(function (p) { return [p[2], p[1], -p[0], p[3]]; }).concat(X2.LOOT_POINTS || []),
+      AIRDROP_POINTS: S.AIRDROP_POINTS.map(function (p) { return [p[1], -p[0]]; }).concat(X2.AIRDROP_POINTS || [])
     };
   })();
   /* ===== v2.5 - WHICH DURATIONS A ROOM MAY PICK =====

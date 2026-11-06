@@ -193,21 +193,26 @@ console.log('--- the hunter drone ---');
   ok(fires >= 6 && dmgB >= 3 * H.dmg, 'in six seconds over open ground it has fired ' + fires + ' times and done ' + dmgB + ' to B (tag hunter, credited to A)');
   ok(damaged.every(x => x.by === 'A' && x.w === 'hunter'), 'every hit is the owner\'s kill, tagged hunter');
   const d = room.drones[0];
-  ok(Math.abs(d.pos[1] - H.cruiseY) < 0.5 && Math.hypot(d.pos[0] - b.pos[0], d.pos[2] - b.pos[2]) <= H.standoff + 2, 'it holds cruise height and stands off ~' + H.standoff + ' m [' + d.pos.map(v => v.toFixed(1)).join(',') + ']');
+  /* v2.9 SUPERSESSION (Rahul: "ghar ke andar ghus ke bhi marega"): a ghost
+     hunter DIVES to its target's level inside 25 m and closes to standoff. */
+  ok(Math.abs(d.pos[1] - (b.pos[1] + 1.4)) < 1.0 && Math.hypot(d.pos[0] - b.pos[0], d.pos[2] - b.pos[2]) <= H.standoff + 2, 'v2.9: it dives to the target\'s level and closes to ~' + H.standoff + ' m [' + d.pos.map(v => v.toFixed(1)).join(',') + ']');
   ok(emitted.some(e => e.ev === 'droneWarn' && e.who === 'B' && e.d.k === 'hunter'), 'B was warned when it acquired them');
   /* v2.7: behind the wall it HUNTS. B moves to x 20 (the 14 m slab at x 10
      between); the hunter holds fire while the line is blocked, closes past
      the slab, and fires once it has the line — a wall is cover, not an escape. */
   b.pos = [20, 0.95, 0]; d.pos = [0, H.cruiseY, 0]; d.lastSeen = T; damaged.length = 0; emitted.length = 0;
   flyH(0.4);
-  ok(damaged.length === 0 && d.target === 'B', 'with the wall between them it holds fire but keeps the target [' + damaged.length + ' hits, target ' + d.target + ']');
+  /* v2.9 SUPERSESSION: a wall is no longer cover from it — the ghost needs no
+     line, only to be within seekRange, and it flies THROUGH the slab to get there */
+  ok(d.target === 'B', 'v2.9: with the wall between them it keeps the target [' + damaged.length + ' hits, target ' + d.target + ']');
   flyH(4);
-  ok(d.pos[0] > 10.3 && damaged.length > 0, 'it flies past the slab and opens fire once it has the line [x ' + d.pos[0].toFixed(1) + ', ' + damaged.length + ' hits]');
+  ok(damaged.length > 0, 'v2.9: it goes through the wall and kills [x ' + d.pos[0].toFixed(1) + ', ' + damaged.length + ' hits]');
   /* v2.7: a ROOF is different — close in and still blind for loseSec, it drops the target and shuns them for 6 s */
   const roof = [15, 3, -6, 25, 4, 6, 0];
   wallCols.push(roof); d.pos = [20, H.cruiseY, 0]; d.lastSeen = T; damaged.length = 0;
   flyH(H.loseSec + 1);
-  ok(damaged.length === 0 && d.target === null && d.shun && d.shun.B, 'under a roof at close range: no fire, target dropped after loseSec and shunned [' + damaged.length + ' hits]');
+  /* v2.9 SUPERSESSION: a roof does not save you either — it comes into the room */
+  ok(damaged.length > 0 && d.target === 'B', 'v2.9: under a roof it still kills — it comes in [' + damaged.length + ' hits]');
   wallCols.pop();
   /* the bounty: B shoots it down and is granted a HUNTER, not a strike drone */
   b.hunters = 0; b.drones = 0; T += 100;

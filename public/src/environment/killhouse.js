@@ -90,34 +90,39 @@
 
     /* ============ THE PLAN ============
        Read top-to-bottom off the drawing. North is -z. */
+    /* ===== v2.10 - FEWER WALLS, A FAIR FIGHT (Rahul: "killhouse mei walls
+       bahot jyada h, thora walls kam kar do aur uska layout thora competitive
+       rakho, wall size is good") =====
+       23 partitions -> 12, and the plan is now POINT-SYMMETRIC: every piece
+       at (x, z) has its twin at (-x, -z), so the north spawn and the south
+       spawn walk into the same fight. (The v15.0 table came from a hand
+       drawing and was lopsided: the long crate run sat only across the SOUTH
+       exit.) Three readable lanes — west (x ~ -19), centre (the deck) and
+       east (x ~ +19) — each with an angle to hold and a way round it:
+         * spawn screens: two staggered walls outside each spawn room, three
+           exits each, no line from one spawn door to the other;
+         * mid walls: a long north-south wall either side of centre and a
+           cross wall per lane, so every lane has a corner to fight off;
+         * deck flanks: one short wall each side of the deck for the ground
+           player under the deck-holder;
+         * the two climbable blocks and two crate runs, mirrored.
+       Partition height stays 3.5 m (v2.8). The deck and the two container
+       corridors stay — the corridors now sit at x -18 and +18 (were -17/+19). */
     var PLAN = [
-      /* v15.0: the v10.20 table scaled x 1.3 / z 1.294; rows 9, 11, 13, 16, 17
-         and 21 removed (see the header). Row numbers kept so "row 12 is too
-         far left" still means the same thing it did on his drawing. */
-      /*  1 */[-14.3, -34.9, 13.0, 0,      'w'],   // top-left long partition
-      /*  2 */[  9.1, -32.4,  7.8, 0,      'w'],   // top-right stub
-      /*  3 */[-19.5, -27.2,  7.8, 0,      'w'],   // upper-left partition
-      /*  4 */[ -2.6, -22.0, 10.4, 0,      'b'],   // BIG BLOCK, upper centre
-      /*  5 */[ 10.4, -24.6,  9.1, 0,      'w'],   // upper-right T, cap
-      /*  6 */[ 10.4, -19.4, 10.4, 1.5708, 'w'],   // upper-right T, stem
-      /*  7 */[-18.2, -20.7,  5.2, 1.5708, 'w'],   // short vertical, left
-      /*  8 */[-13.0, -16.8,  6.5, 0,      'w'],   // left partition
-      /* 10 */[  6.5, -11.6,  9.1, 1.5708, 'w'],   // right vertical
-      /* 12 */[-16.9,  -9.1, 10.4, 0,      'w'],   // long left partition
-      /* 14 */[ 11.7,  -2.6, 10.4, 1.5708, 'w'],   // right room, back wall
-      /* 15 */[ 15.6,   2.6,  6.5, 0,      'w'],   // right room, side
-      /* 18 */[-20.8,   9.1,  6.5, 1.5708, 'w'],   // left vertical
-      /* 19 */[-14.3,  10.4,  6.5, 0,      'w'],   // left T cap
-      /* 20 */[ 11.7,  12.9,  6.5, 1.5708, 'w'],   // right vertical
-      /* 22 */[  1.3,  22.0, 10.4, 0,      'b'],   // BIG BLOCK, lower centre
-      /* 23 */[-16.9,  22.0,  9.1, 0,      'w'],   // lower-left partition
-      /* 24 */[-23.4,  25.9,  5.2, 1.5708, 'w'],   // far-left stub
-      /* 25 */[-14.3,  31.1,  9.1, 0,      'w'],   // lower-left partition
-      /* 26 */[  7.8,  33.6,  7.8, 0,      'w'],   // lower-right partition
-      /* 27 */[ -1.3,  37.5, 18.2, 0,      'c'],   // LONG CRATE RUN, bottom
-      /* 28 */[ 18.2, -10.4,  7.8, 1.5708, 'w'],   // far-right vertical
-      /* 29 */[-22.1, -15.5,  6.5, 0,      'w'],   // far-left upper
-      /* 30 */[ 16.9,  18.1,  6.5, 0,      'w']    // lower-right stub
+      /* spawn screens */
+      [-13.0, -30.5,  9.0, 0,      'w'], [ 13.0,  30.5,  9.0, 0,      'w'],
+      [ 10.5, -30.5,  7.0, 0,      'w'], [-10.5,  30.5,  7.0, 0,      'w'],
+      /* mid walls (north-south, either side of centre) */
+      [-11.0, -15.0,  9.0, 1.5708, 'w'], [ 11.0,  15.0,  9.0, 1.5708, 'w'],
+      /* lane cross walls */
+      [ 15.5, -15.0,  7.5, 0,      'w'], [-15.5,  15.0,  7.5, 0,      'w'],
+      [-20.5, -21.0,  6.5, 0,      'w'], [ 20.5,  21.0,  6.5, 0,      'w'],
+      /* deck flanks */
+      [-11.0,   1.5,  5.2, 1.5708, 'w'], [ 11.0,  -1.5,  5.2, 1.5708, 'w'],
+      /* the climbable blocks */
+      [ -3.0, -22.0, 10.4, 0,      'b'], [  3.0,  22.0, 10.4, 0,      'b'],
+      /* crate runs (waist cover in the open lanes) */
+      [ 16.0, -24.5,  8.0, 0,      'c'], [-16.0,  24.5,  8.0, 0,      'c']
     ];
 
     /* ============ SHELL ============ */
@@ -316,7 +321,7 @@
       box(sx2, 0.62, L / 2 + 0.7, 1.3, 1.24, 1.3, M.cargoWood);
       box(sx2, 1.86, L / 2 + 0.7, 1.3, 1.24, 1.3, M.palletWood);
     }
-    corridor(-17); corridor(19);
+    corridor(-18); corridor(18);   /* v2.10: mirrored (were -17 / +19) */
 
     /* ============ FACILITY DRESSING ============ */
     /* Target silhouettes on stands: the single most recognisable object in a
@@ -459,8 +464,19 @@
     var KEEP_CLEAR = [
       [-26, 26, -44, -35], [-26, 26, 35, 44],     // both spawn rooms
       [-8, 8, -11, 11],                           // the deck, its stairs and the ground beneath
-      [-19, -15, -6, 6], [17, 21, -6, 6]          // the corridors and their crate steps
+      [-20.5, -15.5, -6, 6], [15.5, 20.5, -6, 6]  // the corridors and their crate steps (v2.10: at +/-18)
     ];
+    /* v2.10: and every piece of the plan, so no loose crate lands in a wall */
+    PLAN.forEach(function (p) {
+      var hl = p[2] / 2 + 0.8, hw = (p[4] === 'b' ? 2.1 : p[4] === 'c' ? 0.9 : 0.15) + 0.8;
+      if (p[4] === 'b') hl += 1.4;   // the crate step on the block's west end
+      var alongX = !p[3];
+      KEEP_CLEAR.push(alongX ? [p[0] - hl, p[0] + hl, p[1] - hw, p[1] + hw] : [p[0] - hw, p[0] + hw, p[1] - hl, p[1] + hl]);
+    });
+    /* v2.10: and every spawn point — a random crate never lands on one */
+    ((typeof CFG !== 'undefined' && CFG.MAPS_KILLHOUSE && CFG.MAPS_KILLHOUSE.SPAWNS) || []).forEach(function (sp) {
+      KEEP_CLEAR.push([sp[0] - 1.4, sp[0] + 1.4, sp[1] - 1.4, sp[1] + 1.4]);
+    });
     for (var i = 0; i < 24; i++) {
       var px = (rnd() - 0.5) * 46, pz = (rnd() - 0.5) * 78;
       var cw = 0.5 + rnd() * 0.5, cd = 0.4 + rnd() * 0.4, blocked = false;

@@ -18,6 +18,7 @@ var Game = (function () {
   var timerAccum = 0;
   var landDip = 0;
   var tpp = false;                                  // v13.0: third-person view
+  var proneFogRef = null, proneFogBase = 0;   /* v2.9: the prone view closes in (see the render loop) */
   var _boomO = null, _boomD = null;                 // v13.1: boom ray scratch (allocated at init)
   var ownAv = null;                                 // v13.0: local body rig (TPP)
   var ownLast = { x: 0, z: 0 };                     // v13.0: stride derivation
@@ -314,10 +315,11 @@ var Game = (function () {
       /* v1.0q: Q aboard the flying helicopter brings it down (a lean is pointless up there) */
       if (e.code === 'KeyQ' && window.Heli && Heli.isRiding && Heli.isRiding()) { Heli.landRequest(); e.preventDefault(); return; }
       if (e.code === 'KeyQ') qDownAt = performance.now();   /* v1.0v: a TAP drops an attachment (see keyup); a HOLD leans */
-      /* v2.3: N injects adrenaline, J fires the recon flare, O launches the hunter drone. */
-      if (e.code === 'KeyN' && playing) { e.preventDefault(); Weapons.useAdrenaline(); return; }
-      if (e.code === 'KeyJ' && playing) { e.preventDefault(); Weapons.launchRecon(); return; }
-      if (e.code === 'KeyO' && playing) { e.preventDefault(); Weapons.launchHunter(); return; }
+      /* v2.9 (Rahul: "Hunter Drone J se activate"): J launches the HUNTER, O
+         fires the recon flare (they swapped), and adrenaline has no key — it
+         fires itself on pickup. N is left free. */
+      if (e.code === 'KeyJ' && playing) { e.preventDefault(); Weapons.launchHunter(); return; }
+      if (e.code === 'KeyO' && playing) { e.preventDefault(); Weapons.launchRecon(); return; }
       /* v1.0b: K throws the gun in your hands away, L the sight on it. Every
          map, every mode. The server drops a matching pickup on the floor where
          one exists (see 'dropItem' in server.js). */
@@ -897,11 +899,26 @@ var Game = (function () {
            SHOOT along) are untouched — the spread penalty in weapons/system.js
            is what makes the shot itself unreliable. */
         var shk = PlayerCtl.proneShake ? PlayerCtl.proneShake() : 0;
+        /* ===== v2.9 - LYING DOWN COSTS YOU THE VIEW =====
+           Rahul: "when a player pressed X the screen jitters kare aur visibility
+           thora durr ka kam ho jaye ... view limited hona chahiye compare to
+           standing player." While prone: (1) a constant small jitter rides the
+           camera — at least MOVE.proneSway of the settle shake, never zero; it
+           rides the camera, which is where the shot is cast from, so a prone
+           scope wobbles; (2) the fog closes in to MOVE.proneFog x the map's
+           density, eased so it reads as the view narrowing rather than a
+           switch. Standing up gives both back. */
+        if (PlayerCtl.prone) shk = Math.max(shk, CFG.MOVE.proneSway || 0);
         if (shk > 0) {
           var tt = performance.now() * 0.014;
           camera.rotation.x += Math.sin(tt * 6.3) * 0.035 * shk;
           camera.rotation.y += Math.cos(tt * 4.7) * 0.028 * shk;
           camera.rotation.z += Math.sin(tt * 5.1) * 0.02 * shk;
+        }
+        if (scene.fog && scene.fog.density !== undefined) {
+          if (scene.fog !== proneFogRef) { proneFogRef = scene.fog; proneFogBase = scene.fog.density; }
+          var fogWant = proneFogBase * (PlayerCtl.prone && PlayerCtl.alive ? (CFG.MOVE.proneFog || 1) : 1);
+          scene.fog.density += (fogWant - scene.fog.density) * Math.min(1, dt * 4);
         }
 
         var targetFov = wu.aiming ? wu.adsFov : 75;

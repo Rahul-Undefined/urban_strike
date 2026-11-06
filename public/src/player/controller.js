@@ -34,6 +34,15 @@ var PlayerCtl = (function () {
      it creates a disadvantage for the opponent — the shake gives the
      opponent a fraction of a second." Down: 0.8 s; up: 0.5 s. */
   var speedMult = 1, speedMultUntil = 0, shakeUntil = 0, shakeLen = 1;
+  /* v2.9: a standing shield slows its carrier — GEAR.shield.speed (L1 0.88) or
+     GEAR.shield2.speed (L2 0.74). Set from 'vitals' / 'damaged'; 0 = none. */
+  var shieldLvl = 0;
+  function setShieldLevel(l) { shieldLvl = l | 0; }
+  function shieldSpeed() {
+    if (!shieldLvl) return 1;
+    var S = shieldLvl === 2 ? CFG.GEAR.shield2 : CFG.GEAR.shield;
+    return (S && S.speed) || 1;
+  }
   function speedMultNow() { if (speedMult !== 1 && performance.now() > speedMultUntil) speedMult = 1; return speedMult; }
   function setSpeedMult(m, durSec) { speedMult = m || 1; speedMultUntil = performance.now() + (durSec || 0) * 1000; }
   function adrenalineLeft() { return speedMult !== 1 ? Math.max(0, (speedMultUntil - performance.now()) / 1000) : 0; }
@@ -58,6 +67,7 @@ var PlayerCtl = (function () {
     pos.set(p[0], p[1], p[2]);
     vel.set(0, 0, 0);
     yaw = ry || 0; pitch = 0; crouch = false; prone = false; lean = 0; leanTarget = 0;
+    shieldLvl = 0;   /* v2.9: a new life carries no shield */
     halfY = P.standH / 2;          // stale from a crouched death otherwise
     alive = true;
     // Derive the void plane from the map that is actually loaded.
@@ -241,6 +251,7 @@ var PlayerCtl = (function () {
     var sprinting = input.sprint && input.fwd && !crouch && !prone && !isAiming;
     var speed = prone ? MV.prone : crouch ? MV.crouch : (sprinting ? MV.sprint : MV.walk);
     speed *= speedMultNow();   /* v2.3: adrenaline */
+    speed *= shieldSpeed();    /* v2.9: the shield is heavy */
     speed *= (weaponSpeedMult || 1);
     if (isAiming) speed *= MV.adsMult;
 
@@ -359,6 +370,7 @@ var PlayerCtl = (function () {
     get prone() { return prone; },
     toggleProne: toggleProne,
     setSpeedMult: setSpeedMult, adrenalineLeft: adrenalineLeft, proneShake: proneShake,   /* v2.3 */
+    setShieldLevel: setShieldLevel, shieldLevel: function () { return shieldLvl; },   /* v2.9 */
     get grounded() { return grounded; },
     get lean() { return lean; },
     get moveState() { return moveState; },

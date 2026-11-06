@@ -38,14 +38,21 @@ module.exports = function initCombatModule(ctx) {
 
   const { io, now, modeInfo, pushLobby, endMatch } = ctx;
 
-function weaponServerDamage(weapon, part, pellets, dist) {
+/* v2.9 `prone`: the SHOOTER was prone (st cr === 2). The round carries
+   MOVE.proneDmg of its damage and its falloff starts at MOVE.proneRange of the
+   weapon's range (Rahul: "X press karke shoot karne se 50% hi gun ka power use
+   hoga ... advantage na rahe"). Melee is not a gun and is left alone. */
+function weaponServerDamage(weapon, part, pellets, dist, prone) {
   const w = CFG.WEAPONS[weapon];
   if (!w) return 0;
   let dmg = w.dmg;
   if (w.pellets) dmg *= Math.max(1, Math.min(pellets || 1, w.pellets));
   if (part === 'head') dmg *= (w.head || 1);
   if (part === 'legs') dmg *= (w.legs || 0.72);
-  if (dist > w.range) dmg *= Math.max(0.45, 1 - (dist - w.range) / w.range);
+  const pr = !!(prone && w.type !== 'melee');
+  const range = pr ? w.range * (CFG.MOVE.proneRange || 1) : w.range;
+  if (dist > range) dmg *= Math.max(0.45, 1 - (dist - range) / range);
+  if (pr) dmg *= (CFG.MOVE.proneDmg || 1);
   return dmg;
 }
 
@@ -86,16 +93,27 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
      the normal armour path below. The room is told on every change so every
      client can draw the slab and its state. */
   if (!pointBlank && (victim.shieldHp | 0) > 0) {
-    const SH = CFG.GEAR.shield || {};
+    /* ===== v2.9 - A SNIPER ROUND COSTS A HIT, IT NO LONGER SHATTERS =====
+       L1 takes 2 scoped rounds, L2 (crate) 5 (weapons.config shield/shield2).
+       A scoped round is ABSORBED whole and spends one hit, and a share of the
+       slab's hp with it; the round that spends the LAST hit breaks the shield
+       and sniperPass of it lands. Everything else drains hp as before. */
+    const SH = (victim.shieldLvl === 2 ? CFG.GEAR.shield2 : CFG.GEAR.shield) || {};
     const wdef = CFG.WEAPONS[weapon];
-    const sniper = !!(SH.sniperBreaks && wdef && wdef.scope === true);
+    const sniper = !!(wdef && wdef.scope === true);
     let absorbed;
-    if (sniper) { absorbed = dmg * (1 - (SH.sniperPass === undefined ? 0.5 : SH.sniperPass)); victim.shieldHp = 0; }
+    if (sniper) {
+      const N = SH.sniperHits || 1;
+      victim.shieldHits = (victim.shieldHits | 0) + 1;
+      if (victim.shieldHits >= N) { absorbed = dmg * (1 - (SH.sniperPass === undefined ? 0.5 : SH.sniperPass)); victim.shieldHp = 0; }
+      else { absorbed = dmg; victim.shieldHp = Math.max(1, victim.shieldHp - SH.hp / N); }
+    }
     else { absorbed = Math.min(victim.shieldHp, dmg); victim.shieldHp -= absorbed; }
     dmg -= absorbed;
+    if (victim.shieldHp <= 0) { victim.shieldLvl = 0; victim.shieldHits = 0; }
     if (attacker && attackerId !== victim.id) attacker.damage += absorbed;   // shield damage still counts as damage dealt
     io.to(room.code).emit('shield', { id: victim.id, hp: Math.max(0, Math.round(victim.shieldHp)),
-      max: SH.hp, broke: victim.shieldHp <= 0 ? 1 : 0, sniper: sniper ? 1 : 0 });
+      max: SH.hp, lv: victim.shieldLvl | 0, broke: victim.shieldHp <= 0 ? 1 : 0, sniper: sniper ? 1 : 0 });
     if (dmg <= 0) {
       victim.lastHitAt = now();
       io.to(victim.id).emit('damaged', { dmg: 0, hp: Math.round(victim.hp), lv: victim.armorLvl,
@@ -109,6 +127,22 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
      damage. A head hit for 100 from a 40-base weapon (2.5x) with an H2 helmet
      (0.55) loses 0.55 of the 60-point bonus, so 67 lands. Body and leg shots
      are untouched. Point-blank explosives ignore it, same rule as armour. */
+  /* ===== v2.9 - THE HELMET STOPS SNIPER ROUNDS =====
+     H1 one, H2 two, H3 three (gameplay.config HELMET.sniperStops). A scoped
+     headshot on a helmet with a stop left lands NOTHING and spends the stop;
+     the last stop breaks the helmet. */
+  if (headshot && !pointBlank && victim.helmLvl > 0 && (victim.helmStops | 0) > 0
+      && CFG.WEAPONS[weapon] && CFG.WEAPONS[weapon].scope === true) {
+    victim.helmStops--;
+    if (victim.helmStops <= 0) { victim.helmLvl = 0; victim.helmDur = 0; }
+    victim.lastHitAt = now();
+    io.to(victim.id).emit('damaged', { dmg: 0, hp: Math.round(victim.hp), lv: victim.armorLvl,
+      du: Math.round(victim.armorDur), sh: Math.round(victim.shieldHp || 0), hl: victim.helmLvl | 0, hs: victim.helmStops | 0,
+      helmStop: 1, from: attackerId, fromPos: attacker ? attacker.pos : null });
+    if (attacker && attackerId !== victim.id)
+      io.to(attackerId).emit('hitConfirm', { dmg: 0, headshot: true, kill: false, v: victim.id, helm: 1 });
+    return;
+  }
   if (headshot && !pointBlank && victim.helmLvl > 0 && victim.helmDur > 0) {
     const H = CFG.HELMET[victim.helmLvl];
     const w = CFG.WEAPONS[weapon];
@@ -118,7 +152,7 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
       const cut = Math.min(bonus * H.absorb, victim.helmDur);
       dmg -= cut;
       victim.helmDur = Math.max(0, victim.helmDur - cut);
-      if (victim.helmDur === 0) victim.helmLvl = 0;
+      if (victim.helmDur === 0) { victim.helmLvl = 0; victim.helmStops = 0; }
     }
   }
 
@@ -187,6 +221,7 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
     dmg: Math.round(dmg),
     hp: Math.round(victim.hp), lv: victim.armorLvl, du: Math.round(victim.armorDur),
     sh: Math.round(victim.shieldHp || 0),   /* v15.0 (fix 5) */
+    hl: victim.helmLvl | 0, hs: victim.helmStops | 0,   /* v2.9: the helmet on the HUD */
     from: attackerId, fromPos: attacker ? attacker.pos : null
   });
   if (attacker && attackerId !== victim.id) {

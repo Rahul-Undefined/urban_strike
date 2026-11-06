@@ -380,6 +380,29 @@
        (config/index.js derives MAPS_URBANSMALL). Heli is `map === 'urban'`
        only and TRAINS has no entry for it — so neither exists here. */
     urbansmall: { label: 'Urban Small', ready: true, bound: 108, ext: { x0: -108, x1: 108, z0: -108, z1: 108 }, core: 'urban', longMatch: true },   /* v2.5: may run 30 min */
+    /* ===== v2.11 - URBAN SMALL 2 =====
+       Rahul: "Urban Small ka replica ek aur map, naam 'Urban Small 2' — Urban
+       Small jaisa hi map, area, lekin alag style mei realistic, jaha layout
+       updated rahega, building, station ka position change hoga taki thora new
+       feeling aaye. Loot spots badha dena, drop badha dena."
+       The same districts, built from the same proven builders, then (1) dressed
+       in a REALISTIC material set — brick, concrete panel, limestone, render,
+       slab pavements, dark asphalt — instead of the painted colour skins, and
+       (2) TURNED A QUARTER (90 deg) as a whole: geometry, colliders, minimap,
+       stairs, lifts, spawn / loot / drop tables all together
+       (environment/urbansmall2.js). Every building moves: the railway station
+       goes from the north edge to the west, the airport from the north-west to
+       the south-west, the mall from the east to the north. A quarter turn keeps
+       every collider an exact box and every stair, ramp and route proven on
+       Urban Small exactly as climbable. Extra loot and drop points are
+       generated from the turned geometry (maps-urbansmall2.config.js). Full
+       loot rules, lifts, crates; no train, no helicopter. `render` is a cooler,
+       more neutral daylight. */
+    urbansmall2: { label: 'Urban Small 2', ready: true, bound: 108, ext: { x0: -108, x1: 108, z0: -108, z1: 108 }, core: 'urban', longMatch: true,
+                   render: { sky: 0x8fb2cf, fogColor: 0xb9c4cc, fogDensity: 0.0042,
+                             hemiSky: 0xe4ecf2, hemiGround: 0x5e5a54, hemiIntensity: 0.85,
+                             ambColor: 0x50545a, ambIntensity: 0.30,
+                             sunColor: 0xfff4e6, sunIntensity: 1.35, sunPos: [-70, 95, 45] } },
     /* v15.0 (fix 14): RURAL REMOVED. Rahul: "it is of no use now, remove it
        completely." Builder, config table, script tags, harness lists and gate
        budgets all deleted in the same commit — the entry is not hidden, it is
@@ -418,7 +441,7 @@
        the name tag stay behind them. */
     killhouse: { label: 'Killhouse', ready: true, bound: 48, maxPlayers: 15, indoor: true, smallMap: true,
                  radar: { alwaysShowPlayers: false, proximity: 8 },
-                 crateExclude: ['drone', 'hunter', 'recon', 'visor'] },
+                 crateExclude: ['drone', 'hunter', 'recon', 'visor', 'visor2'] },   /* v2.9: the L2 visor too (Rahul: 'except killhouse') */
     /* ===== v2.8 - THE ROSTER (Rahul): Sunset Row, Freightyard, Bazaar,
        Substation, Riverside and Airfield are REMOVED — builders, config tables,
        script tags and gate lists all gone in one commit, so a stale room
@@ -431,10 +454,13 @@
        `render` is a warm desert afternoon: colours and intensities only, the
        light COUNT is untouched (verify-batch). */
     kasbah: { label: 'Kasbah', ready: true, bound: 100, ext: { x0: -100, x1: 100, z0: -100, z1: 100 }, longMatch: true,
-              render: { sky: 0x6f9fd0, fogColor: 0xd9c6a2, fogDensity: 0.0042,
-                        hemiSky: 0xfff0d6, hemiGround: 0x8a6a44, hemiIntensity: 0.92,
-                        ambColor: 0x6a5a48, ambIntensity: 0.30,
-                        sunColor: 0xffd9a8, sunIntensity: 1.50, sunPos: [60, 90, -40] } },
+              /* v2.10 (Rahul: "map bahot yellow sided hai"): a clear blue-sky
+                 noon instead of the amber afternoon — fog, sky and fill lights
+                 de-yellowed so the quarter colours read true. */
+              render: { sky: 0x7fb3e6, fogColor: 0xd3dbe2, fogDensity: 0.0038,
+                        hemiSky: 0xeaf2ff, hemiGround: 0x7c6e60, hemiIntensity: 0.95,
+                        ambColor: 0x5c5e66, ambIntensity: 0.32,
+                        sunColor: 0xfff3e2, sunIntensity: 1.45, sunPos: [60, 90, -40] } },
     /* v14.0 BLACKSITE — the bot-mode-only map. `botOnly` is enforced
        server-side at create/updateSettings (a non-bot mode asking for it is
        coerced away) and client-side in the map picker; the three bm_ modes

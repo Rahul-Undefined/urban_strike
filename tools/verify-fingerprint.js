@@ -45,9 +45,9 @@ ctx.self=ctx;ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
 
 /* Keep this list identical to index.html — see the v8.9 note in verify-lifts. */
 ["public/src/config/weapons.config.js","public/src/config/gameplay.config.js","public/src/config/loot.config.js",
- "public/src/config/world.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-kasbah.config.js","public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
+ "public/src/config/world.config.js","public/src/config/maps-killhouse.config.js","public/src/config/maps-kasbah.config.js", "public/src/config/maps-urbansmall2.config.js","public/src/config/districts.config.js","public/src/config/index.js","public/src/environment/merge.js",
  "public/src/environment/world.js","public/src/environment/districts-south.js","public/src/environment/districts-north.js",
- "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/killhouse.js","public/src/environment/kasbah.js","public/src/environment/access.js"]
+ "public/src/environment/districts-outer.js","public/src/environment/deco.js","public/src/environment/killhouse.js","public/src/environment/kasbah.js", "public/src/environment/urbansmall2.js","public/src/environment/access.js"]
  .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }));
 
 function fingerprint(map) {
@@ -295,13 +295,20 @@ const BASELINE = {
 /* v2.8 REBASELINE — deliberate: partitions 2.4 -> 3.5 m (killhouse.js, the name
    tag cleared the old walls). Same boxes, taller: colliders, draws, tris,
    casters and lights all unchanged; only the two signatures move. */
-killhouse: { colliders: 608, draws: 25, tris: 9772, casters: 13, lights: 3, bound: 48, colSig: 1499390470, meshSig: -631098334 /* v1.0w: taller cover — barriers 1.10->1.50, crates +0.3; counts unchanged */ },
+/* v2.10 REBASELINE — deliberate: 23 partitions -> 12, point-symmetric plan,
+   corridors at +/-18 (Rahul: "walls kam kar do ... competitive"). */
+killhouse: { colliders: 363, draws: 25, tris: 9316, casters: 13, lights: 3, bound: 48, colSig: -314975736, meshSig: 983142022 /* v1.0w: taller cover — barriers 1.10->1.50, crates +0.3; counts unchanged */ },
   /* v2.8: sunsetrow, freightyard, bazaar, substation, riverside and airfield
      REMOVED with their maps. KASBAH asserted from its first version. */
-  /* 4,498 colliders, 29 draws, 107k triangles — a third of Urban's triangles
-     and a quarter of its draws for a map 40% of its floor. (+10 colliders on
-     the first build: cover in the lanes behind the citadel plinth.) */
-  kasbah: { colliders: 4498, draws: 29, tris: 107232, casters: 17, lights: 3, bound: 100, colSig: -601691901, meshSig: -184419953 }
+  /* v2.10 REBASELINE — deliberate: the quarter palettes (one material per
+     colour, ~40 more batches: draws 29 -> 71, casters 17 -> 47), red-earth
+     walls, and the house-number plates (one Basic-material mesh). Collider
+     COUNT unchanged — paint and colour only. Urban: 11,778 / 109 / 332k. */
+  kasbah: { colliders: 4498, draws: 71, tris: 108674, casters: 47, lights: 3, bound: 100, colSig: 1589056215, meshSig: 211730281 },
+  /* v2.11: Urban Small turned a quarter in realistic materials. Its colliders
+     are Urban Small's, each turned — proven box-for-box (0 mismatches of
+     3,293 with real three) when this baseline was taken. */
+  urbansmall2: { colliders: 3331, draws: 100, tris: 98028, casters: 62, lights: 7, bound: 108, colSig: -1522942047, meshSig: 965133841 }
 };
 
 let pass = 0, fail = 0;

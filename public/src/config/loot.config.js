@@ -86,7 +86,11 @@
     hunter:     { kind: 'gear', g: 'hunter', n: 1, rar: 'l', drop: 1, label: 'Hunter Drone' },
     /* floor gear */
     emp:        { kind: 'gear', g: 'emp', n: 1, rar: 'l', label: 'EMP Charge' },
-    shield:     { kind: 'gear', g: 'shield', n: 1, rar: 'l', bigOnly: 1, label: 'Ballistic Shield' }
+    shield:     { kind: 'gear', g: 'shield', n: 1, rar: 'l', bigOnly: 1, label: 'Ballistic Shield' },
+    /* v2.9: crate-only, both. The heavy shield takes 5 sniper rounds and slows
+       its carrier hard; the L2 visor steers your rounds (weapons.config.js). */
+    shield2:    { kind: 'gear', g: 'shield2', n: 1, rar: 'l', drop: 1, bigOnly: 1, label: 'Heavy Shield L2' },
+    visor2:     { kind: 'gear', g: 'visor2', n: 1, rar: 'l', drop: 1, label: 'Visor L2' }
     /* v2.0: strike_key and remote (the kill-streak strikes) are DELETED, not retired. */
   };
   // Spawn-point classes: g ground (no longer used on Urban), h elevated/interior, s signature.
@@ -210,6 +214,7 @@
       'wpn_m249', 'wpn_vector', 'wpn_famas', 'wpn_aa12', 'wpn_rocket', 'wpn_seeker', 'wpn_flamer',
       'drone', 'drone', 'hunter', 'hunter', 'visor', 'visor', 'recon', 'recon', 'adrenaline', 'adrenaline', 'adrenaline',
       'c4', 'emp', 'emp', 'shield', 'armor3', 'helm_3',
+      'shield2', 'visor2',   /* v2.9: the L2 shield and the L2 visor (crate-only, legendary) */
       'att_x8', 'att_x6', 'att_x4', 'att_supp', 'att_quick', 'att_comp', 'att_reddot'],
     /* kept for old readers; loot.js draws from exoticPool only */
     weaponPool: ['wpn_aa12', 'wpn_awm', 'wpn_m249', 'wpn_vector'],

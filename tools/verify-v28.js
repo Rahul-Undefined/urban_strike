@@ -106,6 +106,17 @@ function hold(s, pos) { return setInterval(() => s.emit('st', { p: pos, ry: 0, r
     R.A.disconnect(); R.B.disconnect();
   }
 
+  /* ---------------- 4. URBAN SMALL 2 (v2.11) ---------------- */
+  console.log('--- 4. Urban Small 2: a room on the turned map ---');
+  {
+    const R = await room({ mode: 'ffa', map: 'urbansmall2', minutes: 10, killTarget: 0 });
+    ok(R.got.A.start && R.got.A.start.settings.map === 'urbansmall2', 'an Urban Small 2 room starts');
+    const S = CFG.MAPS_URBANSMALL2.SPAWNS, p = R.got.B.spawns[0].pos;
+    ok(S.some(s => Math.abs(s[0] - p[0]) < 0.6 && Math.abs(s[1] - p[2]) < 0.6), 'the spawn comes from the turned table [' + p[0] + ',' + p[2] + ']');
+    ok(R.got.A.start && R.got.A.start.pickups.length > 40, 'the floor loot rolled on Urban Small 2\u2019s points [' + (R.got.A.start && R.got.A.start.pickups.length) + ']');
+    R.A.disconnect(); R.B.disconnect();
+  }
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

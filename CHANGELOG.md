@@ -1,3 +1,203 @@
+# v2.11.0 (build 41) — URBAN SMALL 2 (2026-11-07)
+
+Built on v2.10.0. Rahul: "Urban Small ka replica ek aur map, uska naam 'Urban
+Small 2' — Urban Small jaisa hi map, area, hoga lekin alag style mei
+realistic, jaha layout updated rahega, building, station ka position change
+hoga taki thora new feeling aaye. Loot spots badha dena h, drop badha dena h."
+
+## How it is made (environment/urbansmall2.js, world.js buildMap)
+- The SAME districts, from the same proven builders (World.build small), then:
+  1. A REALISTIC MATERIAL SET swapped in for the build (World._restyleRealistic):
+     the nine painted colour skins become red / brown / terracotta brick,
+     grey and dark precast concrete, sandstone and limestone blocks and
+     off-white render; pavements become concrete slabs, asphalt goes darker,
+     roofs tar-grey. Swapped through a new `afterInit` hook in World.build,
+     after makeMaterials() (a swap before the build is rebuilt away — caught
+     by verify-v211), and put back the moment the build ends: no other map
+     inherits it.
+  2. THE WHOLE MAP TURNED A QUARTER (World._turnQuarter): (x, z) -> (z, -x)
+     for every mesh, every collider (then the broadphase), the minimap
+     layers and the stair records. Every building moves: the railway station
+     from the north edge to the WEST, the airport from the north-west to the
+     south-west, the mall from the east to the north. The sun and sky stay
+     put; every lamp turns. Urban's two interior lights are re-turned on a
+     relight.
+- Why a quarter turn: the districts' stairs, lifts and routes are proven on
+  Urban Small. A 90 deg turn keeps every collider an exact box, so all of that
+  proof carries over — verify-v211 shows all 3,331 colliders are Urban
+  Small's, turned, with none added or lost, and verify-climb reports the same
+  7 legacy flights on both maps (they come from Urban).
+- Its own light: a cooler, neutral daylight (MAPS.urbansmall2.render).
+
+## Tables (config/index.js, config/maps-urbansmall2.config.js)
+- Spawns, loot, drops: Urban Small's, turned the same quarter (facing + 90
+  deg), PLUS extra points generated from the turned geometry
+  (`tools/gen-urbansmall2-points.js --write`): 42 ground-floor room spots and
+  37 street spots, 21 more drops. Loot 109 -> 188, drops 14 -> 35, spawns 44.
+- Lifts: Urban's two, turned with their towers (gameplay.config LIFTS).
+- Districts: Urban's, turned — the dial and the M map name the place you
+  stand (districts.config listFor('urbansmall2')).
+- A theatre: full loot rules, crates, lifts, 10 / 15 / 30 minutes; no train,
+  no helicopter (as Urban Small).
+
+## Gates
+- NEW `tools/verify-v211.js` 14/0: the turn is exact box-for-box; stair records
+  and the minimap layer turned; a downward ray finds the mesh roof where the
+  collider roof is at the turned spots exactly as often as on Urban Small;
+  the station hall's 114 raised boxes are on the west edge, none left on the
+  north; spawns / loot / drops / lifts turned and increased; the realistic
+  set is in use and does not leak into Urban Small built afterwards; the dial
+  names the same place at the turned spot.
+- `verify-v28` adds a live Urban Small 2 room (19/0). `verify-lifts` now proves the two turned lifts on the turned build (12/0). `verify-map` 2601/0
+  (Urban Small 2: 188 loot, 44 spawns, 35 drops). `verify-collision`,
+  `verify-cover` (3.6% dead ground, budget 6%), `verify-floaters`,
+  `verify-lighting` (39/0 — Urban Small 2 checked before Kasbah so the
+  relight check still runs on the map it always ran on) and
+  `verify-fingerprint` (Urban Small 2 baselined) cover the new map.
+
+# v2.10.0 (build 40) — KASBAH IN COLOUR, NUMBERED HOUSES, A MAP YOU CAN READ; A MIRRORED KILLHOUSE; VISOR L2 STRONGER (2026-11-06)
+
+Built on v2.9.0. Urban Small 2 follows in v2.11.
+
+## Kasbah — every quarter its own colour (environment/kasbah.js)
+- Rahul: "map bahot yellow sided hai ... every area is somewhat different
+  colour." Nine quarters, each with its own wall palette (materials made
+  once, cached on World): SOUK SQUARE white / turquoise / coral, SPICE ROW
+  saffron / paprika, LANTERN LANE lilac / turquoise / rose, WEAVERS ROW teal
+  / white / green, COPPER STREET copper, BLUE MEDINA blue and white, THE
+  CITADEL red earth, CARAVANSERAI rose, TANNERY GARDENS green / teal. 31 wall
+  colours (was 7 sandy tones). Rampart, gates and plinth in red earth; the
+  ground pale stone; the light a clear blue-sky noon instead of amber.
+
+## Named quarters (config/maps-kasbah.config.js DISTRICTS, districts.config.js)
+- The nine quarters are written from the builder into the generated config;
+  `DISTRICTS.listFor('kasbah')` reads them, so the dial label shows where you
+  stand ("BLUE MEDINA") and the gates name the same place.
+
+## House numbers (kasbah.js)
+- 103 numbered units — every house, kiosk, barracks, the keep, the hammam
+  and every caravanserai room. Numbered quarter by quarter (Souk 01-04,
+  Spice Row 05-20, Lantern Lane 21-36, Weavers Row 37-52, Copper Street
+  53-68, Blue Medina 69-80, Citadel 81-84, Caravanserai 85-98, Tannery
+  Gardens 99-103), rows north to south inside a quarter.
+- A blue zellige tile with white digits over every MAIN door (beside it on the
+  3.8 m barracks / armoury), all 103 in one atlas texture and one mesh — one
+  draw call.
+
+## The minimap and the M map (ui/minimap.js — World.mapPlan)
+- Rahul: "mini map and big map ko ache se design karo ... area bhi dikhe,
+  roads sahi se aaye ... ghar number 23 dhunda ja sake." Kasbah hands the
+  minimap a PLAN instead of every collider: quarter colour washes with their
+  names (strip names run along their avenue), streets as streets, squares,
+  water and garden, every building as one footprint in its own wall colour
+  with its number, the landmarks by name (Fountain, Keep, Well, Hammam, Dye
+  Pits, Pool, Pavilion, the four gates).
+- The M map is drawn from the plan at SCREEN resolution (crisp), not an
+  upscaled bake. The dial shows the nearby house numbers, upright whichever
+  way you face. Other maps are unchanged (World.mapPlan is null for them).
+
+## More loot and drop points (tools/gen-kasbah-points.js)
+- Loot 155 -> 327: a second spot in every room, every reachable terrace,
+  ground loot on the streets and squares. Drops 19 -> 33. Generated from the
+  geometry and proved by verify-map as before.
+
+## Killhouse — fewer walls, a fair fight (killhouse.js)
+- Partitions 23 -> 12; the plan is POINT-SYMMETRIC (every piece at (x,z) has
+  its twin at (-x,-z)), so both spawns walk into the same fight. Three lanes,
+  staggered spawn screens (three exits each), a long wall either side of
+  centre, a cross wall per lane, deck flanks, the two blocks and two crate
+  runs mirrored. Corridors at x -18 / +18. Wall height unchanged (3.5 m).
+  Loose crates are kept off every wall and spawn. Two loot points and one
+  spawn pair moved to match.
+
+## Visor L2, stronger (weapons.config GEAR.visor2)
+- Rahul: "visor l2 ko aur powerful banao." Range 50 -> 80 m, cone 70 -> 120
+  degrees, the steered round goes to the HEAD, and while it is worn every
+  enemy is on your dial AND your M map. Walls still stop the round.
+
+## Gates
+- NEW `tools/verify-v210.js` (offline, 23/0): 103 numbers 01..103, one plate
+  per house on its main door face, every quarter its own block of numbers and
+  its own dominant colour, the plan's quarters / streets / footprints, config
+  quarters = builder quarters, the dial's quarter names, loot / drop counts,
+  the light no longer amber, no stale plan on the next map; Killhouse 12
+  walls and point symmetry; Visor L2 values and wiring.
+- `verify-map` 2102/0, `verify-v29` 44/0, `verify-v28` 16/0,
+  `verify-climb kasbah` 64/64, `verify-cover`, `verify-collision`,
+  `verify-floaters`, `verify-lighting`, `verify-batch` green.
+  `verify-fingerprint` REBASELINED for Kasbah (draws 29 -> 71, the palette)
+  and the Killhouse (colliders 608 -> 363, the new plan). `verify-fullmap`:
+  the worn L2 visor is the one non-mode way to see enemy pins.
+
+# v2.9.0 (build 39) — GEAR THAT WORKS, PRONE COSTS YOU, THE HUNTER, VISOR L2, KICK, YOUR OWN SIDE BACK (2026-11-06)
+
+Built on v2.8.0. Gameplay and general items of Rahul's November list; the
+Kasbah / Killhouse / Urban Small 2 items follow in v2.10 and v2.11.
+
+## Movement and adrenaline (gameplay.config MOVE, weapons.config GEAR.adrenaline)
+- Walk 4.4 -> 5.0, sprint 6.7 -> 7.6. Crouch and prone unchanged.
+- Adrenaline FIRES ON PICKUP (no key — N is free). +22% (was +30%: the base is
+  faster; adrenaline sprint 9.3 m/s, was 8.7). A second pickup while it runs
+  extends it by 45 s, up to 90 s left. Cleared on death.
+
+## Prone (X) costs you (combat.js weaponServerDamage, game.js)
+- A round fired prone does 50% damage and its falloff starts at 50% of the
+  weapon's range — applied on the SERVER from the shooter's stance. AK-47
+  bare-body kill: 2 rounds standing, 4 prone. The knife is not a gun.
+- While prone the camera keeps a small constant jitter and the fog closes to
+  3.2x the map's density — the far view is gone until you stand.
+
+## Vest (gameplay.config ARMOR, combat.js)
+- A vest takes 100% of every body / limb / blast hit until its durability is
+  spent; only the overflow of the round that empties it reaches health.
+  Durability 45 / 85 / 130. AK-47 kills: bare 2, L1 3, L2 4, L3 5.
+
+## Helmet (gameplay.config HELMET, loot.js, server.js, HUD)
+- THE BUG: spawnPlayer never cleared the helmet, so the first helmet of a
+  match was worn forever and every later one of its tier or lower was refused
+  — "helmet pick nahi hota". The helmet is per life now.
+- H1 / H2 / H3 stop 1 / 2 / 3 sniper HEADSHOTS outright (no damage); the
+  last stop breaks it. Other weapons keep the old head-bonus cut.
+- HUD: a helmet row (tier + one pip per sniper round it can still stop).
+
+## Shields (weapons.config shield / shield2, combat.js, controller.js)
+- L1: two scoped rounds to break (the first is absorbed whole, the second
+  breaks it and half lands); slows its carrier to 88%.
+- L2 (NEW, crate only): 650 hp, five scoped rounds, slows to 74%.
+
+## Hunter drone (weapons.config GEAR.hunter, drones.js) — J
+- J launches it (the recon flare moved to O). 20 s; 30 m/s (strike drone 14);
+  hunts the nearest enemy anywhere; flies through walls and roofs and dives
+  into the room; one shot = kill (shield, helmet and vest do not save you);
+  then the next target. Shoot it down: the usual bounty.
+
+## Visor L2 (NEW, crate only; not on the Killhouse)
+- Everything the Recon Visor gives (enemies seen through walls), plus a red
+  LOCK bracket on the reticle when an enemy is steerable, plus the round
+  steering itself onto that enemy's chest — within 50 m, inside a 70° cone, in
+  clear sight. Walls still stop the round. Nothing is shown to the target.
+  Until you die.
+
+## Host kick (server.js 'kickPlayer', ui.js)
+- KICK on every other player's row in the staging area (host only, confirm
+  first, not during the countdown). The kicked client returns to the main
+  screen and does not auto-rejoin. Not a ban.
+
+## Your own side back (rooms.js)
+- The room remembers every operator's side by NAME for its whole life. A
+  returning operator — lobby drop, a drop past the 3-minute hold, any number
+  of times — is put back on that side and locked there.
+- One player leaving the staging area no longer moves anybody else: a player
+  who holds a side keeps it; only newcomers are dealt one (smallest side).
+
+## Gates
+- `test.js` 356/0. NEW `tools/verify-v29.js` 44/0 (module: config, damage
+  pipeline, hunter kills two enemies behind walls, pickups; live: prone half
+  damage, kick, side kept across three rejoins). `verify-v28` 16/0.
+- `verify-drone`: the three v2.7 hunter assertions (respects walls / roofs,
+  holds cruise height) SUPERSEDED by the v2.9 ghost rules, 44/0.
+- Every other gate as v2.8.0; the reds are the same v2.7.0 reds.
+
 # v2.8.0 (build 38) — KASBAH; ASSAULT; THE KILLHOUSE GETS HARDER; 10 MINUTES (2026-11-05)
 
 Built on **v2.7.0 (build 37)** — the last stable build. Every later build was

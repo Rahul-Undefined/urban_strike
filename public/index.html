@@ -53,6 +53,20 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
 /* v15.0 (fix 5): the shield row. */
 #shield-row{display:none}
 #shield-row.on{display:flex}
+/* v2.9: the helmet row — tier badge and one pip per sniper round it can still stop */
+/* v2.9: the L2 visor's lock — a red bracket ring and LOCK under the reticle
+   while a steerable target is in sight; only the wearer ever sees it */
+#crosshair .v2lock{display:none;position:absolute;left:-30px;top:-30px;width:56px;height:56px;border:2px solid rgba(255,60,50,0.95);border-radius:6px;box-shadow:0 0 8px rgba(255,40,30,0.6);font:700 10px Rajdhani,sans-serif;letter-spacing:.2em;color:#ff5a4a;text-align:center;line-height:96px;pointer-events:none}
+#crosshair.locked .v2lock{display:block}
+#crosshair.locked .ch{background:#ff5a4a}
+#helm-row{display:none;align-items:center;gap:6px}
+#helm-row.on{display:flex}
+#helm-row .pips{display:flex;gap:4px;flex:1}
+#helm-row .pip{width:14px;height:6px;border-radius:2px;background:rgba(255,255,255,0.18)}
+#helm-row .pip.full{background:#f0c040}
+#helm-row.lv1 .pip.full{background:#9aa3ad}#helm-row.lv2 .pip.full{background:#4fa3e0}
+.kick-btn{margin-left:6px;padding:1px 7px;font:600 11px Rajdhani,sans-serif;letter-spacing:.06em;color:#ffb4a8;background:rgba(200,40,30,0.18);border:1px solid rgba(255,90,70,0.55);border-radius:4px;cursor:pointer}
+.kick-btn:hover{background:rgba(220,50,40,0.45);color:#fff}
 .fill.shield{width:100%;background:linear-gradient(90deg,#3a5a7c,#9fd8ff)}
 </style>
 </head>
@@ -281,7 +295,9 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
             <div class="manual small">
               <div class="mrow"><b>READY</b><span>everyone readies &#183; host launches</span></div>
               <div class="mrow"><b>COMPASS</b><span>top of the HUD &#183; call bearings, not "over there"</span></div>
-              <div class="mrow"><b>RECONNECT</b><span>drop out? rejoin with the same code &amp; callsign</span></div>
+              <div class="mrow"><b>RECONNECT</b><span>drop out? rejoin with the same code &amp; callsign &#183; same team</span></div>
+              <div class="mrow"><b>J &#183; O</b><span>J hunter drone &#183; O recon flare &#183; adrenaline fires on pickup</span></div>
+              <div class="mrow"><b>PRONE</b><span>X goes down &#183; half damage, half range, short view</span></div>
             </div>
           </div>
         </div>
@@ -298,7 +314,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
 
 <!-- ============ HUD LAYER ============ -->
 <div id="hud-layer" class="hidden">
-  <div id="crosshair"><i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="ch dot"></i></div>
+  <div id="crosshair"><i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="ch dot"></i><b class="v2lock">LOCK</b></div>
   <div id="hitmarker"></div>
   <div id="scope-overlay" class="hidden"><div class="scope-ring"></div><div class="scope-line h"></div><div class="scope-line v"></div></div>
 
@@ -350,6 +366,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
     <div class="stat-bar"><div class="stat-label">HP</div><div class="bar"><div id="hp-fill" class="fill hp"></div></div><div class="stat-num" id="hp-num">100</div></div>
     <div class="stat-bar" id="armor-row"><div class="stat-label" id="armor-badge">AR</div><div class="bar"><div id="armor-fill" class="fill armor"></div></div><div class="stat-num" id="armor-num">0</div></div>
     <!-- v15.0 (fix 5): ballistic shield hp, shown only while one is carried -->
+    <div class="stat-bar" id="helm-row"><div class="stat-label" id="helm-badge">H</div><div class="pips" id="helm-pips"></div><div class="stat-num" id="helm-num"></div></div>
     <div class="stat-bar" id="shield-row"><div class="stat-label">SH</div><div class="bar"><div id="shield-fill" class="fill shield"></div></div><div class="stat-num" id="shield-num">0</div></div>
   </div>
 
@@ -442,6 +459,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
   <script src="src/config/world.config.js"></script>
   <script src="src/config/maps-killhouse.config.js"></script>
   <script src="src/config/maps-kasbah.config.js"></script>
+  <script src="src/config/maps-urbansmall2.config.js"></script>
   <script src="src/config/districts.config.js"></script>
   <script src="src/config/index.js"></script>
   <script src="src/audio/audio.js"></script>
@@ -453,6 +471,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
   <script src="src/environment/deco.js"></script>
   <script src="src/environment/killhouse.js"></script>
   <script src="src/environment/kasbah.js"></script>
+  <script src="src/environment/urbansmall2.js"></script>
   <script src="src/environment/access.js"></script>
   <script src="src/effects/effects.js"></script>
   <script src="src/player/controller.js"></script>

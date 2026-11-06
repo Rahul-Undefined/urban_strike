@@ -1468,7 +1468,17 @@ var World = (function () {
       strays.forEach(function (o) { try { (o.parent || scene).remove(o); } catch (e) {} });
       flickers.length = 0;   // the two urban interior lights re-register below
       var id = mapId || World.builtMap || 'urban';
-      lighting(id === 'urban' || id === 'urbansmall', id);   /* v2.2 */
+      var nBefore = lights.length;
+      lighting(id === 'urban' || id === 'urbansmall' || id === 'urbansmall2', id);   /* v2.2; v2.11 */
+      /* v2.11: Urban Small 2 is turned a quarter AFTER its first lighting();
+         a relight adds Urban's interior pair at the unturned spots, so turn
+         those two the same way the map was turned: (x, z) -> (z, -x). */
+      if (id === 'urbansmall2') {
+        for (var li = nBefore; li < lights.length; li++) {
+          var L2 = lights[li];
+          if (L2 && L2.isPointLight) { var lx = L2.position.x, lz = L2.position.z; L2.position.x = lz; L2.position.z = -lx; }
+        }
+      }
       return true;
     },
     reset: function () {
@@ -1510,7 +1520,12 @@ World.build = function (sceneRef, opts) {
   if (World.isBuilt()) return;
   var SMALL = !!(opts && opts.small);   /* v2.2: Urban Small — the core and the ring boulevard only */
   World._buildSmall = SMALL;
-  World._initPart1(sceneRef, SMALL ? { map: 'urbansmall' } : undefined);
+  World._initPart1(sceneRef, SMALL ? { map: (opts && opts.mapId) || 'urbansmall' } : undefined);   /* v2.11: Urban Small 2 lights as itself */
+  /* v2.11: a restyle hook. _initPart1 has just run makeMaterials(), which
+     REBUILDS every M entry — a swap made before World.build would be thrown
+     away here (verify-v211 caught exactly that). Swapping now, before any
+     builder reads M, is the only place it sticks. */
+  if (opts && typeof opts.afterInit === 'function') opts.afterInit();
   var H = World._internals();
   var emissiveMat = H.emissive;   // unlit-but-mergeable material factory, for districts
   var seg = H.seg, box = H.box, cyl = H.cyl, stairFlight = H.stairFlight, crater = H.crater, M = H.M, rnd = H.rnd, addCollider = H.addCollider;
@@ -2026,7 +2041,7 @@ World.build = function (sceneRef, opts) {
     /* v1.0r: never on the ring boulevard — both of its lanes are railway now.
        The four ring-district signs sit at ±96.6 on purpose, just inside. */
     var bmS = (World._buildingMap || World.builtMap);
-    if (bmS === 'urban' || bmS === 'urbansmall') {
+    if (bmS === 'urban' || bmS === 'urbansmall' || bmS === 'urbansmall2') {   /* v2.11: built unturned, so the same lanes */
       var az = Math.abs(sz);
       var onNS = az > 97.2 && az < 107;                                  // the north/south lanes, the whole width (v1.1)
       var onE = sx > 97.2 && sx < 107 && az < 107;
@@ -2319,6 +2334,19 @@ World.buildMap = function (sceneRef, map) {
     World.builtMap = 'urbansmall';
     return;
   }
+  /* v2.11: Urban Small 2 — Urban Small in realistic materials, then turned a
+     quarter as a whole (environment/urbansmall2.js). The restyle is undone
+     the moment the build is over, so no other map inherits it. */
+  if (map === 'urbansmall2' && World._turnQuarter) {
+    var restore = null;
+    try {
+      World.build(sceneRef, { small: true, mapId: 'urbansmall2',
+        afterInit: function () { restore = World._restyleRealistic ? World._restyleRealistic() : null; } });
+    } finally { if (restore) restore(); }
+    World._turnQuarter(sceneRef);
+    World.builtMap = 'urbansmall2';
+    return;
+  }
   if (map === 'urban' || !builder) {
     World.build(sceneRef);            // urban's own lighting: _initPart1 defaults map:'urban'
     World.builtMap = 'urban';
@@ -2326,6 +2354,7 @@ World.buildMap = function (sceneRef, map) {
   }
   World._initPart1(sceneRef, { urban: false, map: map });   // v12.0: the override finally reaches lighting()
   var H = World._internals();
+  World.mapPlan = null;      /* v2.10: a builder that draws its own map plan sets it (Kasbah); nobody inherits a stale one */
   builder({
     seg: H.seg, box: H.box, cyl: H.cyl, stairFlight: H.stairFlight,
     M: H.M, rnd: H.rnd, scene: H.sceneRef(), addCollider: H.addCollider

@@ -142,6 +142,11 @@ var Weapons = (function () {
   // Per-spawn refill: keep exclusives + attachments earned this match.
   function resetLoadout() {
     if (!owned[baseWeapons()[0]]) matchReset();   /* v14.0: sentinel by product, not by 'ak47' */
+    visor2 = false;   /* v2.9: the L2 visor dies with you */
+    if (Net.setVisor2) Net.setVisor2(false);
+    if (UI.setLock) UI.setLock(false);
+    if (PlayerCtl.setShieldLevel) PlayerCtl.setShieldLevel(0);
+    if (UI.setHelmet) UI.setHelmet(0, 0);
     for (var n in owned) {
       var w = CFG.WEAPONS[n];
       ammo[n] = { mag: eff(n).mag, reserve: w.reserve };
@@ -188,6 +193,10 @@ var Weapons = (function () {
         }
         UI.toast('Ammo resupplied');
       }
+    } else if (d.t === 'helm') {
+      /* v2.9: the helmet is confirmed on the HUD the moment it is worn */
+      if (UI.setHelmet) UI.setHelmet(d.l, d.s);
+      UI.toast('HELMET H' + d.l + ' \u00b7 stops ' + (d.s | 0) + ' sniper headshot' + ((d.s | 0) === 1 ? '' : 's'));
     } else if (d.t === 'ammo') {
       for (var n in owned) {
         var w = CFG.WEAPONS[n];
@@ -221,9 +230,32 @@ var Weapons = (function () {
         if (owned.drone) ammo.drone = ammo.drone || { mag: 0, reserve: 0 };
         UI.toast('Strike Drone \u00b7 ' + d.n + ' carried');
       }
-      else if (d.g === 'hunter') { hunterCount = d.n; UI.toast('Hunter Drone \u00b7 ' + d.n + ' carried \u00b7 O launches (stays up 30 s, hunts what it can see)'); }
-      else if (d.g === 'recon') { reconCount = d.n; UI.toast('Recon Flare \u00b7 J fires it \u00b7 your side sees every enemy on the map for the rest of the match'); }
-      else if (d.g === 'adrenaline') { adrenalineCount = d.n; UI.toast('Adrenaline \u00b7 ' + d.n + ' carried \u00b7 N to inject (+30% speed, 45 s)'); }
+      else if (d.g === 'hunter') { hunterCount = d.n; UI.toast('Hunter Drone \u00b7 ' + d.n + ' carried \u00b7 J launches \u00b7 20 s, one-shot kills, finds them anywhere'); }
+      else if (d.g === 'recon') { reconCount = d.n; UI.toast('Recon Flare \u00b7 O fires it \u00b7 your side sees every enemy on the map for the rest of the match'); }
+      else if (d.g === 'adrenaline') {
+        /* v2.9: AUTO — the server has already started (or extended) it */
+        adrenalineCount = 0;
+        if (d.auto && d.mult) PlayerCtl.setSpeedMult(d.mult, d.durSec);
+        UI.toast('ADRENALINE \u00b7 +' + Math.round(((d.mult || 1) - 1) * 100) + '% speed \u00b7 ' + (d.durSec | 0) + ' s');
+      }
+      else if (d.g === 'visor2') {
+        /* ===== v2.9 - VISOR L2 IS EVERYTHING THE VISOR IS, AND MORE =====
+           Rahul: "Visor L2 ko aisa banana jaise game interesting ho aur woh
+           visor milne se real benefits ho." Three layers, until you die:
+             1. the Recon Visor's through-wall view (Net.setVisor) — you SEE
+                every enemy, walls or not;
+             2. LOCK — the reticle turns red with a bracket when an enemy is
+                steerable (in sight, inside 50 m, inside the cone), so you
+                know the moment to fire;
+             3. the round steers itself onto that enemy's chest.
+           The target is told nothing. Walls still stop the round: you can
+           SEE through them, you cannot SHOOT through them — the counter-play
+           is cover. */
+        visor2 = true;
+        if (Net.setVisor) Net.setVisor(true);
+        if (Net.setVisor2) Net.setVisor2(true);   /* v2.9.1: every enemy on the radar */
+        UI.toast('VISOR L2 \u00b7 enemies through walls and on your radar \u00b7 red LOCK = your rounds find their HEAD (' + CFG.GEAR.visor2.range + ' m) \u00b7 until you die');
+      }
       else if (d.g === 'visor') {
         /* v10.10: no slot, no count, no HUD item — it is a passive effect that
            lasts until death. Net.setVisor drives the through-wall render; this
@@ -303,6 +335,7 @@ var Weapons = (function () {
      the drone slot is selected. */
   /* ===== v2.3 - the three crate enhancers (keys N / J / O in game.js) ===== */
   var hunterCount = 0, reconCount = 0, adrenalineCount = 0;
+  var visor2 = false;   /* v2.9: per life — cleared in resetLoadout */
   function launchHunter() {
     if (!PlayerCtl.alive) return;
     /* v2.7: the SERVER owns the stock. The old client-side refusal could
@@ -323,6 +356,7 @@ var Weapons = (function () {
     });
   }
   function useAdrenaline() {
+    /* v2.9: kept for old callers; adrenaline fires itself on pickup now */
     if (!PlayerCtl.alive) return;
     if (adrenalineCount <= 0) { UI.toast('No adrenaline \u2014 find one in an airdrop'); return; }
     Net.useAdrenaline(function (res) {
@@ -619,11 +653,49 @@ var Weapons = (function () {
     return hit;
   }
 
+  /* ===== v2.9 - VISOR L2: THE ROUND FINDS THE ENEMY =====
+     Rahul: "shoot kare toh bullet auto locate karke enemy ko hit kar de upto
+     50m ... opponent ko pata bhi nahi chalega." While the L2 visor is worn
+     (per life), a GUN's shot is steered onto the enemy nearest the
+     crosshair among those (a) alive and hostile, (b) within GEAR.visor2.range,
+     (c) within coneDeg of where you are looking, and (d) in CLEAR SIGHT — the
+     steered ray must reach that player before any wall. A target behind cover
+     is not found: through-wall kills would be an aimbot nobody can answer.
+     Nothing is sent or shown to the target. Never on a map whose crates
+     exclude it (the Killhouse) — a stale flag there does nothing. */
+  function visorAim(o, w) {
+    if (!visor2 || !w || w.type === 'melee' || w.flame) return null;
+    var mapId = (typeof World !== 'undefined' && World.builtMap) || 'urban';
+    var mm = CFG.MAPS[mapId] || {};
+    if (mm.crateExclude && mm.crateExclude.indexOf('visor2') >= 0) return null;
+    var V = CFG.GEAR.visor2 || { range: 50, coneDeg: 70 };
+    var look = camera.getWorldDirection(new THREE.Vector3());
+    var cosMax = Math.cos((V.coneDeg / 2) * Math.PI / 180);
+    var best = null, bestCos = -2;
+    Net.eachRemote(function (id, r) {
+      if (!r.alive || (Net.isAlly && Net.isAlly(id)) || !r.renderPos) return;
+      var c = r.renderPos;
+      /* v2.9.1: the HEAD when V.head (the cached head mesh position, the
+         same one castRay tests), the chest otherwise */
+      var tgt = (V.head && r.headPos) ? new THREE.Vector3(r.headPos.x, r.headPos.y, r.headPos.z)
+        : new THREE.Vector3(c.x, c.y + (r.prone ? 0 : 0.15), c.z);
+      var dv = tgt.clone().sub(o), dist = dv.length();
+      if (dist > V.range || dist < 0.3) return;
+      dv.normalize();
+      var cs = dv.dot(look);
+      if (cs < cosMax || cs <= bestCos) return;
+      var h = castRay(o, dv, dist + 1.5);
+      if (!h || h.type !== 'player' || h.id !== id) return;   // a wall or another body is first
+      best = dv; bestCos = cs;
+    });
+    return best;
+  }
   function fireBullet(w) {
     var E2 = eff(current);
     var sp = (Input.aim ? E2.ads : E2.spread) * (PlayerCtl.prone ? 0.4 : PlayerCtl.crouch ? 0.6 : 1);
     sp *= 1 + 4 * (PlayerCtl.proneShake ? PlayerCtl.proneShake() : 0);   /* v2.3: going down / getting up costs your aim for a moment */
-    var d2 = rayDir(sp, new THREE.Vector3());
+    var vA = visorAim(camera.position, w);   /* v2.9 */
+    var d2 = vA ? vA.clone() : rayDir(sp, new THREE.Vector3());
     bullets.push({ pos: camera.position.clone(), vel: d2.multiplyScalar(w.bulletSpeed),
       drop: w.bulletDrop, life: 0, w: current, trc: w.trc || 0xffe2b0 });
     var mzB = muzzleWorld(tmpV2).clone();
@@ -648,8 +720,9 @@ var Weapons = (function () {
     /* v1.0b: a flame weapon has a HARD reach — the stream ends at w.range,
        there is no 400 m ray behind it — and draws fire, not a tracer. */
     var reach = w.flame ? w.range : 400;
+    var vAim = visorAim(o, w);   /* v2.9: the L2 visor steers every pellet */
     for (var i = 0; i < pellets; i++) {
-      var d = rayDir(spread, new THREE.Vector3());
+      var d = vAim ? vAim.clone() : rayDir(spread, new THREE.Vector3());
       var hit = castRay(o, d, reach);
       /* v1.0l: the helicopter is a target. If the ray meets its fuselage before
          anything else, the round stops there and the server is told.
@@ -1067,10 +1140,16 @@ var Weapons = (function () {
   }
 
   // ---------- per-frame ----------
+  var lockCheckAt = 0;
   function update(dt) {
     var w = CFG.WEAPONS[current];
     var E = eff(current);
     var t = performance.now();
+    /* v2.9: the L2 visor's LOCK — the same test the shot uses, ten times a second */
+    if (t >= lockCheckAt) {
+      lockCheckAt = t + 100;
+      if (UI.setLock) UI.setLock(!!(visor2 && PlayerCtl.alive && visorAim(camera.position, w)));
+    }
 
     if (reloadUntil > 0 && t >= reloadUntil) { reloadUntil = 0; finishReload(); }
 

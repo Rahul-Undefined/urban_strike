@@ -508,11 +508,17 @@ function spawnPlayer(room, p) {
      Cleared before the vitals emit further down, so the client is told in the
      same message that brings it back to life. */
   p.visor = false;
+  p.visor2 = false;      /* v2.9: the L2 visor is per life too */
+  /* v2.9: the HELMET is per life, like the vest. It never was — the first
+     helmet of a match stayed on through every death, and every later helmet of
+     its tier or lower was refused, which is why "helmet pick nahi hota". */
+  p.helmLvl = 0; p.helmDur = 0; p.helmStops = 0;
   p.trainAboardAt = 0;   /* v1.0g: a fresh life was never on the train */
   /* v15.0 (fix 5): the shield is PER LIFE like the visor. Cleared here, and the
      room told, so the slab on this operator's avatar drops with the body. */
   if ((p.shieldHp | 0) > 0) io.to(room.code).emit('shield', { id: p.id, hp: 0, max: CFG.GEAR.shield.hp });
-  p.shieldHp = 0;
+  p.shieldHp = 0; p.shieldLvl = 0; p.shieldHits = 0;
+  p.adrenalineUntil = 0;   /* v2.9: an auto-fired adrenaline dies with you */
   /* ===== v10.15 - EVERY EXPENDABLE REFILLS ON RESPAWN =====
 
      Rahul: "mines are only 5 in the game per player, once those are utilised
@@ -1491,6 +1497,7 @@ io.on('connection', (socket) => {
       p.teamLocked = true;
       p.color = Rooms.colorFor(room, p, 0);   /* v1.0r */
     });
+    Rooms.rememberSides(room);   /* v2.9 */
     pushLobby(room);
   });
 
@@ -1509,7 +1516,39 @@ io.on('connection', (socket) => {
     p.team = d.team;
     p.teamLocked = true;
     p.color = Rooms.colorFor(room, p, 0);   /* v1.0r */
+    Rooms.rememberSides(room);              /* v2.9: a host's move is the side they come back to */
     pushLobby(room);
+  });
+
+  /* ===== v2.9 - THE HOST MAY REMOVE A PLAYER FROM THE STAGING AREA =====
+     Rahul: "add an option for the host to kick someone out from the game on
+     the staging area." Lobby only (never mid-match, never mid-countdown),
+     host only, never the host himself. The kicked client is told first
+     ('kicked' — it clears its saved session so it does not auto-rejoin), then
+     taken out of the socket room and the record deleted. Their name is also
+     forgotten from room.sides. Not a ban: they may join again with the code. */
+  socket.on('kickPlayer', (d, cb) => {
+    const ack = typeof cb === 'function' ? cb : () => {};
+    const room = getRoom(socket);
+    if (!room || socket.id !== room.hostId) return ack({ ok: false, err: 'Only the host can remove players' });
+    if (room.state !== 'lobby' || room.cdTimer) return ack({ ok: false, err: 'Only in the staging area' });
+    const id = d && d.id;
+    if (!id || id === room.hostId) return ack({ ok: false, err: 'Cannot remove that player' });
+    const p = room.players.get(id);
+    if (!p) return ack({ ok: false, err: 'No such player' });
+    const ts = io.sockets.sockets.get(id);
+    if (ts) {
+      ts.emit('kicked', { by: (room.players.get(room.hostId) || {}).name || 'The host' });
+      ts.leave(room.code);
+      ts.data.roomCode = null;
+    }
+    room.players.delete(id);
+    if (room.sides) delete room.sides[p.name];
+    io.to(room.code).emit('playerLeft', { id: id, name: p.name });
+    io.to(room.code).emit('toast', { msg: p.name + ' was removed by the host' });
+    refreshTeamsAndColors(room);
+    pushLobby(room);
+    ack({ ok: true });
   });
 
   socket.on('startMatch', () => {
@@ -1692,7 +1731,7 @@ io.on('connection', (socket) => {
     } else {
       const dx = shooter.pos[0] - victim.pos[0], dy = shooter.pos[1] - victim.pos[1], dz = shooter.pos[2] - victim.pos[2];
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      dmg = weaponServerDamage(d.w, d.part, d.pellets, dist);
+      dmg = weaponServerDamage(d.w, d.part, d.pellets, dist, shooter.crouch === 2);   /* v2.9: a prone shooter fires at half power */
     }
     if (dmg <= 0) return;
     applyDamage(room, victim, dmg, socket.id, d.w, d.part === 'head', pointBlank);

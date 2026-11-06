@@ -97,11 +97,19 @@ function tryCollect(room, p) {
     } else if (it.kind === 'helm') {
       // same upgrade rule as armour: take it if it's a better tier, or the same
       // tier when the current one is below half durability
-      const hmax = CFG.HELMET[it.l].dur;
-      const hup = it.l > p.helmLvl || (it.l === p.helmLvl && p.helmDur < hmax * 0.5);
+      /* v2.9 (Rahul: "helmet map pe aata hai but woh pick nahi hota"): two
+         bugs. spawnPlayer never cleared helmLvl, so the first helmet of a match
+         was worn FOREVER and every later one of the same or a lower tier was
+         refused (it.l > helmLvl false) — the helmet "would not pick up". And the
+         HUD never showed a helmet, so a pickup that did land looked like
+         nothing. The helmet is per life now (spawnPlayer), sniperStops are
+         issued here, and 'vitals' carries hl/hs for the HUD row. */
+      const hmax = CFG.HELMET[it.l].dur, hst = CFG.HELMET[it.l].sniperStops | 0;
+      const cur = p.helmLvl | 0;
+      const hup = it.l > cur || (it.l === cur && ((p.helmDur | 0) < hmax * 0.5 || (p.helmStops | 0) < hst));
       if (!hup) continue;
-      p.helmLvl = it.l; p.helmDur = hmax;
-      grant = { t: 'helm', l: it.l };
+      p.helmLvl = it.l; p.helmDur = hmax; p.helmStops = hst;
+      grant = { t: 'helm', l: it.l, s: hst };
     } else if (it.kind === 'att') {
       if (p.att[CFG.ATTACH[it.a].cat] === it.a) continue; // already equipped
       p.att[CFG.ATTACH[it.a].cat] = it.a;
@@ -114,9 +122,19 @@ function tryCollect(room, p) {
         if ((p.drones | 0) >= CFG.GEAR.drone.maxCarry) continue;
         p.drones = Math.min(CFG.GEAR.drone.maxCarry, (p.drones | 0) + it.n);
         grant = { t: 'gear', g: 'drone', n: p.drones };
-      } else if (it.g === 'hunter' || it.g === 'adrenaline' || it.g === 'recon') {
+      } else if (it.g === 'adrenaline') {
+        /* ===== v2.9 - ADRENALINE FIRES ON PICKUP =====
+           Rahul: "jaise pick up hota h auto activate ho jana chahiye, koi
+           button assign mat karo." No stock, no key: it runs now, and a second
+           one while the first runs adds durSec (to maxStackSec left). */
+        const A = CFG.GEAR.adrenaline, tNow = now();
+        const left = Math.max(0, (p.adrenalineUntil || 0) - tNow);
+        if (left >= (A.maxStackSec || A.durSec) * 1000 - 1000) continue;
+        p.adrenalineUntil = tNow + Math.min((A.maxStackSec || A.durSec) * 1000, left + A.durSec * 1000);
+        grant = { t: 'gear', g: 'adrenaline', auto: 1, mult: A.mult, durSec: Math.round((p.adrenalineUntil - tNow) / 1000), n: 0 };
+      } else if (it.g === 'hunter' || it.g === 'recon') {
         /* v2.3: counted gear, per match, like the drone */
-        const K = it.g === 'hunter' ? 'hunters' : it.g === 'adrenaline' ? 'adrenalines' : 'recons';
+        const K = it.g === 'hunter' ? 'hunters' : 'recons';
         const cap = CFG.GEAR[it.g].maxCarry;
         if ((p[K] | 0) >= cap) continue;
         p[K] = Math.min(cap, (p[K] | 0) + it.n);
@@ -129,6 +147,13 @@ function tryCollect(room, p) {
         if (p.visor) continue;
         p.visor = true;
         grant = { t: 'gear', g: 'visor', n: 1 };
+      } else if (it.g === 'visor2') {
+        /* v2.9: the L2 visor — per life, a boolean like the visor. The aim it
+           gives is the client's (system.js); the server only remembers that it
+           was issued, so a respawn clears it and a rejoin restores it. */
+        if (p.visor2) continue;
+        p.visor2 = true;
+        grant = { t: 'gear', g: 'visor2', n: 1 };
       } else if (it.g === 'mine') {
         /* v2.8: the carry cap is the map's — 3 on an arena (CFG.mineCapFor) */
         const mcap = CFG.mineCapFor ? CFG.mineCapFor(room.settings.map || 'urban') : CFG.GEAR.mine.maxCarry;
@@ -145,9 +170,15 @@ function tryCollect(room, p) {
         /* v15.0 (fix 5): one shield at a time, per life. A second one while
            the first still stands is left for someone who needs it. */
         if ((p.shieldHp | 0) > 0) continue;
-        p.shieldHp = CFG.GEAR.shield.hp;
-        grant = { t: 'gear', g: 'shield', n: p.shieldHp };
-        io.to(room.code).emit('shield', { id: p.id, hp: p.shieldHp, max: CFG.GEAR.shield.hp });
+        p.shieldHp = CFG.GEAR.shield.hp; p.shieldLvl = 1; p.shieldHits = 0;
+        grant = { t: 'gear', g: 'shield', n: p.shieldHp, lv: 1 };
+        io.to(room.code).emit('shield', { id: p.id, hp: p.shieldHp, max: CFG.GEAR.shield.hp, lv: 1 });
+      } else if (it.g === 'shield2') {
+        /* v2.9: the heavy shield replaces an L1 that is up; never an L2 */
+        if ((p.shieldLvl | 0) >= 2 && (p.shieldHp | 0) > 0) continue;
+        p.shieldHp = CFG.GEAR.shield2.hp; p.shieldLvl = 2; p.shieldHits = 0;
+        grant = { t: 'gear', g: 'shield', n: p.shieldHp, lv: 2 };
+        io.to(room.code).emit('shield', { id: p.id, hp: p.shieldHp, max: CFG.GEAR.shield2.hp, lv: 2 });
       } else if (it.g === 'c4') {
         /* v1.0b: a carried count like the EMP; per match. */
         if ((p.c4 | 0) >= CFG.GEAR.c4.maxCarry) continue;
@@ -167,7 +198,8 @@ function tryCollect(room, p) {
     }
     pk.active = false;
     pk.respawnAt = pk.noRespawn ? Infinity : now() + CFG.LOOT_RESPAWN[it.rar] * 1000;
-    io.to(p.id).emit('vitals', { hp: Math.round(p.hp), lv: p.armorLvl, du: Math.round(p.armorDur), sh: Math.round(p.shieldHp || 0) });
+    io.to(p.id).emit('vitals', { hp: Math.round(p.hp), lv: p.armorLvl, du: Math.round(p.armorDur), sh: Math.round(p.shieldHp || 0),
+      shl: p.shieldLvl | 0, hl: p.helmLvl | 0, hs: p.helmStops | 0 });   /* v2.9: shield level + helmet for the HUD */
     if (grant) io.to(p.id).emit('grant', grant);
     io.to(room.code).emit('pickup', { id: pk.id, by: p.id, t: pk.t, gone: pk.noRespawn ? 1 : 0 });
     /* v10.9: A COLLECTED AIRDROP ITEM IS GONE. RETIRE IT.

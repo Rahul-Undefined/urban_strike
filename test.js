@@ -461,13 +461,24 @@ function phase18() {
             const d = damagedA[damagedA.length - 1];
             ok(d && d.hp === CFG.PLAYER.hp && d.sh < CFG.GEAR.shield.hp && d.dmg === 0, 'a rifle round is soaked by the shield, not the operator [' + JSON.stringify(d) + ']');
             ok(shieldEv.some(e => e.id === A.id && e.hp < CFG.GEAR.shield.hp), 'the room is told the shield state changed');
+            /* v2.9 SUPERSESSION (Rahul: "2 sniper shots to completely break"):
+               the first scoped round is absorbed whole and spends one of the
+               L1 shield's two hits; the second breaks it and half lands. */
             B.emit('hit', { victim: A.id, w: 'sniper', part: 'body', pellets: 1, vp: aPos });
             setTimeout(() => {
-              const br = shieldEv.find(e => e.id === A.id && e.broke === 1);
-              ok(!!br && br.sniper === 1, 'a sniper round shatters the shield in one hit [' + JSON.stringify(br) + ']');
-              const d2 = damagedA[damagedA.length - 1];
-              ok(d2 && d2.sh === 0 && d2.hp < CFG.PLAYER.hp, 'and half of that round reaches the operator [' + JSON.stringify(d2) + ']');
-              stepRemote(remotes);
+              const d1 = damagedA[damagedA.length - 1];
+              ok(!shieldEv.some(e => e.id === A.id && e.broke === 1) && d1 && d1.hp === CFG.PLAYER.hp && d1.sh > 0,
+                'v2.9: the FIRST sniper round is absorbed whole and the shield stands [' + JSON.stringify(d1) + ']');
+              /* the AWM's bolt is 42 rpm — the server refuses a second round
+                 inside ~1.4 s, so the second shot waits it out */
+              setTimeout(() => B.emit('hit', { victim: A.id, w: 'sniper', part: 'body', pellets: 1, vp: aPos }), 1500);
+              setTimeout(() => {
+                const br = shieldEv.find(e => e.id === A.id && e.broke === 1);
+                ok(!!br && br.sniper === 1, 'v2.9: the SECOND sniper round breaks the L1 shield [' + JSON.stringify(br) + ']');
+                const d2 = damagedA[damagedA.length - 1];
+                ok(d2 && d2.sh === 0 && d2.hp < CFG.PLAYER.hp, 'and half of that round reaches the operator [' + JSON.stringify(d2) + ']');
+                stepRemote(remotes);
+              }, 1900);
             }, 400);
           }, 400);
         }, 300);
@@ -816,7 +827,12 @@ function configGates() {
   ['urban', 'urbansmall', 'kasbah', 'killhouse'].forEach(k =>
     ok(CFG.MAPS[k] && CFG.MAPS[k].ready !== false, 'map selectable in registry: ' + k));
   /* ===== v2.8 - THE ROSTER, THE SMALL-MAP STOCK, ASSAULT, THE KILLHOUSE RADAR ===== */
-  ok(Object.keys(CFG.MAPS).join(',') === 'urban,urbansmall,killhouse,kasbah', 'v2.8: the roster is exactly Urban, Urban Small, Killhouse, Kasbah [' + Object.keys(CFG.MAPS).join(',') + ']');
+  /* v2.11 SUPERSESSION: Urban Small 2 joins, after Urban Small */
+  ok(Object.keys(CFG.MAPS).join(',') === 'urban,urbansmall,urbansmall2,killhouse,kasbah', 'v2.11: the roster is Urban, Urban Small, Urban Small 2, Killhouse, Kasbah [' + Object.keys(CFG.MAPS).join(',') + ']');
+  ok(CFG.MAPS_URBANSMALL2 && CFG.MAPS_URBANSMALL2.SPAWNS.length === CFG.MAPS_URBANSMALL.SPAWNS.length
+     && CFG.MAPS_URBANSMALL2.LOOT_POINTS.length > CFG.MAPS_URBANSMALL.LOOT_POINTS.length
+     && CFG.MAPS_URBANSMALL2.AIRDROP_POINTS.length > CFG.MAPS_URBANSMALL.AIRDROP_POINTS.length,
+    'v2.11: Urban Small 2 has Urban Small\'s spawns turned, and more loot and drops [' + CFG.MAPS_URBANSMALL2.LOOT_POINTS.length + ' / ' + CFG.MAPS_URBANSMALL2.AIRDROP_POINTS.length + ']');
   ['sunsetrow', 'freightyard', 'bazaar', 'substation', 'riverside', 'airfield'].forEach(k =>
     ok(!CFG.MAPS[k] && !CFG['MAPS_' + k.toUpperCase()], 'v2.8: ' + k + ' is gone from the registry and its table'));
   ok(CFG.MAPS_KASBAH && CFG.MAPS_KASBAH.SPAWNS.length >= 40 && CFG.MAPS_KASBAH.LOOT_POINTS.length >= 80 && CFG.MAPS_KASBAH.AIRDROP_POINTS.length >= 10,

@@ -37,10 +37,19 @@
     headR: 0.203
   };
 
+  /* ===== v2.9 - A VEST TAKES EVERYTHING UNTIL IT IS GONE =====
+     Rahul: "jab tak pura vest ka power khatam na ho health kam nahi hona
+     chahiye." absorb is 1.0 now: every point of a body / limb / blast hit goes
+     into the vest until its durability is spent, and only the overflow of the
+     round that empties it reaches health. Durability is cut to match — at
+     full absorption the old 60/110/180 would have made an L3 wearer survive
+     a sniper body shot untouched AND the next rifle burst. AK-47 (50) to kill:
+     bare 2, L1 3, L2 4, L3 5 body shots. The vest still never covers the head
+     (v8.17) — that is the helmet's job. */
   var ARMOR = {
-    1: { label: 'L1', absorb: 0.45, dur: 60,  color: '#9aa3ad' },
-    2: { label: 'L2', absorb: 0.58, dur: 110, color: '#4fa3e0' },
-    3: { label: 'L3', absorb: 0.70, dur: 180, color: '#f0c040' }
+    1: { label: 'L1', absorb: 1.0, dur: 45,  color: '#9aa3ad' },
+    2: { label: 'L2', absorb: 1.0, dur: 85,  color: '#4fa3e0' },
+    3: { label: 'L3', absorb: 1.0, dur: 130, color: '#f0c040' }
   };
 
   // Attachments — auto-equipped on pickup into one of three slots (cat).
@@ -60,10 +69,16 @@
   /* HELMET (v6.1) — own slot, own durability, mirroring ARMOR. Applies ONLY to
      head damage: absorb is the fraction of the headshot bonus removed, and each
      hit spends durability. A helmet does nothing against body or leg shots. */
+  /* ===== v2.9 - HELMETS STOP SNIPER ROUNDS =====
+     Rahul: "level 3 sniper shots ko 3 baar rokk le, level 2 2 baar, level 1
+     1 baar." `sniperStops`: a scoped rifle's HEADSHOT on a helmet with stops
+     left is stopped outright (no damage) and costs one stop; the last stop
+     breaks the helmet. Every other weapon's headshot still meets the old
+     rule — the helmet cuts `absorb` of the headshot BONUS out of durability. */
   var HELMET = {
-    1: { label: 'H1', absorb: 0.35, dur: 55,  color: '#8a949e' },
-    2: { label: 'H2', absorb: 0.55, dur: 95,  color: '#4fa3e0' },
-    3: { label: 'H3', absorb: 0.70, dur: 150, color: '#f0c040' }
+    1: { label: 'H1', absorb: 0.35, dur: 55,  sniperStops: 1, color: '#8a949e' },
+    2: { label: 'H2', absorb: 0.55, dur: 95,  sniperStops: 2, color: '#4fa3e0' },
+    3: { label: 'H3', absorb: 0.70, dur: 150, sniperStops: 3, color: '#f0c040' }
   };
 
   /* v9.6: the three shafts at (54,58), (78,60) and (60,80) are GONE with the
@@ -78,12 +93,27 @@
     { map: 'urban', x: -76.2, z: -81.9, r: 1.6, stops: [0.25, 3.25, 6.25] },                           // airport terminal
     /* v2.0: Metro City's shafts left with the map. */
   ];
+  /* v2.11: Urban Small 2 is Urban Small turned a quarter — (x, z) -> (z, -x) —
+     so its two lifts are Urban's two, turned with it. */
+  LIFTS.filter(function (l) { return l.map === 'urban'; }).forEach(function (l) {
+    LIFTS.push({ map: 'urbansmall2', x: l.z, z: -l.x, r: l.r, stops: l.stops.slice() });
+  });
 
 
   var RECOIL = { recover: 0.9, settleSec: 0.35, delayMs: 90 };
 
   var MOVE = {
-    walk: 4.4, sprint: 6.7, crouch: 2.15, prone: 1.05, adsMult: 0.6,
+    /* v2.9 (Rahul: "walking ... aur sprinting ka speed thora increase"):
+       walk 4.4 -> 5.0, sprint 6.7 -> 7.6 (+14% / +13%). Crouch and prone keep
+       their speeds — a faster prone crawl would undo item "prone costs you". */
+    walk: 5.0, sprint: 7.6, crouch: 2.15, prone: 1.05, adsMult: 0.6,
+    /* v2.9 PRONE COSTS YOU (Rahul: "X press karke shoot karne se 50% hi gun
+       ka power use hoga ... view limited hona chahiye"): a round fired while
+       prone carries `proneDmg` of its damage and reaches `proneRange` of the
+       weapon's range (server-applied, weaponServerDamage); the prone view is
+       fogged to `proneFog` x the map's density and the camera keeps a small
+       sway while down. */
+    proneDmg: 0.5, proneRange: 0.5, proneFog: 3.2, proneSway: 0.35,
     jump: 5.7, gravity: 15.5, accel: 42, airAccel: 9, step: 0.42,
     leanAngle: 0.19, leanShift: 0.42
   };

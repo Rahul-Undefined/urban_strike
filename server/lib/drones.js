@@ -225,9 +225,15 @@ module.exports = function initDroneModule(ctx) {
     const anchor = (owner && owner.alive) ? owner.pos : d.pos;
     let tgt = d.target ? room.players.get(d.target) : null, seenNow = false;
     if (tgt && (!tgt.alive || tgt.out || Math.hypot(tgt.pos[0] - anchor[0], tgt.pos[2] - anchor[2]) > S.huntRange * 1.25)) { tgt = null; d.target = null; }
+    /* v2.9 GHOST: walls and roofs do not stop it — "ghar ke andar ghus ke bhi
+       marega". It needs no line of sight; it needs to be CLOSE (seekRange,
+       3-D), and it gets close by flying through whatever is in the way. */
+    const sees = (q) => S.ghost
+      ? Math.hypot(q.pos[0] - d.pos[0], q.pos[1] - d.pos[1], q.pos[2] - d.pos[2]) <= S.seekRange
+      : canSee(room, d.pos, q);
     if (tgt) {
       const dx = tgt.pos[0] - d.pos[0], dz = tgt.pos[2] - d.pos[2], dist = Math.hypot(dx, dz);
-      seenNow = dist <= S.seekRange * 1.2 && canSee(room, d.pos, tgt);
+      seenNow = dist <= S.seekRange * 1.2 && sees(tgt);
       if (seenNow) d.lastSeen = t;
       else if (dist <= S.standoff * 1.5 && t - d.lastSeen > S.loseSec * 1000) {   // close, and still blind: a roof — drop them, try someone else
         d.shun = d.shun || {}; d.shun[tgt.id] = t; tgt = null; d.target = null;
@@ -241,7 +247,7 @@ module.exports = function initDroneModule(ctx) {
         if (dOwner > (S.huntRange || S.seekRange)) continue;
         if (d.shun && d.shun[q.id] && t - d.shun[q.id] < 6000) continue;   // it just lost this one under a roof; try someone else first
         const dq = Math.hypot(q.pos[0] - d.pos[0], q.pos[2] - d.pos[2]);
-        const seen = dq <= S.seekRange && canSee(room, d.pos, q);
+        const seen = dq <= S.seekRange && sees(q);
         if ((seen && !bestSeen) || ((seen === bestSeen) && dq < bd)) { bd = dq; best = q; bestSeen = seen; }
       }
       if (best) {
@@ -259,16 +265,25 @@ module.exports = function initDroneModule(ctx) {
       gx = d.pos[0] + (dx / dist) * want; gz = d.pos[2] + (dz / dist) * want;
       if (seenNow && t - d.lastFire >= S.fireSec * 1000 && dist <= S.seekRange) {   // it fires only at what it can see THIS tick
         d.lastFire = t;
-        const hit = Math.random() < 0.8;   // the odd round misses; a hunter is pressure, not a laser
+        /* v2.9 ONE SHOT: the round always lands and is a kill — applied as a
+           point-blank hit, the path that skips shield, helmet and vest. The
+           target then drops and the next search runs. */
+        const hit = S.oneShot ? true : Math.random() < 0.8;   // pre-2.9: the odd round missed
         io.to(room.code).emit('droneFire', { id: d.id, from: d.pos.slice(), to: [tgt.pos[0], tgt.pos[1] + 0.3, tgt.pos[2]], hit: hit });
-        if (hit) applyDamage(room, tgt, S.dmg, d.owner, 'hunter', false, false);
+        if (hit) applyDamage(room, tgt, S.dmg, d.owner, 'hunter', false, !!S.oneShot);
+        if (S.oneShot && !tgt.alive) { d.target = null; d.lastFire = t; }
       }
     } else if (owner && owner.alive) {
       gx = owner.pos[0] + 4; gz = owner.pos[2] + 4;
     } else { gx = d.pos[0]; gz = d.pos[2]; }
     const mx = gx - d.pos[0], mz = gz - d.pos[2], md = Math.hypot(mx, mz);
     if (md > 0.3) { const step = Math.min(md, S.speed * dt); d.pos[0] += (mx / md) * step; d.pos[2] += (mz / md) * step; }
-    d.pos[1] += (S.cruiseY - d.pos[1]) * Math.min(1, dt * 2);
+    /* v2.9: a ghost hunter DIVES onto its target's level once it is within
+       25 m — into the street, onto the roof, through the ceiling into the
+       room — and climbs back to cruise between targets. */
+    let wantY = S.cruiseY;
+    if (S.ghost && tgt && Math.hypot(tgt.pos[0] - d.pos[0], tgt.pos[2] - d.pos[2]) < 25) wantY = tgt.pos[1] + 1.4;
+    d.pos[1] += (wantY - d.pos[1]) * Math.min(1, dt * (S.ghost ? 5 : 2));
   }
 
   /* Serialised into the normal snapshot so clients render and can shoot at

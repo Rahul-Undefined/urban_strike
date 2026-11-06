@@ -73,12 +73,12 @@ function buildColliders(mapId) {
     [
       'public/src/config/weapons.config.js', 'public/src/config/gameplay.config.js',
       'public/src/config/loot.config.js', 'public/src/config/world.config.js',
-      'public/src/config/maps-killhouse.config.js', 'public/src/config/maps-kasbah.config.js',
+      'public/src/config/maps-killhouse.config.js', 'public/src/config/maps-kasbah.config.js', 'public/src/config/maps-urbansmall2.config.js',
       'public/src/config/index.js', 'public/src/environment/merge.js',
       'public/src/environment/world.js', 'public/src/environment/districts-south.js',
       'public/src/environment/districts-north.js', 'public/src/environment/districts-outer.js',
       'public/src/environment/deco.js', 'public/src/environment/killhouse.js',
-      'public/src/environment/kasbah.js', 'public/src/environment/access.js'
+      'public/src/environment/kasbah.js', 'public/src/environment/urbansmall2.js', 'public/src/environment/access.js'
     ].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }));
     const built = vm.runInContext(
       `(function(){ var s = new THREE.Scene(); World.reset(); World.buildMap(s, ${JSON.stringify(mapId)});

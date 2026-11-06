@@ -45,8 +45,10 @@ console.log('--- the rule itself ---');
    per-mode opt-in (`fullMapContacts`), not the default for every no-sides
    mode — in FFA the host's ENEMY INTEL toggle is the only enemy information
    the M map may carry. `!teamMode` must be GONE from the condition. */
-ok(/var showEnemies = !!\(modeCfg && modeCfg\.fullMapContacts\);/.test(src),
-  'enemy visibility is an explicit per-mode opt-in (fullMapContacts)');
+/* v2.9.1: the one other way to see enemy pins is the L2 visor the player
+   WEARS (crate loot) — still never a mode default. */
+ok(/var showEnemies = !!\(modeCfg && modeCfg\.fullMapContacts\)( \|\| !!\(Net\.visor2On && Net\.visor2On\(\)\))?;/.test(src),
+  'enemy visibility is an explicit per-mode opt-in (fullMapContacts), or the worn L2 visor');
 ok(!/var showEnemies = !teamMode/.test(src),
   'the v9.5 "any no-sides mode shows everyone" default is gone (v15.0 fix 3)');
 /* The Intel blobs are the FFA answer and must not ride the pin gate: they are

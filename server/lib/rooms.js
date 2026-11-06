@@ -142,10 +142,30 @@ function addPlayer(room, socket, name) {
     pos: [0, 0.95, 0], ry: 0, rx: 0, crouch: 0, mv: 0, wp: 0, ln: 0,
     lastShotAt: {}, history: [], respawnAt: 0
   };
+  /* ===== v2.9 - A RETURNING OPERATOR GETS THEIR OWN SIDE BACK =====
+     Rahul: "when a player gets disconnected and rejoins, sometimes the server
+     auto assigns the player to another team ... if the player rejoins as a
+     previous operator then the player should be assigned to the same team,
+     even if the player disconnects and rejoins multiple times."
+     The seat-reclaim path (v11.0) already restores a HELD seat. What it could
+     not cover: a lobby drop (lobby seats are not held — the record is deleted
+     and the balancer re-ran), and a drop that outlived the 3-minute hold. Both
+     came back as a stranger and were dealt a side by join order. The room now
+     remembers every operator's side by NAME for its whole life (room.sides,
+     written by refreshTeamsAndColors and by the host's moves); a joiner whose
+     name is on it is put straight back on that side and LOCKED there, so no
+     later balancer pass can move them. */
+  const past = room.sides && room.sides[p.name];
+  if (past && CFG.activeTeams(room.settings.mode).indexOf(past) >= 0) { p.team = past; p.teamLocked = true; }
   room.players.set(socket.id, p);
   socket.join(room.code);
   socket.data.roomCode = room.code;
   refreshTeamsAndColors(room);
+}
+/* v2.9: remember the side of everyone who has one, for the room's life */
+function rememberSides(room) {
+  room.sides = room.sides || {};
+  for (const q of room.players.values()) if (q.team && !q.bot) room.sides[q.name] = q.team;
 }
 
 // Team assignment (alternating by join order = automatic balancing) + colors.
@@ -190,7 +210,22 @@ function refreshTeamsAndColors(room, preserve) {
      players on team 'g' with no way to score. */
   const ids = CFG.activeTeams(room.settings.mode);
   let autoIdx = 0;
+  /* ===== v2.9 - NOBODY IS MOVED BECAUSE SOMEBODY ELSE LEFT =====
+     The lobby balancer used to re-deal every unlocked player round-robin on
+     EVERY join, leave and settings change — one player dropping out of a 3v3
+     lobby moved two others across. Now a player who already holds a side this
+     mode fields KEEPS it (lobby included); only a player with no side (a
+     newcomer, or a mode change that removed theirs) is dealt one — to the
+     smallest side, ties to the earliest id, which reproduces the old
+     alternation for a lobby filling up from empty. */
+  const counts = {};
+  if (teams) { ids.forEach(t => { counts[t] = 0; }); list.forEach(q => { if (ids.indexOf(q.team) >= 0) counts[q.team]++; }); }
+  const smallest = () => ids.reduce((best, t) => (counts[t] < counts[best] ? t : best), ids[0]);
   list.forEach((p, i) => {
+    if (teams && ids.indexOf(p.team) >= 0 && !preserve && !p.teamLocked && !room._reDeal) {
+      p.color = colorFor(room, p, i);
+      return;
+    }
     if (teams) {
       /* v10.22: in preserve mode any side the current mode fields is kept,
          locked or not. Only a player with no team, or one stranded on a side
@@ -203,7 +238,7 @@ function refreshTeamsAndColors(room, preserve) {
         p.color = colorFor(room, p, i);
         return;
       }
-      p.team = ids[autoIdx++ % ids.length];
+      p.team = smallest(); counts[p.team]++; autoIdx++;
       /* v11.0: a fill that happens while the match is running is immediately a
          settled fact — lock it, or the next joiner's refresh moves this one. */
       p.teamLocked = !inLobby;
@@ -213,6 +248,7 @@ function refreshTeamsAndColors(room, preserve) {
       p.color = colorFor(room, p, i);
     }
   });
+  if (teams) rememberSides(room);   /* v2.9 */
 }
 
 function lobbyPayload(room) {
@@ -245,5 +281,5 @@ function pushLobby(room) { io.to(room.code).emit('lobby', lobbyPayload(room)); }
 // ---------- spawns ----------
 
   return { makeCode, cleanName, cleanTeamName, num, clampOpt, modeInfo, makeRoom, zeroTeamKills,
-    addPlayer, refreshTeamsAndColors, lobbyPayload, pushLobby, colorFor, recolor, cleanHex };   /* v1.0r */
+    addPlayer, refreshTeamsAndColors, lobbyPayload, pushLobby, colorFor, recolor, cleanHex, rememberSides };   /* v2.9 */   /* v1.0r */
 };
