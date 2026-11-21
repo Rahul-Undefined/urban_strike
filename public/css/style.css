@@ -1264,3 +1264,106 @@ select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; p
   #screen-main.active { grid-template-areas: 'top' 'tick' 'hero' 'rail'; grid-template-rows: auto auto auto auto; }
   .mn-stamp { display: none; }
 }
+
+/* =============================================================================
+   MAP ART — v2.13 (src/ui/mapart.js). The game's own wallpapers and intro film:
+   behind the menu, under the launch countdown, on the loading screen, behind the
+   scorecard. All of it is paint: nothing here runs during play (#menu-layer and
+   the overlays are display:none in a match).
+   ========================================================================== */
+/* ---- the menu: wallpapers that drift and cross-fade ---- */
+.ma-menu { position: absolute; inset: 0; overflow: hidden; z-index: 0; }
+.ma-slide { position: absolute; inset: -4%; background-size: cover; background-position: center; opacity: 0;
+  transition: opacity 1.8s ease; will-change: transform, opacity; }
+.ma-slide.ma-show { opacity: 1; }
+.ma-slide.ma-run { animation: maDrift 11s linear both; }
+@keyframes maDrift { from { transform: scale(1.02) translate3d(-1.2%, 0.6%, 0); } to { transform: scale(1.1) translate3d(1.2%, -0.8%, 0); } }
+.ma-menu::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(8,10,15,0.9) 0%, rgba(8,10,15,0.62) 34%, rgba(8,10,15,0.18) 68%, rgba(8,10,15,0.42) 100%),
+              linear-gradient(180deg, rgba(8,10,15,0.5) 0%, rgba(8,10,15,0) 30%, rgba(8,10,15,0.72) 100%); }
+.backdrop.has-art .bd-skyline { opacity: 0; }
+.backdrop.has-art .bd-sky { opacity: 0.25; }
+.ma-replay { position: absolute; right: 18px; bottom: 12px; z-index: 3; background: none; border: 1px solid rgba(240,162,50,0.35); color: var(--ink-dim, #9aa6b2);
+  font-family: var(--mono, monospace); font-size: 10px; letter-spacing: 0.24em; padding: 7px 12px; cursor: pointer; }
+.ma-replay:hover { color: var(--amber, #f0a232); border-color: var(--amber, #f0a232); }
+
+/* ---- the five seconds before a match: the map as a living photograph ---- */
+.ma-deploy { position: fixed; inset: 0; z-index: 399; overflow: hidden; background: #07090d; pointer-events: none; }
+.ma-deploy.hidden { display: none; }
+.ma-deploy.ma-go { animation: maIn 0.5s ease-out both; }
+@keyframes maIn { from { opacity: 0; } to { opacity: 1; } }
+.ma-photo { position: absolute; inset: -6%; background-size: cover; background-position: center; will-change: transform; }
+.ma-go .ma-photo { animation: maPush 7.5s cubic-bezier(0.2, 0.6, 0.3, 1) both; }
+@keyframes maPush { from { transform: scale(1.0) translate3d(1.5%, 1%, 0); filter: saturate(0.8) brightness(0.86); }
+                    to { transform: scale(1.16) translate3d(-1.5%, -1.2%, 0); filter: saturate(1.08) brightness(1); } }
+/* a sweep of low sun across the frame */
+.ma-rays { position: absolute; inset: -20%; mix-blend-mode: screen; opacity: 0.55;
+  background: linear-gradient(105deg, rgba(255,190,110,0) 38%, rgba(255,196,120,0.22) 47%, rgba(255,214,150,0.34) 50%, rgba(255,196,120,0.2) 53%, rgba(255,190,110,0) 62%);
+  animation: maRays 6.5s ease-in-out both; }
+@keyframes maRays { from { transform: translate3d(-34%, 0, 0); } to { transform: translate3d(34%, 0, 0); } }
+/* dust in the light */
+.ma-dust span { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: rgba(255,224,170,0.8); box-shadow: 0 0 6px rgba(255,200,120,0.7);
+  animation: maDust 6s linear infinite; }
+.ma-dust span:nth-child(3n) { width: 2px; height: 2px; opacity: 0.7; }
+.ma-dust span:nth-child(4n) { width: 5px; height: 5px; filter: blur(1.5px); opacity: 0.5; }
+@keyframes maDust { 0% { transform: translate3d(0, 0, 0); opacity: 0; } 12% { opacity: 1; } 88% { opacity: 0.9; } 100% { transform: translate3d(70px, -150px, 0); opacity: 0; } }
+.ma-grade { position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 46%, rgba(7,9,13,0.28) 0%, rgba(7,9,13,0.5) 55%, rgba(7,9,13,0.9) 100%),
+              linear-gradient(180deg, rgba(7,9,13,0.35) 0%, rgba(7,9,13,0) 26%, rgba(7,9,13,0) 58%, rgba(7,9,13,0.9) 100%); }
+.ma-plate { position: absolute; left: 5vw; bottom: 9vh; text-align: left; animation: maPlate 0.7s 0.15s cubic-bezier(0.2,0.8,0.3,1) both; }
+@keyframes maPlate { from { transform: translate3d(-28px, 0, 0); opacity: 0; } to { transform: none; opacity: 1; } }
+.ma-kicker { font-family: var(--mono, monospace); font-size: 12px; letter-spacing: 0.42em; color: var(--amber, #f0a232); }
+.ma-name { font-family: var(--disp, sans-serif); font-weight: 700; font-size: clamp(44px, 7.4vw, 104px); line-height: 0.95; letter-spacing: 0.03em; color: #f1f3f6;
+  text-shadow: 0 4px 22px rgba(0,0,0,0.75); }
+.ma-meta { font-family: var(--mono, monospace); font-size: 13px; letter-spacing: 0.3em; color: #c9d1da; margin-top: 8px; }
+.ma-stripe { width: min(46vw, 520px); height: 6px; margin-top: 14px;
+  background: repeating-linear-gradient(-45deg, var(--amber, #f0a232) 0 12px, transparent 12px 22px); animation: maStripe 0.9s 0.3s ease-out both; transform-origin: left; }
+@keyframes maStripe { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.ma-c { position: absolute; width: 26px; height: 26px; border: 2px solid rgba(240,162,50,0.7); }
+.ma-c.tl { left: 22px; top: 22px; border-right: 0; border-bottom: 0; } .ma-c.tr { right: 22px; top: 22px; border-left: 0; border-bottom: 0; }
+.ma-c.bl { left: 22px; bottom: 22px; border-right: 0; border-top: 0; } .ma-c.br { right: 22px; bottom: 22px; border-left: 0; border-top: 0; }
+
+/* ---- the loading screen wears the same picture, still ---- */
+#loading.ma-on { background-image: linear-gradient(180deg, rgba(7,9,13,0.62) 0%, rgba(7,9,13,0.5) 45%, rgba(7,9,13,0.9) 100%), var(--ma-art);
+  background-size: cover; background-position: center; }
+.ma-loadname { display: none; position: absolute; left: 5vw; bottom: 9vh; text-align: left; }
+#loading.ma-on .ma-loadname { display: block; }
+.ma-loadname span { display: block; font-family: var(--mono, monospace); font-size: 12px; letter-spacing: 0.42em; color: var(--amber, #f0a232); }
+.ma-loadname b { display: block; font-family: var(--disp, sans-serif); font-weight: 700; font-size: clamp(44px, 7.4vw, 104px); line-height: 0.95; letter-spacing: 0.03em; color: #f1f3f6;
+  text-shadow: 0 4px 22px rgba(0,0,0,0.75); }
+
+/* ---- the scorecard: the map you just fought on, dimmed and drifting ---- */
+/* a real element, not ::before/::after — the overlay already uses both for its own trim */
+#end-overlay.ma-on { background: #07090d; overflow: hidden; }
+.ma-end-art { display: none; position: absolute !important; inset: 0; overflow: hidden; z-index: 0 !important; animation: maIn 0.9s ease-out both !important; pointer-events: none; }
+#end-overlay.ma-on .ma-end-art { display: block; }
+.ma-end-art i { position: absolute; inset: -5%; background-image: var(--ma-art); background-size: cover; background-position: center;
+  filter: saturate(0.95) brightness(0.9); animation: maDrift 38s linear infinite alternate; }
+.ma-end-art::after { content: ""; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 42%, rgba(7,9,13,0.52) 0%, rgba(7,9,13,0.7) 55%, rgba(7,9,13,0.92) 100%); }
+#end-overlay.ma-on > *:not(.ma-end-art) { position: relative; z-index: 1; }
+.ma-end-plate { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 6px 0 2px; font-family: var(--mono, monospace); letter-spacing: 0.34em; font-size: 12px; color: #c9d1da;
+  animation: maPlate 0.6s 0.25s ease-out both; }
+.ma-end-plate b { font-family: var(--disp, sans-serif); font-size: 22px; letter-spacing: 0.14em; color: var(--amber, #f0a232); font-weight: 700; }
+.ma-end-plate i { display: block; width: 64px; height: 2px; background: linear-gradient(90deg, transparent, rgba(240,162,50,0.8)); }
+.ma-end-plate i:last-child { transform: scaleX(-1); }
+
+/* ---- the intro film ---- */
+.ma-intro { position: fixed; inset: 0; z-index: 2000; background: #000; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: opacity 0.45s ease; }
+.ma-intro.ma-out { opacity: 0; pointer-events: none; }
+.ma-intro video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.4s ease; background: #000; }
+.ma-intro.ma-playing video { opacity: 1; }
+.ma-gate { position: relative; text-align: center; transition: opacity 0.3s ease; }
+.ma-intro.ma-playing .ma-gate { opacity: 0; pointer-events: none; }
+.ma-gate img { width: min(62vw, 720px); height: auto; display: block; margin: 0 auto 34px; filter: drop-shadow(0 0 34px rgba(240,162,50,0.22)); animation: maLogo 1.1s cubic-bezier(0.2,0.8,0.3,1) both; }
+@keyframes maLogo { from { transform: scale(1.12); opacity: 0; filter: blur(8px); } to { transform: none; opacity: 1; } }
+.ma-start { background: var(--amber, #f0a232); color: #14110a; border: 0; padding: 14px 34px; font-family: var(--disp, sans-serif); font-weight: 700; font-size: 20px; letter-spacing: 0.3em; cursor: pointer;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); animation: maPulse 1.8s ease-in-out infinite; }
+@keyframes maPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(240,162,50,0.5); } 50% { box-shadow: 0 0 0 14px rgba(240,162,50,0); } }
+.ma-gate p { margin-top: 22px; font-family: var(--mono, monospace); font-size: 11px; letter-spacing: 0.34em; color: #7f8a96; }
+.ma-skip { position: absolute; right: 26px; bottom: 22px; font-family: var(--mono, monospace); font-size: 12px; letter-spacing: 0.3em; color: rgba(255,255,255,0.72); opacity: 0; }
+.ma-intro.ma-playing .ma-skip { animation: maIn 0.4s 1s ease-out both; }
+.ma-intro.ma-hold .ma-skip { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .ma-slide.ma-run, .ma-go .ma-photo, .ma-rays, .ma-dust span, .ma-end-art i { animation: none; }
+}

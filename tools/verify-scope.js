@@ -40,6 +40,8 @@ const MODULES = new Set(['CFG', 'THREE', 'World', 'Avatars', 'Net', 'UI', 'FX', 
   'Train',    // v1.0e: the moving train (src/environment/train.js)
   'Zone',     // v1.0j: Urban Zone's circle (src/environment/zone.js)
   'Heli',     // v1.0l: the helicopter (src/environment/heli.js)
+  'Vehicles', // v2.13: vehicles on Urban (src/vehicles/vehicles.js)
+  'MapArt',   // v2.13: map wallpapers and the intro film (src/ui/mapart.js)
   'PlayerCtl', 'Weapons', 'WeaponModels', 'Pickups', 'Minimap', 'DevHUD',
   'Game', 'Input', 'Districts', 'Access', 'Deco', 'Merge', 'MetroMap', 'RuralMap', 'io',
   'StaticMerge',

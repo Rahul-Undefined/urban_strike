@@ -243,7 +243,14 @@ const BotNav = require('./server/lib/botnav.js')({ CFG, Bots });
 const BotAI = require('./server/lib/botai.js')({ CFG, io, now, Nav: BotNav, Rooms,
   applyDamage: (...a) => applyDamage(...a), weaponServerDamage: (...a) => weaponServerDamage(...a),
   spawnPlayer: (r, p) => spawnPlayer(r, p) });
+/* ===== v2.13 - VEHICLES (Urban) =====
+   The server owns which vehicles exist, their health and who sits where; the
+   driver's client drives. See server/lib/vehicles.js. Late-bound applyDamage
+   for the same reason as BotAI above. */
+const Vehicles = require('./server/lib/vehicles.js')({ CFG, io, now, modeInfo: (r) => modeInfo(r),
+  applyDamage: (...a) => applyDamage(...a) });
 const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
+  vehShield: (room, victim) => Vehicles.shields(room, victim),   /* v2.13: a tank's crew is behind armour */
   endMatch: (...a) => endMatch(...a),
   /* v10.10: late-bound on purpose. Nuke needs applyDamage, which Combat
      returns, so Nuke cannot exist yet at this line. Arrow functions defer the
@@ -647,6 +654,7 @@ function startMatch(room) {
   pushLobby(room);
   const zoneSched = Zone.start(room);   /* v1.0j: null unless the mode is Urban Zone */
   const heliSnap = Heli.start(room);    /* v1.0l: null unless the map is Urban */
+  const vehSnap = Vehicles.start(room); /* v2.13: null unless the map has vehicles */
   io.to(room.code).emit('matchStart', {
     settings: room.settings,
     startedAt: room.startedAt,
@@ -654,7 +662,8 @@ function startMatch(room) {
     players: lobbyPayload(room).players,
     pickups: pickupList(room),
     zone: zoneSched,
-    heli: heliSnap
+    heli: heliSnap,
+    vehicles: vehSnap
   });
   for (const p of room.players.values()) spawnPlayer(room, p);
   BotAI.onMatchStart(room);   /* v2.12: Bot Ops fields its operators (no-op in every other mode) */
@@ -715,6 +724,7 @@ function startSnapshots(room) {
     }
     Drones.tick(room, 1 / CFG.NET.snapRate); // v9.4
     BotAI.tick(room, 1 / CFG.NET.snapRate);  // v2.12 Bot Ops
+    Vehicles.tick(room);                     // v2.13 seats of the dead, respawns
     respawnPickups(room);
     Mines.tick(room);
     Hazards.tick(room);                      // v1.0b fire zones + C4 fuses
@@ -772,6 +782,7 @@ function startSnapshots(room) {
     room.snapTk = tkNow;
 
     const packet = { e: ents };
+    const vh = Vehicles.snapshot(room, keyframe); if (vh) packet.vh = vh;   /* v2.13: all on a keyframe, what moved otherwise */
     /* v11.0: the SERVER TICK NUMBER rides the envelope. The client used to
        timestamp every snapshot with its own performance.now() AT ARRIVAL —
        so network jitter and main-thread hitches were written straight into
@@ -1050,7 +1061,8 @@ io.on('connection', (socket) => {
         players: lobbyPayload(room).players,
         pickups: pickupList(room),
         zone: room.zone ? room.zone.sched : null,   /* v1.0j */
-        heli: Heli.snapshot(room)                   /* v1.0l */
+        heli: Heli.snapshot(room),                  /* v1.0l */
+        vehicles: Vehicles.snapshot(room, true)     /* v2.13 */
       });
       spawnPlayer(room, p);
     }
@@ -1584,6 +1596,7 @@ io.on('connection', (socket) => {
     if (!room || socket.id !== room.hostId || room.state !== 'ended') return;
     room.state = 'lobby';
     BotAI.removeBots(room);   /* v2.12: the staging area is for people */
+    Vehicles.reset(room);     /* v2.13 */
     cancelCountdown(room);
     Mines.clear(room);
     clearAirdrop(room);
@@ -1598,6 +1611,40 @@ io.on('connection', (socket) => {
   });
 
   // ~20 Hz player state
+  /* ===== v2.13 - VEHICLES =====
+     vehEnter/vehExit: a seat is the server's to give. veh: the driver's pose,
+     checked against the vehicle's top speed. vehHit: rounds on a hull, no
+     faster than the gun fires. vehRam: the driver says who it ran into; the
+     server checks they were there and how fast it was going. */
+  socket.on('vehEnter', (d, cb) => {
+    const room = getRoom(socket), p = room && room.players.get(socket.id);
+    const res = (room && room.state === 'playing' && p) ? Vehicles.enter(room, p, d) : { ok: false, err: 'Not now' };
+    if (typeof cb === 'function') cb(res);
+  });
+  socket.on('vehExit', () => {
+    const room = getRoom(socket), p = room && room.players.get(socket.id);
+    if (room && p) Vehicles.exit(room, p);
+  });
+  socket.on('veh', (d) => {
+    const room = getRoom(socket); if (!room || room.state !== 'playing') return;
+    const p = room.players.get(socket.id); if (!p || !p.alive) return;
+    Vehicles.drive(room, p, d);
+  });
+  socket.on('vehHit', (d) => {
+    const room = getRoom(socket); if (!room || room.state !== 'playing') return;
+    const p = room.players.get(socket.id); if (!p || !p.alive || Vehicles.seatOf(room, p.id)) return;
+    Vehicles.hit(room, p, d);
+  });
+  socket.on('vehHorn', () => {
+    const room = getRoom(socket); if (!room || room.state !== 'playing') return;
+    const p = room.players.get(socket.id); if (p && p.alive) Vehicles.horn(room, p);
+  });
+  socket.on('vehRam', (d) => {
+    const room = getRoom(socket); if (!room || room.state !== 'playing') return;
+    const p = room.players.get(socket.id); if (!p || !p.alive) return;
+    Vehicles.ram(room, p, d);
+  });
+
   socket.on('st', (s) => {
     const room = getRoom(socket); if (!room) return;
     const p = room.players.get(socket.id); if (!p || !p.alive) return;
@@ -1625,7 +1672,7 @@ io.on('connection', (socket) => {
     if (p.justSpawned) { p.justSpawned = false; }
     else if (p.lastStAt) {
       const dtS = Math.max(0.02, (tSt - p.lastStAt) / 1000);
-      const budget = 21 * dtS + 2.5;      // 3x top sprint, plus lag slack
+      const budget = (Vehicles.speedCap(room, p) || 21) * dtS + 2.5;      // 3x top sprint (or 1.5x the vehicle they sit in), plus lag slack
       const ddx = nx - p.pos[0], ddz = nz - p.pos[2];
       if (ddx * ddx + ddz * ddz > budget * budget) return;
     }
@@ -1709,6 +1756,7 @@ io.on('connection', (socket) => {
     if (d.w === 'frag' && CFG.isArena(room.settings.map || 'urban')
         && (shooter.fragThrows | 0) > CFG.fragCountFor(room.settings.map || 'urban')) return;
     const victim = room.players.get(d.victim); if (!victim || !victim.alive) return;
+    if (Vehicles.seatOf(room, socket.id)) return;   /* v2.13: nobody fires from a seat (driver or passenger) */
 
     const explosive = d.w === 'frag' || d.w === 'rocket' || d.w === 'molotov';
     if (!explosive && d.victim === socket.id) return;

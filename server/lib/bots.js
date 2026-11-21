@@ -43,6 +43,9 @@ function pathFrom(waypoints, fillet) {
   if (!vmCtx.ctx) return null;
   try { return vm.runInContext('World.trainPath(' + JSON.stringify({ waypoints: waypoints, fillet: fillet }) + ')', vmCtx.ctx); } catch (e) { return null; }
 }
+const groundCache = Object.create(null);
+/* v2.13: [x0, z0, x1, z1, kind] for every ground plane of a map ('road', 'turf', 'water', 'dirt') */
+function groundFor(mapId) { buildColliders(mapId); return groundCache[mapId] || []; }
 function buildColliders(mapId) {
   if (colliderCache[mapId]) return colliderCache[mapId];
   let cols = [];
@@ -85,9 +88,11 @@ function buildColliders(mapId) {
          return { c: World.colliders.map(function(c){ return [c[0],c[1],c[2],c[3],c[4],c[5]]; }),
                   s: World._stairs().map(function(f){ return {
                     sx: f.sx, sy: f.sy, sz: f.sz, dirX: f.dirX, dirZ: f.dirZ,
-                    topY: f.topY, endX: f.endX, endZ: f.endZ }; }) }; })();`,
+                    topY: f.topY, endX: f.endX, endZ: f.endZ }; }),
+                  g: (World.minimapGround || []).map(function(r){ return [r[0], r[1], r[2], r[3], r[4]]; }) }; })();`,
       ctx, { filename: '<bot-colliders>' });
     cols = built.c;
+    groundCache[mapId] = built.g || [];   /* v2.13: the road/turf/water planes the builder laid (vehicle parking reads the roads) */
     vmCtx.ctx = ctx;   /* v1.0q: kept for pathFrom() */
     /* v1.0f: the train's path, evaluated in the same vm that built the map —
        the server needs it to kill whoever the moving train hits. */
@@ -385,5 +390,5 @@ module.exports = function initGeometryHarness(ctx) {
   /* v1.0d: no bots. The factory shape survives for the thirty callers; every
      former product verb is gone rather than stubbed, so a call site that still
      expects one fails loudly at load instead of silently fielding nothing. */
-  return { buildColliders, stairsFor, planClimb, segmentBlocked, groundAt, bodyBlocked, trainPath, pathFrom };
+  return { buildColliders, stairsFor, planClimb, segmentBlocked, groundAt, bodyBlocked, trainPath, pathFrom, groundFor };
 };

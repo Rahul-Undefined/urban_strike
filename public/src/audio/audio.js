@@ -359,6 +359,42 @@ var AudioSys = (function () {
     tone(pos, { type: 'sawtooth', f0: 370, f1: 370, dur: 0.9, vol: 0.34 });
     tone(pos, { type: 'square', f0: 155, f1: 155, dur: 0.9, vol: 0.12 });
   }
+  /* ===== v2.13 - VEHICLES =====
+     A horn is two notes a third apart, voiced per kind (the auto's is the
+     pom-pom, the bus's a low air horn). The engine is one looping voice for the
+     vehicle you sit in, on the same master bus as everything else so the
+     volume slider and the mute apply to it. */
+  var HORNS = { bike: [523, 659, 0.3], auto: [440, 587, 0.26], car: [392, 494, 0.5], bus: [220, 277, 0.8], tank: [147, 185, 0.85] };
+  function vehicleHorn(pos, kind) {
+    if (!ctx) return;
+    var hn = HORNS[kind] || HORNS.car;
+    tone(pos, { type: 'square', f0: hn[0], f1: hn[0], dur: hn[2], vol: 0.3 });
+    tone(pos, { type: 'sawtooth', f0: hn[1], f1: hn[1], dur: hn[2], vol: 0.24 });
+  }
+  function vehicleDoor(pos) {
+    if (!ctx) return;
+    tone(pos, { type: 'sine', f0: 150, f1: 60, dur: 0.12, vol: 0.4 });
+    noiseBurst(pos, { f0: 1300, f1: 300, dur: 0.08, vol: 0.22 });
+  }
+  var eng = null;
+  /* on: is somebody driving; load 0..1: how hard; deep: a bus or a tank */
+  function vehicleEngine(on, load, deep) {
+    if (!ctx || !master) return;
+    try {
+      if (!eng) {
+        if (!on) return;
+        eng = { o1: ctx.createOscillator(), o2: ctx.createOscillator(), g: ctx.createGain(), f: ctx.createBiquadFilter() };
+        eng.o1.type = 'sawtooth'; eng.o2.type = 'square'; eng.f.type = 'lowpass'; eng.g.gain.value = 0;
+        eng.o1.connect(eng.f); eng.o2.connect(eng.f); eng.f.connect(eng.g); eng.g.connect(master);
+        eng.o1.start(); eng.o2.start();
+      }
+      var t = ctx.currentTime, k = deep ? 0.62 : 1, ld = Math.max(0, Math.min(1, load || 0));
+      eng.o1.frequency.setTargetAtTime((48 + ld * 120) * k, t, 0.08);
+      eng.o2.frequency.setTargetAtTime((24 + ld * 60) * k, t, 0.08);
+      eng.f.frequency.setTargetAtTime(300 + ld * 1000, t, 0.1);
+      eng.g.gain.setTargetAtTime(on ? 0.05 + ld * 0.06 : 0, t, 0.12);
+    } catch (e) { /* silence is not a reason to stop driving */ }
+  }
   function crateThud(pos) {
     tone(pos, { type: 'sine', f0: 110, f1: 34, dur: 0.4, vol: 0.6 });
     noiseBurst(pos, { f0: 900, f1: 150, dur: 0.3, vol: 0.4 });
@@ -586,6 +622,7 @@ var AudioSys = (function () {
     planeFlyby: planeFlyby, crateThud: crateThud, stinger: stinger, fireCrackle: fireCrackle,
     empPulse: empPulse, heliBeat: heliBeat, fuelSiren: fuelSiren,   /* v15.0 */
     zoneTick: zoneTick, trainRumble: trainRumble, trainHorn: trainHorn,   /* v1.0k */
+    vehicleHorn: vehicleHorn, vehicleDoor: vehicleDoor, vehicleEngine: vehicleEngine,   /* v2.13 */
     setIndoors: setIndoors,
     explosion: explosion, impact: impact, flesh: flesh, hitmark: hitmark,
     whoosh: whoosh, bounce: bounce, pinPull: pinPull, flashRing: flashRing,

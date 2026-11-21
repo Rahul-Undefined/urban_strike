@@ -18,6 +18,7 @@ var Game = (function () {
   var timerAccum = 0;
   var landDip = 0;
   var tpp = false;                                  // v13.0: third-person view
+  var wasRiding = false;                            // v2.13: seated in a vehicle last frame
   var proneFogRef = null, proneFogBase = 0;   /* v2.9: the prone view closes in (see the render loop) */
   var _boomO = null, _boomD = null;                 // v13.1: boom ray scratch (allocated at init)
   var ownAv = null;                                 // v13.0: local body rig (TPP)
@@ -287,6 +288,7 @@ var Game = (function () {
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
                 t.tagName === 'SELECT' || t.isContentEditable)) return;
       var playing = Net.getPhase() === 'playing';
+      var riding = !!(window.Vehicles && Vehicles.mounted());   /* v2.13: hands are on the wheel (or the grab rail) */
       /* v8.9 dev overlay. Registered BEFORE the pointer-lock guard below on
          purpose: the panel has to be readable while paused, which is exactly
          when a bug gets examined. F4 copies the readout so coordinates are
@@ -305,8 +307,8 @@ var Game = (function () {
         e.preventDefault();
         tpp = !tpp;
         try { localStorage.setItem('us_tpp', tpp ? '1' : '0'); } catch (err) {}
-        Weapons.setFirstPerson(!tpp);
-        if (ownAv) ownAv.group.visible = tpp;
+        Weapons.setFirstPerson(!tpp && !riding);
+        if (ownAv) ownAv.group.visible = tpp && !riding;
         UI.toast(tpp ? 'THIRD PERSON \u00b7 P to switch back' : 'FIRST PERSON');
         return;
       }
@@ -318,13 +320,13 @@ var Game = (function () {
       /* v2.9 (Rahul: "Hunter Drone J se activate"): J launches the HUNTER, O
          fires the recon flare (they swapped), and adrenaline has no key — it
          fires itself on pickup. N is left free. */
-      if (e.code === 'KeyJ' && playing) { e.preventDefault(); Weapons.launchHunter(); return; }
-      if (e.code === 'KeyO' && playing) { e.preventDefault(); Weapons.launchRecon(); return; }
+      if (e.code === 'KeyJ' && playing && !riding) { e.preventDefault(); Weapons.launchHunter(); return; }
+      if (e.code === 'KeyO' && playing && !riding) { e.preventDefault(); Weapons.launchRecon(); return; }
       /* v1.0b: K throws the gun in your hands away, L the sight on it. Every
          map, every mode. The server drops a matching pickup on the floor where
          one exists (see 'dropItem' in server.js). */
-      if (e.code === 'KeyK' && playing) { e.preventDefault(); Weapons.dropCurrent(); return; }
-      if (e.code === 'KeyL' && playing) { e.preventDefault(); Weapons.dropSight(); return; }
+      if (e.code === 'KeyK' && playing && !riding) { e.preventDefault(); Weapons.dropCurrent(); return; }
+      if (e.code === 'KeyL' && playing && !riding) { e.preventDefault(); Weapons.dropSight(); return; }
       /* v10.13: V spots whatever enemy is in the crosshair for the team.
 
          This was KeyX for exactly one gate run. X is toggleProne, bound
@@ -355,6 +357,20 @@ var Game = (function () {
         return;
       }
       if (!locked || !playing) return;
+      /* ===== v2.13 - N GETS IN AND OUT OF A VEHICLE =====
+         Rahul: "vehicles PUBG style mei road pe khade rahenge, usko lekar drive
+         kar sakte hai." N was the last free letter beside the movement cluster
+         (E is lean-right, F the flashbang). While seated only the movement
+         keys, N, H (horn) and L (headlights) do anything: W/S drive, A/D
+         steer, Space is the handbrake; a rider throws nothing and reloads
+         nothing. */
+      if (e.code === 'KeyN') { if (window.Vehicles) Vehicles.use(); return; }
+      if (riding) {
+        if (e.code === 'KeyH') Vehicles.horn();          // H is the horn at the wheel (a molotov on foot)
+        else if (e.code === 'KeyL') Vehicles.lights();   // L the headlights (drop-sight on foot)
+        else if (map[e.code]) { Input[map[e.code]] = true; if (e.code === 'Space') e.preventDefault(); }
+        return;
+      }
       if (map[e.code]) { Input[map[e.code]] = true; if (e.code === 'Space') e.preventDefault(); return; }
       if (e.code === 'KeyR') { Weapons.startReload(); return; }
       if (e.code === 'KeyG') { Weapons.startCook(); return; } // hold to cook, release to throw
@@ -439,6 +455,7 @@ var Game = (function () {
     });
     document.addEventListener('mousedown', function (e) {
       if (!locked) return;
+      if (window.Vehicles && Vehicles.mounted()) return;   /* v2.13: nobody fires or aims from a seat */
       if (e.button === 0) Weapons.setTrigger(true);
       if (e.button === 2) Input.aim = true;
     });
@@ -522,9 +539,12 @@ var Game = (function () {
     try { if (window.Showcase) window.Showcase.stop(); } catch (e) { }
     _rebuiltThisMatch = false; _blackFrames = 0;   // v11.0: one watchdog rescue per match
     _relitThisMatch = false; _lightFrames = 0;     // v12.0: light sentinel, same rule
+    /* v2.13: somebody who joins mid-match never saw the staging area — tell the map art which map this is before the loading screen wears it */
+    try { var mapNow = (d.settings && d.settings.map) || 'urban'; if (window.MapArt) MapArt.setMatch(mapNow, (CFG.MAPS[mapNow] || CFG.MAPS.urban).label, (CFG.MODES[d.settings && d.settings.mode] || {}).label); } catch (e) { }
     UI.setLoading(true);
     setTimeout(function () {           // let the loading bar paint before the ~1s map build
       var built = buildWorld((d.settings && d.settings.map) || 'urban', d.pickups);
+      try { if (built && window.Vehicles && d.vehicles) Vehicles.sync(d.vehicles); } catch (e) { reportError('vehicles', e); }   /* v2.13 */
       try {
         var teams = CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams;
         UI.setKillTarget(killTargetLabel(d.settings.killTarget, teams));
@@ -562,6 +582,7 @@ var Game = (function () {
       Weapons.matchReset();
       Pickups.build(scene);
       Pickups.init(pickups);
+      if (window.Vehicles) Vehicles.init(scene);   /* v2.13: empty until the server's list arrives (matchStart, or the next keyframe on a rejoin) */
       Minimap.init();
       if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
       AudioSys.ambient();
@@ -647,6 +668,7 @@ var Game = (function () {
       };
       if (needBuild) {
         try { if (window.Showcase) window.Showcase.stop(); } catch (e) { }
+        try { if (window.MapArt) MapArt.setMatch(mapId, (CFG.MAPS[mapId] || CFG.MAPS.urban).label); } catch (e) { }   /* v2.13 */
         UI.setLoading(true);
         setTimeout(function () { buildWorld(mapId, res.pickups); after(); }, 60);
       } else {
@@ -792,6 +814,7 @@ var Game = (function () {
   function onMatchEnd(d, myId, isHost) {
     PlayerCtl.alive = false;
     clearInput();
+    try { if (window.Vehicles) Vehicles.reset(); } catch (e) { }   /* v2.13: no HUD, no engine note on the scoreboard */
     if (deathInterval) { clearInterval(deathInterval); deathInterval = null; }
     UI.hideDeath();
     UI.setScope(false);
@@ -874,9 +897,22 @@ var Game = (function () {
       /* Every later line reads wu. If the weapons update itself failed, fall
          back to inert values rather than letting one fault cascade. */
       if (!wu) wu = { speedMult: 1, aiming: false, crossGap: 0, adsFov: 75, scoped: false };
+      /* ===== v2.13 - IN A VEHICLE =====
+         The vehicle module moves the player instead of the controller, the
+         camera is its chase camera, and there is no gun in hand: no ADS zoom,
+         no scope, no viewmodel, no own-body rig standing through the roof. */
+      var riding = !!(window.Vehicles && Vehicles.mounted());
+      if (riding !== wasRiding) {
+        wasRiding = riding;
+        Weapons.setFirstPerson(riding ? false : !tpp);
+        if (riding) { Weapons.setTrigger(false); Input.aim = false; }
+      }
+      if (riding) wu = { speedMult: 1, aiming: false, crossGap: wu.crossGap, adsFov: 75, scoped: false };
+      if (window.Vehicles) step('vehicles', function () { Vehicles.update(dt); });
 
       step('player', function () {
-        PlayerCtl.update(dt, Input, wu.speedMult, wu.aiming);
+        if (riding) Vehicles.drive(dt, Input);
+        else PlayerCtl.update(dt, Input, wu.speedMult, wu.aiming);
         UI.setCrosshairGap(wu.crossGap);
 
         var land = PlayerCtl.consumeLand();
@@ -893,28 +929,15 @@ var Game = (function () {
         camera.rotation.y = -PlayerCtl.yaw;
         camera.rotation.x = PlayerCtl.pitch;
         camera.rotation.z = -PlayerCtl.lean * CFG.MOVE.leanAngle;
-        /* v2.3: the prone shake — a decaying sway on the camera for the moment
-           after X (down 0.8 s, up 0.5 s), so the opponent has a window while
-           you settle. Rendering only: PlayerCtl.yaw/pitch (what you SEND and
-           SHOOT along) are untouched — the spread penalty in weapons/system.js
-           is what makes the shot itself unreliable. */
-        var shk = PlayerCtl.proneShake ? PlayerCtl.proneShake() : 0;
-        /* ===== v2.9 - LYING DOWN COSTS YOU THE VIEW =====
-           Rahul: "when a player pressed X the screen jitters kare aur visibility
-           thora durr ka kam ho jaye ... view limited hona chahiye compare to
-           standing player." While prone: (1) a constant small jitter rides the
-           camera — at least MOVE.proneSway of the settle shake, never zero; it
-           rides the camera, which is where the shot is cast from, so a prone
-           scope wobbles; (2) the fog closes in to MOVE.proneFog x the map's
-           density, eased so it reads as the view narrowing rather than a
-           switch. Standing up gives both back. */
-        if (PlayerCtl.prone) shk = Math.max(shk, CFG.MOVE.proneSway || 0);
-        if (shk > 0) {
-          var tt = performance.now() * 0.014;
-          camera.rotation.x += Math.sin(tt * 6.3) * 0.035 * shk;
-          camera.rotation.y += Math.cos(tt * 4.7) * 0.028 * shk;
-          camera.rotation.z += Math.sin(tt * 5.1) * 0.02 * shk;
-        }
+        /* ===== v2.12.1 - LYING DOWN COSTS YOU THE VIEW, NOT A STEADY SCREEN =====
+           Rahul: "screen shake bahot galat show karta h ... visibility bhi 50%
+           rahegi aur baki sab hazy ho jayega." The v2.3 settle shake and the
+           v2.9 prone jitter are both gone — the camera is rock steady in every
+           stance. What prone costs now: the fog closes to MOVE.proneFog x the
+           map's density (2x = you see half as far, the rest is haze), eased so
+           it reads as the view narrowing rather than a switch, and a round
+           fired from the ground carries 20% of its damage (server:
+           weaponServerDamage; v2.13). */
         if (scene.fog && scene.fog.density !== undefined) {
           if (scene.fog !== proneFogRef) { proneFogRef = scene.fog; proneFogBase = scene.fog.density; }
           var fogWant = proneFogBase * (PlayerCtl.prone && PlayerCtl.alive ? (CFG.MOVE.proneFog || 1) : 1);
@@ -937,7 +960,8 @@ var Game = (function () {
            untouched by construction. Scoped ADS stays first-person — a sniper
            overlay from behind your own head is nonsense — so the boom simply
            does not apply while scoped. */
-        if (tpp && !wu.scoped) {
+        if (riding) Vehicles.camera(camera);   /* v2.13: the chase camera, pulled in when a wall is behind it */
+        else if (tpp && !wu.scoped) {
           var boom = TPPCam.computeBoom(
             { x: camera.position.x, y: camera.position.y, z: camera.position.z },
             PlayerCtl.yaw, PlayerCtl.pitch,
@@ -961,7 +985,7 @@ var Game = (function () {
          The rig is NOT a collider and is not in Net's remotes map, so bullets,
          the camera ray and hit detection never meet it. */
       step('ownbody', function () {
-        if (!tpp || !PlayerCtl.alive) { if (ownAv) ownAv.group.visible = false; return; }
+        if (!tpp || !PlayerCtl.alive || riding) { if (ownAv) ownAv.group.visible = false; return; }
         if (!ownAv) {
           ownAv = Avatars.buildAvatar();
           if (ownAv.tagHolder) ownAv.tagHolder.visible = false;   // no name tag over your own head

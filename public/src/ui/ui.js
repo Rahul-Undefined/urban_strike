@@ -170,7 +170,10 @@ var UI = (function () {
     els['menu-layer'].classList.add('hidden');
     els['hud-layer'].classList.remove('hidden');
   }
-  function setLoading(on) { els['loading'].classList.toggle('hidden', !on); }
+  function setLoading(on) {
+    els['loading'].classList.toggle('hidden', !on);
+    try { if (window.MapArt) MapArt.loading(!!on); } catch (e) { /* v2.13: the picture is paint, never a blocker */ }
+  }
 
   // ---------- lobby ----------
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
@@ -544,6 +547,7 @@ var UI = (function () {
     setTeamNames(d.settings && d.settings.teamNames);      // v8.33
     _mode = d.settings.mode || 'ffa';                     // v8.34
     var mapCfg = CFG.MAPS[d.settings.map] || CFG.MAPS.urban;
+    try { if (window.MapArt) MapArt.setMatch(d.settings.map || 'urban', mapCfg ? mapCfg.label : d.settings.map, (CFG.MODES[d.settings.mode] || {}).label || ''); } catch (e) { /* v2.13 */ }
     /* Header summary + intel card: the at-a-glance facts the old three-panel
        info list carried, without the acreage. */
     if (els['lobby-summary']) els['lobby-summary'].textContent =
@@ -660,6 +664,9 @@ var UI = (function () {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">fell from the helicopter</span>' + (d.self ? '' : ' <span class="fw">(hit by</span> <b>' + d.killerName + '</b><span class="fw">)</span>');   /* v1.0l */
     } else if (d.weapon === 'zone') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">bled out in the zone \u00b7 \u22121</span>';   /* v1.0j; v2.6: the point it cost */
+    } else if (d.weapon === 'vehicle') {
+      row.innerHTML = d.self ? '<b>' + d.victimName + '</b> <span class="fw">went up with the vehicle</span>'
+        : '<b>' + d.killerName + '</b> <span class="fw">[VEHICLE]</span> <b>' + d.victimName + '</b>';   /* v2.13: run over, or aboard when it blew */
     } else if (d.weapon === 'train') {
       row.innerHTML = '<b>' + d.victimName + '</b> <span class="fw">was run over by the train</span>' + (d.credit ? ' <span class="fw">\u00b7 +1</span> <b>' + d.credit + '</b>' : '');   /* v1.0f / v1.1.1 */
     } else if (d.self) {
@@ -770,7 +777,7 @@ var UI = (function () {
        different lessons, and until now the screen taught neither. */
     /* v1.0o: the world's own causes say what happened; "explosives" is only
        for a grenade that came back. */
-    var cause = d.weapon === 'train' ? 'Run over by the train.'
+    var cause = d.weapon === 'vehicle' ? (d.self ? 'Your vehicle was destroyed with you in it.' : 'A vehicle got you — ' + d.killerName + '.') : d.weapon === 'train' ? 'Run over by the train.'
       : d.weapon === 'zone' ? 'Bled out outside the zone. \u22121 point.'
       : d.weapon === 'helifall' ? (d.self ? 'You fell from the helicopter.' : 'Fell from the helicopter after ' + d.killerName + ' hit it.')
       : d.weapon === 'helidown' ? 'Shot down with the helicopter by ' + d.killerName + '.'
@@ -805,6 +812,7 @@ var UI = (function () {
        on top of the result. One class switches the lot off; hideEnd puts them
        back. */
     if (els['hud-layer']) els['hud-layer'].classList.add('end-active');
+    try { if (window.MapArt) MapArt.end(true); } catch (e) { /* v2.13: the map behind the result */ }
     els['end-overlay'].classList.remove('hidden');
     els['end-overlay'].classList.remove('animate-in');
     void els['end-overlay'].offsetWidth;
@@ -997,6 +1005,7 @@ var UI = (function () {
     requestAnimationFrame(frame);
   }
   function hideEnd() {
+    try { if (window.MapArt) MapArt.end(false); } catch (e) { /* v2.13 */ }
     els['end-overlay'].classList.add('hidden');
     els['end-overlay'].classList.remove('animate-in');
     if (els['hud-layer']) els['hud-layer'].classList.remove('end-active');   // v8.31.2: give the HUD back
@@ -1328,6 +1337,7 @@ var UI = (function () {
   function setCountdown(n) {
     var el = els['countdown'];
     if (!el) return;
+    try { if (window.MapArt) MapArt.countdown(n); } catch (e) { /* v2.13: the map behind the number */ }
     if (!(n > 0)) { el.classList.add('hidden'); el.innerHTML = ''; return; }
     el.innerHTML =
       '<div class="cd-label">MATCH STARTS IN</div>' +

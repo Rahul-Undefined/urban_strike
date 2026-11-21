@@ -1,3 +1,173 @@
+# v2.13.0 (build 44) — VEHICLES ON URBAN, AND THE GAME'S OWN ART (2026-11-21)
+
+Built on v2.12.1. Rahul: "Vehicles banao ... PUBG style mei road pe khade
+rahenge, usko lekar drive kar sakte hai ... vehicle ka bhi ek life ho jisko
+shoot karne se vehicle blast ho, petrol ho, lights and horn ho aur player ko
+car se hit karne se health opponent ka down ho, vehicle ko blast karne usme jo
+players honge woh 100% kill ... smooth ... server pe utna pressure na ho." And,
+with an asset pack: "5 seconds ka countdown hota h waha maps ka ek realistic
+moving photo aana chahiye, game start hota h toh ek chota sa video ... last
+scorecard mei bhi map ka design ... without hampering the gameplay." And:
+"Prone mei 20% damage hi hoga aur 50% visibility hoga. Sniper ka logic bhi
+theek kar do jo tumko better lage."
+
+## 1. Vehicles (Urban only)
+- FIVE: motorbike (2 seats, 97 km/h), auto rickshaw (3, 54), sedan (4, 90),
+  city bus (8, 54), battle tank (2, 32). 22 at match start: 9 sedans, 6 bikes,
+  4 autos, 3 buses, 1 tank (config/vehicles.config.js, shared by both sides).
+- PARKED ON THE ROADS. 90 spots generated from the map's own road planes
+  (tools/gen-vehicle-spots.js): at the kerb, left of the direction of travel,
+  proved clear of every collider, 7 m or more from the railway, 26 m apart.
+- KEYS. N gets in and out (the last free letter by the movement cluster). At
+  the wheel: W/S drive and brake/reverse, A/D steer, SPACE handbrake, H horn,
+  L headlights. The first aboard drives, the rest ride. Nobody fires from a
+  seat (the server refuses the hit as well).
+- A LIFE. Hull: bike 260, auto 380, sedan 650, bus 1400, tank 4200. Bullets
+  take their damage times the type's armour (a rifle round: 40 off a sedan —
+  17 rounds; 6 off the tank). A rocket takes 720. It smokes below 45%, burns
+  below 18%, then BLOWS UP — and EVERYONE ABOARD DIES, credited to whoever
+  did it. The wreck burns; a new one is parked 60 s later away from players.
+- COVER. A hull stops bullets for whoever is behind it. A rider is exposed
+  where the vehicle is open: all of a bike or an auto, the glass of a sedan
+  or bus (a round into the doors meets steel). The tank's crew cannot be shot.
+- RUNNING PEOPLE OVER. Nothing below 16 km/h; 9 damage per m/s above that; a
+  kill outright from 32 km/h. Never a team-mate, never your own passenger.
+- PETROL. Found with 45-100 in the tank; burned by the throttle (a sedan: about
+  four and a half minutes flat out from full). Empty: the engine dies and it
+  coasts to a stop. It only ever goes down — the server ignores a "refill".
+- LIGHTS AND HORN. Headlight beams and a pool on the road (drawn, not real
+  lights: turning one on costs no shader work); a horn per type (the auto's
+  pom-pom, the bus's air horn), heard by everyone in range.
+- FEEL. The driver's own client drives it (the same split as walking in this
+  game), at frame rate: quarter-second 0-60 it is not, but it is immediate.
+  The body leans — a bike into the turn — and the nose lifts under power. A
+  chase camera on the mouse that turns with the vehicle and pulls in when a
+  wall is behind it. An engine note on the game's own volume slider.
+- LIGHT ON THE SERVER. It keeps the list, the seats, the hull and the petrol,
+  and checks each reported pose against the vehicle's top speed. No physics.
+  A parked vehicle costs nothing per tick and nothing on the wire; a moving
+  one is 46 bytes a snapshot; all 22 on a keyframe are 825 bytes.
+- BOT OPS: no tank (nothing an operator carries can hurt one). Operators do
+  not drive and do not see parked vehicles — they will walk through one.
+- NOT IN THIS VERSION: a working tank gun, firing from the passenger seat,
+  vehicles on the minimap, refuelling. Each is a decision, not an oversight.
+
+## 2. The game's own art (public/assets, src/ui/mapart.js)
+From Rahul's asset pack: its TEXT-FREE wallpapers scaled to 1920x1080 WebP
+(12 pictures, 0.8 MB together) and its 18 s intro film (8.7 MB). The pack's
+loading cards were not used: "BUILD 2.11.0" and the map name are painted into
+them and there is none for Urban Small — names are written by the game.
+- BOOT: the intro film once per browser session, behind a "click to start"
+  card (a browser plays sound only after a click). Any key or click skips it.
+  If it cannot load or play, or shows no picture inside 5 s, the menu opens.
+  REPLAY INTRO on the main screen; ?nointro in the address skips it.
+- It is NOT played before a match: 18 s in front of every round is the
+  opposite of "without hampering the gameplay".
+- MENU: the wallpapers behind the layout, drifting and cross-fading.
+- THE 5-SECOND COUNTDOWN: the map you are about to play, full screen, as a
+  living photograph — a slow push-in, a sweep of low sun, dust in the light —
+  with its name and the mode. The number stays on top.
+- LOADING: the same picture, still, so countdown -> loading -> first frame is
+  one image and not three cuts.
+- SCORECARD: the same map, dimmed and drifting, behind the result, with a
+  map/mode plate under the headline.
+- Nothing is downloaded before it is about to be shown, and none of it runs
+  during play.
+
+## 3. Prone, settled
+- 20% damage, every gun, the ordinary falloff. A prone sniper round is 20
+  health (40 to the head) — not a kill. This replaces v2.12.1's "20% range,
+  nothing past 1.5x" wall, which with 20% damage only made prone useless up
+  close too. Half the view (fog 2x). No camera shake, as v2.12.1.
+
+## Gates
+- NEW tools/verify-vehicles.js: 54 checks — the spots, the server on a fake
+  room, the client run headless against Urban's real colliders (all 22 driven
+  25 s each with a random hand on the wheel: never inside a wall, never off the
+  map), and two live sockets. It caught a bike mounting a kerb into the
+  underside of a stair; a move is now the whole pose, at the height it would
+  stand, or nothing.
+- NEW tools/verify-assets.js: 18 checks — weight, and that the film cannot
+  keep a player out.
+- The real client was run in headless Chromium for this release (vehicles
+  parked, entered, driven; the film; the countdown; the scorecard).
+
+# v2.12.1 (build 43) — BOT OPS FIXED AFTER THE FIRST PLAYTEST, AND PRONE WITHOUT THE SHAKE (2026-11-21)
+
+Built on v2.12.0. Rahul, after playing it: "bot mode is working but bugs are
+there, see the pic how bot is standing" (an operator standing in the sky above
+the watchtower) and "bots are very easy to kill and they are not able to kill
+me ... toughness and realism should be there". And, separately: "jo screen
+shake hoti thi woh logic hata de pure game se ... prone hokar shoot karega toh
+guns ka range sirf 20% rahega ... visibility bhi 50% rahegi aur baki sab hazy".
+
+## 1. The operator in the sky (server/lib/botai.js follow / settle / grounded)
+- CAUSE. An operator's legs moved along its path, but its HEIGHT was looked up
+  "near the height I already have". Where a stair flight joins a roof the two
+  differ by more than that lookup tolerates; it found nothing, the height
+  froze, and the operator carried a rooftop's altitude down the street — then
+  could not plan (no graph node at that height) and hung there, neither moving
+  nor fighting. Reproduced headless: one operator in five inside six minutes,
+  at 8.46 m over Urban Small, for the rest of the match.
+- FIX. Height now belongs to the path: the ground is read every quarter-metre
+  stride near the height it had a stride ago (the same stride the path was
+  proven walkable with), every waypoint anchors it, and the join onto or off a
+  stair flight is climbed AT the flight. A net under all of it puts an operator
+  with no graph under its feet back on the ground below (it fired 0 times in 51
+  simulated minutes — it is a net, not the mechanism).
+- This was also part of "they cannot kill me": a hung operator does nothing.
+
+## 2. Toughness, measured this time (PROFILES in botai.js)
+v2.12 said its tuning was a guess. It was a wrong one. The gate now plays a
+scripted player who WALKS and SHOOTS BACK (420 ms reaction, 38% of rounds on
+target up close) on the real damage pipeline, three seeds, 24 minutes each:
+
+|                         | v2.12 Medium | v2.12.1 Medium | v2.12 Hard | v2.12.1 Hard |
+|-------------------------|-------------:|---------------:|-----------:|-------------:|
+| scripted player's K/D   |         4.42 |           0.68 |       0.83 |         0.24 |
+| operators' rounds that land on a moving player | 3.8% | 12.0% |       5.4% |         8.8% |
+| ...inside 15 m          |          14% |            38% |        24% |          43% |
+
+(A real player uses cover and will do better than the script; the script is a
+yardstick, not a prediction. A better scripted shot — 300 ms, 50% — goes 1.53
+against Medium and 0.72 against Hard.)
+- They notice and react like people who are awake: Medium 300-480 ms (was
+  480-760), Hard 230-380 (was 250-420); the noticing meter fills 1.5x / 2.2x.
+- The aim model is simpler and tighter. `err` is the error of a settled shot
+  at a standing target (Medium 0.022 rad, Hard 0.018); first-shot, own-movement,
+  target-movement and burst multipliers are modest now instead of stacking to
+  5x. Still Gaussian, still misses: 12% on a moving player is not a turret.
+- Every operator wears a vest (Medium level 1, was one in two; Hard level 2,
+  one in three level 3) and Hard always a helmet. Three AK rounds for a Medium
+  operator, four or five for a Hard one. Bullets do what they always did.
+- One more of them may fire on the same player at once (3).
+- They come to you: when nobody has had eyes on a player for a while the squad
+  gets a rough fix (20 m off on Medium every ~22 s, 10 m on Hard every ~15 s)
+  and the nearest two or three who are not holding an angle go and look.
+- They see further (85 m / 105 m) but do not spray from across the map: an
+  assault rifle is not fired past 1.4x (Medium) / 1.7x (Hard) its range.
+- If it is now too much or still too little: `err`, `react` and `intelMs` in
+  PROFILES are the three numbers that matter, and the gate prints the K/D.
+
+## 3. Prone: no shake, 20% range, half the view (Rahul)
+- NO camera shake anywhere: the v2.3 settle shake on X (down and up) and the
+  v2.9 jitter while lying down are both gone, and so is the hidden spread
+  penalty that rode on the settle shake. The camera is steady in every stance.
+- A round fired while prone reaches 20% of the gun's range at full strength
+  and NOTHING past 1.5x that (AK: 9.2 m, nothing past 13.8 m). Lying down far
+  away kills nobody. Scoped rifles have no falloff of their own (range 999), so
+  20% of that would still be the whole map: they count 50 m as their prone
+  reach, nothing past 75 m (MOVE.proneRangeMax).
+- The view while prone is fogged to 2x the map's density — you see half as
+  far, the rest is haze (was 3.2x).
+- UNCHANGED, on purpose: a prone round still carries half damage (the v2.9
+  rule, MOVE.proneDmg 0.5). It was not mentioned, so it was not touched.
+
+## Gates
+- tools/verify-bots.js: new section D (the duel and the no-floating check
+  above), 52 / 0. tools/verify-botmode.js (live). tools/verify-v29.js updated
+  for the new prone rule. test.js.
+
 # v2.12.0 (build 42) — BOT OPS: AI OPERATORS THAT PLAY LIKE PEOPLE (2026-11-21)
 
 Built on v2.11.0. Rahul: "Make a Bot mode for Urban Small and Urban ... tougher

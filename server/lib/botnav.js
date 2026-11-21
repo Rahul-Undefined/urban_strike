@@ -440,7 +440,7 @@ module.exports = function initBotNav(ctx) {
     while (i < ids.length - 1) {
       let j = Math.min(ids.length - 1, i + 36);
       while (j > i + 1 && !walkLine(nav, ids[i], ids[j])) j = i + Math.max(1, (j - i) >> 1);
-      out.push(posOf(nav, ids[j])); i = j;
+      const q = posOf(nav, ids[j]); q[3] = nav.nflag[ids[j]] & 1; out.push(q); i = j;   /* [3]: on a stair flight (v2.12.1) */
     }
     return out;
   }
@@ -456,11 +456,18 @@ module.exports = function initBotNav(ctx) {
   /* ground height under a moving body: the node whose height is nearest the one it had */
   function heightAt(nav, x, z, y) { const n = nodeAt(nav, x, z, y, STEP + 0.25, true); return n < 0 ? null : nav.nh[n]; }
 
+  /* the highest walkable node in this cell at or below y (v2.12.1: where a body with nothing under it lands) */
+  function below(nav, x, z, y) {
+    const c = cellOf(nav, x, z); if (c < 0) return -1;
+    let best = -1, bh = -1e9;
+    for (let n = nav.first[c]; n >= 0; n = nav.nnext[n]) if (!(nav.nflag[n] & 1) && nav.reach[n] && nav.nh[n] <= y && nav.nh[n] > bh) { bh = nav.nh[n]; best = n; }
+    return best;
+  }
   /* standing on a flight (and not on a floor that happens to share the cell) */
   function isStair(nav, x, z, y) {
     const n = nodeAt(nav, x, z, y, 0.5, true);
     return n >= 0 && (nav.nflag[n] & 1) === 1 && nodeAt(nav, x, z, y, 0.3, false) < 0;
   }
-  return { get, ensure, buildSync, los, nodeAt, nearest, posOf, path, smooth, walkLine, randomNear, heightAt, roofed, isStair,
+  return { get, ensure, buildSync, los, nodeAt, nearest, posOf, path, smooth, walkLine, randomNear, heightAt, below, roofed, isStair,
            neighbours, NS, STEP, _cache: cache };
 };

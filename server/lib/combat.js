@@ -39,8 +39,7 @@ module.exports = function initCombatModule(ctx) {
   const { io, now, modeInfo, pushLobby, endMatch } = ctx;
 
 /* v2.9 `prone`: the SHOOTER was prone (st cr === 2). The round carries
-   MOVE.proneDmg of its damage and its falloff starts at MOVE.proneRange of the
-   weapon's range (Rahul: "X press karke shoot karne se 50% hi gun ka power use
+   MOVE.proneDmg of its damage (v2.13: 20%, every gun) (Rahul: "X press karke shoot karne se 50% hi gun ka power use
    hoga ... advantage na rahe"). Melee is not a gun and is left alone. */
 function weaponServerDamage(weapon, part, pellets, dist, prone) {
   const w = CFG.WEAPONS[weapon];
@@ -50,8 +49,12 @@ function weaponServerDamage(weapon, part, pellets, dist, prone) {
   if (part === 'head') dmg *= (w.head || 1);
   if (part === 'legs') dmg *= (w.legs || 0.72);
   const pr = !!(prone && w.type !== 'melee');
-  const range = pr ? w.range * (CFG.MOVE.proneRange || 1) : w.range;
-  if (dist > range) dmg *= Math.max(0.45, 1 - (dist - range) / range);
+  /* v2.13: prone is 20% damage (MOVE.proneDmg), every gun, the ordinary falloff.
+     proneRange/proneRangeMax are still honoured if a config ever sets them. */
+  const pk = pr ? (CFG.MOVE.proneRange || 1) : 1;
+  const range = pr && CFG.MOVE.proneRangeMax ? Math.min(w.range * pk, CFG.MOVE.proneRangeMax) : w.range * pk;
+  if (pr && pk < 1) { if (dist > range) dmg *= Math.max(0, 1 - (dist - range) / (range * 0.5)); }
+  else if (dist > range) dmg *= Math.max(0.45, 1 - (dist - range) / range);
   if (pr) dmg *= (CFG.MOVE.proneDmg || 1);
   return dmg;
 }
@@ -75,6 +78,9 @@ function riderShielded(room, victim, weapon) {
 }
 function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank) {
   if (riderShielded(room, victim, weapon)) return;   /* v1.0v */
+  /* v2.13: a sealed vehicle (the tank) covers its crew from everything but its own
+     end, the zone and the train */
+  if (ctx.vehShield && weapon !== 'vehicle' && weapon !== 'zone' && weapon !== 'train' && ctx.vehShield(room, victim)) return;
   if (!victim.alive) return;
   const attacker = room.players.get(attackerId);
   const teams = modeInfo(room).teams;

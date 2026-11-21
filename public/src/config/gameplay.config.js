@@ -107,13 +107,23 @@
        walk 4.4 -> 5.0, sprint 6.7 -> 7.6 (+14% / +13%). Crouch and prone keep
        their speeds — a faster prone crawl would undo item "prone costs you". */
     walk: 5.0, sprint: 7.6, crouch: 2.15, prone: 1.05, adsMult: 0.6,
-    /* v2.9 PRONE COSTS YOU (Rahul: "X press karke shoot karne se 50% hi gun
-       ka power use hoga ... view limited hona chahiye"): a round fired while
-       prone carries `proneDmg` of its damage and reaches `proneRange` of the
-       weapon's range (server-applied, weaponServerDamage); the prone view is
-       fogged to `proneFog` x the map's density and the camera keeps a small
-       sway while down. */
-    proneDmg: 0.5, proneRange: 0.5, proneFog: 3.2, proneSway: 0.35,
+    /* PRONE COSTS YOU. v2.9 (Rahul: "X press karke shoot karne se 50% hi gun
+       ka power use hoga ... view limited hona chahiye"), reworked in v2.12.1
+       ("screen shake bahot galat show karta h") and settled in v2.13 (Rahul:
+       "Prone mei 20% damage hi hoga aur 50% visibility hoga. Sniper ka logic
+       bhi theek kar do jo tumko better lage"):
+         * NO camera shake, anywhere — not on going down, not while down, not
+           on getting up (proneSway is 0 and the settle shake is gone);
+         * a round fired while prone carries `proneDmg` of its damage: 20%.
+           EVERY gun, the scoped rifles included — a prone sniper round is 20
+           health, not a kill, which is what stops lying down far away and
+           picking people off. The gun's ordinary falloff is unchanged;
+         * the v2.12.1 "20% range, nothing past 1.5x" wall is gone
+           (proneRange 1): with 20% damage it only made prone useless up close
+           too, and an invisible wall is harder to read than a weak bullet;
+         * the view is fogged to `proneFog` x the map's density: 2x the density
+           is half the distance you can see, and everything past it is haze. */
+    proneDmg: 0.2, proneRange: 1, proneRangeMax: 0, proneFog: 2.0, proneSway: 0,
     jump: 5.7, gravity: 15.5, accel: 42, airAccel: 9, step: 0.42,
     leanAngle: 0.19, leanShift: 0.42
   };

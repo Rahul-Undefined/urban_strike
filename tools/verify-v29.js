@@ -35,7 +35,7 @@ ok(CFG.GEAR.shield.speed < 1 && CFG.GEAR.shield2.speed < CFG.GEAR.shield.speed, 
 ok(CFG.LOOT_ITEMS.shield2 && CFG.LOOT_ITEMS.shield2.drop && CFG.AIRDROP.exoticPool.indexOf('shield2') >= 0, 'L2 shield is crate-only and in the crate pool');
 ok(CFG.LOOT_ITEMS.visor2 && CFG.LOOT_ITEMS.visor2.drop && CFG.AIRDROP.exoticPool.indexOf('visor2') >= 0, 'L2 visor is crate-only and in the crate pool');
 ok(!CFG.lootAllowed('ffa', 'killhouse', 'visor2') && CFG.lootAllowed('ffa', 'kasbah', 'visor2'), 'L2 visor never in a Killhouse crate');
-ok(CFG.MOVE.proneDmg === 0.5 && CFG.MOVE.proneRange === 0.5 && CFG.MOVE.proneFog > 1, 'prone: half damage, half range, closer fog');
+ok(CFG.MOVE.proneDmg === 0.2 && CFG.MOVE.proneRange === 1 && CFG.MOVE.proneFog === 2 && !CFG.MOVE.proneSway, 'prone (v2.13): 20% damage, half the view, no camera sway, no range wall');
 const H = CFG.GEAR.hunter;
 ok(H.lifeSec === 20 && H.oneShot && H.ghost && H.speed > CFG.GEAR.drone.hunt && H.speed > CFG.GEAR.drone.dive, 'hunter: 20 s, one-shot, through walls, faster than the strike drone hunts or dives [' + H.speed + ' vs ' + CFG.GEAR.drone.hunt + '/' + CFG.GEAR.drone.dive + ']');
 
@@ -72,11 +72,13 @@ console.log('--- A2. the damage pipeline (combat.js) ---');
     apply(room, W, 100, 'A', 'sniper', false, false);
     ok(W.shieldHp === 0 && W.shieldLvl === 0 && W.hp === 50, 'shield L' + lv + ': round ' + N + ' breaks it and half lands [hp ' + W.hp + ']');
   }
-  /* prone: half damage, falloff from half range */
+  /* prone (v2.13): 20% damage, every gun, the ordinary falloff */
   const stand = Combat.weaponServerDamage('ak47', 'body', 1, 10, false), prone = Combat.weaponServerDamage('ak47', 'body', 1, 10, true);
-  ok(stand === 50 && prone === 25, 'prone AK round at 10 m: 25, standing 50 [' + prone + ' / ' + stand + ']');
+  ok(stand === 50 && prone === 10, 'prone AK round at 10 m: 10, standing 50 [' + prone + ' / ' + stand + ']');
   const farS = Combat.weaponServerDamage('ak47', 'body', 1, 40, false), farP = Combat.weaponServerDamage('ak47', 'body', 1, 40, true);
-  ok(farS === 50 && farP < 25, 'at 40 m a prone round is already falling off (half range) [' + farP.toFixed(1) + ']');
+  ok(farS === 50 && farP === 10, 'no range wall: a prone AK round at 40 m is still 20% of the standing one [' + farP + ' / ' + farS + ']');
+  const snS = Combat.weaponServerDamage('sniper', 'body', 1, 120, false), snP = Combat.weaponServerDamage('sniper', 'body', 1, 120, true), snH = Combat.weaponServerDamage('sniper', 'head', 1, 120, true);
+  ok(snS === CFG.WEAPONS.sniper.dmg && snP === CFG.WEAPONS.sniper.dmg * 0.2 && snH < 100, 'a prone sniper is not a one-shot: body ' + snP + ', head ' + snH.toFixed(0) + ' at 120 m (standing body ' + snS + ')');
   ok(Combat.weaponServerDamage('knife', 'body', 1, 1, true) === CFG.WEAPONS.knife.dmg, 'the knife is not a gun — prone does not halve it');
 }
 
@@ -160,9 +162,11 @@ function emitAck(s, ev, d) { return new Promise(r => s.emit(ev, d, r)); }
     A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: bp }); await wait(400);
     const standDmg = dmgB.length ? dmgB[dmgB.length - 1].dmg : -1;
     cr = 2; await wait(300);
+    const n0 = dmgB.length;
     A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: bp }); await wait(400);
-    const proneDmg = dmgB.length > 1 ? dmgB[dmgB.length - 1].dmg : -1;
-    ok(standDmg > 0 && proneDmg > 0 && proneDmg <= Math.ceil(standDmg / 2), 'a prone shooter deals half or less of the same standing shot [' + proneDmg + ' vs ' + standDmg + ' at ' + dist.toFixed(0) + ' m]');
+    const proneDmg = dmgB.length > n0 ? dmgB[dmgB.length - 1].dmg : 0;
+    ok(standDmg > 0 && proneDmg > 0 && proneDmg <= Math.ceil(standDmg * 0.2) + 1,
+      'a prone shooter ' + dist.toFixed(0) + ' m away deals a fifth of the same standing shot [' + proneDmg + ' vs ' + standDmg + ']');
     clearInterval(ha); clearInterval(hb); A.disconnect(); B.disconnect();
   }
 

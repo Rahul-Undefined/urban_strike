@@ -1,5 +1,9 @@
 # URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
+**v2.13.0 — VEHICLES, and the game's own art.** Urban now has 22 vehicles parked at the kerb — motorbike, auto rickshaw, sedan, city bus, battle tank. N gets in and out; W/S A/D drive, Space brakes, H is the horn, L the headlights. Each has a hull you can shoot until it blows up (everyone aboard dies with it), petrol that runs out, and it hurts or kills whoever it runs over. The server only keeps the list — the driver's own client drives — so a parked vehicle costs it nothing. Also: an intro film once per session, map wallpapers behind the menu, the map you are about to play as a moving photograph under the 5-second countdown and on the loading screen, and behind the scorecard. Prone is now 20% damage, half the view.
+
+**v2.12.1 — Bot Ops fixed after the first playtest.** Operators can no longer end up standing in the air (their height now follows the path they walk), and they are tuned by measurement: against a scripted player who moves and shoots back, Medium went from a walkover (player K/D 4.4) to a fight (0.68) and Hard from 0.83 to 0.24. Prone: no camera shake anywhere, 20% gun range, half the view.
+
 **v2.12.0 — BOT OPS.** A new lobby category: you — alone or in a squad of up to six — against AI operators on Urban Small or Urban, at Medium or Hard. They see, hear and remember rather than know; six playing styles (rusher, assault, flanker, anchor, sniper, marksman); they use 21 guns, take cover, flank, climb to roofs and hold rooms. Same guns and damage at both difficulties — Hard is a better operator, not a stronger bullet.
 
 **v2.11.0 — URBAN SMALL 2.** Urban Small's districts in a realistic look (brick, concrete, stone, dark asphalt) and turned a quarter as a whole — the station is on the west edge now, the mall on the north, the airport in the south-west — with 188 loot points (Urban Small 109) and 35 drop points (14).

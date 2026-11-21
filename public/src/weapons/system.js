@@ -650,6 +650,21 @@ var Weapons = (function () {
         hit = { type: 'player', t: t, id: id, part: part, point: new THREE.Vector3(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t), vp: [c.x, c.y, c.z] };
       }
     });
+    /* ===== v2.13 - A VEHICLE'S HULL IS IN THE WAY =====
+       Tested last, against whatever the ray already found. The hull is cover
+       for anyone behind it. A RIDER is exposed where the vehicle is open: all
+       of a bike or an auto, the glass of a car or a bus (above the sill) — a
+       round into the doors meets steel. Nobody inside a sealed hull (the tank)
+       can be reached at all. */
+    if (typeof Vehicles !== 'undefined' && Vehicles.rayHit) {
+      var vh = Vehicles.rayHit(o, d, maxDist);
+      if (vh) {
+        var ridden = (hit && hit.type === 'player') ? Vehicles.riderOf(hit.id) : null;
+        var inThis = !!(ridden && ridden.id === vh.id);
+        var exposed = inThis && !vh.sealed && hit.point.y >= vh.sillY;
+        if (!exposed && (inThis || !hit || vh.t < hit.t)) hit = { type: 'vehicle', t: vh.t, id: vh.id, point: vh.point };
+      }
+    }
     return hit;
   }
 
@@ -693,7 +708,6 @@ var Weapons = (function () {
   function fireBullet(w) {
     var E2 = eff(current);
     var sp = (Input.aim ? E2.ads : E2.spread) * (PlayerCtl.prone ? 0.4 : PlayerCtl.crouch ? 0.6 : 1);
-    sp *= 1 + 4 * (PlayerCtl.proneShake ? PlayerCtl.proneShake() : 0);   /* v2.3: going down / getting up costs your aim for a moment */
     var vA = visorAim(camera.position, w);   /* v2.9 */
     var d2 = vA ? vA.clone() : rayDir(sp, new THREE.Vector3());
     bullets.push({ pos: camera.position.clone(), vel: d2.multiplyScalar(w.bulletSpeed),
@@ -717,6 +731,7 @@ var Weapons = (function () {
     var o = camera.position.clone();
     var mz = muzzleWorld(tmpV2).clone();
     var perVictim = {};
+    var perHull = {};   /* v2.13: rounds that met a vehicle this shot */
     /* v1.0b: a flame weapon has a HARD reach — the stream ends at w.range,
        there is no 400 m ray behind it — and draws fire, not a tracer. */
     var reach = w.flame ? w.range : 400;
@@ -765,6 +780,7 @@ var Weapons = (function () {
         Net.droneHit(hit.id, CFG.WEAPONS[current].dmg);
       }
       if (hit && hit.type === 'world') { FX.impact(hit.point); AudioSys.impact(hit.point); }
+      if (hit && hit.type === 'vehicle') { FX.impact(hit.point); AudioSys.impact(hit.point); perHull[hit.id] = (perHull[hit.id] || 0) + 1; }   /* v2.13 */
       if (hit && hit.type === 'player') {
         FX.bloodPuff(hit.point);
         AudioSys.flesh(hit.point);
@@ -778,6 +794,7 @@ var Weapons = (function () {
       var pv2 = perVictim[id];
       Net.sendHit({ victim: id, w: current, part: pv2.part, pellets: pv2.pellets, vp: pv2.vp });
     }
+    for (var hullId in perHull) Vehicles.report(+hullId, current, perHull[hullId]);   /* v2.13: the server decides what the hull lost */
     if (!E.noFlash) FX.muzzle(mz, true);
     Net.sendShoot({ w: current, o: [mz.x, mz.y, mz.z], dir: [0, 0, 0], sup: E.quiet ? 1 : 0 });
   }
@@ -1128,8 +1145,14 @@ var Weapons = (function () {
           var hhR = Heli.rayHit(p.pos, dir, step + 0.6);
           if (hhR) { hitHeli = true; p.pos.copy(hhR.point).addScaledVector(dir, -0.3); Net.hitHeli(p.kind === 'seeker' ? 'seeker' : 'rocket', hhR.idx, function (res) { if (res && res.destroyed) UI.toast('HELICOPTER DOWN \u00b7 ' + (res.n | 0) + ' aboard'); else if (res && res.ok) UI.hitmarker(false); }); }
         }
-        if (wh || hitPlayer || hitHeli || p.life > 6) {
-          if (wh && !hitHeli) p.pos.copy(wh.point).addScaledVector(dir, -0.05);
+        /* v2.13: a rocket that meets a vehicle goes off on the hull and the server is told */
+        var hitVeh = false;
+        if (p.mine && typeof Vehicles !== 'undefined' && Vehicles.rayHit) {
+          var vhR = Vehicles.rayHit(p.pos, dir, step + 0.6);
+          if (vhR && (!wh || vhR.t < wh.t)) { hitVeh = true; p.pos.copy(vhR.point).addScaledVector(dir, -0.3); Vehicles.report(vhR.id, p.kind === 'seeker' ? 'seeker' : 'rocket', 1); }
+        }
+        if (wh || hitPlayer || hitHeli || hitVeh || p.life > 6) {
+          if (wh && !hitHeli && !hitVeh) p.pos.copy(wh.point).addScaledVector(dir, -0.05);
           detonate(p); scene.remove(p.mesh); projectiles.splice(i, 1);
         } else {
           p.pos.addScaledVector(dir, step);
@@ -1174,6 +1197,7 @@ var Weapons = (function () {
         } else {
           FX.impact(bhit.point);
           AudioSys.impact(bhit.point);
+          if (bhit.type === 'vehicle') Vehicles.report(bhit.id, BL.w, 1);   /* v2.13 */
         }
         bullets.splice(bi, 1);
         continue;

@@ -185,7 +185,17 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
 /* ===== v1.1 — 454 -> 460 KB. THE WESTERN REACH, STATED PLAINLY: three new
    districts in districts-outer.js, the asymmetric extent in minimap.js, the
    parametric tower. ~1 KB gz. */
-const GZ_BUDGET_KB = 460;
+/* ===== v2.13 — 460 -> 485 KB, WRITTEN DOWN, NOT QUIETLY EDITED. =====
+   First load went 455 -> 479 KB gzipped. What it bought, checked for waste
+   first: src/vehicles/vehicles.js (five models, the driving, the chase camera
+   — 13 KB gz), the generated parking table (2 KB), src/ui/mapart.js and its
+   CSS (6 KB), the horn/engine voices (1 KB). None of it is dead; the only way
+   to get it back is to load vehicles.js on Urban alone, which is the same
+   on-demand-builders change described above and deserves the same build.
+   THE BIGGER NUMBER IS NOT IN THIS GATE: the intro film is 3.1 MB (re-encoded
+   from the pack's 8.7) and the menu wallpapers up to 0.4 MB — once per DEVICE
+   (they are cached), nothing per match. A hundred new players is ~0.35 GB. */
+const GZ_BUDGET_KB = 485;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

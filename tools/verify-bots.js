@@ -15,6 +15,9 @@
         - a shot they hear brings them closer; a dead operator comes back
           with its armour; the guns in play cover the armoury.
    C. THE COST: milliseconds per server tick.
+   D. (v2.12.1) A PLAYER WHO MOVES AND SHOOTS BACK: nobody stands on nothing,
+      the operators hit a moving target like people do, and Medium/Hard are
+      a fight and a harder fight.
 
    Run: node tools/verify-bots.js */
 'use strict';
@@ -171,14 +174,122 @@ for (const mode of ['bom', 'boh']) {
   victim.alive = false; victim.deaths++; victim.respawnAt = W.clock.t + 3000;
   W.step(3.6);
   ok(victim.alive && victim.hp === 100, 'a killed operator returns after the respawn delay');
-  if (diff === 'hard') ok(bots.filter(b => b.alive).every(b => b.armorLvl === 2), 'Hard operators wear a level-2 vest');
+  if (diff === 'hard') ok(bots.filter(b => b.alive).every(b => b.armorLvl >= 2 && b.helmLvl >= 2), 'every Hard operator wears a level-2 or level-3 vest and a helmet');
+  else ok(bots.filter(b => b.alive).every(b => b.armorLvl === 1), 'every Medium operator wears a level-1 vest (v2.12.1: it was one in two)');
   ok(ms < 4, 'cost: ' + ms.toFixed(2) + ' ms per server tick for ' + bots.length + ' operators');
+}
+/* ---------------- D. A PLAYER WHO MOVES AND SHOOTS BACK (v2.12.1) ----------------
+   Rahul, after playing v2.12: "bots are very easy to kill and they are not able
+   to kill me" — and one of them was standing in the sky. Sections A-C could not
+   see either: they test a player standing still. This one plays a scripted
+   player who WALKS the map and FIRES BACK (an average shot: 420 ms to react,
+   38% of rounds on target up close, falling with distance), on the real damage
+   pipeline, and counts:
+     * every operator position on every tick must have the graph under it;
+     * how often the operators hit a moving player, by distance;
+     * who wins. v2.12 measured this way: Medium K/D 4.4 for the player (the
+       operators landed 3.8% of their rounds), Hard 0.83. */
+function duel(map, mode, minutes, seed) {
+  seedRandom(seed);
+  delete require.cache[require.resolve(path.join(ROOT, 'server/lib/botai.js'))];
+  const clock = { t: 1e6 }, now = () => clock.t, R = () => Math.random();
+  const room = { code: 'DUEL', state: 'playing', settings: { mode, map, killTarget: 0, minutes: 0 }, players: new Map(), teamKills: { a: 0, b: 0 }, startedAt: clock.t };
+  const nav = Nav.buildSync(map), cols = nav.cols;
+  const L = { shots: 0, hits: 0, near: [0, 0], kills: 0, deaths: 0, air: 0, airRun: 0, airAt: null, samples: 0, rescued: 0 };
+  let human, lastNear = false;
+  const io = { to: () => ({ emit(ev, d) {
+    if (ev !== 'shoot' || String(d.id).indexOf('bot_') !== 0) return;
+    const b = room.players.get(d.id); L.shots++; lastNear = Math.hypot(b.ai.x - human.pos[0], b.ai.z - human.pos[2]) < 15; if (lastNear) L.near[0]++;
+  } }), sockets: { sockets: new Map() } };
+  const SP = (CFG['MAPS_' + map.toUpperCase()] || {}).SPAWNS || CFG.SPAWNS;
+  const spawnPlayer = (r, p) => { const c = SP.filter(q => q[3] === (p.team || 'b') || q[3] === 'n'), q = c[(R() * c.length) | 0];
+    p.pos = [q[0], 0.96, q[1]]; p.hp = 100; p.armorLvl = 0; p.armorDur = 0; p.helmLvl = 0; p.helmDur = 0; p.alive = true; p.protUntil = clock.t + 2500; p.rd = {}; };
+  const Combat = require(path.join(ROOT, 'server/lib/combat.js'))({ io, now, modeInfo: () => ({ teams: true, teamCount: 2 }), pushLobby() {}, endMatch() {},
+    Nuke: { onKill() {} }, Rocket: { onKill() {} }, nukeOnKill() {}, rocketOnKill() {}, Loot: { dropDeathCrate() {} }, Heli: { onDeath() {} }, rooms: new Map() });
+  const applyDamage = (r, v, dmg, by, w, head, pb) => {
+    const before = v.hp + (v.armorDur || 0), was = v.alive;
+    Combat.applyDamage(r, v, dmg, by, w, head, pb);
+    if (!v.bot) { if (v.hp + (v.armorDur || 0) < before || (was && !v.alive)) { L.hits++; if (lastNear) L.near[1]++; } if (was && !v.alive) { L.deaths++; v.respawnAt = clock.t + 5000; } human.hurtBy = by; human.hurtAt = clock.t; }
+    else if (was && !v.alive) { L.kills++; if (!v.respawnAt || v.respawnAt < clock.t) v.respawnAt = clock.t + 5000; }
+  };
+  const AI = require(path.join(ROOT, 'server/lib/botai.js'))({ CFG, io, now, Nav, Rooms: { colorFor: () => '#c33', pushLobby() {} }, applyDamage, weaponServerDamage: Combat.weaponServerDamage, spawnPlayer });
+  human = { id: 'human1', name: 'Tester', team: 'a', connected: true, alive: false, hp: 100, armorLvl: 0, armorDur: 0, helmLvl: 0, helmDur: 0, helmStops: 0, pos: [0, 0.96, 0], crouch: 0, mv: 1, ry: 0, rx: 0,
+    protUntil: 0, rd: {}, kills: 0, deaths: 0, damage: 0, streak: 0, bestStreak: 0, assists: 0, history: [], lastShotAt: {}, shieldHp: 0 };
+  const H = { x: 0, z: 0, feet: 0, path: null, pi: 0, yaw: 0, target: null, seenAt: 0, nextShot: 0, mag: 30, reloadUntil: 0 };
+  const hspawn = () => { spawnPlayer(room, human); const q = Nav.posOf(nav, Nav.nearest(nav, human.pos[0], human.pos[2], 0, 5, 1.5)); H.x = q[0]; H.z = q[2]; H.feet = q[1]; H.path = null; H.target = null; H.mag = 30; };
+  room.players.set(human.id, human); hspawn(); AI.onMatchStart(room);
+  /* is there anything under this operator's feet? */
+  const G = 4, grid = new Map();
+  cols.forEach((c, ci) => { if (c[3] - c[0] > 900) return;
+    for (let i = Math.floor((c[0] - 0.6) / G); i <= Math.floor((c[3] + 0.6) / G); i++) for (let j = Math.floor((c[2] - 0.6) / G); j <= Math.floor((c[5] + 0.6) / G); j++) { const k = i + ',' + j; let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(ci); } });
+  const gap = (x, y, z) => { let sup = y; const a = grid.get(Math.floor(x / G) + ',' + Math.floor(z / G)) || [];
+    for (const ci of a) { const c = cols[ci]; if (x >= c[0] - 0.36 && x <= c[3] + 0.36 && z >= c[2] - 0.36 && z <= c[5] + 0.36) { const d = y - c[4]; if (d > -0.5 && d < sup) sup = d; } } return sup; };
+  const bots = () => room._bots.list, WALK = CFG.MOVE.walk;
+  for (let i = 0; i < minutes * 60 * 15; i++) {
+    clock.t += 1000 / 15; const t = clock.t, dt = 1 / 15;
+    if (!human.alive) { if (t >= (human.respawnAt || 0)) hspawn(); }
+    else {
+      if (!H.path) { const n = Nav.randomNear(nav, H.x, H.z, 25, 80, 3, R), from = Nav.nearest(nav, H.x, H.z, H.feet, 2, 1);
+        if (n >= 0 && from >= 0) { const ids = Nav.path(nav, from, n, 22000); if (ids && ids.length > 1) { H.path = Nav.smooth(nav, ids); H.pi = 0; } } }
+      let moving = false;
+      if (H.path) { let remain = WALK * dt; moving = true;
+        while (remain > 1e-5 && H.pi < H.path.length) { const w = H.path[H.pi], dx = w[0] - H.x, dz = w[2] - H.z, d = Math.hypot(dx, dz);
+          if (d <= remain) { H.x = w[0]; H.z = w[2]; H.feet = w[1]; remain -= d; H.pi++; } else { H.x += dx / d * remain; H.z += dz / d * remain; H.feet += (w[1] - H.feet) * (remain / d); H.yawMove = Math.atan2(dx, -dz); remain = 0; } }
+        if (H.pi >= H.path.length) H.path = null; }
+      human.pos = [H.x, H.feet + 0.96, H.z]; human.mv = moving ? 1 : 0;
+      let best = null, bd = 1e9;
+      for (const b of bots()) { if (!b.alive) continue; const dx = b.ai.x - H.x, dz = b.ai.z - H.z, d = Math.hypot(dx, dz); if (d > 90) continue;
+        const ang = Math.abs(((Math.atan2(dx, -dz) - H.yaw + 9.4248) % 6.2832) - 3.1416), aware = human.hurtBy === b.id && t - human.hurtAt < 3000 && t - human.hurtAt > 450;
+        if (ang > 1.22 && !aware && H.target !== b.id) continue;
+        if (!Nav.los(nav, H.x, H.feet + 1.73, H.z, b.ai.x, b.ai.feet + 1.2, b.ai.z)) continue;
+        if (d < bd) { bd = d; best = b; } }
+      if (best) {
+        if (H.target !== best.id) { H.target = best.id; H.seenAt = t; }
+        H.yaw = Math.atan2(best.ai.x - H.x, -(best.ai.z - H.z));
+        if (t - H.seenAt >= 420 && t >= H.nextShot && t >= H.reloadUntil && !(best.protUntil > t)) {
+          H.nextShot = t + 60000 / 590; H.mag--; AI.onShot(room, human, 'ak47', 0); human.protUntil = 0;
+          let p = Math.max(0.08, Math.min(0.38, 0.46 - bd / 140)); if (best.mv) p *= 0.75; if (best.crouch) p *= 0.85; if (moving) p *= 0.8;
+          if (R() < p) { const head = R() < 0.08; applyDamage(room, best, Combat.weaponServerDamage('ak47', head ? 'head' : 'body', 1, bd, false), human.id, 'ak47', head, false); }
+          if (H.mag <= 0) { H.reloadUntil = t + 2400; H.mag = 30; }
+        }
+      } else { H.target = null; if (H.yawMove !== undefined) H.yaw = H.yawMove; }
+      human.ry = H.yaw;
+    }
+    AI.tick(room, dt);
+    for (const b of bots()) { if (!b.alive) continue; L.samples++; const A = b.ai;
+      if (A.rescued) { L.rescued += A.rescued; A.rescued = 0; }
+      const g = gap(A.x, A.feet, A.z), st = Nav.isStair(nav, A.x, A.z, A.feet);
+      /* one stride across the join between a flight and a floor is a step, not
+         a float: what must never happen is a RUN of ticks with nothing under it */
+      if ((!st && g > 0.5) || (st && g > 1.3)) { L.air++; A._air = (A._air || 0) + 1; if (A._air > L.airRun) { L.airRun = A._air; L.airAt = [A.x.toFixed(1), A.feet.toFixed(2), A.z.toFixed(1), 'gap ' + g.toFixed(2), b.name, A.mode, A.path ? 'on path' : 'idle'].join(' '); } }
+      else A._air = 0; }
+  }
+  return L;
+}
+console.log('--- D. a player who moves and shoots back ---');
+{
+  const sum = (mode) => { const T = { shots: 0, hits: 0, near: [0, 0], kills: 0, deaths: 0, air: 0, airRun: 0, samples: 0, rescued: 0, airAt: null };
+    [11, 22, 33].forEach(seed => { const L = duel('urbansmall', mode, 8, seed); ['shots', 'hits', 'kills', 'deaths', 'air', 'samples', 'rescued'].forEach(k => { T[k] += L[k]; }); T.near[0] += L.near[0]; T.near[1] += L.near[1]; if (L.airRun > T.airRun) { T.airRun = L.airRun; T.airAt = L.airAt; } });
+    return T; };
+  const M = sum('bom'), Hd = sum('boh'), U = duel('urban', 'bom', 3, 44);
+  const run = Math.max(M.airRun, Hd.airRun);
+  ok(run <= 2, 'no operator stands on nothing: ' + (M.samples + Hd.samples) + ' positions over 48 simulated minutes on Urban Small; the longest spell off the graph was ' + run + ' tick(s) — a stride across a stair join (' + (M.air + Hd.air) + ' such strides in all). v2.12: one operator hung at 8.5 m for two minutes' + (run > 2 ? ' [WORST: ' + (M.airRun >= Hd.airRun ? M.airAt : Hd.airAt) + ']' : ''));
+  ok(U.airRun <= 2, 'nor on Urban: ' + U.samples + ' positions, longest spell ' + U.airRun + ' tick(s)' + (U.airRun > 2 ? ' [WORST: ' + U.airAt + ']' : ''));
+  ok(M.rescued + Hd.rescued + U.rescued <= 6, 'the put-it-back-on-the-ground net fired ' + (M.rescued + Hd.rescued + U.rescued) + ' time(s) in all of that (it is a net, not the mechanism)');
+  const kdM = M.kills / Math.max(1, M.deaths), kdH = Hd.kills / Math.max(1, Hd.deaths), hrM = M.hits / M.shots, hrH = Hd.hits / Hd.shots;
+  console.log('        medium: the scripted player ' + M.kills + ' kills / ' + M.deaths + ' deaths (K/D ' + kdM.toFixed(2) + '); operators landed ' + (hrM * 100).toFixed(1) + '% of ' + M.shots + ' rounds, ' + (100 * M.near[1] / Math.max(1, M.near[0])).toFixed(0) + '% inside 15 m');
+  console.log('        hard:   the scripted player ' + Hd.kills + ' kills / ' + Hd.deaths + ' deaths (K/D ' + kdH.toFixed(2) + '); operators landed ' + (hrH * 100).toFixed(1) + '% of ' + Hd.shots + ' rounds, ' + (100 * Hd.near[1] / Math.max(1, Hd.near[0])).toFixed(0) + '% inside 15 m');
+  ok(kdM > 0.35 && kdM < 1.5, 'Medium is a fight: an average scripted player goes K/D ' + kdM.toFixed(2) + ' (v2.12: 4.4 — a walkover)');
+  ok(kdH < kdM && kdH > 0.12 && Hd.kills >= 15, 'Hard is harder and still playable: K/D ' + kdH.toFixed(2) + ', ' + Hd.kills + ' kills in 24 minutes');
+  ok(hrM > 0.06 && hrM < 0.2 && hrH > 0.06 && hrH < 0.2, 'they hit a MOVING player like people do, not like a turret: ' + (hrM * 100).toFixed(1) + '% Medium, ' + (hrH * 100).toFixed(1) + '% Hard (v2.12: 3.8%)');
+  ok(M.near[1] / Math.max(1, M.near[0]) > 0.25, 'up close they are dangerous: ' + (100 * M.near[1] / Math.max(1, M.near[0])).toFixed(0) + '% of Medium rounds inside 15 m land');
+  stats.duel = { kdM, kdH };
 }
 /* Hard is a better operator, not a stronger bullet */
 const pm = stats.medium.prof, ph = stats.hard.prof;
-ok(ph.err < pm.err && ph.react[1] < pm.react[0] + 1 && ph.view > pm.view && ph.commsMs < pm.commsMs && ph.turn > pm.turn,
+ok(ph.err < pm.err && ph.react[0] + ph.react[1] < pm.react[0] + pm.react[1] && ph.view > pm.view && ph.commsMs < pm.commsMs && ph.turn > pm.turn,
   'Hard notices sooner, turns faster, aims steadier and talks sooner than Medium [aim error ' + ph.err + ' vs ' + pm.err + ' rad, reaction ' + ph.react.join('-') + ' vs ' + pm.react.join('-') + ' ms]');
-ok(stats.hard.kills > stats.medium.kills, 'and it shows: ' + stats.hard.kills + ' kills against ' + stats.medium.kills + ' on the same stationary player in the same two minutes');
+ok(stats.duel.kdH < stats.duel.kdM, 'and it shows where it counts: the same scripted player goes ' + stats.duel.kdH.toFixed(2) + ' against Hard and ' + stats.duel.kdM.toFixed(2) + ' against Medium');
 ok(stats.medium.kills >= 1, 'Medium is still a threat to a player who stands still [' + stats.medium.kills + ' kills]');
 Math.random = realRandom;
 /* the armoury */

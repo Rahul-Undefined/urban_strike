@@ -46,16 +46,34 @@ module.exports = function initBotAI(ctx) {
   const wrap = (a) => { while (a > Math.PI) a -= 6.283185307; while (a < -Math.PI) a += 6.283185307; return a; };
 
   /* ---------------- difficulty: behaviour scales, damage never does ---------------- */
+  /* ===== v2.12.1 - RETUNED AFTER RAHUL PLAYED IT =====
+     "Bots are very easy to kill and they are not able to kill me." Measured,
+     not guessed this time (tools/verify-bots.js section D plays a moving,
+     shooting player against them): at 25 m against a walking target a v2.12
+     Medium operator landed 3-10% of its rounds and needed about a second to
+     notice and react, while it died to two or three of the player's. Whoever
+     fires first wins in this game (50 a round, 100 health), so they never did.
+       * they notice and react like people who are awake (react, detect);
+       * the aim model is simpler and tighter: `err` is the angular error of a
+         settled shot at a standing target, and movement/first-shot/burst
+         multipliers are now modest instead of stacking to 5x;
+       * every operator wears a vest (Hard: level 2 or 3 and a helmet);
+       * one more of them may fire at the same player at once;
+       * the squad gets a rough fix on a player it has lost for a while
+         (`intel`), so the fight comes to you instead of waiting on a roof.
+     Still true: difficulty changes behaviour and kit, never what a bullet does. */
   const PROFILES = {
-    medium: { label: 'MEDIUM', react: [480, 760], turn: 4.2, err: 0.031, tau: 650, fov: 0.96, view: 62, detect: 1.0,
-              memory: 12000, commsMs: 3000, hearErr: 0.14, hurtErr: 5, headPct: 0.05, burst: [3, 6], pause: [320, 700],
-              scopeMul: 0.7, snipeSettle: 1300, moveMul: 0.95, cover: 0.45, peek: 0.2, retreatHp: 28, flankK: 0.5,
-              crouchK: 0.6, strafe: [900, 1700], maxShooters: 2, armorP: 0.5, vest: 1, helm: 0, pool: 'base',
+    medium: { label: 'MEDIUM', react: [300, 480], turn: 6.0, err: 0.022, tau: 500, fov: 1.05, view: 85, detect: 1.5, flinch: 1.6,
+              memory: 14000, commsMs: 2200, hearErr: 0.12, hurtErr: 4, headPct: 0.08, burst: [4, 7], pause: [260, 560],
+              scopeMul: 0.6, snipeSettle: 1050, moveMul: 0.97, cover: 0.55, peek: 0.3, retreatHp: 30, flankK: 0.6,
+              crouchK: 0.7, strafe: [700, 1400], maxShooters: 3, armorP: 1.0, vest: 1, vestUp: 0, helm: 1, helmP: 0.4, pool: 'base',
+              intelMs: 22000, intelErr: 20, reach: 1.4,
               count: (h) => Math.min(10, 3 + 2 * h) },
-    hard:   { label: 'HARD', react: [250, 420], turn: 7.5, err: 0.0195, tau: 380, fov: 1.19, view: 88, detect: 1.9,
-              memory: 18000, commsMs: 900, hearErr: 0.07, hurtErr: 2.5, headPct: 0.14, burst: [3, 8], pause: [170, 430],
-              scopeMul: 0.5, snipeSettle: 750, moveMul: 1.0, cover: 0.85, peek: 0.55, retreatHp: 40, flankK: 1.0,
-              crouchK: 1.0, strafe: [450, 1100], maxShooters: 3, armorP: 1.0, vest: 2, helm: 1, pool: 'all',
+    hard:   { label: 'HARD', react: [230, 380], turn: 10, err: 0.018, tau: 320, fov: 1.25, view: 105, detect: 2.2, flinch: 1.25,
+              memory: 20000, commsMs: 700, hearErr: 0.06, hurtErr: 2, headPct: 0.2, burst: [4, 9], pause: [140, 360],
+              scopeMul: 0.45, snipeSettle: 650, moveMul: 1.0, cover: 0.85, peek: 0.55, retreatHp: 40, flankK: 1.0,
+              crouchK: 1.0, strafe: [450, 1000], maxShooters: 3, armorP: 1.0, vest: 2, vestUp: 0.35, helm: 2, helmP: 1.0, pool: 'all',
+              intelMs: 15000, intelErr: 10, reach: 1.7,
               count: (h) => Math.min(12, 4 + 2 * h) }
   };
   /* ---------------- playing styles ---------------- */
@@ -122,10 +140,15 @@ module.exports = function initBotAI(ctx) {
     if (n < 0) n = Nav.randomNear(nav, bot.pos[0], bot.pos[2], 0, 25, 1.5, rnd);
     if (n >= 0) { const q = Nav.posOf(nav, n); A.x = q[0]; A.feet = q[1]; A.z = q[2]; }
     else { A.x = bot.pos[0]; A.z = bot.pos[2]; A.feet = bot.pos[1] - HALF[0]; }
+    A.ref = A.feet; A.airT = 0;
     A.yaw = bot.ry || 0; A.pitch = 0;
     if (rnd() < prof.armorP) {
-      bot.armorLvl = prof.vest; bot.armorDur = CFG.ARMOR[prof.vest].dur;
-      if (prof.helm) { const hl = prof.helm + (rnd() < 0.3 ? 1 : 0); bot.helmLvl = hl; bot.helmDur = CFG.HELMET[hl].dur; bot.helmStops = CFG.HELMET[hl].sniperStops | 0; }
+      const vl = Math.min(3, prof.vest + (rnd() < (prof.vestUp || 0) ? 1 : 0));
+      bot.armorLvl = vl; bot.armorDur = CFG.ARMOR[vl].dur;
+    }
+    if (prof.helm && rnd() < (prof.helmP === undefined ? 1 : prof.helmP)) {
+      const hl = Math.min(3, prof.helm + (prof.helmP >= 1 && rnd() < 0.3 ? 1 : 0));
+      bot.helmLvl = hl; bot.helmDur = CFG.HELMET[hl].dur; bot.helmStops = CFG.HELMET[hl].sniperStops | 0;
     }
     bot.crouch = 0; bot.wp = Math.max(0, CFG.WEAPON_ORDER.indexOf(A.wpn[0]));
     writePos(bot, A);
@@ -191,31 +214,76 @@ module.exports = function initBotAI(ctx) {
     if (Nav.isStair(nav, A.x, A.z, A.feet)) { A.pending = [node, mode, tag]; return true; }   // finish the flight first
     const from = curNode(A, nav); if (from < 0) return false;
     const ids = Nav.path(nav, from, node, 22000); if (!ids || ids.length < 2) return false;
-    A.path = Nav.smooth(nav, ids); A.pi = 0; A.moveMode = mode; A.goalNode = node; A.goalTag = tag || null; A.pathAt = now(); A.pending = null;
+    A.path = Nav.smooth(nav, ids); A.pi = 0; A.ref = A.feet; A.moveMode = mode; A.goalNode = node; A.goalTag = tag || null; A.pathAt = now(); A.pending = null;
     return A.path.length > 0;
   }
   function goNear(A, nav, x, z, y, mode, tag, reach) {
     const n = Nav.nearest(nav, x, z, y === undefined ? A.feet : y, reach || 6, y === undefined ? undefined : 2.5);
     return goTo(A, nav, n, mode, tag);
   }
+  /* ===== v2.12.1 - A BOT'S HEIGHT COMES FROM ITS PATH, NOT FROM WHERE IT WAS =====
+     Rahul's screenshot: an operator standing in the sky above the watchtower.
+     The legs moved along the path, but the height was looked up "near the
+     height I already have" — and where a stair flight meets a roof the two
+     differ by more than that lookup tolerates. The lookup found nothing, the
+     height froze, and the bot carried a rooftop's altitude down the street
+     (reproduced headless: one of five operators inside six minutes, then
+     stuck there for good, neither moving nor fighting).
+     Every waypoint carries its own height. `A.ref` is that height, walked
+     along the segment; the graph is consulted NEAR IT only to follow kerbs
+     and treads between waypoints. A path can no longer leave the ground. */
   function follow(A, nav, dt, speed) {
-    if (!A.path || A.pi >= A.path.length) { A.moving = false; return; }
+    if (A.ref === undefined || A.ref === null) A.ref = A.feet;
+    if (!A.path || A.pi >= A.path.length) { A.moving = false; settle(A, nav, dt); return; }
     let remain = speed * dt; A.moving = true;
     while (remain > 1e-5 && A.pi < A.path.length) {
       const w = A.path[A.pi], dx = w[0] - A.x, dz = w[2] - A.z, d = Math.hypot(dx, dz);
-      if (d <= remain) { A.x = w[0]; A.z = w[2]; remain -= d; A.pi++; }
-      else { A.x += dx / d * remain; A.z += dz / d * remain; A.mvx = dx / d; A.mvz = dz / d; remain = 0; }
+      if (A.segI !== A.pi || A.segP !== A.path) { A.segI = A.pi; A.segP = A.path; A.segLen = d; A.segFrom = A.pi > 0 ? (A.path[A.pi - 1][3] | 0) : (Nav.isStair(nav, A.x, A.z, A.ref) ? 1 : 0); }
+      if (d <= Math.min(remain, 0.25) + 1e-9) { A.x = w[0]; A.z = w[2]; A.ref = w[1]; remain -= d; A.pi++; continue; }
+      /* quarter-metre strides — the stride the line was proven walkable with — and
+         at each one the ground is read NEAR THE HEIGHT IT HAD A STRIDE AGO */
+      const m = Math.min(remain, 0.25), d2 = d - m;
+      A.x += dx / d * m; A.z += dz / d * m; A.mvx = dx / d; A.mvz = dz / d; remain -= m;
+      const h = Nav.heightAt(nav, A.x, A.z, A.ref);
+      if (h !== null) { A.ref = h; continue; }
+      /* no ground within a step of it here: the join between a floor and a
+         flight (their heights are tied by a link, not by adjacent cells) */
+      const rise = w[1] - A.ref, onto = (w[3] | 0) && !A.segFrom, off = A.segFrom && !(w[3] | 0);
+      if (onto) { if (d2 < 0.6) A.ref += rise * Math.min(1, m / Math.max(m, d2 + m)); }          // climb at the foot of the flight, not across the yard
+      else if (off) { const gone = A.segLen - d2; A.ref += rise * (gone >= 0.6 ? 1 : Math.min(1, m / Math.max(m, 0.6 - gone + m))); }   // down at once when stepping off
+      else A.ref += rise * (m / d);                                                               // along a flight: a straight line between its nodes
     }
-    const h = Nav.heightAt(nav, A.x, A.z, A.feet);
-    if (h !== null) A.feet += (h - A.feet) * Math.min(1, dt * 14);
+    settle(A, nav, dt);
     if (A.pi >= A.path.length) { A.path = null; A.moving = false; A.arrivedAt = now(); }
+  }
+  function settle(A, nav, dt) {
+    if (A.ref === undefined || A.ref === null) A.ref = A.feet;
+    const h = Nav.heightAt(nav, A.x, A.z, A.ref);
+    const want = h !== null ? h : A.ref;
+    const dy = want - A.feet;
+    /* up a tread at once; down no faster than a body falls */
+    A.feet += dy > 0 ? dy * Math.min(1, dt * 14) : Math.max(dy, -Math.max(0.35, 11 * dt));
+  }
+  /* the net under all of it: a bot with no graph under its feet is put back on
+     the ground below it (or the nearest ground) and plans again */
+  function grounded(A, nav, dt) {
+    if (A.path) { A.airT = 0; return; }                    // on a path the height is the path's own
+    for (let ox = -1; ox <= 1; ox += 0.5) for (let oz = -1; oz <= 1; oz += 0.5)
+      if (Nav.nodeAt(nav, A.x + ox, A.z + oz, A.feet, 0.9, true) >= 0) { A.airT = 0; return; }   // a tread or a floor within reach of its feet
+    A.airT = (A.airT || 0) + dt;
+    if (A.airT < 0.35) return;
+    let n = Nav.below(nav, A.x, A.z, A.feet + 0.3);
+    if (n < 0) n = Nav.nearest(nav, A.x, A.z, A.feet, 8, 80);
+    if (n < 0) return;
+    const q = Nav.posOf(nav, n);
+    A.x = q[0]; A.z = q[2]; A.ref = q[1]; A.path = null; A.pending = null; A.moving = false; A.thinkAt = 0; A.airT = 0; A.rescued = (A.rescued || 0) + 1;
   }
   function sidestep(A, nav, tx, tz, dist) {
     const dx = tx - A.x, dz = tz - A.z, d = Math.hypot(dx, dz) || 1;
     for (let tries = 0; tries < 2; tries++) {
       const s = A.strafeDir, px = -dz / d * s, pz = dx / d * s;
       const from = curNode(A, nav), n = Nav.nodeAt(nav, A.x + px * dist, A.z + pz * dist, A.feet, 0.5);
-      if (from >= 0 && n >= 0 && Nav.walkLine(nav, from, n)) { A.path = [Nav.posOf(nav, n)]; A.pi = 0; A.moveMode = 'strafe'; A.goalTag = 'strafe'; return true; }
+      if (from >= 0 && n >= 0 && Nav.walkLine(nav, from, n)) { A.path = [Nav.posOf(nav, n)]; A.pi = 0; A.ref = A.feet; A.moveMode = 'strafe'; A.goalTag = 'strafe'; return true; }
       A.strafeDir = -s;
     }
     return false;
@@ -522,7 +590,8 @@ module.exports = function initBotAI(ctx) {
       speed *= prof.moveMul; mv = m === 'run' ? 2 : 1;
       follow(A, nav, dt, speed);
       if (!A.path && A.goalTag === 'roam') A.idleUntil = t + rand(900, 2600);
-    } else A.moving = false;
+    } else { A.moving = false; settle(A, nav, dt); }
+    grounded(A, nav, dt);
     bot.mv = A.moving ? mv : 0;
     /* eyes */
     let wantYaw = A.yaw, wantPitch = 0;
@@ -563,7 +632,7 @@ module.exports = function initBotAI(ctx) {
     if (Math.abs(dy) > 0.14) return;                                  // not on him yet
     const bolt = isBolt(wn);
     if (bolt && (t - A.onTargetSince < prof.snipeSettle || A.moving)) return;
-    if (!bolt && d > (w.range || 40) * 2.2) return;                   // out of reach: close in, do not spray
+    if (!bolt && d > (w.range || 40) * (prof.reach || 2.2)) return;    // out of reach: close in, do not spray
     /* a few of them shoot one player at a time; the rest move */
     let sh = S.shooters.get(A.target); if (!sh) S.shooters.set(A.target, sh = new Map());
     let busy = 0; for (const [bid, bt] of sh) { if (t - bt > 700) sh.delete(bid); else if (bid !== bot.id) busy++; }
@@ -588,11 +657,11 @@ module.exports = function initBotAI(ctx) {
     A.nextShotAt = t + 60000 / (w.rpm || 600);
     A.mag[wn]--; A.burstLeft--; A.shotsInBurst++;
     sh.set(bot.id, t); bot.protUntil = 0;
-    const settle = 1 + 2.2 * Math.exp(-(t - A.onTargetSince) / prof.tau);
+    const firstShot = 1 + 1.2 * Math.exp(-(t - A.onTargetSince) / prof.tau);
     const tSpeed = Math.hypot(k.vx, k.vz);
-    let err = prof.err * settle * (A.moving ? 1.55 : cr ? 0.85 : 1) * (1 + Math.min(1.3, tSpeed / 6)) *
-              (1 + 0.08 * A.shotsInBurst) * (t < A.flinchUntil ? 2 : 1);
-    if (bolt) err *= prof.scopeMul * (1 + Math.min(2, tSpeed / 3));
+    let err = prof.err * firstShot * (A.moving ? 1.3 : cr ? 0.85 : 1) * (1 + Math.min(0.6, tSpeed / 12)) *
+              (1 + 0.05 * A.shotsInBurst) * (t < A.flinchUntil ? (prof.flinch || 1.6) : 1);
+    if (bolt) err *= prof.scopeMul * (1 + Math.min(1.2, tSpeed / 5));
     const ecr = e.crouch | 0, ef = feetOf(e), top = ef + BODYH[ecr];
     const settled = t - A.onTargetSince > prof.tau * 2;
     const goHead = k.head || (settled && d < 45 && rnd() < prof.headPct * (bolt ? 2 : 1));
@@ -629,12 +698,37 @@ module.exports = function initBotAI(ctx) {
   }
 
   /* ---------------- the tick (snapshot rate) ---------------- */
+  /* v2.12.1: nobody has had eyes on a player for a while — the squad gets a
+     rough fix (a sound, a radio call) and the nearest operators who are not
+     holding an angle go and look. Without this a solo player could walk the
+     map and meet nobody; the fight is supposed to come to him. */
+  function scout(room, S, t) {
+    if (!S.scoutAt) { S.scoutAt = t + S.prof.intelMs; return; }
+    if (t < S.scoutAt) return;
+    S.scoutAt = t + S.prof.intelMs * rand(0.8, 1.25);
+    const hs = humans(room).filter(h => h.alive && !(h.protUntil > t));
+    if (!hs.length) return;
+    for (const b of S.list) if (b.alive) for (const k of b.ai.known.values()) if (k.vis || t - k.t < 6000) return;   // contact: no need
+    const h = pick(hs), err = S.prof.intelErr;
+    const fx = h.pos[0] + gauss() * err, fz = h.pos[2] + gauss() * err, fy = feetOf(h);
+    S.intel = { x: fx, y: fy, z: fz, t: t };
+    const near = S.list.filter(b => b.alive && b.ai.per.hold < 0.9 && b.ai.mode !== 'cover')
+      .sort((a, b) => Math.hypot(a.ai.x - fx, a.ai.z - fz) - Math.hypot(b.ai.x - fx, b.ai.z - fz))
+      .slice(0, S.prof === PROFILES.hard ? 3 : 2);
+    near.forEach(b => {
+      const kk = know(b.ai, h.id); if (kk.vis) return;
+      kk.x = fx + gauss() * 3; kk.z = fz + gauss() * 3; kk.y = fy; kk.t = t;
+      if (b.ai.mode === 'hold') { b.ai.mode = 'patrol'; b.ai.holdUntil = 0; }
+      b.ai.thinkAt = 0;
+    });
+  }
   function tick(room, dt) {
     const S = room._bots; if (!S || !S.ready || room.state !== 'playing') return;
     const t = now(); S.tickN++;
     if (S.tickN % 45 === 0) ensureCount(room, S);
     const focus = {}; for (const b of S.list) if (b.alive && b.ai.target) focus[b.ai.target] = (focus[b.ai.target] || 0) + 1;
     S.focus = focus;
+    scout(room, S, t);
     for (let i = 0; i < S.list.length; i++) {
       const bot = S.list[i], A = bot.ai;
       if (!bot.alive) {

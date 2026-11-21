@@ -113,7 +113,8 @@ const botsIn = (G) => ((G.lobby && G.lobby.players) || []).filter(p => p.bot);
   ok(botsIn(H).length === 6 && H.toasts.some(m => /HARD/.test(m)), botsIn(H).length + ' Hard operators on the 440 m map, fielded ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s after START');
   await wait(3000);
   ok(H.maxGap < 1500, 'building Urban’s walk graph never stalled the match [longest snapshot gap ' + H.maxGap + ' ms]');
-  ok(Object.keys(H.track).filter(id => H.ents[id] && H.ents[id].lv === 2).length >= 5, 'Hard operators wear level-2 vests');
+  /* v2.12.1: level 2, one in three level 3 — the v2.12 check wanted exactly 2 and failed whenever two of six drew a 3 */
+  ok(Object.keys(H.track).filter(id => H.ents[id] && H.ents[id].lv >= 2).length >= 5, 'Hard operators wear level-2 or level-3 vests [' + Object.keys(H.track).map(id => H.ents[id] ? H.ents[id].lv : '?').join(', ') + ']');
   clearInterval(H.hold); H.A.disconnect();
   await wait(400);
 

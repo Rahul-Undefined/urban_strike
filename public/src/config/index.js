@@ -10,7 +10,9 @@
       require('./world.config.js'),
       require('./maps-killhouse.config.js'),
       require('./maps-kasbah.config.js'),  /* v2.8: sunsetrow, small and medium tables removed with their maps */
-      require('./maps-urbansmall2.config.js')   /* v2.11 */
+      require('./maps-urbansmall2.config.js'),  /* v2.11 */
+      require('./vehicles.config.js'),          /* v2.13 */
+      (function () { try { return require('./vehicle-spots.config.js'); } catch (e) { return {}; } })()   /* generated; absent only while it is being generated */
     ]);
   } else {
     root.CFG = factory(root.__CFG_PARTS || []);

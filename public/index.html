@@ -297,7 +297,8 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
               <div class="mrow"><b>COMPASS</b><span>top of the HUD &#183; call bearings, not "over there"</span></div>
               <div class="mrow"><b>RECONNECT</b><span>drop out? rejoin with the same code &amp; callsign &#183; same team</span></div>
               <div class="mrow"><b>J &#183; O</b><span>J hunter drone &#183; O recon flare &#183; adrenaline fires on pickup</span></div>
-              <div class="mrow"><b>PRONE</b><span>X goes down &#183; half damage, half range, short view</span></div>
+              <div class="mrow"><b>PRONE</b><span>X goes down &#183; 20% damage, half the view, no screen shake</span></div>
+              <div class="mrow"><b>VEHICLES</b><span>Urban &#183; N in/out &#183; W/S A/D drive &#183; SPACE brake &#183; H horn &#183; L lights</span></div>
             </div>
           </div>
         </div>
@@ -460,6 +461,8 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
   <script src="src/config/maps-killhouse.config.js"></script>
   <script src="src/config/maps-kasbah.config.js"></script>
   <script src="src/config/maps-urbansmall2.config.js"></script>
+  <script src="src/config/vehicles.config.js"></script>        <!-- v2.13: the vehicle table, shared with the server -->
+  <script src="src/config/vehicle-spots.config.js"></script>   <!-- v2.13: generated parking spots -->
   <script src="src/config/districts.config.js"></script>
   <script src="src/config/index.js"></script>
   <script src="src/audio/audio.js"></script>
@@ -483,6 +486,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
   <script src="src/loot/pickups.js"></script>
   <script src="src/ui/minimap.js"></script>
   <script src="src/ui/showcase.js"></script>
+  <script src="src/ui/mapart.js"></script>  <!-- v2.13: map wallpapers behind the menu, the countdown, loading and the scorecard; the intro film -->
   <script src="src/ui/ui.js"></script>
   <script src="src/ui/devhud.js"></script>
   <script src="src/core/tppcam.js"></script>  <!-- v13.0: TPP boom math, loaded before the game that calls it -->
@@ -490,6 +494,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
   <script src="src/environment/train.js"></script>  <!-- v1.0e: the moving train (deterministic schedule + rider floor), before the game that runs it -->
   <script src="src/environment/zone.js"></script>   <!-- v1.0j: Urban Zone — the circle, from the schedule the server rolled -->
   <script src="src/environment/heli.js"></script>   <!-- v1.0l: the helicopter — pose from heliState, cabin floor, hit box -->
+  <script src="src/vehicles/vehicles.js"></script>  <!-- v2.13: vehicles on Urban — models, driving, chase camera -->
   <script src="src/core/game.js"></script>
 </body>
 </html>

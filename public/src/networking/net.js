@@ -436,6 +436,7 @@ var Net = (function () {
       var tSample = sampleTimeFor(d.n, tLocal, d.t);   /* v2.0: the server's clock (d.t) when it is there */
       if (d.tk !== undefined) teamKills = d.tk || {};
       Pickups.droneSync(d.dr);          // undefined when none are airborne
+      if (d.vh && window.Vehicles) Vehicles.sync(d.vh);   /* v2.13: vehicle poses and health */
       /* v12.0 (item 10): approximate enemy blobs. Present only when the host
          toggle is ON and the server hit its 2 s cadence; the timestamp lets
          the map fade a stale feed instead of freezing a lie in place. */
@@ -872,6 +873,10 @@ var Net = (function () {
       UI.toast(d.owner === myIdV ? (hunterK ? 'Hunter away \u00b7 hunting' : 'Drone away \u00b7 acquiring') : (hunterK ? 'Hunter drone in the air' : 'Drone in the air'));
     });
     socket.on('droneBoom', function (d) { Pickups.droneBoom(d); });
+    /* v2.13: who sits where, and a vehicle's end */
+    socket.on('vehSeat', function (d) { if (window.Vehicles) Vehicles.onSeat(d); });
+    socket.on('vehBoom', function (d) { if (window.Vehicles) Vehicles.onBoom(d); });
+    socket.on('vehHorn', function (d) { if (window.Vehicles) Vehicles.onHorn(d); });
     socket.on('droneHit', function (d) { UI.droneHealth && UI.droneHealth(d.id, d.hp); });
     socket.on('droneKilled', function () { UI.toast('Drone destroyed'); });
     /* THE WARNING IS THE WEAPON'S FAIRNESS. Without it a drone is an unblockable
@@ -1033,6 +1038,9 @@ var Net = (function () {
       var deadFor = (!r.alive && r.deadAt) ? (performance.now() - r.deadAt) : 1e9;
       var deadAnim = deadFor < CORPSE_MS;
       r.av.group.visible = vis || deadAnim;
+      /* v2.13: a rider is drawn as the seated figure in the vehicle, not as a
+         standing rig through its roof */
+      if (r.alive && window.Vehicles && Vehicles.isRider(id)) r.av.group.visible = false;
       if (deadAnim && !vis) {
         var fade = deadFor > (CORPSE_MS - FADE_MS)
           ? Math.max(0, (CORPSE_MS - deadFor) / FADE_MS) : 1;
@@ -1247,6 +1255,8 @@ var Net = (function () {
     /* v13.0 (item 7): take my marker back; id is stamped server-side. */
     unmark: function () { if (socket) socket.emit('mark', { remove: 1 }); },
     getMyId: function () { return myIdV; },
+    /* v2.13: vehicle requests (vehEnter, vehExit, veh, vehHit, vehRam) */
+    emitVeh: function (ev, d, cb) { if (socket && /^veh/.test(ev)) { if (cb) socket.emit(ev, d, cb); else socket.emit(ev, d); } },
     /* v10.13: the client says where it is LOOKING; the server decides whether
        an enemy is there and whether it can be seen. Nothing about who the
        enemy is comes from this side. */

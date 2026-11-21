@@ -46,8 +46,8 @@ var PlayerCtl = (function () {
   function speedMultNow() { if (speedMult !== 1 && performance.now() > speedMultUntil) speedMult = 1; return speedMult; }
   function setSpeedMult(m, durSec) { speedMult = m || 1; speedMultUntil = performance.now() + (durSec || 0) * 1000; }
   function adrenalineLeft() { return speedMult !== 1 ? Math.max(0, (speedMultUntil - performance.now()) / 1000) : 0; }
-  function proneShake() { var left = shakeUntil - performance.now(); return left > 0 ? Math.min(1, left / shakeLen) : 0; }
-  function startShake(sec) { shakeLen = sec * 1000; shakeUntil = performance.now() + shakeLen; }
+  function proneShake() { return 0; }   /* v2.12.1 (Rahul: "screen shake bahot galat show karta h"): there is no shake any more; kept so older callers read 0 */
+  function startShake(sec) { /* v2.12.1: removed */ }
   function toggleProne() {
     if (!alive) return;
     if (!prone) { prone = true; crouch = false; halfY = halfH(); startShake(0.8); return; }
