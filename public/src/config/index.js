@@ -63,7 +63,10 @@
     var X2 = C.MAPS_URBANSMALL2_EXTRA || { LOOT_POINTS: [], AIRDROP_POINTS: [], SPAWNS: [] };
     var S = C.MAPS_URBANSMALL;
     C.MAPS_URBANSMALL2 = {
-      SPAWNS: S.SPAWNS.map(function (s) { return [s[1], -s[0], s[2] + Math.PI / 2, s[3]]; }).concat(X2.SPAWNS || []),
+      /* v2.12 FIX: facing is ry with forward = (sin ry, -cos ry); turning the map
+         (x, z) -> (z, -x) turns it to ry - 90 deg. v2.11 added 90 and every Urban
+         Small 2 spawn looked exactly backwards. */
+      SPAWNS: S.SPAWNS.map(function (s) { return [s[1], -s[0], s[2] - Math.PI / 2, s[3]]; }).concat(X2.SPAWNS || []),
       LOOT_POINTS: S.LOOT_POINTS.map(function (p) { return [p[2], p[1], -p[0], p[3]]; }).concat(X2.LOOT_POINTS || []),
       AIRDROP_POINTS: S.AIRDROP_POINTS.map(function (p) { return [p[1], -p[0]]; }).concat(X2.AIRDROP_POINTS || [])
     };
@@ -77,6 +80,17 @@
   /* v2.8: 10 joins. A zone mode is still ALWAYS the default 15; a longMatch
      map (Urban, Urban Small, Kasbah) offers the whole list (10, 15, 30); every
      other map (the Killhouse) offers everything up to the default (10, 15). */
+  /* ===== v2.12 - THE MAP A MODE MAY RUN ON =====
+     One resolver for both server clamps and the lobby: a `mapLock` mode owns
+     its map; a `mapAllow` mode (Bot Ops) takes the asked map when it is on
+     its list and the first of its list when it is not; any other mode takes
+     what was asked. */
+  C.mapFor = function (modeId, mapId) {
+    var m = (C.MODES && C.MODES[modeId]) || {};
+    if (m.mapLock) return m.mapLock;
+    if (m.mapAllow && m.mapAllow.indexOf(mapId) < 0) return m.mapAllow[0];
+    return mapId;
+  };
   C.timeOptionsFor = function (modeId, mapId) {
     var M = C.MATCH || {}, def = M.defaultMinutes || 15, all = M.timeOptions || [def];
     var mode = C.MODES && C.MODES[modeId], map = C.MAPS && C.MAPS[mapId];

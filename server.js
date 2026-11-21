@@ -235,6 +235,14 @@ const Loot = require('./server/lib/loot.js')({ io, now, mapData,
   zoneCratePoints: (room, pts, landInSec) => Zone.cratePoints(room, pts, landInSec) });   /* v1.0j */
 const { initPickups, pickupList, tryCollect, respawnPickups,
   scheduleAirdrop, clearAirdrop, dropCrate } = Loot;
+/* ===== v2.12 - BOT OPS =====
+   botnav: the walk graph + line of sight, built from the same headless
+   colliders every other server system uses. botai: the operators. Late-bound
+   arrows because Combat and spawnPlayer are defined below this line. */
+const BotNav = require('./server/lib/botnav.js')({ CFG, Bots });
+const BotAI = require('./server/lib/botai.js')({ CFG, io, now, Nav: BotNav, Rooms,
+  applyDamage: (...a) => applyDamage(...a), weaponServerDamage: (...a) => weaponServerDamage(...a),
+  spawnPlayer: (r, p) => spawnPlayer(r, p) });
 const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
   endMatch: (...a) => endMatch(...a),
   /* v10.10: late-bound on purpose. Nuke needs applyDamage, which Combat
@@ -649,6 +657,7 @@ function startMatch(room) {
     heli: heliSnap
   });
   for (const p of room.players.values()) spawnPlayer(room, p);
+  BotAI.onMatchStart(room);   /* v2.12: Bot Ops fields its operators (no-op in every other mode) */
   cancelCountdown(room);
   Mines.reset(room);
   startSnapshots(room);
@@ -705,6 +714,7 @@ function startSnapshots(room) {
       return;
     }
     Drones.tick(room, 1 / CFG.NET.snapRate); // v9.4
+    BotAI.tick(room, 1 / CFG.NET.snapRate);  // v2.12 Bot Ops
     respawnPickups(room);
     Mines.tick(room);
     Hazards.tick(room);                      // v1.0b fire zones + C4 fuses
@@ -872,6 +882,8 @@ function startSnapshots(room) {
    countdown — because a timer that outlives its room is a callback holding a
    corpse. Returns true if the room was destroyed. */
 function destroyRoomIfEmpty(room) {
+  /* v2.12: a room with nobody but AI operators in it is an empty room */
+  if (room && room.players.size) { let people = 0; for (const q of room.players.values()) if (!q.bot) people++; if (!people) BotAI.removeBots(room); }
   if (!room || room.players.size !== 0) return false;
   stopSnapshots(room);
   clearAirdrop(room);
@@ -888,6 +900,7 @@ function stopSnapshots(room) {
 function endMatch(room, winnerId, reason) {
   if (room.state !== 'playing') return;
   room.state = 'ended';
+  BotAI.onMatchEnd(room);   /* v2.12: operators stop; they stay on the scoreboard until the lobby */
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
   stopSnapshots(room);
   clearAirdrop(room);
@@ -1054,6 +1067,7 @@ io.on('connection', (socket) => {
     if (s && s.map && CFG.MAPS[s.map] && CFG.MAPS[s.map].ready !== false
         && !(CFG.MODES[room.settings.mode] || {}).mapLock) room.settings.map = s.map;   /* v1.0j: a locked mode owns its map */
     { const ml = (CFG.MODES[room.settings.mode] || {}).mapLock; if (ml) room.settings.map = ml; }
+    room.settings.map = CFG.mapFor(room.settings.mode, room.settings.map);   /* v2.12: Bot Ops plays on its own list */
     /* v8.33: only the host may rename a team, and only in the lobby — both
        already guaranteed by the guard at the top of this handler. */
     /* v1.0d: backfill, botCount, bmDiff and botSkill are no longer settings —
@@ -1483,6 +1497,7 @@ io.on('connection', (socket) => {
     if (!room || socket.id !== room.hostId || room.state !== 'lobby') return;
     if (room.cdTimer) return;
     if (!modeInfo(room).teams) return;
+    if ((CFG.MODES[room.settings.mode] || {}).bots) return;   /* v2.12: Bot Ops has one human side */
     const list = [...room.players.values()];
     for (let i = list.length - 1; i > 0; i--) {          // Fisher-Yates
       const j = Math.floor(Math.random() * (i + 1));
@@ -1506,6 +1521,7 @@ io.on('connection', (socket) => {
     if (!room || socket.id !== room.hostId || room.state !== 'lobby') return;
     if (room.cdTimer) return;                       // no shuffling mid-countdown
     if (!modeInfo(room).teams) return;              // meaningless in FFA
+    if ((CFG.MODES[room.settings.mode] || {}).bots) return;   /* v2.12: Bot Ops has one human side */
     /* v8.34: any side the CURRENT mode fields, not just a/b. Validating against
        activeTeams rather than CFG.TEAMS matters — 'g' is a real team but not a
        legal destination in 5v5, and putting someone there would leave them
@@ -1567,6 +1583,7 @@ io.on('connection', (socket) => {
     const room = getRoom(socket);
     if (!room || socket.id !== room.hostId || room.state !== 'ended') return;
     room.state = 'lobby';
+    BotAI.removeBots(room);   /* v2.12: the staging area is for people */
     cancelCountdown(room);
     Mines.clear(room);
     clearAirdrop(room);
@@ -1650,6 +1667,7 @@ io.on('connection', (socket) => {
     const room = getRoom(socket); if (!room || room.state !== 'playing') return;
     const p = room.players.get(socket.id);
     if (p) p.protUntil = 0;
+    if (p) BotAI.onShot(room, p, d && d.w, !!(d && d.sup));   /* v2.12: operators hear gunfire */
     socket.to(room.code).emit('shoot', { id: socket.id, w: d && d.w, o: d && d.o, dir: d && d.dir, sup: d && d.sup ? 1 : 0 });
   });
 

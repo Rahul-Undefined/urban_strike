@@ -128,7 +128,10 @@ for (let u = -90; u <= 90; u += 9) {
   [-18, 18].forEach(k => { if (Math.abs(u) > 34) { spawnCand.push([k, u]); spawnCand.push([u, k]); } });
 }
 const spawns = [];
-function face(x, z) { return Math.atan2(-x, -z); }    // toward the square
+/* v2.12 FIX: facing is ry with forward = (sin ry, -cos ry). To look at the
+   square (the origin) from (x, z): ry = atan2(-x, z). v2.8 wrote atan2(-x, -z),
+   which is right on the east-west axis and BACKWARDS on the north-south one. */
+function face(x, z) { return Math.atan2(-x, z); }    // toward the square
 const okSpawn = spawnCand.filter(p => inExt(p[0], p[1], 3) && standingClear(p[0], p[1]) && roomy(p[0], p[1], 1.0));
 /* greedy thinning: an even scatter, 20 m apart at least */
 okSpawn.sort((a, b) => (a[0] * 7 + a[1] * 13) % 11 - (b[0] * 7 + b[1] * 13) % 11);
@@ -209,7 +212,8 @@ if (WRITE) {
   return { MAPS_KASBAH: MAPS_KASBAH };
 });
 `;
-  fs.writeFileSync(path.join(ROOT, 'public/src/config/maps-kasbah.config.js', 'public/src/config/maps-urbansmall2.config.js'), src);
-  console.log('wrote public/src/config/maps-kasbah.config.js', 'wrote public/src/config/maps-urbansmall2.config.js');
+  /* v2.12 FIX: a v2.11 list edit had appended a second path here; the write went to a path that does not exist */
+  fs.writeFileSync(path.join(ROOT, 'public/src/config/maps-kasbah.config.js'), src);
+  console.log('wrote public/src/config/maps-kasbah.config.js');
 }
 process.exit(stranded.length ? 1 : 0);

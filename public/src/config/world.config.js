@@ -156,7 +156,20 @@
     aff: { label: 'Assault \u00b7 Free For All', vlabel: 'Free For All \u00b7 rifles only', cat: 'assault', teams: false, teamCount: 0, maxPlayers: 15, assault: true },
     at2: { label: 'Assault \u00b7 2 vs 2', vlabel: '2 vs 2 \u00b7 rifles only', cat: 'assault', teams: true, teamCount: 2, maxPlayers: 4, assault: true },
     at3: { label: 'Assault \u00b7 3 vs 3', vlabel: '3 vs 3 \u00b7 rifles only', cat: 'assault', teams: true, teamCount: 2, maxPlayers: 6, assault: true },
-    at4: { label: 'Assault \u00b7 4 vs 4', vlabel: '4 vs 4 \u00b7 rifles only', cat: 'assault', teams: true, teamCount: 2, maxPlayers: 8, assault: true }
+    at4: { label: 'Assault \u00b7 4 vs 4', vlabel: '4 vs 4 \u00b7 rifles only', cat: 'assault', teams: true, teamCount: 2, maxPlayers: 8, assault: true },
+
+    /* ===== v2.12 - BOT OPS (Rahul: "a Bot mode for Urban Small and Urban ...
+       Medium and Highest difficulty ... solo and also with a team") =====
+       Every human is on side A; the AI operators are side B (server/lib/
+       botai.js). One human is a solo run, up to six is a squad — the number of
+       operators follows the number of humans. `bots` is the difficulty;
+       `mapAllow` the maps the mode may be played on (CFG.mapFor). The v1.0d
+       removal of the old bot modes stands for THOSE modes (co2, bm_*, the
+       backfill): none of them is back. */
+    bom: { label: 'Bot Ops \u00b7 Medium', vlabel: 'Medium \u00b7 they make mistakes', cat: 'bots', teams: true, teamCount: 2, maxPlayers: 6,
+           bots: 'medium', mapAllow: ['urbansmall', 'urban'], fullMapContacts: false },
+    boh: { label: 'Bot Ops \u00b7 Hard', vlabel: 'Hard \u00b7 they hunt as a team', cat: 'bots', teams: true, teamCount: 2, maxPlayers: 6,
+           bots: 'hard', mapAllow: ['urbansmall', 'urban'], fullMapContacts: false }
   };
 
   /* ===== v1.0j - THE ZONE SCHEDULE =====
@@ -305,6 +318,8 @@
       blurb: 'One life. No respawn. No clock. Last one breathing wins.' },
     { id: 'assault', label: 'Assault',
       blurb: 'Assault rifles only. No snipers, no SMGs, no shotguns \u2014 AK, M4 and whatever rifle the crate brings.' },
+    { id: 'bots',   label: 'Bot Ops',
+      blurb: 'You \u2014 alone or with a squad of up to six \u2014 against AI operators who patrol, flank, snipe from roofs and hold rooms. Urban Small or Urban.' },
     { id: 'zone',   label: 'Urban Zone',
       blurb: 'The circle closes and you bleed outside it; respawns land inside. Urban (a circle a minute) or Urban Small (a new circle anywhere every 2 min, 50% per 10 s).' }
   ];

@@ -1,159 +1,128 @@
-/* ============================================================================
-   VERIFY-BOTMODE (v14.0) — the separated system's own gate.
+/* verify-botmode — BOT OPS (v2.12), LIVE, against a running server (npm start).
+   Replaces the v14.0 gate of the same name (it tested a mode removed in v1.0d).
 
-   Four families of assertion, matching how the wall was built:
+   A real socket plays the human. It checks what only the whole server can show:
+     1. the mode exists, is locked to its two maps, and puts the human on side A;
+     2. operators appear in the roster and in the snapshot, flagged as bots, on
+        side B, and MOVE in the snapshot;
+     3. gunfire draws them: they shoot, and the human takes damage;
+     4. the human can hit and kill one (the ordinary 'hit' path, lag
+        compensation included), and it comes back;
+     5. Hard on Urban fields more operators; the walk graph for the 440 m map
+        is built without the match ever stalling;
+     6. leaving the room leaves no operators behind, and no other mode has any.
 
-   1. THE FENCE — three modes exist, flagged botmode+vsBots, locked to
-      Blacksite, in a category ALL_MODE_CATS does not contain (so the
-      multiplayer picker cannot list them, armed or not), and NOT hidden
-      (hidden bot-fielding modes are refused at create since v13 — these are
-      product and must seat rooms).
-   2. THE POOL WALLS, both directions — every bot-mode loadout weapon carries
-      pool:'botmode'; the legacy engine's loadout table names zero of them;
-      no multiplayer weapon wears the tag.
-   3. DIFFICULTY IS INTELLIGENCE — the brief's rule as arithmetic: reaction
-      falls, aim tightens, detection grows, cover rises across
-      easy→medium→hard→hardplus, while dmgMul is pinned at exactly 1.0 and
-      moveMul never exceeds 1.0. Hard is a smarter opponent, never a
-      stronger one, and this gate is what keeps that sentence true.
-   4. THE BATTLE LADDER, pure — stageFor() is arithmetic precisely so 5-10-
-      15-20 with rising tiers is provable without waiting fifteen minutes.
-
-   Plus the seams as source text: the engine's _bmSkill hook, the tick's
-   botmode admission, addBots' explicit-options path, the server's
-   start/end/teardown wiring, and the loot walls — a driver nobody calls is
-   a driver, and these asserts are what notice the unplugging.
-   ========================================================================= */
+   Run: node tools/verify-botmode.js   (server on :3000) */
 'use strict';
-const fs = require('fs');
 const path = require('path');
-let pass = 0, fail = 0;
-const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? '  PASS  ' : '  FAIL  ') + m); };
-
+const io = require('socket.io-client');
 const CFG = require('../public/src/config/index.js');
-const BotMode = require('../server/lib/botmode.js')({ CFG, io: null, now: Date.now, Bots: null });
+const SnapCodec = require('../public/src/networking/snapcodec.js');
+const URL = process.env.URL || 'http://localhost:3000';
+let pass = 0, fail = 0;
+function ok(c, m) { if (c) { pass++; console.log('  PASS  ' + m); } else { fail++; console.log('  FAIL  ' + m); } }
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const ack = (s, ev, d) => new Promise(r => s.emit(ev, d, r));
 
-console.log('--- 1. the fence ---');
-{
-  const bm = ['bm_solo', 'bm_team', 'bm_battle'];
-  ok(bm.every(m => CFG.MODES[m]), 'the three bot modes exist');
-  ok(bm.every(m => CFG.MODES[m].botmode && CFG.MODES[m].vsBots),
-    'each is flagged botmode (the driver key) and vsBots (side dealing + legacy accounting)');
-  ok(bm.every(m => CFG.MODES[m].mapLock === 'blacksite'),
-    'each locks to Blacksite — the v12 coercion machinery drags the room there');
-  ok(bm.every(m => !CFG.MODES[m].hidden),
-    'none is hidden — hidden bot-fielding modes are refused at create, and these are product');
-  ok(CFG.ALL_MODE_CATS.indexOf('botmode') === -1,
-    'the botmode category is absent from ALL_MODE_CATS: the multiplayer picker cannot list it');
-  ok(bm.every(m => CFG.humanSideOf(m) === 'a' && CFG.botSideOf(m) === 'b'),
-    'humans deal to side a, machines to side b — inherited from the v9.2 rule via vsBots');
-  const map = CFG.MAPS.blacksite;
-  ok(!!map && map.botOnly === true && map.ready === true,
-    'Blacksite exists, ready, and is botOnly — the server refuses it to every other mode');
-  ok(map.maxPlayers >= 24,
-    'Blacksite seats BATTLE\'s ceiling: 20 machines plus a human team [' + map.maxPlayers + ']');
-  ok(CFG.MATCH.timeOptions.length === 1 && CFG.MATCH.timeOptions[0] === 15 && CFG.BOTMODE.MINUTES === 15,
-    'fifteen minutes is the only duration, globally and in the namespace');
+async function play(settings) {
+  const A = io(URL, { transports: ['websocket'], forceNew: true });
+  await new Promise(r => A.on('connect', r));
+  const G = { A, lobby: null, start: null, toasts: [], spawns: {}, shots: [], damaged: [], deaths: [], cache: {}, ents: {}, snapN: 0, lastSnapAt: 0, maxGap: 0, track: {} };
+  A.on('lobby', d => { G.lobby = d; });
+  A.on('matchStart', d => { G.start = d; });
+  A.on('toast', d => G.toasts.push(d.msg));
+  A.on('spawn', d => { G.spawns[d.id] = d; if (d.id === A.id) { G.dead = false; if (G.pos) G.pos = d.pos.slice(); } });
+  A.on('shoot', d => { if (String(d.id).indexOf('bot_') === 0) G.shots.push(d); });
+  A.on('damaged', d => G.damaged.push(d));
+  /* the tester is a player too: when the operators kill it, it respawns the way
+     a client does (the first cut of this gate never did, and failed whenever
+     the operators won the exchange) */
+  A.on('death', d => {
+    G.deaths.push(d);
+    const who = d.victimId;
+    if (who === A.id) { G.dead = true; G.died = (G.died || 0) + 1; setTimeout(() => A.emit('respawn'), ((d.respawnSec || 5) * 1000) + 350); }
+  });
+  A.on('snap', d => {
+    const t = Date.now(); if (G.lastSnapAt) G.maxGap = Math.max(G.maxGap, t - G.lastSnapAt); G.lastSnapAt = t; G.snapN++;
+    (d.e || []).forEach(arr => { const s = SnapCodec.decodeEntity(arr, G.cache); if (s && s.id) { const p = SnapCodec.toPlayerState(s); G.ents[s.id] = p;
+      if (String(s.id).indexOf('bot_') === 0) { const tr = G.track[s.id] || (G.track[s.id] = { dist: 0, last: p.p, maxY: 0 });
+        const dd = Math.hypot(p.p[0] - tr.last[0], p.p[2] - tr.last[2]); if (dd < 4) tr.dist += dd; tr.last = p.p; if (p.p[1] > tr.maxY) tr.maxY = p.p[1]; } } });
+  });
+  const res = await ack(A, 'createRoom', { name: 'Tester', settings: Object.assign({ killTarget: 0, minutes: 10 }, settings) });
+  G.code = res.code; G.create = res;
+  await wait(250);
+  return G;
 }
-
-console.log('--- 2. the pool walls, both directions ---');
-{
-  const pool = Object.keys(CFG.WEAPONS).filter(k => CFG.WEAPONS[k].pool === 'botmode');
-  ok(pool.length >= 5, 'the bot-mode pool exists in CFG.WEAPONS [' + pool.join(', ') + ']');
-  ok(pool.every(k => k.indexOf('bm_') === 0),
-    'every pooled weapon wears the bm_ prefix — collision with a multiplayer id is impossible by naming');
-  const lo = CFG.BOTMODE.LOADOUTS;
-  ok(lo.length >= 3 && lo.every(l => CFG.WEAPONS[l.w] && CFG.WEAPONS[l.w].pool === 'botmode'
-      && CFG.WEAPONS[l.w2] && CFG.WEAPONS[l.w2].pool === 'botmode'),
-    'every bot-mode loadout draws BOTH slots from the pool, nothing else');
-  /* the other direction: the legacy table and the multiplayer guns */
-  const botsSrc = fs.readFileSync(path.join(__dirname, '..', 'server/lib/bots.js'), 'utf8');
-  ok(!/LOADOUTS = \[[\s\S]*?bm_[\s\S]*?\];/.test(botsSrc.slice(botsSrc.indexOf('LOADOUTS = ['), botsSrc.indexOf('];', botsSrc.indexOf('LOADOUTS = [')))),
-    'the LEGACY loadout table names zero bm_ weapons');
-  const mpTagged = Object.keys(CFG.WEAPONS).filter(k => k.indexOf('bm_') !== 0 && CFG.WEAPONS[k].pool === 'botmode');
-  ok(mpTagged.length === 0, 'no multiplayer weapon wears the botmode tag [' + mpTagged.join(', ') + ']');
+async function begin(G) {
+  G.A.emit('setReady', { v: true }); await wait(200); G.A.emit('startMatch');
+  for (let i = 0; i < 100 && !G.spawns[G.A.id]; i++) await wait(100);
+  G.pos = G.spawns[G.A.id].pos.slice();
+  G.hold = setInterval(() => G.A.emit('st', { p: G.pos, ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0, ping: 20 }), 50);
 }
+const botsIn = (G) => ((G.lobby && G.lobby.players) || []).filter(p => p.bot);
 
-console.log('--- 3. difficulty is intelligence, never stats ---');
-{
-  const P = BotMode.PROFILES;
-  const order = ['easy', 'medium', 'hard', 'hardplus'];
-  ok(order.every(k => P[k]), 'all four profiles exist (hardplus is the wave director\'s alone)');
-  const dec = f => order.every((k, i) => i === 0 || P[k][f] < P[order[i - 1]][f]);
-  const inc = f => order.every((k, i) => i === 0 || P[k][f] > P[order[i - 1]][f]);
-  const nondec = f => order.every((k, i) => i === 0 || P[k][f] >= P[order[i - 1]][f]);
-  ok(dec('react'), 'reaction time strictly FALLS up the ladder [' + order.map(k => P[k].react).join(' > ') + ' ms]');
-  ok(dec('aimErr'), 'aim scatter strictly TIGHTENS [' + order.map(k => P[k].aimErr).join(' > ') + ']');
-  ok(inc('range'), 'detection/engagement range strictly GROWS [' + order.map(k => P[k].range).join(' < ') + ' m]');
-  ok(nondec('coverPct') && nondec('sprintPct') && nondec('nadePct'),
-    'cover, sprint repositioning and grenade use never regress up the ladder');
-  ok(order.every(k => P[k].dmgMul === 1.0),
-    'dmgMul is EXACTLY 1.0 at every tier — hard is smarter, never stronger, by pinned rule');
-  ok(order.every(k => P[k].moveMul <= 1.0),
-    'moveMul never exceeds 1.0 — no superhuman legs at any tier');
-}
+(async function main() {
+  console.log('--- 1. the mode ---');
+  ok(CFG.modesInCat('bots').join(',') === 'bom,boh' && CFG.MODE_CATS.some(c => c.id === 'bots'), 'a Bot Ops category with Medium and Hard');
+  const G = await play({ mode: 'bom', map: 'kasbah' });
+  ok(G.lobby && G.lobby.settings.mode === 'bom' && G.lobby.settings.map === 'urbansmall', 'asked for Kasbah, the room is on Urban Small — Bot Ops plays on its own maps [' + (G.lobby && G.lobby.settings.map) + ']');
+  ok(botsIn(G).length === 0, 'no operators in the staging area');
+  await begin(G);
+  for (let i = 0; i < 60 && botsIn(G).length === 0; i++) await wait(100);
+  const me = (G.lobby.players || []).find(p => p.id === G.A.id), bots = botsIn(G);
+  console.log('--- 2. the operators ---');
+  ok(me && me.team === 'a', 'the human is on side A');
+  ok(bots.length === 5 && bots.every(b => b.team === 'b'), bots.length + ' operators in the roster, flagged as bots, all on side B [' + bots.map(b => b.name).join(', ') + ']');
+  ok(G.toasts.some(m => /BOT OPS .* MEDIUM/.test(m)), 'announced: "' + (G.toasts.find(m => /BOT OPS/.test(m)) || '') + '"');
+  await wait(6000);
+  const tracked = Object.keys(G.track);
+  ok(tracked.length === 5, 'all ' + tracked.length + ' are in the snapshot');
+  ok(tracked.filter(id => G.track[id].dist > 4).length >= 4, 'and they move there [' + tracked.map(id => G.track[id].dist.toFixed(0)).join(', ') + ' m in 6 s]');
 
-console.log('--- 4. the battle ladder, as arithmetic ---');
-{
-  const s = BotMode.stageFor;
-  const w = CFG.BOTMODE.WAVES;
-  ok(w.length === 4 && w.map(x => x.count).join(',') === '5,10,15,20',
-    'the ladder is 5-10-15-20, the brief\'s numbers verbatim');
-  ok(w.every((x, i) => i === 0 || x.at > w[i - 1].at) && w[w.length - 1].at < 15 * 60,
-    'stages are strictly later and the last lands inside the 15-minute match [' + w.map(x => x.at).join('s, ') + 's]');
-  ok(s(0).count === 5 && s(w[1].at - 1).count === 5, 'stage 1 holds five hostiles until the second wave');
-  ok(s(w[1].at).count === 10 && s(w[2].at).count === 15 && s(w[3].at).count === 20,
-    'each boundary lifts the active count exactly on time');
-  ok(s(899).count === 20 && s(899).diff === 'hardplus',
-    'the final minute is twenty machines at the top tier');
-  const tiers = ['easy', 'medium', 'hard', 'hardplus'];
-  ok(w.every((x, i) => x.diff === tiers[i]),
-    'difficulty climbs a tier with every wave — pressure, not just population');
-}
+  console.log('--- 3. gunfire draws them ---');
+  const fire = setInterval(() => G.A.emit('shoot', { w: 'ak47', o: G.pos, dir: [0, 0, 1], sup: 0 }), 900);
+  for (let i = 0; i < 700 && (G.shots.length < 3 || G.damaged.length < 1); i++) await wait(100);
+  clearInterval(fire);
+  ok(G.shots.length >= 3, 'operators open fire on a player who gives his position away [' + G.shots.length + ' shots]');
+  ok(G.damaged.length >= 1, 'and the human is hit [' + G.damaged.length + ' hits, hp ' + (G.damaged.length ? G.damaged[G.damaged.length - 1].hp : '-') + ']');
+  ok(G.shots.every(s => CFG.WEAPONS[s.w] && Array.isArray(s.o) && s.o.length === 3), 'every operator shot is a real weapon with an origin the client can draw');
 
-console.log('--- 4b. the loot wall, exercised against the REAL loot module ---');
-{
-  const initLoot = require('../server/lib/loot.js');
-  const pts = [];
-  for (let i = 0; i < 300; i++) pts.push([0, 0.55, 0, i % 3 === 0 ? 's' : (i % 3 === 1 ? 'h' : 'g')]);
-  const L = initLoot({ io: { to: () => ({ emit: () => {} }) }, now: () => Date.now(), mapData: () => ({ LOOT_POINTS: pts }) });
-  function rollWeapons(mode) {
-    const room = { code: 'X', players: new Map(), settings: { mode: mode } };
-    const seen = new Set();
-    for (let run = 0; run < 20; run++) {
-      L.initPickups(room);
-      room.pickups.forEach(pk => {
-        const it = CFG.LOOT_ITEMS[pk.t];
-        if (it && it.kind === 'weapon') seen.add(pk.t);
-      });
-    }
-    return [...seen];
+  console.log('--- 4. killing one ---');
+  let target = null;
+  for (let i = 0; i < 100 && !target; i++) { target = Object.keys(G.ents).find(id => id.indexOf('bot_') === 0 && G.ents[id].al); if (!target) await wait(100); }
+  const died = () => G.deaths.some(d => d.victimId === target);
+  const hp0 = G.ents[target].hp;
+  for (let i = 0; i < 260 && !died(); i++) {
+    if (!G.dead && G.ents[target].al) G.A.emit('hit', { victim: target, w: 'ak47', part: 'body', pellets: 1, vp: G.ents[target].p });
+    await wait(130);
   }
-  const bm = rollWeapons('bm_solo');
-  ok(bm.length >= 3 && bm.every(t => t.indexOf('wpn_bm_') === 0),
-    'a bot-mode room rolls ONLY pool weapons across 20 floors [' + bm.join(', ') + ']');
-  const mp = rollWeapons('ffa');
-  ok(mp.length >= 3 && mp.every(t => t.indexOf('wpn_bm_') !== 0),
-    'a multiplayer room rolls ZERO pool weapons across 20 floors [' + mp.length + ' kinds, none bm]');
-}
+  await wait(300);
+  ok(died() || G.ents[target].al === 0, 'the human kills an operator through the ordinary hit path [' + target + ', hp ' + hp0 + ' -> dead; the tester itself died ' + (G.died || 0) + ' time(s) on the way]');
+  delete G.spawns[target];
+  for (let i = 0; i < 120 && !G.spawns[target]; i++) await wait(100);
+  ok(!!G.spawns[target], 'and it comes back after the respawn delay');
+  ok(G.maxGap < 1500, 'the snapshot never stalled [longest gap ' + G.maxGap + ' ms over ' + G.snapN + ' snapshots]');
+  clearInterval(G.hold); G.A.disconnect();
+  await wait(400);
 
-console.log('--- 5. the seams, as source ---');
-{
-  const R = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
-  const bots = R('server/lib/bots.js'), srv = R('server.js'), loot = R('server/lib/loot.js');
-  ok(bots.indexOf('room._bmSkill') !== -1, 'the engine reads room._bmSkill — one skill seam, two products');
-  ok(/botmode\)\) return;\s*\/\* v14\.0/.test(bots) || bots.indexOf('botmode rooms tick regardless') !== -1,
-    'the tick admits botmode rooms regardless of the legacy switch');
-  ok(bots.indexOf('opts.loadouts || LOADOUTS') !== -1, 'addBots takes explicit loadouts — the driver hands it the pool');
-  ok(srv.indexOf('BotMode.onMatchStart(room)') !== -1 && srv.indexOf('BotMode.onMatchEnd(room)') !== -1,
-    'the server wires match start and end into the driver');
-  ok(srv.indexOf('room.bmTimer') !== -1 && /destroyRoomIfEmpty[\s\S]{0,600}bmTimer/.test(srv),
-    'the wave timer dies in the room teardown — the v13.1 rule holds for the new clock');
-  ok(srv.indexOf("room.settings.bmDiff = s.bmDiff") !== -1,
-    'the lobby difficulty setting is clamped server-side to easy/medium/hard');
-  ok((loot.match(/pool === 'botmode'/g) || []).length >= 2,
-    'both loot doors (ground rolls and airdrops) filter by the pool tag');
-}
+  console.log('--- 5. Hard on Urban ---');
+  const H = await play({ mode: 'boh', map: 'urban' });
+  ok(H.lobby.settings.map === 'urban', 'Bot Ops Hard runs on Urban');
+  const t0 = Date.now(); await begin(H);
+  for (let i = 0; i < 300 && botsIn(H).length === 0; i++) await wait(100);
+  ok(botsIn(H).length === 6 && H.toasts.some(m => /HARD/.test(m)), botsIn(H).length + ' Hard operators on the 440 m map, fielded ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s after START');
+  await wait(3000);
+  ok(H.maxGap < 1500, 'building Urban’s walk graph never stalled the match [longest snapshot gap ' + H.maxGap + ' ms]');
+  ok(Object.keys(H.track).filter(id => H.ents[id] && H.ents[id].lv === 2).length >= 5, 'Hard operators wear level-2 vests');
+  clearInterval(H.hold); H.A.disconnect();
+  await wait(400);
 
-console.log('\n' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+  console.log('--- 6. nothing left behind ---');
+  const F = await play({ mode: 'ffa', map: 'urbansmall' });
+  await begin(F); await wait(2500);
+  ok(botsIn(F).length === 0 && Object.keys(F.track).length === 0, 'a Free For All room has no operators');
+  clearInterval(F.hold); F.A.disconnect();
+
+  console.log('\n' + pass + ' passed, ' + fail + ' failed');
+  process.exit(fail ? 1 : 0);
+})().catch(e => { console.error(e); process.exit(1); });

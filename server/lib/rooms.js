@@ -80,8 +80,8 @@ function makeRoom(hostSocket, name, settings) {
   /* v14.0: a botOnly map is refused to any mode that is not botmode —
      the exclusivity is enforced in BOTH directions (bm modes are dragged
      TO blacksite by mapLock below; everything else is kept OFF it here). */
-  const map = (CFG.MODES[mode] && CFG.MODES[mode].mapLock) ? CFG.MODES[mode].mapLock   /* v1.0j: Urban Zone is Urban */
-    : (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false) ? settings.map : 'urban';
+  const map = CFG.mapFor(mode, (CFG.MODES[mode] && CFG.MODES[mode].mapLock) ? CFG.MODES[mode].mapLock   /* v1.0j: Urban Zone is Urban */
+    : (settings && CFG.MAPS[settings.map] && CFG.MAPS[settings.map].ready !== false) ? settings.map : 'urban');   /* v2.12: Bot Ops plays on its own list */
   const room = {
     code,
     hostId: hostSocket.id,
@@ -221,7 +221,15 @@ function refreshTeamsAndColors(room, preserve) {
   const counts = {};
   if (teams) { ids.forEach(t => { counts[t] = 0; }); list.forEach(q => { if (ids.indexOf(q.team) >= 0) counts[q.team]++; }); }
   const smallest = () => ids.reduce((best, t) => (counts[t] < counts[best] ? t : best), ids[0]);
+  const botOps = !!(CFG.MODES[room.settings.mode] || {}).bots;
   list.forEach((p, i) => {
+    /* v2.12 BOT OPS: every human is side A, every operator side B — always.
+       No balancer, no host move, no shuffle can put a human on the bots' side. */
+    if (botOps && teams) {
+      p.team = p.bot ? (ids[1] || 'b') : ids[0]; p.teamLocked = true;
+      p.color = colorFor(room, p, i);
+      return;
+    }
     if (teams && ids.indexOf(p.team) >= 0 && !preserve && !p.teamLocked && !room._reDeal) {
       p.color = colorFor(room, p, i);
       return;

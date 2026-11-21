@@ -255,7 +255,7 @@ var UI = (function () {
          gets a direct picker instead. */
       var swap = '';
       var sides = CFG.activeTeams(d.settings.mode);
-      if (mode.teams && d.hostId === myId && sides.indexOf(p.team) >= 0) {
+      if (mode.teams && !mode.bots && d.hostId === myId && sides.indexOf(p.team) >= 0) {   /* v2.12: no side-swapping in Bot Ops */
         if (sides.length <= 2) {
           var to = sides[(sides.indexOf(p.team) + 1) % sides.length];
           swap = ' <button class="team-swap" data-id="' + p.id + '" data-to="' + to +
@@ -501,6 +501,11 @@ var UI = (function () {
          disabled so the host cannot pick what the server would refuse. */
       var mlMode = CFG.MODES[d.settings.mode] || {};
       els['lobby-map'].disabled = !!mlMode.mapLock || !isHost || counting;
+      /* v2.12: a mapAllow mode (Bot Ops) offers only its own maps */
+      for (var oi = 0; oi < els['lobby-map'].options.length; oi++) {
+        var op = els['lobby-map'].options[oi], okMap = !mlMode.mapAllow || mlMode.mapAllow.indexOf(op.value) >= 0;
+        op.disabled = !okMap; op.hidden = !okMap;
+      }
       els['lobby-map'].title = mlMode.mapLock ? 'This mode is played on ' + ((CFG.MAPS[mlMode.mapLock] || {}).label || mlMode.mapLock) : '';   /* v2.4: Urban or Urban Small */
     if (els['lobby-time'] && document.activeElement !== els['lobby-time']) {
       /* v2.5: the option list follows the mode + map; one option renders locked */

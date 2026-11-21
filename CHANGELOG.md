@@ -1,3 +1,108 @@
+# v2.12.0 (build 42) — BOT OPS: AI OPERATORS THAT PLAY LIKE PEOPLE (2026-11-21)
+
+Built on v2.11.0. Rahul: "Make a Bot mode for Urban Small and Urban ... tougher
+to kill, their own brain and playing style, engaging and tough but not
+unplayable, a Medium and a Highest difficulty ... go inside rooms, roofs and
+towers and shoot and use all the guns ... looks like playing with a human ...
+solo and also with a team." And: "purana bot mode agar kuch hai toh better kar
+sakte ho toh karo, warna discard karke new se develop karo."
+
+## What was kept, what was discarded
+- KEPT: server/lib/bots.js — since v1.0d it is only the headless geometry
+  harness (colliders, the stair registry, the linear line-of-sight reference).
+  It is proven and thirty files depend on it.
+- DISCARDED: the v14.0 driver in botmode.js. It was an orphan — it called an
+  engine deleted in v1.0d and nothing required it. The old engine's own notes
+  explain why it is not coming back: it steered straight at a waypoint and
+  "one bot in twelve gained more than a metre of height in a full minute".
+- NEW: server/lib/botnav.js and server/lib/botai.js. None of the removed bot
+  modes (Overrun, Strike Team, the backfill, bm_*) is back.
+
+## The mode (world.config MODES bom / boh, MODE_CATS 'bots')
+- Lobby category BOT OPS: Medium ("they make mistakes") and Hard ("they hunt
+  as a team"). Urban Small or Urban only (`mapAllow`, CFG.mapFor — the lobby
+  offers only those two; the server coerces anything else).
+- Every human is side A, every operator side B. One human is a solo run; up to
+  six is a squad. Operators: Medium 3 + 2 per human (max 10), Hard 4 + 2 per
+  human (max 12); a human joining mid-match brings more. No side-swapping.
+- Operators leave when the match returns to the staging area; a room with only
+  operators in it is an empty room.
+
+## The walk graph (botnav.js)
+- 0.5 m cells, MULTI-LEVEL, flooded from the spawn points one auto-step at a
+  time, so a node exists only where a 1.92 m body fits AND a player could walk
+  there. Stair flights are laid in from the world's own stair registry (a
+  capsule test at cell centres entered only 7 of 58 flights; the record enters
+  67 of 71 on Urban Small and 219 of 223 on Urban).
+- Urban Small: 194k nodes, 98% walkable from the street, 58/58 stair-heads
+  reachable, 30k nodes above 2.8 m. Urban: 900k nodes, 210/210, 76k above.
+- A* (weighted, capped) + line-walk smoothing: ~1 ms a path. Line of sight on
+  a 6 m collider grid: ~8 microseconds, identical to the linear reference on
+  300/300 random pairs per map.
+- Operators are moved ALONG graph paths. They cannot wedge on a crate, walk
+  through a wall, or fall off a roof. The build is time-sliced.
+
+## The operators (botai.js)
+- SENSES, not omniscience: a view cone and range, a clear line, and a noticing
+  time that is longer when you crouch, lie down, stand still or are far away.
+  They hear unsuppressed shots (85 m) and sprinting feet (13 m), learn roughly
+  where a shot that hit them came from, and are told by team-mates after a
+  delay. They hunt the place they last saw you — not you.
+- SIX PLAYING STYLES: Rusher (SMG / shotgun, sprints in), Assault (rifle, mid
+  range, strafes), Flanker (goes round), Anchor (holds a room, crouched),
+  Sniper (walks up to a roof or tower and holds it), Marksman (DMR, covered
+  angles). Each has its own ranges, patience and guns.
+- A GUN HANDLED LIKE A PERSON'S: reaction delay, a human turn rate, error that
+  is worst at the start of a burst, on the move, against a moving target and
+  when flinching; bursts and pauses; magazines, reloads, a side-arm at close
+  range or when dry; snipers must settle before the shot.
+- TACTICS: cover when hurt or reloading, peeking back out, flanking, holding
+  an angle on where you disappeared, searching, then giving up.
+- FAIR: at most 2 (Medium) / 3 (Hard) operators fire on one player at once —
+  the rest move. Spawn protection is respected. A shot needs a clear line at
+  the moment it is fired.
+- 21 guns in their hands across the styles (Medium: the base guns; Hard: crate
+  guns too). No rockets, flamethrower, drones or grenades.
+
+## Difficulty: a bullet is a bullet
+- Same guns, same damage, through weaponServerDamage / applyDamage — your
+  vest, helmet and shield work on them as on anyone.
+- Medium: reaction 480-760 ms, aim error 0.031 rad, 62 m sight, shares a
+  contact after 3 s, takes cover 45% of the time, half wear a level-1 vest.
+- Hard: reaction 250-420 ms, 0.0195 rad, 88 m, shares after 0.9 s, cover 85%,
+  breaks the line between bursts, flanks twice as often, level-2 vest and a
+  helmet on every one. All tunable in PROFILES at the top of botai.js.
+
+## Also fixed
+- Urban Small 2 spawns faced BACKWARDS (v2.11 turned the facing +90 deg; the
+  quarter turn is -90 deg with forward = (sin ry, -cos ry)).
+- Kasbah's north and south spawns faced away from the square (v2.8 wrote
+  atan2(-x, -z); it is atan2(-x, z)). Regenerated.
+- tools/gen-kasbah-points.js could not write its file since v2.11 (a list
+  edit had appended a second path to the write call).
+
+## Gates
+- `tools/verify-bots.js` REWRITTEN (offline, deterministic, 44/0): the graph
+  on both maps; two seeded two-minute matches against a stationary player with
+  the real combat.js pipeline — every operator moves, some go up high, every
+  shot has a clear line, none comes sooner than the reaction time, none at a
+  protected player; hearing; respawn with armour; cost 0.05-0.10 ms per tick.
+- `tools/verify-botmode.js` REWRITTEN (live, 19/0): the room is coerced to
+  Urban Small, the human is side A, five operators are in the roster and the
+  snapshot and move, gunfire draws them, they shoot and hit, the human kills
+  one through the ordinary hit path and it returns, Hard fields six on Urban
+  6.0 s after START with no snapshot gap over 400 ms, an FFA room has none.
+- Both replace gates that had crashed since v1.0d.
+
+## Known limits
+- Measured on a stationary, unarmoured player in the open: Medium 3 kills in
+  two minutes, Hard 13. Real matches will differ — tune PROFILES after play.
+- Operators do not jump, vault, drive, loot, throw grenades or use drones.
+- Urban's graph costs about 35 MB of memory and 2.5 s of (time-sliced) CPU on
+  a desktop the first time a Bot Ops match starts there; a small host will
+  take longer to field the operators (the toast marks the moment).
+- Operators may walk onto Urban's railway and be hit by a train.
+
 # v2.11.0 (build 41) — URBAN SMALL 2 (2026-11-07)
 
 Built on v2.10.0. Rahul: "Urban Small ka replica ek aur map, uska naam 'Urban

@@ -1,5 +1,7 @@
 # URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
+**v2.12.0 — BOT OPS.** A new lobby category: you — alone or in a squad of up to six — against AI operators on Urban Small or Urban, at Medium or Hard. They see, hear and remember rather than know; six playing styles (rusher, assault, flanker, anchor, sniper, marksman); they use 21 guns, take cover, flank, climb to roofs and hold rooms. Same guns and damage at both difficulties — Hard is a better operator, not a stronger bullet.
+
 **v2.11.0 — URBAN SMALL 2.** Urban Small's districts in a realistic look (brick, concrete, stone, dark asphalt) and turned a quarter as a whole — the station is on the west edge now, the mall on the north, the airport in the south-west — with 188 loot points (Urban Small 109) and 35 drop points (14).
 
 **v2.10.0 — KASBAH IN COLOUR.** Nine named quarters, each its own colour; 103 numbered houses with a tile over every main door; a redrawn minimap and M map (quarters, streets, every house with its number, landmarks); twice the loot and more drop points. The Killhouse is mirrored with 12 walls instead of 23. Visor L2: 80 m, headshots, enemies on your maps.

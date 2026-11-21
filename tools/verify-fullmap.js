@@ -95,7 +95,8 @@ const expectHidden = ['ffa', 't2', 't3', 't4', 't5', 't6', 't8', 't10',
   'sq2', 'sq4',
   'zone', 'zsq2', 'zsq3',    /* v1.0j/l: Urban Zone is one life like Last Stand but the CIRCLE is the anti-camping device — exact pins would delete the hunt */
   'zs', 'zssq2', 'zssq4',    /* v2.4: Urban Small Zone — the same rule */
-  'aff', 'at2', 'at3', 'at4'];   /* v2.8: Assault is FFA / Team Battle with rifles — the same rule as theirs */
+  'aff', 'at2', 'at3', 'at4',    /* v2.8: Assault is FFA / Team Battle with rifles — the same rule as theirs */
+  'bom', 'boh'];                 /* v2.12: Bot Ops is a two-side mode — team-mates on the map, no enemy pins */
 /* v10.13: the outbreak modes. Enemies SHOWN on the full map, and that is a
    design decision rather than a default. In a PvP mode a full map that reveals
    the other side removes the whole game; here the other side is a wave of
