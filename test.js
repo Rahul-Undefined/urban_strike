@@ -1158,6 +1158,9 @@ function phase2(done) {
       setTimeout(() => {
         ok(!!deathPayload, 'A killed B through remaining armor');
         ok(deathPayload && deathPayload.assistIds.indexOf(C.id) !== -1, 'C credited with the assist');
+        /* v2.16: every death leaves a pool of blood, and the death message carries it — [index, x, y, z, deaths there] at the body */
+        ok(deathPayload && Array.isArray(deathPayload.blood) && deathPayload.blood.length === 5 && deathPayload.blood[4] >= 1 &&
+          Math.hypot(deathPayload.blood[1] - bPos[0], deathPayload.blood[3] - bPos[2]) < 3, 'the death message carries the pool of blood it left, where the body fell');
         ok(tkChecked, 'team kill counted in snapshot team score');
         setTimeout(() => {
           const rows = {};

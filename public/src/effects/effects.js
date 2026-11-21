@@ -81,28 +81,51 @@ var FX = (function () {
     }
   }
 
-  // Muzzle flash: crossed star spikes + hot core + smoke wisp + brief light.
+  /* ===== v2.16 - A MUZZLE FLASH, NOT THREE ORANGE BARS =====
+     The flash was three untextured sprites — which draw as plain orange
+     RECTANGLES — crossed over a white square, each up to 0.9 m long and a
+     metre from the eye. That is the "weird" in "gunshot ka animation ...
+     abhi weird rehta h." It is now a painted burst: a white-hot core, a soft
+     orange bloom and six uneven tongues, drawn once into a 128 px texture and
+     added to the frame (additive blending, so it brightens what is behind it
+     instead of covering it). Each shot turns it to a new angle and size and
+     it is gone in 55 ms; the smoke that follows is a soft puff, not a square.
+     The local flash is sized for something an arm's length away. */
+  var flashTex = null, puffTex = null;
+  function flashArt() {
+    if (flashTex || typeof document === 'undefined') return;
+    try {
+      var cv = document.createElement('canvas'); cv.width = cv.height = 128;
+      var g = cv.getContext('2d'), i;
+      g.translate(64, 64);
+      for (i = 0; i < 6; i++) {                                  // the tongues
+        var a = i * 1.047 + (i % 2 ? 0.22 : -0.1), len = i % 3 === 0 ? 60 : i % 2 ? 44 : 34, w = i % 3 === 0 ? 9 : 6;
+        var gr = g.createLinearGradient(0, 0, len, 0); gr.addColorStop(0, 'rgba(255,236,190,0.95)'); gr.addColorStop(0.45, 'rgba(255,158,52,0.7)'); gr.addColorStop(1, 'rgba(255,90,10,0)');
+        g.save(); g.rotate(a); g.fillStyle = gr; g.beginPath(); g.moveTo(0, -w); g.quadraticCurveTo(len * 0.5, -w * 0.55, len, 0); g.quadraticCurveTo(len * 0.5, w * 0.55, 0, w); g.fill(); g.restore();
+      }
+      var bloom = g.createRadialGradient(0, 0, 2, 0, 0, 46); bloom.addColorStop(0, 'rgba(255,255,244,1)'); bloom.addColorStop(0.22, 'rgba(255,224,150,0.9)'); bloom.addColorStop(0.55, 'rgba(255,140,40,0.35)'); bloom.addColorStop(1, 'rgba(255,90,10,0)');
+      g.fillStyle = bloom; g.beginPath(); g.arc(0, 0, 46, 0, 6.283); g.fill();
+      flashTex = new THREE.CanvasTexture(cv);
+      var pv = document.createElement('canvas'); pv.width = pv.height = 64;
+      var p = pv.getContext('2d'), soft = p.createRadialGradient(32, 32, 2, 32, 32, 30); soft.addColorStop(0, 'rgba(255,255,255,0.9)'); soft.addColorStop(0.5, 'rgba(255,255,255,0.4)'); soft.addColorStop(1, 'rgba(255,255,255,0)');
+      p.fillStyle = soft; p.fillRect(0, 0, 64, 64);
+      puffTex = new THREE.CanvasTexture(pv);
+    } catch (err) { flashTex = puffTex = null; }
+  }
   function muzzle(worldPos, isLocal) {
-    var baseRot = Math.random() * Math.PI;
-    for (var i = 0; i < 3; i++) {
-      var spike = new THREE.Sprite(fireMat.clone());
-      spike.material.rotation = baseRot + i * 1.05;
-      spike.position.copy(worldPos);
-      var len = 0.55 + Math.random() * 0.35;
-      spike.scale.set(len, 0.14 + Math.random() * 0.06, 1);
-      add(spike, 0.05, function (e, t) { e.mesh.material.opacity = 0.95 * (1 - t); });
-    }
-    var core = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xfff2c8, transparent: true, opacity: 1, depthWrite: false }));
-    core.position.copy(worldPos);
-    core.scale.set(0.22, 0.22, 1);
-    add(core, 0.04, function (e, t) { e.mesh.material.opacity = 1 - t; });
-    var wisp = new THREE.Sprite(smokeMat.clone());
+    flashArt();
+    var size = (isLocal ? 0.30 : 0.62) * (0.85 + Math.random() * 0.4);
+    var burst = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending, rotation: Math.random() * 6.283 }));
+    burst.position.copy(worldPos);
+    burst.scale.set(size, size, 1);
+    add(burst, 0.055, function (e, t) { e.mesh.material.opacity = 1 - t * t; e.mesh.scale.setScalar(size * (1 + t * 0.35)); });
+    var wisp = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, color: 0xa7adb3, transparent: true, opacity: 0.28, depthWrite: false }));
     wisp.position.copy(worldPos);
-    wisp.scale.set(0.15, 0.15, 1);
-    add(wisp, 0.5, function (e, t, dt) {
-      e.mesh.position.y += 0.45 * dt;
-      e.mesh.scale.setScalar(0.15 + t * 0.55);
-      e.mesh.material.opacity = 0.3 * (1 - t);
+    wisp.scale.set(0.12, 0.12, 1);
+    add(wisp, 0.45, function (e, t, dt) {
+      e.mesh.position.y += 0.4 * dt;
+      e.mesh.scale.setScalar(0.12 + t * 0.42);
+      e.mesh.material.opacity = 0.28 * (1 - t);
     });
     if (isLocal && muzzleLight) {
       muzzleLight.position.copy(worldPos);

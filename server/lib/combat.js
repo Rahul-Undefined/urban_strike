@@ -2,6 +2,7 @@
    (lobby pushes, match end) arrive via injected ctx callbacks. */
 'use strict';
 const CFG = require('../../public/src/config/index.js');
+const Blood = require('./blood.js');   /* v2.16: where people died */
 module.exports = function initCombatModule(ctx) {
 
   /* v8.37 LAST STAND WIN CONDITION.
@@ -345,6 +346,7 @@ function applyDamage(room, victim, dmg, attackerId, weapon, headshot, pointBlank
                               _atk.pos[2] - victim.pos[2]))
       : null;
     io.to(room.code).emit('death', {
+      blood: Blood.add(room, victim.pos),   /* v2.16: the pool this death made or fed — every death, every mode, every map */
       victimId: victim.id, victimName: victim.name,
       killerId: attackerId, killerName, killerStreak, assistIds, dist: _dist,
       weapon, headshot: !!headshot, self: attackerId === victim.id,

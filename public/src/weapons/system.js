@@ -33,6 +33,36 @@ var Weapons = (function () {
   var reloadingShell = false;
   var triggerDown = false, semiQueued = false;
   var kick = 0, meleeAnim = 0;
+  /* ===== v2.16 - A SHOT THAT LOOKS LIKE A SHOT =====
+     Rahul: "gunshot ka animation perfect hona chahiye, abhi weird rehta h."
+     Three things were weird, all measured in this file:
+       1. THE MUZZLE DIPPED. The kick was rig.rotation.x = -kick * 0.06, and a
+          negative turn about X on a gun that points down -z lowers its muzzle:
+          every shot nodded the barrel 3.4 degrees DOWN. Recoil lifts a muzzle.
+       2. IT WAS LATE AND SOFT. The push back was a target the rig was eased
+          toward at 10/s while the target itself decayed, so the gun reached
+          about a third of the kick, a tenth of a second after the shot.
+       3. THE FLASH WAS NOT ON THE GUN. It was drawn at a fixed point in front
+          of the camera (muzzleWorld), so it sat halfway along an AWM's barrel,
+          ahead of a pistol's, and stayed low-right when the sights were up.
+     Now the rig rides four springs — back, muzzle-up, roll, yaw — struck at the
+     instant of the shot and settling in about 150 ms with a touch of overshoot;
+     how hard depends on the weapon (a bolt rifle bucks, an SMG chatters) and
+     less when the sights are up. And the flash, the tracer and the smoke leave
+     from the muzzle of the model that is on screen. Aim is untouched: the shot
+     is still the camera's ray, as it has been since v9.12. */
+  var REC = { z: 0, vz: 0, up: 0, vup: 0, roll: 0, vroll: 0, yaw: 0, vyaw: 0, baseZ: -0.5 };
+  var REC_K = 330, REC_C = 27;                    // spring and damping: ~150 ms, slightly under-damped
+  function recoilPunch(w, ads) {
+    var k = w.type === 'bolt' ? 1.7 : w.type === 'rocket' ? 1.9 : w.type === 'bow' ? 0.5 : w.type === 'semi' ? (w.pellets > 1 ? 1.6 : 1.05) : 0.62 + Math.min(0.5, (w.recoil || 0.01) * 22);
+    if (ads) k *= 0.5;
+    REC.vz += 1.9 * k; REC.vup += 2.6 * k;
+    REC.vroll += (Math.random() - 0.5) * 1.5 * k; REC.vyaw += (Math.random() - 0.5) * 0.8 * k;
+  }
+  function recoilStep(dt) {
+    var h = Math.min(0.033, dt), ch = ['z', 'up', 'roll', 'yaw'];
+    for (var i = 0; i < 4; i++) { var c = ch[i], v = 'v' + c; REC[v] += (-REC_K * REC[c] - REC_C * REC[v]) * h; REC[c] += REC[v] * h; }
+  }
   var pumpAnim = 0, slideAnim = 0, recoilAccum = 0, reloadStartAt = 0, reloadDur = 0;
   var recPitch = 0, recYaw = 0;      // exact un-recovered recoil, in radians
   var atts = { sight: null, muzzle: null, mag: null };   // equipped attachments by slot
@@ -512,6 +542,14 @@ var Weapons = (function () {
     /* from a seat the camera is a chase camera metres behind the vehicle — the
        round and its flash leave from the rider, not from the lens */
     if (myVehicle()) return Vehicles.muzzle(out, camera.getWorldDirection(tmpMz));
+    /* v2.16: from the muzzle of the model on screen (its own measured bore,
+       and the can if one is fitted) — not from a fixed point near the lens.
+       Scoped or in third person there is no model to ask: the old point. */
+    var mdl = models[current];
+    if (mdl && rig && rig.visible && firstPerson && mdl.userData && mdl.userData.muzzleZ !== undefined && mdl.localToWorld) {
+      out.set(0, mdl.userData.muzzleY || 0, mdl.userData.muzzleZ - ((atts && atts.muzzle) ? 0.2 : 0) - 0.02);
+      return mdl.localToWorld(out);
+    }
     out.set(0.24, -0.15, -0.6).applyQuaternion(camera.getWorldQuaternion(tmpQ)).add(camera.position);
     return out;
   }
@@ -891,6 +929,7 @@ var Weapons = (function () {
     }
     nextFireAt = t + 60000 / w.rpm;
     kick = 1;
+    if (w.type !== 'melee') recoilPunch(w, aiming);
     var EF = eff(current);
     // Pattern recoil: vertical kick + horizontal drift that wanders as a burst grows.
     recoilAccum += EF.recoil;
@@ -905,9 +944,9 @@ var Weapons = (function () {
     PlayerCtl.yaw += ky;   recYaw += ky;
 
     if (w.type === 'melee') fireMelee(w);
-    else if (w.type === 'rocket') { AudioSys.shot('rocket', null); fireRocket(w); }
+    else if (w.type === 'rocket') { AudioSys.shot(current, null); fireRocket(w); }   /* v2.16: the Seeker has its own launch */
     else {
-      AudioSys.shot(current, null, { supp: EF.quiet });
+      AudioSys.shot(current, null, { supp: EF.quiet, last: a.mag === 0 });   /* v2.16: `last` is the Garand's ping */
       if (w.bullet) fireBullet(w); else fireHitscan(w);
       // brass ejection from the port, thrown to the shooter's right
       var ep = tmpV.set(0.3, -0.16, -0.35).applyQuaternion(camera.getWorldQuaternion(tmpQ)).add(camera.position);
@@ -1399,9 +1438,13 @@ var Weapons = (function () {
     var lerp = Math.min(1, dt * 10);
     rig.position.x += (tx - rig.position.x) * lerp;
     rig.position.y += (ty - rig.position.y) * lerp;
-    rig.position.z += (tz + kick * 0.09 - rig.position.z) * lerp;
-    rig.rotation.x = -kick * 0.06 + (isReloading() ? -0.42 : 0) + meleeAnim * -0.9;
-    rig.rotation.z = meleeAnim * 0.4;
+    /* v2.16: the stance eases (REC.baseZ); the recoil is added on top, at once */
+    recoilStep(dt);
+    REC.baseZ += (tz - REC.baseZ) * lerp;
+    rig.position.z = REC.baseZ + REC.z;
+    rig.rotation.x = REC.up + (isReloading() ? -0.42 : 0) + meleeAnim * -0.9;
+    rig.rotation.y = REC.yaw;
+    rig.rotation.z = REC.roll + meleeAnim * 0.4;
     kick *= Math.pow(0.02, dt);
     meleeAnim *= Math.pow(0.003, dt);
     pumpAnim *= Math.pow(0.004, dt);

@@ -67,8 +67,17 @@ ok(/app\.use\(compression\(/.test(serverSrc), 'gzip is still on — it cannot ca
 
 console.log('\n--- the payload is actually small enough ---');
 const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
-const refs = (html.match(/(?:src|href)="(?!http|\/socket)([^"]+)"/g) || [])
-  .map(m => m.replace(/.*="/, '').replace(/"/, ''));
+/* v2.16: index.html now names two PICTURES as well (the boot cover's mark and
+   the menu's first wallpaper — an <img>, two preload links and one inline
+   style). Each file is counted ONCE however many tags name it, and code and
+   pictures are counted apart: the budget below has always been the code
+   (scripts, stylesheet, the page), and a picture does not gzip. */
+const allRefs = Array.from(new Set(((html.match(/(?:src|href)="(?!http|\/socket)([^"]+)"/g) || [])
+  .map(m => m.replace(/.*="/, '').replace(/"/, '')))
+  .concat((html.match(/url\((?!['"]?(?:http|data:))['"]?([^'")]+)['"]?\)/g) || []).map(m => m.replace(/^url\(['"]?/, '').replace(/['"]?\)$/, '')))));
+const isPicture = f => /\.(webp|png|jpe?g|gif|svg|avif)$/i.test(f);
+const refs = allRefs.filter(f => !isPicture(f));
+const pictures = allRefs.filter(isPicture);
 let raw = html.length, gz = zlib.gzipSync(Buffer.from(html), { level: 6 }).length;
 let missing = [];
 refs.forEach(f => {
@@ -77,10 +86,21 @@ refs.forEach(f => {
   const b = fs.readFileSync(p);
   raw += b.length; gz += zlib.gzipSync(b, { level: 6 }).length;
 });
+let picBytes = 0;
+pictures.forEach(f => { const p = path.join(ROOT, 'public', f); if (!fs.existsSync(p)) { missing.push(f); return; } picBytes += fs.statSync(p).size; });
 ok(missing.length === 0, 'every file index.html references exists' +
   (missing.length ? ' — MISSING ' + missing.join(', ') : ''));
 console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
   ' KB raw, ' + (gz / 1024).toFixed(0) + ' KB gzipped');
+/* The pictures the page itself names. NOT new bandwidth: since v2.13 the
+   film's gate has fetched the logo and the menu its first wallpaper on every
+   fresh load — from scripts, where this gate could not see them. v2.16 names
+   them in the markup so they arrive WITH the page instead of two seconds
+   after it. Listed and capped here so a third one cannot arrive unnoticed. */
+const PICTURE_BUDGET_KB = 110;
+console.log('        ' + pictures.length + ' pictures named by the page: ' + (picBytes / 1024).toFixed(0) + ' KB  [' + pictures.join(', ') + ']');
+ok(pictures.length <= 2 && picBytes / 1024 <= PICTURE_BUDGET_KB,
+  'the page names at most two pictures, ' + (picBytes / 1024).toFixed(0) + ' KB together (budget ' + PICTURE_BUDGET_KB + ' KB) — the same two a fresh load always fetched');
 
 /* A budget, not a target. It may fall and never rise. If a change pushes past
    it, the question is whether that file needed to grow — not whether the number
@@ -211,7 +231,32 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
    click, once per DEVICE (ETag, 304 afterwards). With the film and the
    wallpapers a brand-new player now costs about 5.2 MB instead of 4.0:
    ~960 new devices per 5 GB instead of ~1,250. Returning players: nothing. */
-const GZ_BUDGET_KB = 494;
+/* ===== v2.16 — 494 -> 514 KB, RAISED BY THE SPEND AND NO FURTHER. =====
+   Checked first, as always: is this waste or content? One piece of waste was
+   found and deleted (the v14 alias()/dup()/stubCopy() helpers in viewmodels.js
+   that nothing had called since every weapon got its own model). The rest is
+   Rahul's eight-point list, itemised (gzipped, against v2.15.0):
+     weapons/viewmodels.js  finishes (5 painted sheets + a sky), gloved and
+                            sleeved hands, furniture on every gun, and the
+                            fold that draws it all as ~11 meshes      6.5 KB
+     effects/blood.js       the pools (one mesh for the whole map)    4.1 KB
+     audio/audio.js         25 weapon voices in place of 12 patches   2.6 KB
+     vehicles/vehicles.js   the speedometer and the seat counts       2.2 KB
+     audio/track.js         the radio's speaker                       1.3 KB
+     weapons/system.js      recoil springs, the muzzle of the model   1.3 KB
+     index.html             the boot cover and the first wallpaper    1.2 KB
+     effects/effects.js     a painted muzzle flash                    0.8 KB
+     ui/mapart.js           the cover's hand-over to the film / menu  0.7 KB
+     game.js, CSS, config   wiring                                    0.8 KB
+   513 KB measured; 514 leaves one kilobyte, deliberately.
+   Bandwidth, stated plainly: ~10,630 -> ~10,210 fresh loads per 5 GB.
+   THE REAL FIX IS STILL NOT DONE, AND IT IS NOW THE OBVIOUS ONE: measured,
+   211 KB of the 479 KB of scripts is block comments (44%; system.js alone is
+   12 KB gzipped of them). Serving the scripts with comments stripped — the
+   files in the repository untouched — would take first load to roughly
+   300 KB. It changes what the browser is sent, so it is proposed to Rahul
+   rather than slipped in. */
+const GZ_BUDGET_KB = 514;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

@@ -112,16 +112,26 @@ var MapArt = (function () {
       menuTop = 1 - menuTop;
     });
   }
+  /* v2.16: index.html now carries the holder and its FIRST picture (MENU[0])
+     in the markup, so the menu never opens on the old backdrop while 46
+     scripts load. When it is there the slideshow simply carries on from it;
+     when it is not (an older page, a test page) it is built as before. */
   function menuStart() {
     var backdrop = document.querySelector('#menu-layer .backdrop');
-    if (!backdrop || document.querySelector('.ma-menu')) return;
-    var holder = mk('div', 'ma-menu', '<div class="ma-slide"></div><div class="ma-slide"></div>');
-    backdrop.insertBefore(holder, backdrop.firstChild);
+    if (!backdrop || menuT) return;
+    var holder = backdrop.querySelector('.ma-menu');
     backdrop.classList.add('has-art');
-    menuTop = 1;
-    menuStep();
+    if (holder && holder.children.length === 2 && holder.children[0].classList.contains('ma-show')) {
+      menuTop = 0; menuI = 1;                     // slide 0 is showing MENU[0]; the next step brings MENU[1] in on slide 1
+    } else {
+      if (!holder) { holder = mk('div', 'ma-menu', '<div class="ma-slide"></div><div class="ma-slide"></div>'); backdrop.insertBefore(holder, backdrop.firstChild); }
+      menuTop = 1;
+      menuStep();
+    }
     menuT = setInterval(menuStep, 9000);
   }
+  /* the boot cover index.html paints first (window.__maBoot) */
+  function bootCover() { return (typeof window !== 'undefined' && window.__maBoot && window.__maBoot.el) ? window.__maBoot : null; }
 
   /* ------------------------------------------------------------ the countdown */
   function ensureDeploy() {
@@ -355,12 +365,25 @@ var MapArt = (function () {
     var state = 'gate';
     var startedAt = 0;
     var guardT = 0;
-    introEl = mk('div', 'ma-intro',
-      '<video playsinline preload="none"></video>' +
-      '<div class="ma-gate"><img alt="Urban Strike" src="assets/intro/logo.webp"><button type="button" class="ma-start">CLICK TO START</button>' +
-      '<p>PLAY WITH HEADPHONES · SOUND IS INTEL</p></div><div class="ma-skip">SKIP ▸</div>');
+    /* v2.16: on a first visit the boot cover IS the gate - the same element,
+       already on screen with the mark in place. It is taken over rather than
+       replaced, so nothing fades, jumps or plays its entrance twice. */
+    var boot = bootCover();
+    if (!force && boot && !boot.gone() && boot.el.parentNode && boot.el.querySelector('video') && boot.el.querySelector('.ma-start')) {
+      boot.taken();
+      introEl = boot.el;
+      introEl.classList.remove('ma-boot');
+      introEl.removeAttribute('aria-hidden');
+      var go = introEl.querySelector('.ma-start');
+      go.disabled = false; go.textContent = 'CLICK TO START';
+    } else {
+      introEl = mk('div', 'ma-intro',
+        '<video playsinline preload="none"></video>' +
+        '<div class="ma-gate"><img alt="Urban Strike" src="assets/intro/logo.webp"><button type="button" class="ma-start">CLICK TO START</button>' +
+        '<p>PLAY WITH HEADPHONES · SOUND IS INTEL</p></div><div class="ma-skip">SKIP ▸</div>');
+      document.body.appendChild(introEl);
+    }
     introEl.id = 'ma-intro';
-    document.body.appendChild(introEl);
     var video = introEl.querySelector('video');
     function finish() {
       if (state === 'out') return;
@@ -404,6 +427,18 @@ var MapArt = (function () {
     if (typeof document === 'undefined') return;
     try { menuStart(); } catch (err) { /* the old backdrop is still there */ }
     try { intro(false); } catch (err) { /* straight to the menu */ }
+    /* no film this time: the cover comes off a FINISHED menu - its first
+       picture decoded (preload gives up waiting after 2.5 s) and two frames
+       for Game.init, which runs right after this, to fill the screen in */
+    try {
+      var boot = bootCover();
+      if (boot && !introEl && !boot.gone()) {
+        preload(MENU[0], function () {
+          var raf = window.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); };
+          raf(function () { raf(function () { setTimeout(boot.lift, 90); }); });
+        });
+      }
+    } catch (err) { if (window.__maBoot) window.__maBoot.lift(); }
     try {
       var main = $('screen-main');
       if (main && !main.querySelector('.ma-replay')) {

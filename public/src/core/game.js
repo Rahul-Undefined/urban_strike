@@ -22,6 +22,7 @@ var Game = (function () {
   var proneFogRef = null, proneFogBase = 0;   /* v2.9: the prone view closes in (see the render loop) */
   var _boomO = null, _boomD = null;                 // v13.1: boom ray scratch (allocated at init)
   var ownAv = null;                                 // v13.0: local body rig (TPP)
+  var dressTick = 0, dressKey = null;   /* v2.16: whose sleeves the first-person hands are wearing */
   var ownLast = { x: 0, z: 0 };                     // v13.0: stride derivation
   /* v11.0 black-world guards — see the camguard/drawwatch steps in loop(). */
   var _camSafe = { pos: new THREE.Vector3(0, 3, 0), rx: 0, ry: 0 };
@@ -551,6 +552,7 @@ var Game = (function () {
     setTimeout(function () {           // let the loading bar paint before the ~1s map build
       var built = buildWorld((d.settings && d.settings.map) || 'urban', d.pickups);
       try { if (built && window.Vehicles && d.vehicles) Vehicles.sync(d.vehicles); } catch (e) { reportError('vehicles', e); }   /* v2.13 */
+      try { if (built && window.Blood && d.blood) Blood.sync(d.blood); } catch (e) { reportError('blood', e); }                  /* v2.16 */
       try {
         var teams = CFG.MODES[d.settings.mode] && CFG.MODES[d.settings.mode].teams;
         UI.setKillTarget(killTargetLabel(d.settings.killTarget, teams));
@@ -589,6 +591,7 @@ var Game = (function () {
       Pickups.build(scene);
       Pickups.init(pickups);
       if (window.Vehicles) Vehicles.init(scene);   /* v2.13: empty until the server's list arrives (matchStart, or the next keyframe on a rejoin) */
+      if (window.Blood) Blood.init(scene);         /* v2.16: a clean floor; pools arrive with deaths (and with matchStart for a late joiner) */
       Minimap.init();
       if (!gameplayBound) { Net.bindGameplayEvents(); gameplayBound = true; }
       AudioSys.ambient();
@@ -915,6 +918,7 @@ var Game = (function () {
       }
       if (riding) wu = { speedMult: 1, aiming: false, crossGap: wu.crossGap, adsFov: 75, scoped: false };
       if (window.Vehicles) step('vehicles', function () { Vehicles.update(dt); });
+      if (window.Blood) step('blood', function () { Blood.update(dt); });   /* v2.16: returns at once unless a pool is spreading */
 
       step('player', function () {
         if (riding) Vehicles.drive(dt, Input);
@@ -990,6 +994,18 @@ var Game = (function () {
          pose pipeline, two callers; a walk-cycle fix lands on both.
          The rig is NOT a collider and is not in Net's remotes map, so bullets,
          the camera ray and hit detection never meet it. */
+      /* v2.16: the first-person sleeves and wrists are YOURS — your side's colour,
+         your callsign's skin (viewmodels.js setDress). Looked up twice a second,
+         applied when it changes: a new match on the other team re-dresses you. */
+      step('dress', function () {
+        if ((dressTick = (dressTick + 1) % 30) !== 1 || !window.WeaponModels || !WeaponModels.setDress) return;
+        var row = null, list = Net.getRoster() || [];
+        for (var di = 0; di < list.length; di++) if (list[di].id === Net.myId()) row = list[di];
+        var key = row ? (row.name + '|' + row.color) : '';
+        if (!row || key === dressKey) return;
+        dressKey = key;
+        WeaponModels.setDress(row.color, Avatars.lookFor(row.name).skin);
+      });
       step('ownbody', function () {
         if (!tpp || !PlayerCtl.alive || riding) { if (ownAv) ownAv.group.visible = false; return; }
         /* v2.14: your own body wears what everyone else sees on you — your

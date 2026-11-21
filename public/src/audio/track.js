@@ -17,8 +17,9 @@
              then fades out — gunfire and footsteps are information, music is
              not, and v13.0's rule ("the score must never fight the game")
              stands.
-     radio   in a vehicle that has a driver. It resumes where the radio was.
-             B switches it off and on (it masks footsteps; that is a choice).
+     radio   in a vehicle that has a driver, through a dashboard speaker (see
+             voice()) at under half its first loudness. It resumes where the
+             radio was. B switches it off and on.
      menu    a quiet loop on the menu and in the lobby, in place of the
              synthesized bed. Not while the intro film is showing.
 
@@ -31,7 +32,7 @@ var Soundtrack = (function () {
   'use strict';
   var SRC = 'assets/music/track.mp3';
   var DROP = 14.4;                                   // s — where the bass lands (measured: silence to 12.7-14.3, full level from 14.40)
-  var LEVEL = { menu: 0.2, start: 0.6, radio: 0.42 };   // of the master bus
+  var LEVEL = { menu: 0.2, start: 0.6, radio: 0.26 };   // of the master bus (the radio's is after its speaker chain: see voice())
   var HOLD = 6, FADE = 5;                            // s of play before the start music leaves, and how long it takes to
   var el = null, g = null, dead = false;
   var mode = null;                                   // 'start' | 'radio' | 'menu' | null — what is sounding now
@@ -65,9 +66,54 @@ var Soundtrack = (function () {
       el.addEventListener('loadedmetadata', function () { if (pendingSeek >= 0) seek(pendingSeek); });
       el.src = SRC;
       g = bus.ctx.createGain(); g.gain.value = 0;
-      bus.ctx.createMediaElementSource(el).connect(g); g.connect(bus.master);
+      var src = bus.ctx.createMediaElementSource(el);
+      try { voice(bus.ctx, src); }
+      catch (err) { dry = wet = hiss = null; try { src.disconnect(); } catch (e2) { /* nothing was connected */ } src.connect(g); }   // no speaker chain: the plain track, ONCE, is still a radio
+      g.connect(bus.master);
     } catch (err) { fail(); }
     return !dead;
+  }
+  /* ===== v2.16 - THE RADIO SOUNDS LIKE A RADIO, AND HALF AS LOUD =====
+     Rahul: "sound ko aisa banao ki lage radio mei gaana bajj raha h, original
+     full quality nahi chahiye" and "loudness 50% se low kar do, bahot jor hai."
+     In a vehicle the track plays through a dashboard speaker: summed to mono,
+     nothing below 320 Hz or above 3.3 kHz (24 dB an octave each side), a nudge
+     at 1.7 kHz where a small cone honks, a little saturation, and a bed of
+     hiss that crackles for a moment as the set comes on. The menu and the
+     match-start music keep the clean path — two gains choose between them.
+     LOUDNESS, MEASURED (EBU R128, ffmpeg): the clean track at the old radio
+     level was -12.9 LUFS; this chain at 0.26 is -25.0. Twelve LU down — a
+     little under half as loud to the ear (ten is half). */
+  var dry = null, wet = null, hiss = null;
+  function voice(c, src) {
+    var bq = function (type, f, q, gain) { var n = c.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; if (gain) n.gain.value = gain; return n; };
+    dry = c.createGain(); wet = c.createGain(); wet.gain.value = 0;
+    src.connect(dry); dry.connect(g);
+    var mono = c.createGain(); mono.channelCount = 1; mono.channelCountMode = 'explicit'; mono.channelInterpretation = 'speakers';
+    var sat = c.createWaveShaper(), curve = new Float32Array(257);
+    for (var i = 0; i < 257; i++) { var x = i / 128 - 1; curve[i] = Math.tanh(1.5 * x) / Math.tanh(1.5) * 0.9; }
+    sat.curve = curve;
+    var nodes = [mono, bq('highpass', 320, 0.71), bq('highpass', 320, 0.71), bq('peaking', 1700, 1, 5), sat, bq('lowpass', 3300, 0.71), bq('lowpass', 3300, 0.71), wet];
+    src.connect(nodes[0]);
+    for (var k = 1; k < nodes.length; k++) nodes[k - 1].connect(nodes[k]);
+    wet.connect(g);
+    /* the hiss: one second of noise, looped, band-passed, silent until the radio is on */
+    var buf = c.createBuffer(1, 22050, 22050);
+    var d = buf.getChannelData(0);
+    for (var j = 0; j < d.length; j++) d[j] = Math.random() * 2 - 1;
+    var ns = c.createBufferSource(); ns.buffer = buf; ns.loop = true;
+    hiss = c.createGain(); hiss.gain.value = 0;
+    var band = bq('bandpass', 2600, 0.6);
+    ns.connect(band); band.connect(hiss); hiss.connect(g);
+    ns.start();
+  }
+  function speaker(on) {
+    if (!wet) return;
+    var t = g.context.currentTime;
+    dry.gain.cancelScheduledValues(t); wet.gain.cancelScheduledValues(t); hiss.gain.cancelScheduledValues(t);
+    dry.gain.setTargetAtTime(on ? 0 : 1, t, 0.03); wet.gain.setTargetAtTime(on ? 1 : 0, t, 0.03);
+    if (on) { hiss.gain.setValueAtTime(0.5, t); hiss.gain.setTargetAtTime(0.045, t + 0.05, 0.12); }   // a crackle as it comes on, then a bed
+    else hiss.gain.setTargetAtTime(0, t, 0.05);
   }
   function level(v, secs) {
     var t = g.context.currentTime;
@@ -103,6 +149,7 @@ var Soundtrack = (function () {
     if (mode === 'radio' && el) radioAt = el.currentTime || 0;
     var from = mode; mode = next;
     if (!el) return;
+    if (next === 'radio' || from === 'radio') speaker(next === 'radio');
     if (next === 'radio') { if (from !== 'menu') seek(radioAt); play(); level(LEVEL.radio, 0.5); }
     else if (next === 'menu') { play(); level(LEVEL.menu, from === 'radio' ? 0.8 : 2.5); }
     else rest(from === 'radio' ? 0.5 : 0.9);
@@ -119,7 +166,7 @@ var Soundtrack = (function () {
     clearTimeout(T.dog); T.dog = setTimeout(endSting, 30000);   // a match that never arrives must not leave this playing
     if (!sting) {
       if (mode === 'radio') radioAt = el.currentTime || 0;
-      sting = true; live = false; mode = 'start';
+      sting = true; live = false; mode = 'start'; speaker(false);
       clearTimeout(T.out); clearTimeout(T.end);
       var t = g.context.currentTime;
       g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(0, t);
@@ -200,7 +247,7 @@ var Soundtrack = (function () {
   return {
     cue: cue, count: count, radio: radio, toggleRadio: toggleRadio, enable: enable, poke: poke,
     isOn: function () { return songOn; }, radioIsOn: function () { return radioOn; },
-    DROP: DROP, SRC: SRC, LEVEL: LEVEL,
+    DROP: DROP, SRC: SRC, LEVEL: LEVEL, _voice: function () { return { dry: dry, wet: wet, hiss: hiss }; },
     _state: function () { return { mode: mode, sting: sting, live: live, wantMenu: wantMenu, wantRadio: wantRadio, dead: dead, at: el ? el.currentTime : -1, gain: g ? g.gain.value : -1, paused: el ? el.paused : true }; }
   };
 })();

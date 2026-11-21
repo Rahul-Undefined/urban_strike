@@ -1,3 +1,128 @@
+# v2.16.0 (build 49) — SEATS, A SPEEDOMETER, BLOOD, AND GUNS WORTH LOOKING AT (2026-11-21)
+
+Built on v2.15.0. Rahul's eight-point list, then three follow-ups: "blood
+stains should be applicable on the maps and all modes", "speedometer ka size
+chota karo", and "jitna uska graphics enhance kar pao kar do ... harr gun ka
+sound signature better karo taki gun ka sound unique and awesome lage."
+
+## 1-3. Seats — sedan 4, bike 2, bus 6
+- The sedan already seated four and the bike two (proved on a live server:
+  four in, the fifth refused; a real browser rode as the fourth passenger for
+  44 m and got out there). Only the bus changed: 8 -> 6, six places inside it.
+- What was missing was being TOLD: the boarding prompt now reads
+  "N — RIDE SEDAN  2/4 seats" and the dashboard shows SEATS 2/4.
+
+## 4. The speedometer
+- A black dial, white numerals, orange ticks and needle, an LCD under the
+  pivot — after the photograph. Bottom-centre, 190 px wide (143 tall), never
+  more than 26% of the screen's height. Made smaller on request.
+- Nothing overlaps: every word is in the LCD (PETROL / HULL / km/h / SEATS),
+  the needle's lowest reach stops above it, the key reminder sits ABOVE the
+  dial and fades after ten seconds, toasts step up out of the way while
+  aboard, the boarding prompt is higher than the dial on any screen.
+- Each vehicle has its own scale (bike and sedan 160, auto and bus 100, tank
+  60 km/h). The face is painted once; the needle is redrawn only when it moves.
+
+## 5. The radio
+- "50% se low": level 0.42 -> 0.26, and through the speaker it measures
+  -12.9 -> about -25 LUFS (EBU R128). Twelve LU down; ten is half as loud.
+- "radio mei gaana": mono, 320 Hz - 3.3 kHz at 24 dB/octave, +5 dB of honk at
+  1.7 kHz, a little overdrive, and a bed of hiss that crackles as it comes on.
+  The menu and the match-start drop still play the clean track.
+
+## 6. Start-up
+- Measured on a 3 Mbit link: for ~2 s the page showed the OLD backdrop and a
+  half-filled menu, then everything new arrived at once (it is all put there
+  by ~46 scripts).
+- Now the first thing painted is a boot cover that is in the markup — the
+  game's mark on black. On a first visit that very element BECOMES the film's
+  gate (LOADING turns into CLICK TO START; nothing jumps). Otherwise it lifts
+  off a finished menu: first wallpaper decoded, build number in, operator
+  drawn. The first wallpaper is in the markup too, and both pictures are
+  preloaded with the page.
+- It can always leave by itself: 8 s by script, 9 s by stylesheet alone.
+
+## 7. Guns
+**To look at.** Five finishes painted once on 128 px sheets — brushed metal
+with worn edges, stippled polymer, grained wood, woven cloth, skin — with
+Phong shine by material and a small sky reflected in the steel. No files.
+- Hands: a glove with fingers, knuckle pad, a wrist of skin, a cuff, and a
+  sleeve with creases and an elbow pad. The sleeve is the colour the avatar
+  wears; the wrist is the operator's own skin tone.
+- Furniture on every firearm: trigger and guard, ejection port and bolt, pins,
+  selector, vents, sight bases, muzzle crown, butt plate, slide serrations,
+  pump grooves ... each is now 46+ parts (it was 12-20).
+- And it costs LESS to draw: after fitting, parts are folded into one mesh
+  per finish. 1,504 parts across 22 firearms draw as 241 meshes — 11 each
+  (a weapon with the new hands would otherwise have been ~60).
+
+**The shot.** Three things were weird, all measured: the muzzle DIPPED 3.4
+degrees on every shot (recoil lifts a muzzle), the kick arrived late and at a
+third of its size, and the flash was drawn at a fixed point near the camera,
+not on the gun.
+- The rig rides four springs — back, muzzle-up, roll, yaw — struck at the
+  instant of the shot: 3.4 cm back and 2.7 degrees up within 40 ms, home
+  inside 0.6 s with a touch of overshoot. Bolt rifle 5.6 > shotgun 5.2 > AK
+  2.9 > MP5 2.6 degrees; half with the sights up. Aim is untouched.
+- Flash, tracer and smoke leave from the muzzle of the model on screen (and
+  from the end of the can when one is fitted). The flash is a painted burst,
+  additive, turned to a new angle each shot, gone in 55 ms.
+
+**To hear.** There were twelve patches for twenty-nine weapons: the Kar98,
+AUG, FAMAS, AKM, K98, Garand, UMP, MP5, Vector, bow, flamethrower and Seeker
+all played the PISTOL.
+- 25 voices now, each built from crack, body, boom, tail and the action's
+  click, tuned to calibre and barrel. The Garand pings on its last round, the
+  AR's buffer spring twangs, the M249's belt rattles, the bow is a string.
+- No two shots are the same sound (detuned a few percent, a different slice
+  of noise). Rapid fire shares its tails. A suppressor leaves 21% of the
+  level and the action. From 60 m the snap and the click do not carry.
+- Rendered in Chromium and measured: the nearest two voices are 0.20 apart on
+  brightness / ring / low end / level; before it was 0.06.
+- Tried and removed: a limiter on the master bus. It took the first 20 ms of
+  an AK from 0.56 to 0.12 — it ate the crack.
+
+## 8. Blood
+- Every death leaves a pool on the floor under the body: 2.4 m across (about
+  six litres at 2.5 mm), spreading over a few seconds. More deaths within
+  2.6 m on the same floor feed the SAME pool: two deaths 3.2 m, six 5.1 m,
+  to a ceiling of 7.5 m.
+- It stays for the whole match and is the same on every screen: the server
+  keeps the list, the pool rides the death message that is sent anyway, and
+  somebody who joins in the tenth minute is handed all of them.
+- All maps and all modes, by construction: there is ONE place a death is
+  announced (players and bots alike) and no mode or map condition near it.
+- Cost: one mesh, one material, one texture for every pool on the map — one
+  draw call. Nothing in the 15 Hz snapshot. A frame in which nothing is
+  spreading costs one comparison.
+- Real client: four real kills in one place made one pool (n = 4), and a
+  late joiner received it.
+
+## Cost, stated plainly
+- First load 493 -> 513 KB gzipped; the budget is raised 494 -> 514, by the
+  spend, itemised in tools/verify-bandwidth.js. ~10,630 -> ~10,210 fresh
+  loads per 5 GB. One piece of dead code was found and deleted on the way.
+- The gate now counts pictures apart from code: the page names two (the mark
+  and the first wallpaper, 100 KB) — the same two every fresh load has
+  fetched since v2.13, now asked for with the page instead of after it.
+- PROPOSED, NOT BUILT: 211 KB of the 479 KB of scripts is comments. Serving
+  them stripped (repository untouched) would take first load to ~300 KB.
+
+## Verified
+- tools/verify-v216.js: 113 checks (seats on the real server module, dial
+  geometry, the radio's node graph, the boot cover, models built with real
+  three.js, recoil springs, the shot synthesiser's graph, blood end to end).
+- test.js gained one: the death message carries its pool.
+- verify-client and verify-bandwidth read <script> tags, not every src=.
+- Real Chromium: first visit (cover -> gate -> film -> menu -> second
+  wallpaper nine seconds on), a match with real kills, a late joiner.
+- NOT verified by a person: how it sounds on real speakers, and frame rate on
+  a real GPU — headless Chromium renders in software.
+
+## Still open
+- The radio is not heard by people OUTSIDE the vehicle.
+- Three.js r128 -> current: deferred by Rahul ("baad mei isko dekhte h").
+
 # v2.15.0 (build 48) — THE SOUNDTRACK, THE CAR RADIO, AND A SCORECARD WITH LIGHTNING (2026-11-21)
 
 Built on v2.14.1. Rahul sent an mp3: "you need to implement this song in the

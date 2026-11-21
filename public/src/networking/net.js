@@ -669,6 +669,7 @@ var Net = (function () {
     });
 
     s.on('death', function (d) {
+      try { if (d.blood && window.Blood) Blood.add(d.blood); } catch (e) { /* v2.16: a stain is never worth a broken kill feed */ }
       UI.addFeed(d, myIdV);
       if (d.killerId === myIdV && !d.self) {
         var SPREE = { 3: 'KILLING SPREE', 5: 'RAMPAGE', 7: 'UNSTOPPABLE', 10: 'GODLIKE' };

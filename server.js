@@ -247,6 +247,7 @@ const BotAI = require('./server/lib/botai.js')({ CFG, io, now, Nav: BotNav, Room
    The server owns which vehicles exist, their health and who sits where; the
    driver's client drives. See server/lib/vehicles.js. Late-bound applyDamage
    for the same reason as BotAI above. */
+const Blood = require('./server/lib/blood.js');   /* v2.16: where people died — one short list a match, carried on the death event */
 const Vehicles = require('./server/lib/vehicles.js')({ CFG, io, now, modeInfo: (r) => modeInfo(r),
   applyDamage: (...a) => applyDamage(...a) });
 const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
@@ -655,6 +656,7 @@ function startMatch(room) {
   const zoneSched = Zone.start(room);   /* v1.0j: null unless the mode is Urban Zone */
   const heliSnap = Heli.start(room);    /* v1.0l: null unless the map is Urban */
   const vehSnap = Vehicles.start(room); /* v2.13: null unless the map has vehicles */
+  Blood.start(room);                    /* v2.16: a new match has a clean floor */
   io.to(room.code).emit('matchStart', {
     settings: room.settings,
     startedAt: room.startedAt,
@@ -1062,7 +1064,8 @@ io.on('connection', (socket) => {
         pickups: pickupList(room),
         zone: room.zone ? room.zone.sched : null,   /* v1.0j */
         heli: Heli.snapshot(room),                  /* v1.0l */
-        vehicles: Vehicles.snapshot(room, true)     /* v2.13 */
+        vehicles: Vehicles.snapshot(room, true),    /* v2.13 */
+        blood: Blood.list(room)                     /* v2.16: every pool so far, for somebody who joins late */
       });
       spawnPlayer(room, p);
     }
@@ -1597,6 +1600,7 @@ io.on('connection', (socket) => {
     room.state = 'lobby';
     BotAI.removeBots(room);   /* v2.12: the staging area is for people */
     Vehicles.reset(room);     /* v2.13 */
+    Blood.start(room);        /* v2.16 */
     cancelCountdown(room);
     Mines.clear(room);
     clearAirdrop(room);

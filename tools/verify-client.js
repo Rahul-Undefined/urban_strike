@@ -41,8 +41,10 @@ try { THREE = require('three'); } catch (e) { console.log('SKIP: npm install fir
    (verify-lifts carries the v8.9 note). If index.html gains a file, this gate
    loads it on the next run without anyone remembering to update it. */
 const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
-const scripts = (html.match(/src="([^"]+)"/g) || [])
-  .map(s => s.slice(5, -1))
+/* v2.16: only <script> tags. The page now has an <img src> of its own (the
+   boot cover's mark) and the bare src="..." pattern tried to run a .webp. */
+const scripts = (html.match(/<script\b[^>]*\ssrc="([^"]+)"/g) || [])
+  .map(s => s.replace(/^.*\ssrc="/, '').slice(0, -1))
   .filter(s => !/^https?:/.test(s) && !/socket\.io/.test(s));
 
 ok(scripts.length > 20, 'index.html lists the client bundle [' + scripts.length + ' files]');

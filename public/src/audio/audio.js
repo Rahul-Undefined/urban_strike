@@ -12,6 +12,11 @@ var AudioSys = (function () {
       ctx = new AC();
       master = ctx.createGain();
       master.gain.value = volume;
+      /* v2.16, TRIED AND TAKEN OUT: a DynamicsCompressor as a limiter here.
+         Measured in Chromium (offline render): with a 2 ms attack it took the
+         first 20 ms of an AK from a peak of 0.56 to 0.12 — it ate the crack,
+         which is the part that makes a gunshot a gunshot. Peaks stay as they
+         are; the loudest single shot (.338) renders at 0.83 of full scale. */
       master.connect(ctx.destination);
       // indoor echo bus: post-master send -> slap delay + feedback + lowpass
       echoSend = ctx.createGain(); echoSend.gain.value = 0;
@@ -168,24 +173,29 @@ var AudioSys = (function () {
 
   function noiseBurst(pos, opts) {
     if (!ctx) return;
-    var t = ctx.currentTime;
+    var t = ctx.currentTime + (opts.at || 0);      // v2.16: `at` seconds from now, on the audio clock (no setTimeout jitter)
     var src = ctx.createBufferSource(); src.buffer = noiseBuf;
     src.playbackRate.value = opts.rate || 1;
     var f = ctx.createBiquadFilter(); f.type = opts.ftype || 'lowpass';
+    if (opts.q) f.Q.value = opts.q;
     f.frequency.setValueAtTime(opts.f0 || 3000, t);
     if (opts.f1) f.frequency.exponentialRampToValueAtTime(opts.f1, t + (opts.dur || 0.2));
     var g = ctx.createGain();
     g.gain.setValueAtTime(opts.vol || 0.5, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + (opts.dur || 0.2));
+    /* v2.16: `hold` keeps the burst up for longer before it dies (0 = the old
+       straight fall to silence, which leaves 34% after 20 ms of a 170 ms
+       burst — a tick, not a blast) */
+    if (opts.hold) { g.gain.exponentialRampToValueAtTime((opts.vol || 0.5) * opts.hold, t + (opts.dur || 0.2) * 0.8); g.gain.linearRampToValueAtTime(0.0001, t + (opts.dur || 0.2)); }
+    else g.gain.exponentialRampToValueAtTime(0.0001, t + (opts.dur || 0.2));
     src.connect(f); f.connect(g);
     var tail = out(g, pos);
     if (tail === null) { try { src.disconnect(); f.disconnect(); g.disconnect(); } catch (e) {} return; }   // too far or too many: never started
     finish(src, [f, g], tail !== g ? tail : null, !!pos);
-    src.start(t); src.stop(t + (opts.dur || 0.2) + 0.05);
+    src.start(t, Math.random() * 1.4); src.stop(t + (opts.dur || 0.2) + 0.05);   // v2.16: a different slice of the noise each time — two shots are never the same sample
   }
   function tone(pos, opts) {
     if (!ctx) return;
-    var t = ctx.currentTime;
+    var t = ctx.currentTime + (opts.at || 0);
     var o = ctx.createOscillator(); o.type = opts.type || 'sine';
     o.frequency.setValueAtTime(opts.f0 || 440, t);
     if (opts.f1) o.frequency.exponentialRampToValueAtTime(opts.f1, t + (opts.dur || 0.2));
@@ -200,47 +210,106 @@ var AudioSys = (function () {
   }
 
   // ---- game sounds ----
-  // Layered per-weapon patches: body (noise burst) + crack (transient) +
-  // boom (sub thump) + mech (action cycling). Each gun reads differently.
+  /* ===== v2.16 - EVERY GUN HAS ITS OWN VOICE =====
+     Rahul: "harr gun ka sound signature better karo taki gun ka sound unique
+     and awesome lage."
+     WHAT WAS THERE: twelve patches for twenty-nine weapons. The Kar98, AUG,
+     FAMAS, AKM, K98, Garand, UMP, MP5, Vector, bow, flamethrower and Seeker
+     had none and all played the PISTOL. And a patch was a noise burst, a
+     square-wave blip for the "crack" (which is why they sounded like an
+     arcade cabinet) and a sine.
+     WHAT A SHOT IS NOW, in the order the ear gets it:
+       crack  10-25 ms of high-passed noise: the supersonic snap. Bright for a
+              5.56, dull for a .45, enormous for a .338.
+       body   the muzzle blast: filtered noise swept downward. Its pitch and
+              length are the calibre and the barrel.
+       boom   a falling sine: what you feel in the chest. A 9 mm barely has
+              one; a shotgun is mostly this.
+       tail   the report rolling away: a long, low, quiet decay. It is the
+              difference between a toy and a rifle, and between rifles.
+       mech   the action: a resonant click of the bolt carrier a few
+              hundredths later — an AK clanks low, an M4 rings, an MP5 ticks.
+     Plus what makes one weapon THAT weapon (`x`): the M1 Garand's clip pings
+     out on its last round, the M4's buffer spring twangs, the M249's belt
+     rattles, the bow is a string, not a gun.
+     No two shots are identical: each is detuned a few percent and reads a
+     different slice of the noise, so automatic fire is not a loop.
+     STILL NO FILES, AND NO MORE WORK FOR THE BROWSER: the tail is the one long
+     layer, so it is rationed (TAILGAP) — rapid fire shares tails the way real
+     reports overlap — and a shot heard from far away drops its click and most
+     of its crack, which do not carry. A shot is 8-14 nodes (the Garand's
+     last round, with its ping, is 18), as before.
+     c crack [Hz, vol]   b body [f0, f1, s, vol]   m boom [f0, f1, s, vol]
+     t tail [s, vol, Hz]   k mech [Hz, vol, Q]   x signature */
   var SHOT = {
-    ak47:    { body: { f0: 2100, f1: 420, dur: 0.19, vol: 0.62 }, crack: { f: 1450, dur: 0.05, vol: 0.26, type: 'square' },   boom: { f0: 130, f1: 55, dur: 0.16, vol: 0.34 }, mech: { f: 620, vol: 0.10 } },
-    m4a1:    { body: { f0: 3200, f1: 750, dur: 0.12, vol: 0.5 },  crack: { f: 2300, dur: 0.035, vol: 0.24, type: 'square' },  boom: { f0: 150, f1: 75, dur: 0.1, vol: 0.2 },   mech: { f: 900, vol: 0.07 } },
-    sniper:  { body: { f0: 1500, f1: 190, dur: 0.6, vol: 0.95 },  crack: { f: 850, dur: 0.07, vol: 0.4, type: 'sawtooth' },   boom: { f0: 100, f1: 32, dur: 0.55, vol: 0.7 } },
-    uzi:     { body: { f0: 4200, f1: 1100, dur: 0.07, vol: 0.38 },crack: { f: 3000, dur: 0.02, vol: 0.2, type: 'square' } },
-    shotgun: { body: { f0: 1300, f1: 230, dur: 0.34, vol: 0.85 }, crack: { f: 700, dur: 0.06, vol: 0.32, type: 'sawtooth' },  boom: { f0: 95, f1: 38, dur: 0.4, vol: 0.62 } },
-    pistol:  { body: { f0: 2900, f1: 720, dur: 0.11, vol: 0.48 }, crack: { f: 1950, dur: 0.03, vol: 0.22, type: 'square' },   boom: { f0: 170, f1: 90, dur: 0.07, vol: 0.14 } },
-    rocket:  { body: { f0: 800, f1: 160, dur: 0.7, vol: 0.85, ftype: 'bandpass' }, crack: { f: 420, dur: 0.09, vol: 0.3, type: 'sawtooth' }, boom: { f0: 80, f1: 30, dur: 0.5, vol: 0.55 } },
-    scarh:   { body: { f0: 2400, f1: 480, dur: 0.17, vol: 0.6 },  crack: { f: 1600, dur: 0.045, vol: 0.26, type: 'square' },  boom: { f0: 125, f1: 58, dur: 0.15, vol: 0.32 }, mech: { f: 700, vol: 0.09 } },
-    mk14:    { body: { f0: 2000, f1: 340, dur: 0.24, vol: 0.7 },  crack: { f: 1200, dur: 0.055, vol: 0.3, type: 'sawtooth' }, boom: { f0: 110, f1: 48, dur: 0.22, vol: 0.4 } },
-    p90:     { body: { f0: 4600, f1: 1300, dur: 0.06, vol: 0.36 },crack: { f: 3300, dur: 0.018, vol: 0.18, type: 'square' } },
-    m249:    { body: { f0: 1900, f1: 380, dur: 0.15, vol: 0.62 }, crack: { f: 1000, dur: 0.05, vol: 0.24, type: 'square' },   boom: { f0: 105, f1: 50, dur: 0.18, vol: 0.42 }, mech: { f: 520, vol: 0.12 } },
-    awm:     { body: { f0: 1400, f1: 170, dur: 0.7, vol: 1.0 },   crack: { f: 780, dur: 0.08, vol: 0.42, type: 'sawtooth' },  boom: { f0: 92, f1: 28, dur: 0.62, vol: 0.78 } }
+    ak47:    { c: [2600, 0.50], b: [1900, 360, 0.17, 0.62],  m: [135, 52, 0.17, 0.38],  t: [0.55, 0.16, 900],  k: [1500, 0.13, 7] },
+    akm:     { c: [2300, 0.52], b: [1650, 310, 0.20, 0.66],  m: [124, 47, 0.21, 0.43],  t: [0.62, 0.18, 800],  k: [1250, 0.14, 6] },
+    m4a1:    { c: [3900, 0.52], b: [3000, 700, 0.11, 0.50],  m: [165, 80, 0.09, 0.20],  t: [0.40, 0.13, 1400], k: [2400, 0.08, 9], x: 'spring' },
+    aug:     { c: [3500, 0.48], b: [2500, 820, 0.10, 0.50, 'bandpass'], m: [152, 72, 0.10, 0.23], t: [0.36, 0.12, 1250], k: [2100, 0.07, 8] },
+    famas:   { c: [4300, 0.50], b: [3400, 900, 0.085, 0.46], m: [176, 88, 0.07, 0.17],  t: [0.30, 0.11, 1600], k: [2800, 0.07, 10] },
+    scarh:   { c: [3100, 0.56], b: [1750, 330, 0.20, 0.68],  m: [112, 44, 0.22, 0.48],  t: [0.78, 0.19, 780],  k: [2300, 0.09, 9] },
+    mk14:    { c: [2500, 0.60], b: [1900, 320, 0.24, 0.70],  m: [110, 44, 0.24, 0.44],  t: [0.85, 0.20, 750],  k: [1700, 0.08, 7] },
+    garand:  { c: [2200, 0.58], b: [1600, 300, 0.26, 0.74],  m: [105, 42, 0.26, 0.46],  t: [0.90, 0.20, 700],  k: [1300, 0.09, 5], x: 'ping' },
+    m249:    { c: [2500, 0.48], b: [1800, 360, 0.13, 0.62],  m: [120, 52, 0.15, 0.40],  t: [0.50, 0.15, 850],  k: [1100, 0.15, 5], x: 'belt' },
+    sniper:  { c: [2000, 0.70], b: [1400, 180, 0.50, 0.95],  m: [95, 30, 0.50, 0.72],   t: [1.40, 0.30, 600] },
+    awm:     { c: [1800, 0.75], b: [1200, 150, 0.60, 1.00],  m: [85, 26, 0.60, 0.80],   t: [1.70, 0.34, 500] },
+    kar98:   { c: [2300, 0.66], b: [1700, 260, 0.38, 0.85],  m: [105, 36, 0.36, 0.58],  t: [1.10, 0.26, 700] },
+    k98w:    { c: [2600, 0.60], b: [1900, 300, 0.30, 0.78],  m: [112, 40, 0.30, 0.50],  t: [0.95, 0.22, 760] },
+    uzi:     { c: [3200, 0.40], b: [2300, 820, 0.060, 0.46], m: [190, 100, 0.05, 0.12], t: [0.22, 0.09, 1600], k: [1700, 0.13, 6] },
+    mp5:     { c: [3600, 0.38], b: [2900, 1000, 0.055, 0.42], m: [200, 110, 0.045, 0.10], t: [0.20, 0.08, 1800], k: [2600, 0.06, 11] },
+    ump9:    { c: [2800, 0.40], b: [1800, 600, 0.075, 0.50], m: [170, 85, 0.07, 0.20],  t: [0.26, 0.10, 1300], k: [1500, 0.09, 6] },
+    vector:  { c: [3000, 0.38], b: [2000, 700, 0.050, 0.44], m: [160, 90, 0.045, 0.18], t: [0.18, 0.08, 1500], k: [3000, 0.05, 12] },
+    p90:     { c: [4600, 0.40], b: [4200, 1300, 0.050, 0.38], m: [220, 130, 0.035, 0.07], t: [0.20, 0.07, 2200], k: [3200, 0.05, 12] },
+    pistol:  { c: [3400, 0.45], b: [2700, 700, 0.10, 0.50],  m: [175, 90, 0.07, 0.16],  t: [0.30, 0.10, 1500], k: [2900, 0.09, 9] },
+    shotgun: { c: [1500, 0.50], b: [900, 150, 0.30, 0.95],   m: [100, 38, 0.36, 0.66],  t: [0.90, 0.26, 550] },
+    aa12:    { c: [1600, 0.46], b: [850, 170, 0.15, 0.86],   m: [120, 48, 0.16, 0.55],  t: [0.50, 0.18, 600],  k: [900, 0.12, 4] },
+    rocket:  { c: [900, 0.30],  b: [800, 160, 0.70, 0.85, 'bandpass'], m: [80, 30, 0.50, 0.55], t: [1.20, 0.24, 420] },
+    seeker:  { c: [1400, 0.26], b: [1100, 240, 0.60, 0.75, 'bandpass'], m: [90, 34, 0.42, 0.45], t: [1.00, 0.20, 520], x: 'lock' },
+    flamer:  { b: [700, 220, 0.22, 0.60], t: [0.30, 0.12, 380] },
+    bow:     { x: 'bow' }
   };
+  var TAILGAP = 0.085, tailAt = 0;                 // s: at most one new tail this often, however fast the gun
   function shot(weapon, pos, opts) {
     if (!ctx) return;
     if (weapon === 'knife') { noiseBurst(pos, { ftype: 'highpass', f0: 3800, dur: 0.09, vol: 0.28 }); return; }
-    if (opts && opts.supp) { // suppressed: soft thup + action click
-      noiseBurst(pos, { f0: 1300, f1: 420, dur: 0.09, vol: 0.2, ftype: 'bandpass' });
-      setTimeout(function () { tone(pos, { type: 'square', f0: 750, f1: 480, dur: 0.02, vol: 0.08 }); }, 25);
+    var s = SHOT[weapon] || SHOT.pistol;
+    var gain = (opts && opts.vol) || 1, d = 0.95 + Math.random() * 0.10, lvl = (0.94 + Math.random() * 0.12) * gain;
+    if (opts && opts.supp) {                       // suppressed: the gun's own pitch, with the blast taken off it
+      var bs = s.b || SHOT.pistol.b;
+      noiseBurst(pos, { f0: Math.min(1700, bs[0] * 0.55) * d, f1: 380, dur: 0.085, vol: 0.2 * lvl, ftype: 'bandpass' });
+      if (s.k) noiseBurst(pos, { ftype: 'bandpass', f0: s.k[0] * d, q: s.k[2], dur: 0.03, vol: s.k[1] * 1.6 * lvl, at: 0.024 });
       return;
     }
-    var s = SHOT[weapon] || SHOT.pistol;
-    var ov = (typeof CFG !== 'undefined' && CFG.WEAPONS[weapon] && CFG.WEAPONS[weapon].snd) || null;
-    if (ov) {
-      s = {
-        body: Object.assign({}, s.body, ov.body || {}),
-        crack: Object.assign({}, s.crack, ov.crack || {}),
-        boom: ov.boom !== undefined ? ov.boom : s.boom,
-        mech: s.mech
-      };
+    /* how far away it is, 0 (here) to 1 (at the edge of hearing): the snap and the click do not carry */
+    var far = 0;
+    if (pos) { var dx = pos.x - lisX, dy = pos.y - lisY, dz = pos.z - lisZ; far = Math.min(1, Math.sqrt(dx * dx + dy * dy + dz * dz) / AUDIBLE); }
+    if (s.x === 'bow') {                           // a string and an arrow, no powder
+      tone(pos, { type: 'triangle', f0: 230 * d, f1: 120, dur: 0.26, vol: 0.34 * lvl });
+      noiseBurst(pos, { ftype: 'highpass', f0: 2600, dur: 0.10, vol: 0.16 * lvl });
+      return;
     }
-    noiseBurst(pos, { f0: s.body.f0, f1: s.body.f1, dur: s.body.dur, vol: s.body.vol, ftype: s.body.ftype });
-    tone(pos, { type: s.crack.type, f0: s.crack.f, f1: s.crack.f * 0.35, dur: s.crack.dur, vol: s.crack.vol });
-    if (s.boom) tone(pos, { type: 'sine', f0: s.boom.f0, f1: s.boom.f1, dur: s.boom.dur, vol: s.boom.vol });
-    if (s.mech) setTimeout(function () { tone(pos, { type: 'square', f0: s.mech.f, f1: s.mech.f * 0.6, dur: 0.02, vol: s.mech.vol }); }, 28);
+    if (s.c && far < 0.75) noiseBurst(pos, { ftype: 'highpass', f0: s.c[0] * d, dur: 0.016, vol: s.c[1] * lvl * (1 - far) });
+    if (s.b) noiseBurst(pos, { ftype: s.b[4] || 'lowpass', f0: s.b[0] * d * (1 - 0.45 * far), f1: s.b[1] * d, dur: s.b[2], vol: s.b[3] * lvl, hold: 0.06 });
+    if (s.m) tone(pos, { type: 'sine', f0: s.m[0] * d, f1: s.m[1], dur: s.m[2], vol: s.m[3] * lvl });
+    if (s.t && ctx.currentTime - tailAt >= TAILGAP) {
+      tailAt = ctx.currentTime;
+      noiseBurst(pos, { f0: s.t[2] * d, f1: s.t[2] * 0.3, dur: s.t[0], vol: s.t[1] * lvl * (1 + 0.6 * far), at: 0.012, hold: 0.05 });
+    }
+    if (far > 0.22) return;                        // the rest is what the shooter and the people beside them hear
+    if (s.k) noiseBurst(pos, { ftype: 'bandpass', f0: s.k[0] * d, q: s.k[2], dur: 0.035, vol: s.k[1] * 2.2 * lvl, at: 0.026 });
+    if (s.x === 'spring') tone(pos, { type: 'sine', f0: 860 * d, f1: 700, dur: 0.07, vol: 0.05 * lvl, at: 0.03 });                      // the AR buffer spring
+    else if (s.x === 'belt') noiseBurst(pos, { ftype: 'bandpass', f0: 3800 * d, q: 5, dur: 0.03, vol: 0.10 * lvl, at: 0.05 });        // a link dropping off the belt
+    else if (s.x === 'lock') tone(pos, { type: 'square', f0: 1800, f1: 2600, dur: 0.06, vol: 0.05 * lvl });                             // the seeker head
+    else if (s.x === 'ping' && opts && opts.last) {                                                                                   // the en-bloc clip leaving an empty Garand
+      tone(pos, { type: 'sine', f0: 2750, f1: 2680, dur: 0.55, vol: 0.16 * lvl, at: 0.06 });
+      tone(pos, { type: 'sine', f0: 4120, f1: 4050, dur: 0.30, vol: 0.06 * lvl, at: 0.06 });
+    }
   }
+  /* reloads and dry clicks: the weapons without a sequence of their own borrow their family's */
+  var KIN = { akm: 'ak47', scarh: 'ak47', m249: 'ak47', aa12: 'ak47', aug: 'm4a1', famas: 'm4a1', mk14: 'm4a1', garand: 'sniper', kar98: 'sniper', k98w: 'sniper', awm: 'sniper',
+    ump9: 'uzi', mp5: 'uzi', vector: 'uzi', p90: 'uzi', seeker: 'rocket' };
   function dryFire(weapon) {
-    var f = { ak47: 1300, m4a1: 1600, sniper: 950, uzi: 2100, shotgun: 800, pistol: 1800, rocket: 600, knife: 1500 }[weapon] || 1400;
+    var f = { ak47: 1300, m4a1: 1600, sniper: 950, uzi: 2100, shotgun: 800, pistol: 1800, rocket: 600, knife: 1500 }[KIN[weapon] || weapon] || 1400;
     tone(null, { type: 'square', f0: f, f1: f * 0.55, dur: 0.03, vol: 0.2 });
     setTimeout(function () { tone(null, { type: 'square', f0: f * 0.7, f1: f * 0.4, dur: 0.025, vol: 0.12 }); }, 55);
   }
@@ -255,7 +324,7 @@ var AudioSys = (function () {
   };
   function reload(weapon, pos) {
     if (!ctx) return;
-    var sq = RELOAD_SEQ[weapon] || RELOAD_SEQ.m4a1;
+    var sq = RELOAD_SEQ[weapon] || RELOAD_SEQ[KIN[weapon]] || RELOAD_SEQ.m4a1;
     sq.forEach(function (st) {
       setTimeout(function () { tone(pos, { type: 'square', f0: st[1], f1: st[1] * 0.55, dur: 0.05, vol: st[2] }); }, st[0]);
     });
@@ -664,7 +733,7 @@ var AudioSys = (function () {
     musicRefresh: musicRefresh, zap: zap, wake: wake,
     music: music,
     init: init, resume: resume, setVolume: setVolume, updateListener: updateListener, ambient: ambient,
-    shot: shot, reload: reload, magIn: magIn, bolt: bolt, step: step,
+    shot: shot, _shots: SHOT, _kin: KIN, reload: reload, magIn: magIn, bolt: bolt, step: step,
     dryFire: dryFire, shellIn: shellIn, pickupSnd: pickupSnd,
     planeFlyby: planeFlyby, crateThud: crateThud, stinger: stinger, fireCrackle: fireCrackle,
     empPulse: empPulse, heliBeat: heliBeat, fuelSiren: fuelSiren,   /* v15.0 */

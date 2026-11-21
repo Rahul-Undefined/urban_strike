@@ -63,7 +63,7 @@
        trades rate of fire for reach rather than being a straight upgrade. Same
        lethality rules as the others. */
     kar98:   { key: 7, label: 'Kar98', type: 'bolt', dmg: 100, rpm: 38, mag: 5, reserve: 25, reload: 3.4, spread: 0.0016, ads: 0.00045, range: 999, head: 2, legs: 1.0, speed: 0.87, recoil: 0.032, drift: 0.22, adsFov: 18, scope: true, boltTime: 0.95, scopeZoom: [6, 20], sway: 0.0040, trc: 0xd8e6f2 },
-    uzi:     { key: 4, label: 'UZI-9', type: 'auto', dmg: 30, rpm: 950, mag: 32, reserve: 128, reload: 1.9, spread: 0.030, ads: 0.014, range: 22, head: 1.67, legs: 0.72, speed: 1.02, recoil: 0.010, drift: 0.9, adsFov: 55, trc: 0xffc46a, snd: { body: { f0: 2100, f1: 800, dur: 0.05, vol: 0.5 }, crack: { f: 2600, dur: 0.03, vol: 0.3 } } },
+    uzi:     { key: 4, label: 'UZI-9', type: 'auto', dmg: 30, rpm: 950, mag: 32, reserve: 128, reload: 1.9, spread: 0.030, ads: 0.014, range: 22, head: 1.67, legs: 0.72, speed: 1.02, recoil: 0.010, drift: 0.9, adsFov: 55, trc: 0xffc46a },
     /* ===== v9.3 SHOTGUN — TWO SHOTS, ALWAYS =====
 
        Rahul: "shotguns shots and kills should be fixed 80% on one shot and 20%
@@ -84,7 +84,7 @@
        The AA-12 keeps its own maths: 6 x 10 = 60 per trigger pull, two shots to
        kill, and it fires five times a second. It is the sustained shotgun; the
        M870 is the punch. */
-    shotgun: { key: 5, shellReload: true, label: 'M870', type: 'semi', dmg: 8.9, pellets: 9, rpm: 75, mag: 6, reserve: 30, reload: 3.4, spread: 0.075, ads: 0.05, range: 9, head: 1.4, legs: 0.8, speed: 0.96, recoil: 0.05, drift: 0.2, adsFov: 58, trc: 0xffa050, snd: { body: { f0: 700, f1: 140, dur: 0.22, vol: 0.95 }, crack: { f: 900, dur: 0.06, vol: 0.4 }, boom: { f0: 130, f1: 55, dur: 0.3, vol: 0.5 } } },
+    shotgun: { key: 5, shellReload: true, label: 'M870', type: 'semi', dmg: 8.9, pellets: 9, rpm: 75, mag: 6, reserve: 30, reload: 3.4, spread: 0.075, ads: 0.05, range: 9, head: 1.4, legs: 0.8, speed: 0.96, recoil: 0.05, drift: 0.2, adsFov: 58, trc: 0xffa050 },
     pistol:  { key: 6, label: 'P92', type: 'semi', dmg: 30, rpm: 380, mag: 12, reserve: 60, reload: 1.2, spread: 0.011, ads: 0.004, range: 28, head: 1.67, legs: 0.72, speed: 1.0, recoil: 0.0075, drift: 0.3, adsFov: 52, trc: 0xffd9a0 },
     /* ===== v2.0 (Rahul): THE RPG-L SEEKS THE HELICOPTER. `homing: 1` with a
        SHORT `lockRange`: if a machine is within 130 m of the muzzle when the
@@ -104,8 +104,8 @@
     scarh:   { key: 9, ex: 1, mark: 1, label: 'SCAR-H', type: 'auto', dmg: 50, rpm: 560, mag: 25, reserve: 100, reload: 2.4, spread: 0.015, ads: 0.005, range: 50, head: 1.6, legs: 0.72, speed: 0.92, recoil: 0.013, drift: 0.5, adsFov: 48, trc: 0xffcf80 },
     mk14:    { key: 9, ex: 1, mark: 1, label: 'MK-14 EBR', type: 'semi', dmg: 55, rpm: 300, mag: 15, reserve: 60, reload: 2.6, spread: 0.008, ads: 0.0018, range: 70, head: 1.6, legs: 0.65, speed: 0.90, recoil: 0.02, drift: 0.35, adsFov: 34, trc: 0xd8f0ff },
     p90:     { key: 9, ex: 1, label: 'P90', type: 'auto', dmg: 30, rpm: 900, mag: 50, reserve: 150, reload: 2.4, spread: 0.026, ads: 0.012, range: 26, head: 1.67, legs: 0.72, speed: 1.0, recoil: 0.009, drift: 0.8, adsFov: 54, trc: 0xffd070 },
-    m249:    { key: 9, ex: 1, label: 'M249 SAW', type: 'auto', dmg: 50, rpm: 680, mag: 100, reserve: 200, reload: 5.2, spread: 0.024, ads: 0.010, range: 42, head: 1.6, legs: 0.72, speed: 0.84, recoil: 0.014, drift: 1.0, adsFov: 50, trc: 0xffa860, snd: { body: { f0: 1500, f1: 300, dur: 0.11, vol: 0.8 }, crack: { f: 1700, dur: 0.05, vol: 0.35 }, boom: { f0: 170, f1: 90, dur: 0.14, vol: 0.3 } } },
-    aa12:    { key: 9, ex: 1, label: 'AA-12', type: 'auto', dmg: 10, pellets: 6, rpm: 300, mag: 20, reserve: 40, reload: 3.1, spread: 0.055, ads: 0.04, range: 13, head: 1.4, legs: 0.8, speed: 0.90, recoil: 0.028, drift: 0.7, adsFov: 56, trc: 0xffa050, snd: { body: { f0: 780, f1: 170, dur: 0.14, vol: 0.85 }, crack: { f: 950, dur: 0.05, vol: 0.35 }, boom: { f0: 140, f1: 60, dur: 0.2, vol: 0.42 } } },
+    m249:    { key: 9, ex: 1, label: 'M249 SAW', type: 'auto', dmg: 50, rpm: 680, mag: 100, reserve: 200, reload: 5.2, spread: 0.024, ads: 0.010, range: 42, head: 1.6, legs: 0.72, speed: 0.84, recoil: 0.014, drift: 1.0, adsFov: 50, trc: 0xffa860 },
+    aa12:    { key: 9, ex: 1, label: 'AA-12', type: 'auto', dmg: 10, pellets: 6, rpm: 300, mag: 20, reserve: 40, reload: 3.1, spread: 0.055, ads: 0.04, range: 13, head: 1.4, legs: 0.8, speed: 0.90, recoil: 0.028, drift: 0.7, adsFov: 56, trc: 0xffa050 },
     awm:     { key: 9, ex: 1, label: 'AWM .338', type: 'bolt', dmg: 110, rpm: 32, mag: 5, reserve: 15, reload: 3.6, spread: 0.001, ads: 0.0003, range: 999, head: 2, legs: 1.0, speed: 0.82, recoil: 0.035, drift: 0.2, adsFov: 14, scope: true, boltTime: 0.95, scopeZoom: [8, 24], sway: 0.0030, trc: 0xbfe0ff },
 
     /* ===================== v9.3 — THE ARMOURY EXPANSION =====================

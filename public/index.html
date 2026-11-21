@@ -9,6 +9,9 @@
      and TEKO (tall condensed, every heading, button and label). Rajdhani stays for body, Plex Mono for data. -->
 <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Teko:wght@500;600;700&family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<!-- v2.16: the two pictures the first screen is made of are asked for with the page, not after its scripts -->
+<link rel="preload" as="image" href="assets/intro/logo.webp">
+<link rel="preload" as="image" href="assets/maps/kasbah_gate.webp">
 <style>
 @keyframes hudPulse{0%,100%{opacity:1}50%{opacity:.55}}
 /* v1.0b: the big-map rocket banner — same place, its own element */
@@ -72,6 +75,45 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
 </head>
 <body>
 
+<!-- v2.16 THE BOOT COVER.
+     Rahul: "Game jab start ho raha toh phir purana wala hi graphics aa raha
+     phir 1 sec baad load hokar naya wala animation aa raha aur images
+     background mei start ho raha."
+
+     Measured on a 3 Mbit link: for about two seconds the page showed the OLD
+     backdrop and a half-filled menu, because everything new (the wallpapers,
+     the film's gate, the build number, the operator) is put there by scripts,
+     and there are ~46 of them. Then it all arrived at once.
+
+     So the first thing painted is THIS, and it is in the markup: the game's
+     own mark on black, in the same place and the same styles as the film's
+     gate. When the scripts are in, mapart.js either turns this very element
+     INTO the gate (first visit: LOADING becomes CLICK TO START, nothing
+     jumps) or lifts it off a menu that is already finished - first wallpaper
+     decoded, build number in, operator drawn. The old backdrop is never the
+     first thing anyone sees again.
+
+     It can always leave by itself: the script below lifts it after 8 s
+     whatever else happens, and with no script at all the stylesheet fades it
+     at 9 s (.ma-boot). -->
+<div id="ma-boot" class="ma-intro ma-boot" aria-hidden="true">
+  <video playsinline preload="none"></video>
+  <div class="ma-gate"><img alt="Urban Strike" src="assets/intro/logo.webp"><button type="button" class="ma-start" disabled>LOADING</button>
+  <p>PLAY WITH HEADPHONES · SOUND IS INTEL</p></div><div class="ma-skip">SKIP ▸</div>
+</div>
+<script>
+window.__maBoot = (function () {
+  var el = document.getElementById('ma-boot'), done = false;
+  function lift() {
+    if (done || !el) return; done = true;
+    el.classList.add('ma-out');
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 480);
+  }
+  setTimeout(lift, 8000);                          // the menu is always reachable
+  return { el: el, lift: lift, taken: function () { done = true; }, gone: function () { return done; } };
+})();
+</script>
+
 <canvas id="game-canvas"></canvas>
 
 <!-- ============ MENU LAYER ============ -->
@@ -100,7 +142,9 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
      files — because it was already the right kind of expensive. -->
 <div id="wave-banner" class="hidden"><b id="wave-title"></b><span id="wave-sub"></span></div>
 <div id="menu-layer">
-  <div class="backdrop" aria-hidden="true">
+  <div class="backdrop has-art" aria-hidden="true">
+    <!-- v2.16: the first wallpaper is in the markup (mapart.js MENU[0]) - the slideshow starts from a picture that is already there -->
+    <div class="ma-menu"><div class="ma-slide ma-show ma-run" style="background-image:url(assets/maps/kasbah_gate.webp)"></div><div class="ma-slide"></div></div>
     <div class="bd-sky"></div>
     <svg class="bd-skyline" viewBox="0 0 1600 420" preserveAspectRatio="xMidYMax slice">
       <g class="sky-far">
@@ -298,7 +342,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
               <div class="mrow"><b>RECONNECT</b><span>drop out? rejoin with the same code &amp; callsign &#183; same team</span></div>
               <div class="mrow"><b>J &#183; O</b><span>J hunter drone &#183; O recon flare &#183; adrenaline fires on pickup</span></div>
               <div class="mrow"><b>PRONE</b><span>X goes down &#183; 20% damage, half the view, no screen shake</span></div>
-              <div class="mrow"><b>VEHICLES</b><span>Urban &#183; N in/out &#183; W/S A/D drive &#183; SPACE brake &#183; CLICK fire &#183; H horn &#183; L lights &#183; B radio</span></div>
+              <div class="mrow"><b>VEHICLES</b><span>Urban &#183; N in/out &#183; seats: sedan 4, bike 2, bus 6 &#183; W/S A/D drive &#183; SPACE brake &#183; CLICK fire &#183; H horn &#183; L lights &#183; B radio</span></div>
             </div>
           </div>
         </div>
@@ -480,6 +524,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
   <script src="src/environment/urbansmall2.js"></script>
   <script src="src/environment/access.js"></script>
   <script src="src/effects/effects.js"></script>
+  <script src="src/effects/blood.js"></script>   <!-- v2.16: the pools left where operators die — one mesh for the whole map -->
   <script src="src/player/controller.js"></script>
   <script src="src/weapons/viewmodels.js"></script>
   <script src="src/weapons/system.js"></script>

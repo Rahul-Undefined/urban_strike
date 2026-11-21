@@ -757,7 +757,7 @@ var Vehicles = (function () {
     /* v2.15: the radio plays for everyone aboard a vehicle somebody is DRIVING (track.js; one comparison a frame) */
     if (typeof Soundtrack !== 'undefined') Soundtrack.radio(!!(mine && (mySeat === 0 || (mine.seats && mine.seats[0]))));
     showPrompt(nearest);
-    if (mine) hud(mine);
+    if (mine) hud(mine, dt);
   }
   function camera(cam) {
     if (!mine || !cam || typeof PlayerCtl === 'undefined') return;
@@ -780,61 +780,139 @@ var Vehicles = (function () {
     cam.rotation.x = pitch; cam.rotation.z = 0;
   }
 
-  /* ------------------------------------------------------------ HUD, sound */
+  /* ------------------------------------------------------------ HUD, sound
+     v2.16 - A SPEEDOMETER, NOT A PANEL OF BARS. Rahul sent a dashboard photo:
+     "speedmeter aisa hona chahiye below screen pe sahi tarike se without
+     overlapping any other words or text." A black dial at the bottom centre
+     (the one stretch of the HUD nothing else writes on: health is bottom-left,
+     ammunition bottom-right; toasts move up above it while seated): white
+     numerals, orange minor ticks and rim, a glowing orange needle, and an LCD
+     strip in the face for what the bars used to say — speed, petrol, hull,
+     seats. SMALL (Rahul, on seeing the first size: "speedometer ka size chota
+     karo"): 190 px across at most, 26% of the screen's height on a short one.
+     The scale is the vehicle's own (`dial` in the table): the photo
+     reads to 260, and a sedan that tops out at 90 would never leave its first
+     third. The FACE is painted once per scale into its own canvas; a frame
+     copies it and draws a needle, and only when the needle has moved. */
+  var DIAL = { W: 640, H: 480, cx: 320, cy: 322, R: 292, a0: 190, sweep: 200 };   // 0 sits ten degrees below level, so a parked needle clears the LCD under the pivot
+  var gauge = { cv: null, g: null, face: null, faceMax: 0, drawn: -9, sp: 0, lcd: '', keysAt: 0, keys: '' };
+  function dialAt(t, r, out) {                     // t 0..1 round the scale, r pixels from the pivot
+    var a = (DIAL.a0 - t * DIAL.sweep) * Math.PI / 180;
+    out[0] = DIAL.cx + Math.cos(a) * r; out[1] = DIAL.cy - Math.sin(a) * r;
+    return out;
+  }
+  function dialStep(max) { return max > 110 ? 20 : 10; }   // a numeral every this many km/h
+  function paintFace(max) {
+    var cv = document.createElement('canvas'); cv.width = DIAL.W; cv.height = DIAL.H;
+    var g = cv.getContext('2d'); if (!g) return null;
+    var p = [0, 0], q = [0, 0], step = dialStep(max), minor = step / 10, k;
+    g.fillStyle = 'rgba(3,4,6,0.9)';
+    g.beginPath(); g.arc(DIAL.cx, DIAL.cy, DIAL.R + 22, 0, Math.PI * 2); g.fill();
+    g.lineCap = 'butt';
+    g.strokeStyle = '#f08a1c'; g.lineWidth = 3;                                   // the rim
+    g.beginPath(); g.arc(DIAL.cx, DIAL.cy, DIAL.R, -DIAL.a0 * Math.PI / 180, -(DIAL.a0 - DIAL.sweep) * Math.PI / 180, false); g.stroke();
+    for (k = 0; k * minor <= max + 1e-6; k++) {
+      var v = k * minor, t = v / max, major = k % 10 === 0, mid = k % 5 === 0;
+      dialAt(t, DIAL.R - 5, p); dialAt(t, DIAL.R - (major ? 40 : mid ? 26 : 17), q);
+      g.strokeStyle = major ? '#ffffff' : '#f08a1c'; g.lineWidth = major ? 7 : mid ? 3.5 : 2.5;
+      g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
+    }
+    g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '600 ' + (max > 110 ? 37 : 39) + 'px Rajdhani, Arial, sans-serif';
+    for (k = 0; k * step <= max + 1e-6; k++) { dialAt(k * step / max, DIAL.R - 78, p); g.fillText(String(k * step), p[0], p[1] + 2); }
+    return cv;                                      // nothing is written where the needle sweeps: name and numbers sit under the pivot
+  }
+  function drawGauge(veh, dt) {
+    var max = veh.T.dial || 160, g = gauge.g;
+    if (!g) return;
+    if (gauge.faceMax !== max) { gauge.face = paintFace(max); gauge.faceMax = max; gauge.drawn = -9; gauge.sp = Math.abs(veh.sp) * 3.6; }
+    var want = Math.min(max, Math.abs(veh.sp) * 3.6);
+    gauge.sp += (want - gauge.sp) * Math.min(1, dt * 9);                          // a needle has a little weight
+    if (Math.abs(gauge.sp - gauge.drawn) < 0.12) return;
+    gauge.drawn = gauge.sp;
+    g.clearRect(0, 0, DIAL.W, DIAL.H);
+    if (gauge.face) g.drawImage(gauge.face, 0, 0);
+    var a = [0, 0], b = [0, 0], t = gauge.sp / max;
+    dialAt(t, 26, a); dialAt(t, DIAL.R - 46, b);
+    g.lineCap = 'round';
+    g.strokeStyle = 'rgba(255,110,0,0.20)'; g.lineWidth = 20; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+    g.strokeStyle = 'rgba(255,140,20,0.55)'; g.lineWidth = 11; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+    g.strokeStyle = '#ffb84a'; g.lineWidth = 5; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+    g.fillStyle = '#0b0d11'; g.beginPath(); g.arc(DIAL.cx, DIAL.cy, 20, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#3a3f47'; g.lineWidth = 3; g.beginPath(); g.arc(DIAL.cx, DIAL.cy, 20, 0, Math.PI * 2); g.stroke();
+  }
   function dom() {
     if (hudEl || typeof document === 'undefined' || !document.body || !document.createElement) return;
     var css = document.createElement('style');
     css.textContent =
-      '#veh-hud{position:fixed;right:26px;bottom:150px;z-index:40;display:none;min-width:190px;padding:12px 16px;background:rgba(10,14,20,.72);' +
-      'border-left:3px solid #f0b23c;color:#e9edf2;font-family:Rajdhani,Arial,sans-serif;pointer-events:none}' +
-      '#veh-hud .vn{font-size:13px;letter-spacing:.18em;color:#f0b23c;text-transform:uppercase}' +
-      '#veh-hud .vs{font-size:46px;font-weight:700;line-height:1}#veh-hud .vs i{font-size:13px;font-style:normal;letter-spacing:.14em;color:#9aa6b2;margin-left:6px}' +
-      '#veh-hud .vl{display:flex;align-items:center;gap:8px;margin-top:6px}#veh-hud .vl em{font-style:normal;font-size:10px;letter-spacing:.16em;color:#9aa6b2;width:50px}' +
-      '#veh-hud .vb{flex:1;height:6px;background:rgba(255,255,255,.14)}#veh-hud .vb span{display:block;height:100%;background:#6fd08c}' +
-      '#veh-hud .vk{margin-top:8px}' +
-      '#veh-hud .vk{font-size:12px;color:#9aa6b2;letter-spacing:.06em}' +
+      '#veh-hud{--vw:min(190px,26vh);position:fixed;left:50%;bottom:4px;transform:translateX(-50%);z-index:40;display:none;width:var(--vw);pointer-events:none;' +
+      'font-family:Rajdhani,Arial,sans-serif;color:#e9edf2}' +
+      '#veh-hud canvas{display:block;width:100%;height:auto}' +
+      '#veh-hud .vlcd{position:absolute;left:50%;top:77%;transform:translateX(-50%);white-space:nowrap;padding:1px 5px 2px;text-align:center;' +
+      'background:#11161c;border:1px solid #2b323b;border-radius:2px;font:600 10px/11px Consolas,Menlo,monospace;color:#8f9aa6}' +
+      '#veh-hud .vlcd span{margin:0 3px}' +
+      '#veh-hud .vlcd b{color:#e6f1ea;font-weight:700}#veh-hud .vlcd .warn b{color:#f0b23c}#veh-hud .vlcd .bad b{color:#ff5b45;animation:vgBlink .8s steps(2,end) infinite}' +
+      '@keyframes vgBlink{50%{opacity:.35}}' +
+      '#veh-hud .vk{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);margin-bottom:4px;white-space:nowrap;padding:3px 10px;background:rgba(8,11,16,.6);' +
+      'font-size:12px;color:#c3ccd6;letter-spacing:.06em;transition:opacity .6s}#veh-hud .vk.gone{opacity:0}#veh-hud .vk.hot{color:#ff5b45;background:rgba(40,6,4,.8)}' +
+      'body.veh-on #toasts{bottom:calc(min(190px,26vh)*.75 + 40px)}' +
       '#veh-prompt{position:fixed;left:50%;bottom:24%;transform:translateX(-50%);z-index:40;display:none;padding:8px 16px;background:rgba(10,14,20,.78);' +
       'border:1px solid rgba(240,178,60,.6);color:#e9edf2;font:600 15px Rajdhani,Arial,sans-serif;letter-spacing:.1em;pointer-events:none}' +
-      '#veh-prompt b{color:#f0b23c}';
+      '#veh-prompt b{color:#f0b23c}#veh-prompt i{font-style:normal;color:#9aa6b2;margin-left:8px;font-size:13px}';
     document.head.appendChild(css);
     hudEl = document.createElement('div');
     hudEl.id = 'veh-hud';
-    hudEl.innerHTML = '<div class="vn"></div><div class="vs"><b>0</b><i>KM/H</i></div>' +
-      '<div class="vl"><em>HULL</em><div class="vb"><span></span></div></div>' +
-      '<div class="vl"><em>PETROL</em><div class="vb"><span></span></div></div><div class="vk"></div>';
+    hudEl.innerHTML = '<canvas width="' + DIAL.W + '" height="' + DIAL.H + '"></canvas>' +
+      '<div class="vlcd"><div><span>PETROL <b></b></span><span>HULL <b></b></span></div><div><span><b></b> km/h</span><span>SEATS <b></b></span></div></div><div class="vk"></div>';
     document.body.appendChild(hudEl);
+    gauge.cv = hudEl.firstChild;
+    try { gauge.g = gauge.cv.getContext('2d'); } catch (err) { gauge.g = null; }
     promptEl = document.createElement('div');
     promptEl.id = 'veh-prompt';
     document.body.appendChild(promptEl);
   }
   function keyName() { return String(V.useKey || 'KeyN').replace('Key', ''); }
-  function showHud(on) { dom(); if (hudEl) hudEl.style.display = on ? 'block' : 'none'; }
+  function aboard(veh) { var n = 0; if (veh.seats) for (var k = 0; k < veh.T.seats; k++) if (veh.seats[k]) n++; return n; }
+  function showHud(on) {
+    dom();
+    if (!hudEl) return;
+    hudEl.style.display = on ? 'block' : 'none';
+    if (document.body.classList) document.body.classList.toggle('veh-on', !!on);   // toasts step up out of the dial's way
+    if (on) { gauge.keysAt = performance.now(); gauge.drawn = -9; gauge.lcd = ''; }
+  }
   function showPrompt(veh) {
     dom();
     if (!promptEl) return;
     if (!veh) { if (promptEl.style.display !== 'none') promptEl.style.display = 'none'; return; }
     var seat = freeSeat(veh);
-    var text = keyName() + ' — ' + (seat === 0 ? 'DRIVE' : 'RIDE') + ' <b>' + veh.T.label.toUpperCase() + '</b>';
+    var text = keyName() + ' — ' + (seat === 0 ? 'DRIVE' : 'RIDE') + ' <b>' + veh.T.label.toUpperCase() + '</b><i>' + aboard(veh) + '/' + veh.T.seats + ' seats</i>';
     if (promptEl.innerHTML !== text) promptEl.innerHTML = text;
     promptEl.style.display = 'block';
   }
-  function hud(veh) {
+  function hud(veh, dt) {
     if (!hudEl) return;
-    var kids = hudEl.children;
-    kids[0].textContent = veh.T.label + (mySeat === 0 ? '' : ' \u00b7 passenger');
-    kids[1].firstChild.textContent = String(Math.round(Math.abs(veh.sp) * 3.6));
-    var frac = Math.max(0, Math.min(1, veh.hp / veh.T.hp));
-    var bar = kids[2].lastChild.firstChild;
-    bar.style.width = (frac * 100).toFixed(0) + '%';
-    bar.style.background = frac > 0.5 ? '#6fd08c' : frac > 0.25 ? '#f0b23c' : '#e2513f';
-    var fuel = Math.max(0, Math.min(1, veh.fuel / 100));
-    var fbar = kids[3].lastChild.firstChild;
-    fbar.style.width = (fuel * 100).toFixed(0) + '%';
-    fbar.style.background = fuel > 0.25 ? '#e9c46a' : '#e2513f';
-    var fire = veh.T.sealed ? '' : 'CLICK fire \u00b7 R reload \u00b7 ';
-    var hint = mySeat === 0 ? 'W/S A/D drive \u00b7 SPACE brake \u00b7 ' + fire + 'H horn \u00b7 L lights \u00b7 B radio \u00b7 ' + keyName() + ' out' : fire + 'B radio \u00b7 ' + keyName() + ' get out';
-    if (frac < V.fireAt) hint = 'ON FIRE \u2014 GET OUT (' + keyName() + ')';
-    if (kids[4].textContent !== hint) kids[4].textContent = hint;
+    drawGauge(veh, dt || 0.016);
+    var kids = hudEl.children, rows = kids[1].children;
+    var frac = Math.max(0, Math.min(1, veh.hp / veh.T.hp)), fuel = Math.max(0, Math.min(1, veh.fuel / 100));
+    var line = Math.round(Math.abs(veh.sp) * 3.6) + '|' + Math.round(fuel * 100) + '|' + Math.round(frac * 100) + '|' + aboard(veh) + '|' + veh.id;
+    if (line !== gauge.lcd) {                       // the DOM is touched when a number on it changes, not every frame
+      gauge.lcd = line;
+      var pet = rows[0].children[0], hul = rows[0].children[1];
+      pet.lastChild.textContent = Math.round(fuel * 100) + '%';
+      pet.className = fuel > 0.25 ? '' : fuel > 0.1 ? 'warn' : 'bad';
+      hul.lastChild.textContent = Math.round(frac * 100) + '%';
+      hul.className = frac > V.smokeAt ? '' : frac > V.fireAt ? 'warn' : 'bad';
+      rows[1].children[0].firstChild.textContent = String(Math.round(Math.abs(veh.sp) * 3.6));
+      rows[1].children[1].lastChild.textContent = aboard(veh) + '/' + veh.T.seats;
+    }
+    var fire = veh.T.sealed ? '' : 'CLICK fire · R reload · ';
+    var who = veh.T.label.toUpperCase() + (mySeat === 0 ? '' : ' · PASSENGER') + ' — ';
+    var hint = who + (mySeat === 0 ? 'W/S A/D drive · SPACE brake · ' + fire + 'H horn · L lights · B radio · ' + keyName() + ' out' : fire + 'B radio · ' + keyName() + ' get out');
+    var hot = frac < V.fireAt;
+    if (hot) hint = 'ON FIRE — GET OUT (' + keyName() + ')';
+    /* the keys are a reminder, not furniture: ten seconds after boarding they fade (the field manual has them) */
+    var cls = 'vk' + (hot ? ' hot' : performance.now() - gauge.keysAt > 10000 ? ' gone' : '');
+    if (gauge.keys !== hint + cls) { gauge.keys = hint + cls; kids[2].textContent = hint; kids[2].className = cls; }
   }
   /* the engine note is the game's own audio bus (volume slider, mute) */
   function engine(on, speed, top, deep) {
@@ -844,6 +922,6 @@ var Vehicles = (function () {
            camera: camera, use: use, horn: horn, lights: lights, onHorn: onHorn, rayHit: rayHit, report: report, isRider: isRider, riderOf: riderOf,
            canFire: canFire, aimPenalty: aimPenalty, muzzle: muzzle, ridden: function () { return mine; },
            driving: function () { return !!mine && mySeat === 0; },
-           _list: function () { return list; }, _build: buildModel, _mount: mount, _hullFree: hullFree, _exitSpot: exitSpot };
+           _list: function () { return list; }, _seat: function () { return mySeat; }, _gauge: gauge, _dial: DIAL, _dialAt: dialAt, _dialStep: dialStep, _build: buildModel, _mount: mount, _hullFree: hullFree, _exitSpot: exitSpot };
 })();
 if (typeof window !== 'undefined') window.Vehicles = Vehicles;

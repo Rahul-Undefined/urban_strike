@@ -1364,6 +1364,12 @@ select.team-pick { font: 600 10px "Rajdhani", sans-serif; letter-spacing: 1px; p
 .ma-skip { position: absolute; right: 26px; bottom: 22px; font-family: var(--mono, monospace); font-size: 12px; letter-spacing: 0.3em; color: rgba(255,255,255,0.72); opacity: 0; }
 .ma-intro.ma-playing .ma-skip { animation: maIn 0.4s 1s ease-out both; }
 .ma-intro.ma-hold .ma-skip { display: none; }
+/* ---- v2.16: the boot cover (index.html, first thing in <body>): the gate before its scripts ---- */
+.ma-intro.ma-boot { cursor: progress; z-index: 2100; animation: maBootGone 0.45s ease 9s forwards; }   /* no script at all: it still leaves */
+.ma-intro.ma-boot .ma-start { background: none; color: #a8b2bd; box-shadow: none; clip-path: none; cursor: progress; animation: maBootTick 1.2s ease-in-out infinite; }
+.ma-intro.ma-boot .ma-gate p { visibility: hidden; }
+@keyframes maBootTick { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes maBootGone { to { opacity: 0; visibility: hidden; } }
 /* ---- v2.15: the scorecard, electrified (mapart.js draws the lightning on .ma-end-fx) ---- */
 #end-overlay.ma-on > canvas.ma-end-fx { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; pointer-events: none; mix-blend-mode: screen; animation: none !important; }
 #end-overlay.ma-volt .end-table { animation: maLive 2.4s ease-in-out 1.2s infinite; }
