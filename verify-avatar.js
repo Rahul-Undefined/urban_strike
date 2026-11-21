@@ -176,8 +176,8 @@ ctx.__S = S({ crouch: true });
 for (let i = 0; i < 90; i++) vm.runInContext("Avatars.poseAvatar(__A, __S)", ctx);
 console.log("        crouch: hip " + standHip.toFixed(2) + " -> " + av.hipL.rotation.x.toFixed(2) +
   ", knee " + av.hipL.knee.rotation.x.toFixed(2) + ", scale.y " + av.group.scale.y.toFixed(2));
-ok(av.hipL.rotation.x > standHip + 0.5, "crouch bends the hips");
-ok(av.hipL.knee.rotation.x < -0.8, "crouch bends the knees");
+ok(av.hipL.rotation.x < standHip - 0.5, "crouch bends the hips — thighs FORWARD (v2.14.1: they went back; the operator faces +z and a positive hip turn swings the leg behind)");
+ok(av.hipL.knee.rotation.x > 0.8, "crouch folds the knees the way a knee folds (v2.14.1: it was -2.05, a bird's leg)");
 /* v8.16: this compared scale.y to 1, which was right while the rig had no
    scale of its own. The rig now carries a deliberate, CONSTANT silhouette
    scale (RIG in avatars.js) so remote players are resolvable at range. The
@@ -200,12 +200,10 @@ ok(Math.abs(av.amp) < 0.05, "leg swing damps to rest when the player stops");
 
 /* STRAFING must not look like walking. Moving sideways opens the hips rather
    than swinging the legs fore-and-aft. */
-ctx.__S = S({ moved: 0.06, mx: 0, mz: 1 });
-for (let i = 0; i < 60; i++) vm.runInContext("Avatars.poseAvatar(__A, __S)", ctx);
-const fwdHipZ = Math.abs(av.hipL.rotation.z);
-ctx.__S = S({ moved: 0.06, mx: 1, mz: 0 });
-for (let i = 0; i < 60; i++) vm.runInContext("Avatars.poseAvatar(__A, __S)", ctx);
-const sideHipZ = Math.abs(av.hipL.rotation.z);
+/* v2.14.1: over a whole cycle, not at whichever instant frame 60 lands on */
+const rollOver = (state) => { ctx.__S = S(state); let m = 0; for (let i = 0; i < 150; i++) { vm.runInContext("Avatars.poseAvatar(__A, __S)", ctx); if (i > 60) m = Math.max(m, Math.abs(av.hipL.rotation.z), Math.abs(av.hipR.rotation.z)); } return m; };
+const fwdHipZ = rollOver({ moved: 0.06, mx: 0, mz: 1 });
+const sideHipZ = rollOver({ moved: 0.06, mx: 1, mz: 0 });
 console.log("        strafe: hip roll " + fwdHipZ.toFixed(3) + " forward -> " + sideHipZ.toFixed(3) + " sideways");
 ok(sideHipZ > fwdHipZ + 0.05, "strafing opens the hips instead of reusing the walk cycle");
 

@@ -1,3 +1,85 @@
+# v2.14.1 (build 47) — LEGS THAT WALK, KIT THAT HAS LEVELS (2026-11-21)
+
+Built on v2.14.0. Rahul: "avatar animation thora gadbad hai. Front walk ke
+animation specially leg theek hona chahiye knee and leg ko sahi movement hona
+chahiye. Back walk ... Right and left walk ... Helmet, Vest yeh sab ka design
+consistent kar do taki woh avatar pehne toh acha lage, dress code bhi ussi
+tarah se le, aur lvl 1 and 2, 3 woh sab sahi se hona chahiye. aur killhouse
+mei ya sab jagah yeh sahi se implement hona chahiye."
+
+## What was actually wrong (measured, not guessed)
+1. **The knees bent backwards.** The rig faces +z; a positive hip angle swings
+   the thigh back and a positive knee angle folds the shin back. The file
+   crouched with hip +1.32 / knee -2.05 and walked with a negative knee — a
+   bird's leg — since v8.36 turned the body round and left the leg signs alone.
+2. **Forward depended on the compass.** net.js and game.js rotated the step
+   into the body's frame with the wrong sign: walking north read as walking
+   backwards, north-east as a sidestep. Fixed in both callers (16 headings).
+3. **The support hand left the rifle every stride** (the gap between the hands
+   opened and closed by 16 cm): the arms swung like an unarmed walker's.
+4. **One helmet and one vest for all three levels**, and on the ground they
+   were blocks in the level's colour that became something else when worn.
+5. **Your own third-person body walked empty-handed and bare-headed**, whatever
+   you had picked up.
+
+## The walk
+A leg now has a stance and a swing. Stance: the foot is down, the body passes
+over it, the knee stays nearly straight. Swing: the foot comes off behind, the
+knee folds to clear the ground and opens again for the heel to land.
+
+|            | knee in the swing | planted knee | foot lift | stride |
+|------------|------------------:|-------------:|----------:|-------:|
+| front walk | 59 deg            | under 9 deg  | 6 cm      | 0.55 m |
+| back walk  | 54 deg            |              | 4 cm      | 0.31 m |
+| left/right | steps out 0.16 m, legs never cross       | 3 cm      |        |
+| run        | 105 deg           |              |           | longer |
+
+- No knee angle is ever negative (the old cycle: down to -1.06 rad).
+- Crouch: thighs forward, knees in front of the hips. Prone: straight legs (it
+  had a 26 degree backward kink). Dying: the knees give forward.
+- Crouch-walking put the toes 10 cm through the floor; a floor guard now folds
+  the knee so no foot reaches lower than where the stance rests.
+- Both hands stay on the weapon: the shoulders counter-turn against the hips
+  and the rifle rocks with them (hand gap now constant, was 16 cm).
+- Height, head position and the head hit box did not move (same table as
+  v2.14.0, gate re-run).
+
+## Kit: three levels, one uniform
+| level | vest                                              | helmet                               | bars  |
+|-------|---------------------------------------------------|--------------------------------------|-------|
+| 1     | two slim plates on straps                         | bump shell                           | grey  |
+| 2     | + cummerbund, three magazines, hydration          | + rails, ear defenders, shroud       | blue  |
+| 3     | + shoulder guards, collar, groin/side plates, radio | fuller shell, goggles, jaw guards  | gold  |
+
+- Same fabric and cut at every level; the level reads twice — by how much kit
+  there is, and by bars in the HUD's level colour on the chest and the back of
+  the helmet. The band and patch stay in the TEAM colour (a blue level-2 band
+  on a red player would read as the other side).
+- Dress code: the shirt's collar, cuffs, elbow pads and shoulder pockets are
+  cut from the kit fabric, so clothes and kit read as one uniform.
+- Loot on the ground is now the very piece you will wear, at its level (the
+  ring under it still shows the level colour).
+- Your own body in third person (P) carries your weapon and wears your helmet
+  and vest at the HUD's level — and loses them when they break.
+- One mesh each, as before: a level swaps a cached, shared geometry.
+
+## Everywhere
+Real client, third person, on Urban, Urban Small (5 Bot Ops operators, kitted
+L1/L2), Urban Small 2, Kasbah and Killhouse: no page errors, nothing NaN, walk
+/ strafe / back-pedal all read correctly. On stairs a trailing foot sits lower
+than the capsule's floor — that is the stair, not a fault (checked: every such
+sample was a bot climbing).
+
+## Cost and limits
+- 10,666 triangles an operator (was 9,890); still 20 meshes.
+- First load is 484 KB gzipped — under the 485 budget WITHOUT raising it: 12 KB
+  of superseded history in avatars.js (notes about the box rig) was condensed
+  to the lessons it left.
+- NOT done: no ankle joint, so at toe-off a toe dips up to 3 cm into the floor;
+  no forward lean when sprinting (it would move the head hit box); the level
+  bars are small past ~25 m by design — at range the silhouette tells.
+- Tested in a headless browser and by gates, not by a person with a mouse.
+
 # v2.14.0 (build 46) — THE v3 OPERATOR: A BODY THAT LOOKS LIKE A PERSON (2026-11-21)
 
 Built on v2.13.1. Rahul sent a new avatars.js ("operator v3") with a reference

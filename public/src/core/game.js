@@ -1002,9 +1002,16 @@ var Game = (function () {
         if (!ownAv) {
           ownAv = meRow ? Avatars.buildAvatar(meRow.name, meRow.color) : Avatars.buildAvatar();
           ownAv._key = ownKey;
+          ownAv._r = { av: ownAv, gunName: null };
           if (ownAv.tagHolder) ownAv.tagHolder.visible = false;   // no name tag over your own head
           scene.add(ownAv.group);
         }
+        /* v2.14.1: your own body carries what you carry and wears what you wear.
+           It walked about empty-handed and bare-headed whatever you had picked
+           up — the one avatar a player looks at most. Same two calls net.js
+           makes for everyone else; both return at once when nothing changed. */
+        Avatars.setRemoteGun(ownAv._r, Math.max(0, CFG.WEAPON_ORDER.indexOf(Weapons.currentName())));
+        Avatars.setGear(ownAv, UI.worn.h, UI.worn.a);
         ownAv.group.visible = true;
         var g2 = ownAv.group;
         g2.position.set(PlayerCtl.pos.x, PlayerCtl.pos.y, PlayerCtl.pos.z);
@@ -1013,7 +1020,7 @@ var Game = (function () {
         var dxw = PlayerCtl.pos.x - ownLast.x, dzw = PlayerCtl.pos.z - ownLast.z;
         var movedNow = Math.sqrt(dxw * dxw + dzw * dzw);
         var cs = Math.cos(PlayerCtl.yaw), sn = Math.sin(PlayerCtl.yaw);
-        var lz = dxw * sn + dzw * cs, lx = dxw * cs - dzw * sn;
+        var lz = dxw * sn - dzw * cs, lx = -dxw * cs - dzw * sn;   /* v2.14.1: the body frame, as in net.js (it was the wrong compass) */
         var mag = Math.sqrt(lx * lx + lz * lz) || 1;
         ownLast.x = PlayerCtl.pos.x; ownLast.z = PlayerCtl.pos.z;
         Avatars.poseAvatar(ownAv, {

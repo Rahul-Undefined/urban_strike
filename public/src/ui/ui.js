@@ -561,8 +561,12 @@ var UI = (function () {
   }
 
   // ---------- HUD ----------
+  /* v2.14.1: what the player is wearing right now, for their own body in third
+     person (game.js). The HUD is the one place both levels already arrive. */
+  var worn = { h: 0, a: 0 };
   function setVitals(hp, lv, du) {
     hp = Math.max(0, Math.round(hp)); lv = lv | 0; du = Math.max(0, Math.round(du || 0));
+    worn.a = lv;
     els['hp-fill'].style.width = hp + '%';
     els['hp-num'].textContent = hp;
     els['hp-fill'].classList.toggle('low', hp <= 30);
@@ -1027,9 +1031,10 @@ var UI = (function () {
      with the kill-streak strikes; the visor pip lives below (setVisorHud). */
   /* v2.9: helmet tier and the sniper rounds it can still stop (H1 1, H2 2, H3 3) */
   function setHelmet(lv, stops) {
+    lv = lv | 0; stops = Math.max(0, stops | 0);
+    worn.h = lv;
     var row = document.getElementById('helm-row');
     if (!row) return;
-    lv = lv | 0; stops = Math.max(0, stops | 0);
     row.className = 'stat-bar' + (lv > 0 ? ' on lv' + lv : '');
     if (lv <= 0) return;
     var H = CFG.HELMET[lv] || {}, n = H.sniperStops | 0, html = '';
@@ -1508,7 +1513,7 @@ var UI = (function () {
       var el = document.getElementById('spectate-name');
       if (el) el.style.display = 'none';
     },
-    toast: toast, waveBanner: waveBanner, setHelmet: setHelmet, setLock: setLock,   /* v2.9 */
+    toast: toast, waveBanner: waveBanner, setHelmet: setHelmet, worn: worn, setLock: setLock,   /* v2.9 */
     setVisorHud: setVisorHud,
     setShield: setShield,   /* v15.0 */
     setQualityReadout: setQualityReadout,   /* v1.0c */

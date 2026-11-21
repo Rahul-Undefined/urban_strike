@@ -4,43 +4,12 @@
 var Avatars = (function () {
   'use strict';
 
-  /* ===== v10.9 - GEOMETRY IS SHARED, NOT MINTED PER MESH =====
-
-     THE LEAK. Rahul: "one person drops at a time and after he refreshes the
-     browser and again joins". One client at a time, recoverable by reload, is
-     a client-side resource exhaustion — not the server, which would have
-     dropped everybody together.
-
-     Two call sites built `new THREE.BoxGeometry` on every invocation and
-     nothing in this file ever called `dispose()` — the word appeared ZERO
-     times in 651 lines, while four other client files use it correctly. So:
-
-       setRemoteGun()  every weapon switch by any remote player tore down the
-                       old gun with h.remove() and built a new one. Removing an
-                       Object3D from a parent does NOT free its GPU buffers;
-                       three.js requires an explicit dispose. 6-15 geometries
-                       orphaned per switch, per remote player, forever.
-
-       removeRemote()  a leaver's 13 body geometries and two canvas textures
-                       were abandoned the same way.
-
-     A rejoin arrives under a NEW socket id, so every other client builds a
-     fresh avatar and strands the old one. That is why it cascades: each drop
-     makes every surviving browser heavier and the next drop likelier.
-
-     THE FIX IS NOT "call dispose in more places". Geometry here is immutable —
-     nothing in this file reads or writes `.geometry` after construction, and
-     every box size is a literal. So a box of a given size is built ONCE and
-     shared by every mesh that needs it. Allocation stops being per-event and
-     becomes per-distinct-size: bounded at a few hundred for the life of the
-     page, no matter how long the match runs or how often anyone swaps.
-
-     What is still per-avatar, and therefore still must be disposed, is the two
-     CanvasTextures (name tag, hp bar) and their SpriteMaterials. See
-     disposeAvatar() at the foot of this file.
-
-     DO NOT dispose anything reachable from here. AVM, RGM and accentCache are
-     module-level and shared; freeing one turns every other operator black. */
+  /* v10.9 - GEOMETRY IS SHARED, NOT MINTED PER MESH. Building a geometry per
+     weapon switch or per join and never disposing it stranded GPU buffers
+     until a browser dropped ("one person drops at a time"). Geometry here is
+     built ONCE per distinct piece, cached and shared; what is per-avatar (two
+     CanvasTextures and their SpriteMaterials) is freed by disposeAvatar().
+     DO NOT dispose anything module-level: it turns every other operator black. */
   /* v10.10: shared by every avatar's visor silhouette. Sized to the standing
      capsule rather than the body mesh — a blob that reads at 40 m through three
      walls is more useful than an accurate outline nobody can resolve. */
@@ -204,38 +173,24 @@ var Avatars = (function () {
      OPERATOR v3 — A HUMAN, NOT A STACK OF BOXES (v2.14.0)
      ==========================================================================
      Rahul: "real human like avatar hona chahiye."
+     Every body part is a SCULPTED mesh: lathed limbs, a tapered torso, a head
+     with skull, jaw, nose, ears, hair and eyes, gloved hands, soled boots.
 
-     WHAT CHANGED. Every body part used to be one BoxGeometry. Each part is now
-     a SCULPTED mesh: limbs are lathed profiles (a thigh is thick at the hip
-     and narrows to the knee, a calf swells and narrows to the ankle), the
-     torso tapers from chest to waist, the head has a skull, jaw, chin, nose,
-     ears, hair, eyes and brows, the hands are gloved, the boots have soles.
+     THE CONTRACT DID NOT CHANGE. Every joint sits where it did in v7.9-v1.0e:
+     hips (±0.115, -0.02), knees -0.42, spine 0.02, shoulders (±0.245, 0.495),
+     elbows -0.29, neck 0.625, head +0.118. RIG, RIG_LIFT, the head hit box
+     (net.js reads headMesh's world position), the gun holder on the right
+     elbow and the returned field names are as they were.
 
-     WHAT DID NOT CHANGE — THE CONTRACT. Every joint sits at exactly the
-     position it did in v7.9-v1.0e: hips (±0.115, -0.02), knees -0.42, spine
-     0.02, shoulders (±0.245, 0.495), elbows -0.29, neck 0.625, head +0.118.
-     poseAvatar, RIG, RIG_LIFT, the head hitbox (net.js reads headMesh's world
-     position), the gun holder on the right elbow and the returned field names
-     are untouched, so movement, prone, reload, hit detection and every gate
-     that reads the rig behave exactly as before.
+     IT COSTS NO MORE THAN THE BOXES. The detail is in VERTICES, not meshes:
+     each rigid segment is ONE mesh with its colours baked into a vertex-colour
+     attribute. 12 always visible; knee pads and face are shed past 30 m;
+     helmet and vest when worn. ONE body material for every player; the team
+     colour is baked into the geometry and cached by colour, so a team shares
+     every buffer.
 
-     WHY IT COSTS NO MORE THAN THE BOXES. The detail is in VERTICES, not in
-     meshes. Each rigid segment (one joint's worth of body) is ONE mesh whose
-     colours are baked into a vertex-colour attribute — shirt, trousers,
-     gloves, skin and webbing on one draw call. So:
-       - always visible: 12 meshes (pelvis, chest, neck, head, 2 upper arms,
-         2 forearms, 2 thighs, 2 shins)            budget 17
-       - detail (hidden past 30 m): 2 knee pads, the face  -> 15 near, 12 far
-       - kitted: + plate carrier + helmet                   -> 17   budget 20
-     ONE body material for every player on the server. The team colour is
-     baked into the GEOMETRY of the four accent-bearing segments and cached
-     by colour, so two players on one team share every buffer.
-
-     REAL-PERSON VARIETY. Skin tone, hair colour and beard are picked from the
-     callsign with a stable hash, so the same player always looks the same to
-     everyone and a lobby is not fifteen clones. Head geometries are cached per
-     look (5 x 3 x 2 at most).
-
+     Skin, hair and beard come from the callsign by a stable hash: the same
+     player looks the same to everyone and a lobby is not fifteen clones.
      Facing: +z is the front of the operator (knee pads, toes, face). */
   var AVM = {
     body: new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 14, specular: 0x161616 }),
@@ -321,12 +276,11 @@ var Avatars = (function () {
       var L = [], A = mix(hexRGB(acc), hexRGB(0x6a6658), 0.22);
       // waist -> ribcage -> chest -> trapezius slope; deeper at the chest than the waist
       piece(L, lathe([[0.153, 0.22], [0.165, 0.3], [0.19, 0.38], [0.203, 0.45], [0.205, 0.5], [0.19, 0.545], [0.15, 0.575], [0.09, 0.6], [0.06, 0.61]], 18),
-        [0, 0, 0], null, [1, 1, 0.62], function (x, y, z) {
-          y += 0.40;
-          // a seam down the side and a darker collar read as a garment
-          var k = (Math.abs(x) > 0.185 && y < 0.5) ? 0.82 : 1.0;
-          if (y > 0.585) k = 0.75;
-          return shade(A, k);
+        [0, 0, 0], null, [1, 1, 0.62], function (x, y) {
+          /* v3 tested y + 0.40 here, so the "collar" shade covered the whole
+             shirt; that 0.75 is the shirt players know and it stays. The
+             collar itself is now the top ring, in kit fabric. */
+          return y > 0.585 ? hexRGB(COL.vest) : shade(A, 0.75);
         });
       piece(L, sph(0.08, 12, 8), [0.075, 0.445, 0.07], null, [1, 0.7, 0.45], shade(A, 0.97));   // chest L/R give the shirt a body under it
       piece(L, sph(0.08, 12, 8), [-0.075, 0.445, 0.07], null, [1, 0.7, 0.45], shade(A, 0.97));
@@ -424,14 +378,16 @@ var Avatars = (function () {
       var L = [], A = hexRGB(acc);
       piece(L, sph(1, 14, 10), [0, -0.05, 0], null, [0.056, 0.055, 0.062], shade(A, 0.95));   // deltoid (kept below the joint: a cap above it swings out when the arm lifts)
       piece(L, lathe([[0.046, -0.3], [0.05, -0.25], [0.055, -0.16], [0.057, -0.09], [0.057, -0.03]], 14), [0, 0, 0], null, [1, 1, 1.08], A);
-      piece(L, box(0.055, 0.05, 0.008), [side * 0.054, -0.085, 0], [0, side * Math.PI / 2, 0], null, shade(A, 0.72)); // shoulder pocket
+      piece(L, box(0.06, 0.06, 0.008), [side * 0.054, -0.085, 0], [0, side * Math.PI / 2, 0], null, hexRGB(COL.vest)); // shoulder pocket, in kit fabric
       return merge(L);
     });
   }
   function geoForearm(acc, skin) {
     return cached('farm|' + acc + '|' + skin, function () {
-      var L = [], A = shade(hexRGB(acc), 0.84), G = hexRGB(COL.webbing), S = hexRGB(skin);
+      var L = [], A = shade(hexRGB(acc), 0.84), G = hexRGB(COL.webbing), S = hexRGB(skin), K = hexRGB(COL.vest);
       piece(L, sph(0.04, 10, 8), [0, 0, 0], null, null, A);                                                  // elbow
+      piece(L, sph(1, 10, 6), [0, -0.02, -0.03], null, [0.04, 0.062, 0.024], K);                            // elbow pad
+      piece(L, cyl(0.0405, 0.04, 0.032, 10), [0, -0.196, 0], null, null, K);                                 // cuff
       piece(L, lathe([[0.036, -0.215], [0.042, -0.16], [0.046, -0.08], [0.043, -0.01]], 12), [0, 0, 0], null, null, A);
       piece(L, cyl(0.036, 0.037, 0.016, 10), [0, -0.222, 0], null, null, S);                                 // wrist
       piece(L, lathe([[0.027, -0.305], [0.036, -0.285], [0.041, -0.26], [0.039, -0.232]], 10), [0, 0, 0.004], null, [0.82, 1, 1.12], G); // gloved hand
@@ -472,39 +428,107 @@ var Avatars = (function () {
       return merge(L);
     });
   }
-  function geoVest(acc) {
-    return cached('vest|' + acc, function () {
-      var L = [], V = hexRGB(COL.vest), Vd = hexRGB(COL.vestDk), Pp = hexRGB(COL.pouch), A = hexRGB(acc);
-      piece(L, box(0.33, 0.29, 0.05), [0, 0.405, 0.098], [-0.06, 0, 0], null, V);                           // front plate bag
-      piece(L, box(0.33, 0.3, 0.045), [0, 0.405, -0.1], [0.05, 0, 0], null, V);                             // back plate bag
-      piece(L, cyl(0.212, 0.212, 0.12, 18), [0, 0.31, 0], null, [1, 1, 0.66], Vd);                          // cummerbund
-      [-1, 1].forEach(function (s) {
-        piece(L, box(0.075, 0.03, 0.235), [s * 0.115, 0.565, 0], [0, 0, s * 0.18], null, Vd);              // shoulder straps
+  /* ===== v2.14.1 - THREE LEVELS YOU CAN TELL APART =====
+     Rahul: "Helmet, Vest yeh sab ka design consistent kar do ... lvl 1 and 2,
+     3 woh sab sahi se hona chahiye." v3 drew ONE vest and ONE helmet for every
+     level. Each level is now its own piece of the same kit (same fabric, same
+     cut) and says what it is twice: by how much of it there is, and by bars in
+     the level's HUD colour on the chest and the back of the helmet.
+       vest    L1 two slim plates on straps   L2 + cummerbund, magazines
+               L3 + shoulder guards, collar, groin and side plates, radio
+       helmet  L1 bump shell   L2 + rails, ear defenders, shroud
+               L3 a fuller ballistic shell, goggles up, jaw guards, battery
+     One mesh each: the level swaps the (cached, shared) geometry. The shirt's
+     collar, cuffs, elbow pads and shoulder pockets are cut from the same
+     fabric, so clothes and kit are one uniform. */
+  var LVL_HEX = [0, 0x9aa3ad, 0x4fa3e0, 0xf0c040];
+  function lvlRGB(lvl) {
+    var hex = LVL_HEX[lvl] || LVL_HEX[1];
+    try { var cfgC = (typeof CFG !== 'undefined' && CFG.ARMOR && CFG.ARMOR[lvl] && CFG.ARMOR[lvl].color) ? CFG.ARMOR[lvl].color : null; if (cfgC) return hexRGB(cfgC); } catch (err) { /* the table above */ }
+    return hexRGB(hex);
+  }
+  function geoVest(acc, lvl) {
+    lvl = Math.max(1, Math.min(3, lvl | 0 || 2));
+    return cached('vest|' + acc + '|' + lvl, function () {
+      var L = [], V = hexRGB(COL.vest), Vd = hexRGB(COL.vestDk), Pp = hexRGB(COL.pouch), A = hexRGB(acc), Lc = lvlRGB(lvl);
+      var thick = lvl === 1 ? 0.036 : lvl === 2 ? 0.05 : 0.062, front = (lvl === 1 ? 0.106 : 0.091) + thick / 2;   // the slim plate sits proud of the shirt (it was flush, and the chest showed through)
+      piece(L, box(lvl === 1 ? 0.29 : 0.33, lvl === 1 ? 0.26 : 0.29, thick), [0, lvl === 1 ? 0.42 : 0.405, front], [-0.06, 0, 0], null, V);       // front plate bag
+      piece(L, box(lvl === 1 ? 0.29 : 0.33, lvl === 1 ? 0.27 : 0.3, thick - 0.005), [0, lvl === 1 ? 0.42 : 0.405, -front - 0.002], [0.05, 0, 0], null, V); // back plate bag
+      [-1, 1].forEach(function (sd) {
+        piece(L, box(0.075, 0.03, 0.235), [sd * 0.115, 0.565, 0], [0, 0, sd * 0.18], null, Vd);              // shoulder straps
+        if (lvl === 1) {                                                                                      // the light carrier hangs on two side straps
+          piece(L, box(0.012, 0.03, 0.2), [sd * 0.2, 0.37, 0], null, null, Vd);
+          piece(L, box(0.012, 0.03, 0.2), [sd * 0.2, 0.31, 0], null, null, Vd);
+        }
       });
-      [-0.105, 0, 0.105].forEach(function (x) {
-        piece(L, box(0.078, 0.12, 0.048), [x, 0.335, 0.14], null, null, Pp);                                // triple mag pouch
-        piece(L, box(0.078, 0.025, 0.052), [x, 0.392, 0.14], null, null, Vd);                               // flaps
-      });
-      piece(L, box(0.16, 0.07, 0.03), [0, 0.47, 0.13], null, null, Pp);                                     // admin pouch
-      piece(L, box(0.09, 0.05, 0.008), [0, 0.5, 0.148], null, null, A);                                     // team patch
-      piece(L, box(0.2, 0.15, 0.05), [0, 0.36, -0.14], null, null, Pp);                                     // hydration pouch
+      if (lvl >= 2) piece(L, cyl(0.212, 0.212, 0.12, 18), [0, 0.31, 0], null, [1, 1, 0.66], Vd);            // cummerbund
+      if (lvl >= 2) {
+        [-0.105, 0, 0.105].forEach(function (x) {
+          piece(L, box(0.078, 0.12, 0.048), [x, 0.335, front + 0.042], null, null, Pp);                      // triple mag pouch
+          piece(L, box(0.078, 0.025, 0.052), [x, 0.392, front + 0.042], null, null, Vd);                     // flaps
+        });
+        piece(L, box(0.2, 0.15, 0.05), [0, 0.36, -front - 0.042], null, null, Pp);                           // hydration pouch
+      }
+      piece(L, box(lvl === 1 ? 0.12 : 0.16, 0.07, 0.03), [0, lvl === 1 ? 0.37 : 0.47, front + 0.032], null, null, Pp);   // admin pouch
+      piece(L, box(0.09, 0.05, 0.008), [lvl === 1 ? 0 : 0, lvl === 1 ? 0.49 : 0.5, front + (lvl === 1 ? 0.022 : 0.05)], null, null, A);   // team patch
+      if (lvl === 3) {
+        [-1, 1].forEach(function (sd) {
+          piece(L, box(0.115, 0.045, 0.17), [sd * 0.205, 0.555, 0], [0, 0, -sd * 0.32], null, V);            // shoulder guards
+          piece(L, box(0.105, 0.012, 0.15), [sd * 0.212, 0.583, 0], [0, 0, -sd * 0.32], null, Vd);
+          piece(L, box(0.03, 0.15, 0.15), [sd * 0.213, 0.33, 0], null, null, V);                             // side plates
+        });
+        piece(L, cyl(0.082, 0.092, 0.05, 16), [0, 0.615, -0.004], null, [1, 1, 0.92], Vd);                   // collar
+        piece(L, box(0.19, 0.13, 0.03), [0, 0.2, front - 0.02], [0.1, 0, 0], null, V);                       // groin plate
+        piece(L, box(0.06, 0.11, 0.045), [-0.12, 0.47, -front - 0.04], null, null, Vd);                      // radio
+        piece(L, cyl(0.004, 0.004, 0.2, 5), [-0.12, 0.62, -front - 0.04], null, null, hexRGB(COL.cup));      // its aerial
+        piece(L, box(0.1, 0.1, 0.06), [0.19, 0.26, 0.06], null, null, Pp);                                   // dump pouch
+      }
+      /* level bars, top of the chest plate on the wearer's left */
+      for (var bar = 0; bar < lvl; bar++) piece(L, box(0.05, 0.011, 0.008), [0.105, 0.535 - bar * 0.018, front + (lvl === 1 ? 0.022 : 0.03)], [-0.06, 0, 0], null, Lc);
       return merge(L);
     });
   }
-  function geoHelmet(acc) {
-    return cached('helmet|' + acc, function () {
-      var L = [], Hm = hexRGB(COL.helmet), Hd = hexRGB(COL.helmetDk), C = hexRGB(COL.cup), A = hexRGB(acc);
-      piece(L, sph(1, 18, 10, 0, Math.PI * 0.52), [0, 0.012, -0.008], [-0.14, 0, 0], [0.111, 0.118, 0.12], Hm); // high-cut shell
-      piece(L, cyl(0.113, 0.113, 0.013, 18), [0, 0.03, -0.006], [-0.14, 0, 0], [1, 1, 1.06], A);          // team band
-      [-1, 1].forEach(function (s) {
-        piece(L, box(0.012, 0.022, 0.12), [s * 0.11, 0.035, -0.01], null, null, Hd);                       // ARC rails
-        piece(L, cyl(0.036, 0.036, 0.034, 14), [s * 0.103, -0.012, -0.004], [0, 0, Math.PI / 2], null, C);  // ear defenders
-        piece(L, box(0.012, 0.11, 0.012), [s * 0.1, 0.03, -0.004], [0, 0, -s * 0.15], null, C);           // headband
+  function geoHelmet(acc, lvl) {
+    lvl = Math.max(1, Math.min(3, lvl | 0 || 2));
+    return cached('helmet|' + acc + '|' + lvl, function () {
+      var L = [], Hm = hexRGB(COL.helmet), Hd = hexRGB(COL.helmetDk), C = hexRGB(COL.cup), A = hexRGB(acc), Lc = lvlRGB(lvl);
+      var full = lvl === 3;
+      piece(L, sph(1, 18, 10, 0, Math.PI * (full ? 0.58 : 0.52)), [0, 0.012, -0.008], [-0.14, 0, 0],
+            full ? [0.116, 0.121, 0.125] : [0.111, 0.118, 0.12], Hm);                                        // shell (the ballistic one comes lower)
+      piece(L, cyl(full ? 0.118 : 0.113, full ? 0.118 : 0.113, 0.013, 18), [0, 0.03, -0.006], [-0.14, 0, 0], [1, 1, 1.06], A);   // team band
+      [-1, 1].forEach(function (sd) {
+        piece(L, box(0.008, 0.1, 0.012), [sd * 0.097, -0.045, 0.03], [0.25, 0, -sd * 0.08], null, C);        // chin strap
+        if (lvl >= 2) {
+          piece(L, box(0.012, 0.022, 0.12), [sd * (full ? 0.115 : 0.11), 0.035, -0.01], null, null, Hd);     // ARC rails
+          piece(L, cyl(0.036, 0.036, 0.034, 14), [sd * 0.103, -0.012, -0.004], [0, 0, Math.PI / 2], null, C); // ear defenders
+          piece(L, box(0.012, 0.11, 0.012), [sd * 0.1, 0.03, -0.004], [0, 0, -sd * 0.15], null, C);         // headband
+        }
+        if (full) {
+          piece(L, box(0.014, 0.06, 0.075), [sd * 0.1, -0.058, 0.045], [0.2, 0, 0], null, Hm);               // jaw guards
+          piece(L, cyl(0.02, 0.022, 0.07, 10), [sd * 0.027, 0.118, 0.105], [1.15, 0, 0], null, C);           // goggles, flipped up
+          piece(L, cyl(0.016, 0.016, 0.004, 10), [sd * 0.027, 0.148, 0.12], [1.15, 0, 0], null, hexRGB(0x2f7a55));   // their lenses
+        }
       });
-      piece(L, box(0.055, 0.04, 0.025), [0, 0.085, 0.112], [0.35, 0, 0], null, Hd);                       // NVG shroud
-      piece(L, box(0.04, 0.03, 0.03), [0, 0.11, -0.115], null, null, Hd);                                  // battery pack
+      if (lvl >= 2) piece(L, box(0.055, 0.04, 0.025), [0, 0.085, 0.112], [0.35, 0, 0], null, Hd);           // NVG shroud
+      if (full) {
+        piece(L, box(0.03, 0.05, 0.03), [0, 0.108, 0.108], [0.5, 0, 0], null, Hd);                           // goggle arm
+        piece(L, box(0.04, 0.03, 0.03), [0, 0.11, -0.118], null, null, Hd);                                  // battery pack
+        piece(L, box(0.07, 0.035, 0.012), [0, 0.06, -0.128], [-0.2, 0, 0], null, Hd);                        // counterweight
+      }
+      /* level bars across the back of the shell */
+      for (var bar = 0; bar < lvl; bar++) piece(L, box(0.014, 0.03, 0.006), [(bar - (lvl - 1) / 2) * 0.024, 0.012, -(full ? 0.131 : 0.126)], [-0.1, 0, 0], null, Lc);
       return merge(L);
     });
+  }
+  /* THE SAME KIT ON THE GROUND. pickups.js draws a loot helmet or vest with
+     this, so what lies there is what gets worn; it was a block in the level's
+     colour that became something else on the body. Nobody's side yet, so the
+     band and patch carry the LEVEL's colour. */
+  function kitGeo(helm, lvl) {
+    var c = new THREE.Color((helm ? CFG.HELMET : CFG.ARMOR)[lvl].color).getHex();
+    var g = (helm ? geoHelmet(c, lvl) : geoVest(c, lvl)).clone(), k = helm ? 1.7 : 1.45;
+    g.translate(0, helm ? -0.03 : -0.37, 0); g.scale(k, k, k);
+    return g;
   }
   function geoPack() {
     return cached('pack', function () {
@@ -588,9 +612,9 @@ var Avatars = (function () {
     var armL = buildArm(-1), armR = buildArm(1);
 
     /* ---- modular equipment: built once, toggled by .visible ---- */
-    var vest = seg(spine, geoVest(acc));
+    var vest = seg(spine, geoVest(acc, 2));
     vest.visible = false;
-    var helmet = seg(neck, geoHelmet(acc), 0, 0.118, 0);
+    var helmet = seg(neck, geoHelmet(acc, 2), 0, 0.118, 0);
     helmet.visible = false;
     var pack = seg(spine, geoPack());
     pack.visible = false;
@@ -600,18 +624,9 @@ var Avatars = (function () {
     gun.position.set(0, -0.12, 0.10);
     armR.elbow.add(gun);
 
-    /* v8.16: NAMEPLATE AND HP BAR GO IN A COUNTER-ROTATED HOLDER.
-
-       They used to be direct children of the group. Prone rotates the group
-       ~83 degrees about X, which swung the tag from 1.16 m above the head to
-       roughly the same distance out IN FRONT of the body at ground level —
-       so it read as "the name tag vanished" when it had actually been laid
-       flat on the floor with the player.
-
-       A holder at the group origin, counter-rotated by exactly the group's own
-       rotation, cancels it for its children while leaving the body posed. Its
-       inverse scale also undoes the RIG stretch, so a 1.52x-wide operator does
-       not get a 1.52x-wide smeared nameplate. */
+    /* v8.16: the name plate and hp bar hang on a holder that is counter-rotated
+       (prone lays the group flat, which laid the tag on the floor) and
+       inverse-scaled (RIG would smear them wide). */
     var tagHolder = new THREE.Group();
     tagHolder.scale.set(1 / RIG.x, 1 / RIG.y, 1 / RIG.z);
     g.add(tagHolder);
@@ -624,43 +639,14 @@ var Avatars = (function () {
     hs.position.y = 0.98 * RIG.y; hs.visible = false; tagHolder.add(hs);
     var hb = { sprite: hs, canvas: hc, ctx: hc.getContext('2d'), tex: htx };
 
-    /* ===== v10.10 RECON VISOR SILHOUETTE ===== (placed correctly in v10.12)
-
-       A single box drawn with depthTest OFF and a high renderOrder, so it
-       paints over whatever is in front of it. Hidden by default; Net toggles it
-       when the local player is wearing a visor.
-
-       WHY IT IS PARENTED TO tagHolder AND NOT TO g.
-
-       v10.10 added it straight to `g` with `position.y = RIG.y * 0.95`. That
-       was wrong twice over, and wrong in a way nothing would have reported:
-
-         g.scale is (1.52, 1.301, 1.52). A child of g is scaled by that, so the
-         0.62 x 1.86 x 0.42 box rendered at 0.94 x 2.42 x 0.64 — a marker half a
-         metre taller than the operator it marks.
-
-         Local position is scaled too, so y = RIG.y * 0.95 = 1.236 landed at
-         1.236 * 1.301 = 1.61 above the group origin — floating over the head
-         rather than on the body.
-
-       And because g is ROTATED for prone (~83 degrees about X), the box would
-       have swung out flat in front of a prone player, marking empty floor.
-
-       tagHolder already solves all three. It carries the inverse RIG scale and
-       is counter-rotated every frame by poseAvatar, which is exactly why the
-       nameplate and hp bar live there. Its children work in world units, so
-       -0.27 is the standing group lift (halfNow * RIG_LIFT = 0.9 * 0.301) put
-       back, landing the box on the capsule centre.
-
-       WHY A SEPARATE MESH RATHER THAN RE-MATERIALISING THE BODY. v10.9 made
-       every avatar material SHARED across all players — that was the fix for
-       the disconnect leak. Setting depthTest = false on a body material to show
-       one player through a wall sets it on EVERY player, including the ones you
-       are meant to have to find.
-
-       Geometry and material are module-level and shared, so this costs one mesh
-       per avatar and nothing per frame. disposeAvatar must NOT free them; it
-       names the four resources it owns and this is not among them. */
+    /* v10.10/v10.12 RECON VISOR SILHOUETTE: one box drawn with depthTest off.
+       It hangs on tagHolder, not g: g carries the RIG scale and the prone
+       rotation, which made the marker half a metre too tall, floating over
+       the head, and flat on the floor beside a prone player. tagHolder works
+       in world units, so -(0.9 * RIG_LIFT) lands it on the capsule centre.
+       A separate mesh because the body material is shared by every player
+       (v10.9): depthTest off on one is depthTest off on all. Geometry and
+       material are module-level; disposeAvatar must NOT free them. */
     var xray = new THREE.Mesh(XRAY_GEO, XRAY_MAT);
     xray.position.y = -(0.9 * RIG_LIFT);
     xray.visible = false;
@@ -674,14 +660,44 @@ var Avatars = (function () {
       tagHolder: tagHolder,
       hipL: hipL, hipR: hipR, armL: armL, armR: armR,
       helmet: helmet, vest: vest, pack: pack, detail: detail,
+      acc: acc, gearH: 2, gearA: 2,                // v2.14.1: which level's geometry the helmet and vest wear now
       legL: hipL, legR: hipR,                       // back-compat aliases
       phase: 0, breath: 0
     };
   }
 
   /* ---- equipment from network state. Called only when a tier changes. ---- */
+  /* one leg of the v2.14.1 walk; `GAIT` is filled by poseAvatar just before.
+     xSide: -1 for the leg at -x, +1 for the leg at +x. */
+  var GAIT = { hip: 0, knee: 0, sag: 0, lat: 0, fold: 0, give: 0, lift: 0, floor: 0 };
+  /* how far below the hip the sole reaches (thigh 0.42, shin and boot 0.50, the
+     sole running 0.1575 ahead of the ankle and 0.0875 behind): hx is the thigh's
+     angle, s the shin's (hx + knee) */
+  function legLow(hx, s) { return -0.42 * Math.cos(hx) - 0.5 * Math.cos(s) - (s > 0 ? 0.1575 : -0.0875) * Math.sin(s); }
+  function poseLeg(hip, ph, xSide) {
+    var sn = Math.sin(ph), cs = Math.cos(ph);
+    var swing = cs > 0 ? cs : 0;
+    var fold = Math.cos(ph + 0.3); fold = fold > 0 ? fold * fold : 0;                  // peaks just before the leg passes under the body; almost nothing while the foot is still down
+    var give = Math.cos(ph - 2.12); give = give > 0 ? give * give * give : 0;          // just after the foot lands
+    var hx = GAIT.hip - sn * GAIT.sag - swing * GAIT.lift;                             // negative = forward
+    var kx = Math.max(0, GAIT.knee + fold * GAIT.fold + give * GAIT.give);             // a knee only folds one way
+    /* THE FLOOR. A crouched leg that swings back straightens toward the ground
+       and would put its toes through it (10 cm, measured). No foot may reach
+       lower than the stance's own resting foot: the knee folds the difference. */
+    var low = legLow(hx, hx + kx);
+    if (low < GAIT.floor) { var slope = 0.5 * Math.sin(hx + kx) - 0.1575 * Math.cos(hx + kx); if (slope > 0.12) kx += Math.min(0.7, (GAIT.floor - low) / slope); }
+    hip.rotation.x = hx;
+    var rz = sn * GAIT.lat;                                                            // positive = toward +x
+    hip.rotation.z = xSide < 0 ? Math.min(rz, 0.07) : Math.max(rz, -0.07);            // a leg does not swing through the other one
+    hip.knee.rotation.x = kx;
+  }
   function setGear(av, helmLvl, armorLvl) {
-    var h = helmLvl > 0, v = armorLvl > 0;
+    var hl = Math.max(0, Math.min(3, helmLvl | 0)), al = Math.max(0, Math.min(3, armorLvl | 0));
+    var h = hl > 0, v = al > 0;
+    /* v2.14.1: the level picks the piece. Geometry is cached per colour and level
+       and shared, so this is a pointer swap — nothing is built twice or freed. */
+    if (h && av.gearH !== hl) { av.helmet.geometry = geoHelmet(av.acc, hl); av.gearH = hl; }
+    if (v && av.gearA !== al) { av.vest.geometry = geoVest(av.acc, al); av.gearA = al; }
     if (av.helmet.visible !== h) av.helmet.visible = h;
     if (av.vest.visible !== v) av.vest.visible = v;
     /* The pack mesh is built and wired but stays hidden: no item grants it yet,
@@ -722,21 +738,14 @@ var Avatars = (function () {
     if (s.dead) {
       /* Three stages rather than one topple: the knees give, the spine folds,
          then the body rolls. Arms trail instead of staying welded to the gun. */
-      /* v8.26: collapse compressed 0.85s -> 0.50s.
-
-         Rahul wants a body gone 0.80s after the kill. The old fall took 0.85s
-         on its own, so at that window the corpse would have been deleted
-         mid-topple — you would see it start to fall and get cut off, which
-         looks like a rendering fault rather than a fast kill.
-
-         Shortening the fall keeps the sequence whole inside the budget:
-         0.50s to go down, a short beat, then the fade in net.js finishes at
-         0.80s. Same three stages, same shapes, just quicker. */
+      /* v8.26: the fall takes 0.50 s, so it finishes inside the 0.80 s the body
+         stays (net.js fades it) and is not cut off mid-topple. */
       var t = Math.min(1, s.deadT / 0.50);
       var e = t * t * (3 - 2 * t);
       var late = Math.max(0, (t - 0.35) / 0.65);
-      av.hipL.rotation.x = e * 1.2; av.hipR.rotation.x = e * 1.0;
-      av.hipL.knee.rotation.x = -e * 2.0; av.hipR.knee.rotation.x = -e * 1.7;
+      /* v2.14.1: signs turned round — see THE KNEES BENT BACKWARDS below */
+      av.hipL.rotation.x = -e * 1.2; av.hipR.rotation.x = -e * 1.0;
+      av.hipL.knee.rotation.x = e * 2.0; av.hipR.knee.rotation.x = e * 1.7;
       av.spine.rotation.x = e * 0.62; av.spine.rotation.z = late * 0.25;
       av.spine.position.y = 0.02 - e * 0.18;
       av.armL.rotation.x = -e * 1.0; av.armR.rotation.x = -e * 0.75;
@@ -746,18 +755,8 @@ var Avatars = (function () {
       av.head.rotation.x = e * 0.45;
       av.group.rotation.z = e * 1.52;
       av.group.rotation.x = late * 0.22;
-      /* v8.21 THE CORPSE WAS FALLING THROUGH THE WORLD.
-
-         This line used to read `av.group.position.y -= e * 0.32`, a
-         subtraction applied EVERY FRAME. Over the 0.85 s collapse that is
-         roughly fifty frames each taking up to another 0.32 m, so the body
-         sank about sixteen metres into the ground inside a second. Rahul saw
-         a player "just vanish" and assumed there was no death animation at
-         all — there was a three-stage one, it was simply happening underground
-         after the first few frames.
-
-         Now absolute: settle 0.32 m from wherever the network says the body
-         is, and stay there. */
+      /* v8.21: ABSOLUTE, never `-=`. Subtracting every frame sank the corpse
+         sixteen metres in a second ("players just vanish"). */
       var restY = (typeof av.baseY === 'number' && isFinite(av.baseY)) ? av.baseY : av.group.position.y;
       av.group.position.y = restY - e * 0.32;
 
@@ -788,63 +787,31 @@ var Avatars = (function () {
     av.pT = lerp(av.pT, proneT, kSlow);
     var c = av.cT, p = av.pT;
 
-    /* Crouch bend retuned in v8.15. The old figures left the feet 0.17 m under
-       the floor once the double-counted drop was removed, because the legs
-       were only compressing to 0.74 m while the capsule centre sits at 0.60.
-       The legs have to fold enough to meet the centre the network dictates,
-       not the other way round. Measured, not guessed: feet land at -0.01. */
-    var hipCrouch = c * 1.32 + p * 0.30;
-    var kneeCrouch = -c * 2.05 - p * 0.45;
-    /* v8.15 STANCE HEIGHT WAS DOUBLE-COUNTED.
-
-       net.js:343 sets av.baseY = renderPos.y, and renderPos.y is the CAPSULE
-       CENTRE. controller.js reassigns halfY = halfH() on every stance change
-       (lines 31, 210, 215), so the centre ALREADY drops when a player crouches
-       or goes prone: 0.90 standing, 0.60 crouched, 0.35 prone.
-
-       This function then subtracted the drop a second time. Measured on the
-       real rig, feet relative to the ground:
-
-           stand   -0.04    (about right)
-           crouch  -0.14    (buried)
-           prone   -0.46    (more than half the body underground)
-
-       A prone body is 0.70 m thick. Sunk 0.46, only the weapon — carried
-       forward and above the torso — still cleared the floor, which is exactly
-       what Rahul filmed: "it vanishes, only the gunshots are visible."
-
-       The network carries the whole vertical story. Do not re-apply it here.
-       The spine offsets below are POSTURE inside the body and stay, but the
-       crouch figure was tuned against the double-counted position, so it is
-       retuned to sit the feet on the floor. */
+    /* ===== v2.14.1 - THE KNEES BENT BACKWARDS =====
+       Rahul: "avatar animation thora gadbad hai ... knee and leg ko sahi
+       movement hona chahiye." Measured on the rig, which faces +z: a POSITIVE
+       hip rotation swings the thigh BACK, a POSITIVE knee rotation folds the
+       shin back (the only way a knee folds). This file crouched with hip
+       +1.32 / knee -2.05 and walked with a negative knee: a bird's leg, since
+       v8.36 turned the body round and left the leg signs alone. Same angles,
+       the right way round, so the feet are exactly as far below the hips and
+       no height or hit box moves (tools/verify-operator.js measures it). */
+    var hipCrouch = -c * 1.32 + p * 0.05;
+    var kneeCrouch = c * 2.05;
+    /* v8.15 STANCE HEIGHT IS THE NETWORK'S. av.baseY is the CAPSULE CENTRE and
+       already drops with the stance (0.90 / 0.60 / 0.35). Subtracting the drop
+       again here buried a prone body 0.46 m ("it vanishes, only the gunshots
+       are visible"). Do not re-apply it: the spine offsets below are POSTURE
+       inside the body. */
     av.spine.position.y = 0.02 - c * 0.12 - p * 0.30;
     av.spine.rotation.x = c * 0.22 + p * 0.10;
-    /* v8.35 PRONE WAS LYING BACKWARDS.
-
-       Rotation about X maps +Y -> (0, cos, sin) and +Z -> (0, -sin, cos). The
-       rig's forward is +Z (the boot toe is offset +0.025 in Z and the rifle is
-       carried at +Z). So laying a body face-down with the head forward needs
-       the head to travel +Y -> +Z, which is sin = +1, which is a POSITIVE
-       rotation.
-
-       It was negative. Measured on the real rig, prone put the head at
-       z -0.54 and the feet at z +1.01: the operator was laid out on their BACK,
-       feet-first, crawling backwards. The belly faced the sky, and because the
-       arms were still posed for standing they swung upward with it, leaving the
-       rifle pointing at the clouds 0.49 m above the body.
-
-       One character. Everything downstream follows, including hit detection —
-       v8.32 made the head box read the rendered head's world position, so a
-       correctly-rotated body carries its own hitbox with it for free. */
+    /* v8.35 PRONE: the rig faces +z, so face-down and head-first is a POSITIVE
+       rotation about X (it was negative: on its back, feet first). The head
+       hit box reads the rendered head, so it follows for free. */
     av.group.rotation.x = p * (Math.PI / 2) * 0.92;
-    /* NaN GUARD. baseY is written by net.js every frame, but poseAvatar can
-       run before the first renderPos exists — a fresh join, a respawn, a
-       dropped snapshot. `undefined - p * 0.55` is NaN, Three.js skips an
-       object with a NaN matrix entirely, and NaN is STICKY because baseY is
-       only ever read. The avatar goes invisible AND stops moving, forever,
-       while the local frame keeps rendering. That is the "frozen player"
-       report, and it only ever bites remote avatars, which is why it was
-       invisible in single-player testing. */
+    /* NaN GUARD: poseAvatar can run before the first baseY (a fresh join, a
+       respawn, a dropped snapshot). NaN is sticky and three.js skips an object
+       with a NaN matrix — the "frozen, invisible player" report. */
     /* Lift by half the stance height times the rig's Y growth, so the feet
        stay planted whether standing, crouched or flat. Same half-heights the
        capsule uses. */
@@ -854,27 +821,48 @@ var Avatars = (function () {
     if (av.tagHolder) { av.tagHolder.rotation.x = -av.group.rotation.x; av.tagHolder.rotation.z = 0; av.tagHolder.position.y = 0; }
 
     // ---------- locomotion ----------
+    /* ===== v2.14.1 - A WALK WITH A STANCE AND A SWING =====
+       The old cycle was one sine on the hip and half a sine on the knee. A leg
+       does two different things in a step:
+         stance  the foot is down and the body passes over it: the hip goes
+                 from flexed to extended, the knee stays nearly straight;
+         swing   the foot comes off behind, the knee folds to clear the ground
+                 (most just BEFORE the leg passes under the body) and opens
+                 again for the heel to land in front.
+       sin(ph) = +1 is the foot furthest AHEAD IN THE DIRECTION OF TRAVEL and
+       cos(ph) > 0 is the swing. Direction is in the signed components, so one
+       description walks forward, walks back (shorter steps) and sidesteps (the
+       legs step OUT and close, never through each other, with a knee lift).
+       `fwd` +1 is the way the operator faces, `side` +1 the model's +x.
+       net.js and game.js hand over exactly that; they rotated the wrong way
+       and the answer depended on the compass. */
     var speed = s.moved / Math.max(0.0001, s.dt);
-    var fwd = s.mz || 0, side = s.mx || 0;          // local, -1..1
-    av.phase += s.moved * (s.run ? 2.5 : 3.1);
+    var fwd = s.mz || 0, side = s.mx || 0;          // body frame, -1..1
+    var lateral = Math.abs(side) > Math.abs(fwd);
+    av.phase += s.moved * (s.run ? 2.05 : (lateral || fwd < -0.3) ? 3.3 : 2.75);
     var amp = s.moved > 0.0005 ? Math.min(1, speed / (s.run ? 7.0 : 4.2)) : 0;
     av.amp = lerp(av.amp === undefined ? 0 : av.amp, amp, k * 0.8);
     av.fwd = lerp(av.fwd === undefined ? 0 : av.fwd, fwd, k);
     av.side = lerp(av.side === undefined ? 0 : av.side, side, k);
+    av.runT = lerp(av.runT === undefined ? 0 : av.runT, s.run ? 1 : 0, k);
     var A = av.amp * (1 - c * 0.45) * (1 - p * 0.8);
 
-    var sw = Math.sin(av.phase), swb = Math.sin(av.phase + Math.PI);
-    /* STRAFING. A soldier moving sideways does not swing their legs fore-and-aft
-       — they step out and cross over. Forward swing scales with how much of the
-       motion is forward; the sideways component opens the hips instead. */
-    var fA = A * Math.abs(av.fwd), sA = A * Math.abs(av.side);
-    var backing = av.fwd < -0.25 ? -1 : 1;
-    av.hipL.rotation.x = hipCrouch + sw * 0.62 * fA * backing;
-    av.hipR.rotation.x = hipCrouch + swb * 0.62 * fA * backing;
-    av.hipL.rotation.z = -av.side * 0.10 - Math.max(0, sw) * 0.26 * sA;
-    av.hipR.rotation.z = -av.side * 0.10 + Math.max(0, swb) * 0.26 * sA;
-    av.hipL.knee.rotation.x = kneeCrouch - Math.max(0, -sw) * (1.0 * fA + 0.55 * sA) - 0.06;
-    av.hipR.knee.rotation.x = kneeCrouch - Math.max(0, -swb) * (1.0 * fA + 0.55 * sA) - 0.06;
+    var backK = av.fwd < 0 ? 0.72 : 1, absF = Math.abs(av.fwd), absS = Math.abs(av.side);
+    GAIT.hip = hipCrouch; GAIT.knee = kneeCrouch + 0.05;                           // a soft knee, never locked, never the other way
+    GAIT.floor = legLow(GAIT.hip, GAIT.hip + GAIT.knee);
+    GAIT.sag = A * (0.44 + 0.30 * av.runT) * backK * (1 - p * 0.85) * av.fwd;      // thigh swing, fore and aft
+    GAIT.lat = A * 0.24 * av.side;                                                 // step out / close
+    GAIT.fold = A * ((0.98 + 0.80 * av.runT) * absF + (av.fwd < 0 ? 0.22 * absF : 0) + 0.9 * absS);   // knee fold in the swing (going back or sideways it is what lifts the foot)
+    GAIT.give = A * (0.14 + 0.20 * av.runT) * absF;                                // knee give as the weight lands
+    GAIT.lift = A * (0.07 + 0.30 * absS + (av.fwd < 0 ? 0.05 * absF : 0)) * (1 - p);   // extra hip flexion so the swinging foot clears the ground
+    poseLeg(av.hipL, av.phase, -1);
+    poseLeg(av.hipR, av.phase + Math.PI, 1);
+    /* BOTH HANDS STAY ON THE RIFLE. The arms swung against each other like an
+       unarmed walker's, so the support hand left the handguard every stride.
+       Now the shoulders counter-turn against the hips and the weapon rocks
+       with them as one piece; the head stays on the target. */
+    var sw = Math.sin(av.phase), fA = A * absF;
+    var carrySway = sw * (0.045 + 0.05 * av.runT) * fA, twist = sw * (0.07 + 0.07 * av.runT) * fA;
 
     /* TURNING. Yaw rate leans the torso into the turn and counter-rotates the
        shoulders slightly, which is most of what stops a strafing player from
@@ -891,8 +879,8 @@ var Avatars = (function () {
     var aim = -s.rx * 0.62;
     var bob = Math.sin(av.phase * 2) * 0.012 * A;
     av.spine.position.y += bob;
-    av.spine.rotation.y = -turnLean * 0.9 + av.side * 0.12;
-    av.spine.rotation.z = turnLean + av.side * 0.06;
+    av.spine.rotation.y = -turnLean * 0.9 + av.side * 0.12 - twist;
+    av.spine.rotation.z = turnLean - av.side * 0.06;   // v2.14.1: top of the body toward the side it is moving to (it leaned away)
 
     /* RELOAD. The support hand drops to the magazine well and comes back, the
        weapon tips down, and the head follows it — read at a glance, and it is
@@ -902,110 +890,39 @@ var Avatars = (function () {
     var R = av.rT;
     var pump = Math.sin(av.breath * 3.4) * 0.5 + 0.5;
 
-    /* v8.21 WEAPON IS CARRIED, NOT CARRIED AROUND.
-
-       Rahul: "it is always in one position standing gun down... while shooting
-       as well the avatar figure is holding the gun down."
-
-       He was right and the numbers show why. The right arm sat at -0.62 rad,
-       about 35 degrees forward of hanging — a low-ready at best, and from any
-       distance it reads as a man walking about with a rifle by his knee. The
-       weapon is welded to armR.elbow, so the arm angle IS the gun angle;
-       nothing else could lift it.
-
-       Raised to a chest carry: shoulders driven further forward, elbows folded
-       harder to bring the stock in rather than pushing the muzzle out, and the
-       support arm crossed further so both hands read as on the weapon. `aim`
-       still adds on top when a remote player is ADS, so scoping is still a
-       visible change in silhouette rather than the new resting pose. */
-    /* v8.32 THE WEAPON WAS BEING CARRIED AT ARM'S LENGTH.
-
-       v8.21 fixed "standing gun down" by driving the shoulders to -1.18 rad and
-       folding the elbows to -1.02. The intent in that commit was to "bring the
-       stock in rather than pushing the muzzle out". Measured, it did the
-       opposite: the weapon ended up 0.79 m in FRONT of the chest and 0.13 m
-       ABOVE it, which on screen reads as arms thrust up in a V with the rifle
-       floating detached beside the body.
-
-       The cause is not the angles alone. RIG scales X and Z by 1.52 but Y by
-       only 1.22, so a limb rotated toward horizontal is stretched 1.52x while
-       the same limb hanging down is stretched 1.22x. Rotating the shoulder
-       forward therefore does not just swing the arm — it LENGTHENS it by 25%.
-       Angles alone could not bring the weapon closer than 0.56 m; the mount
-       offset had to move with them.
-
-       Solved together rather than guessed: shoulder -0.40, elbow -1.10, and the
-       weapon remounted from (0,-0.28,-0.06) to (0,-0.12,+0.10). Result is the
-       weapon at 0.36 m forward and 0.62 m up — chest height, close to the body,
-       and 0.22 m from the elbow, comfortably inside a forearm's reach so the
-       hands read as being ON it. `aim` still adds on top for ADS. */
-    /* v8.35 PRONE NEEDS ITS OWN ARM POSE.
-
-       Correcting the body rotation is only half of it. A standing carry rotated
-       83 degrees puts the arms wherever the torso throws them — with the old
-       backwards rotation that was straight up, and even with the corrected one
-       it would drive the rifle down into the ground, because the arms hang
-       along local -Y and local -Y now points backwards and down.
-
-       Prone shoulders have to reach the other way. Solved numerically against
-       the corrected body rather than guessed: shoulder -1.90 and elbow +0.20
-       relative to the standing pose put the weapon at z +0.65 — forward of the
-       head — and y -0.12, which is 0.23 m above the deck. Reach from the elbow
-       stays 0.21 m, well inside a forearm, so the hands still read as on it.
-
-       Blended by `p`, so the transition in and out of prone is the same smooth
-       lerp every other stance uses. */
+    /* THE CARRY (v8.21, v8.32). The weapon is welded to armR.elbow, so the arm
+       angle IS the gun angle. Shoulder -0.40, elbow -1.10 and the mount at
+       (0,-0.12,+0.10) hold it at chest height, close to the body and inside a
+       forearm's reach, so both hands read as ON it. RIG stretches a limb more
+       when it points forward, which is why angles and mount were solved
+       together and not guessed. `aim` adds on top for looking up and down. */
+    /* v8.35 PRONE ARMS: a standing carry laid flat drives the rifle into the
+       ground. Shoulder -1.90 and elbow +0.20 on top of the standing pose put
+       the weapon forward of the head, 0.23 m above the deck. Blended by `p`. */
     var proneArm = p * 1.90, proneElbow = p * 0.20;
-    av.armR.rotation.x = -0.40 + aim + swb * 0.16 * fA + br - R * 0.16 - proneArm;
+    av.armR.rotation.x = -0.40 + aim + carrySway + br - R * 0.16 - proneArm;
     av.armR.rotation.z = -0.20;
     av.armR.elbow.rotation.x = -1.10 - R * 0.18 + proneElbow;
-    av.armL.rotation.x = -0.58 + aim + sw * 0.16 * fA + br + R * (0.55 + pump * 0.35) - proneArm;
+    av.armL.rotation.x = -0.58 + aim + carrySway + br + R * (0.55 + pump * 0.35) - proneArm;
     av.armL.rotation.z = 0.34 - R * 0.30;
     av.armL.elbow.rotation.x = -1.24 - R * (0.45 + pump * 0.30) + proneElbow;
     /* v8.35: the weapon counter-rotates by exactly the body's prone rotation,
-       so the barrel stays level with the WORLD while the operator lies flat.
-       Solved numerically at -1.45 rad and then written as the negated body
-       rotation, because that is what it physically is — if the 0.92 lie-flat
-       factor is ever retuned the barrel follows instead of silently drifting
-       back into the dirt. Without this the muzzle buried 0.76 m underground. */
-    /* v2.14.0 LOW READY. Measured with the v8.21 arm pose and rx = 0, the
-       barrel pointed 79 degrees DOWN — every standing operator held his rifle
-       muzzle-to-the-floor like a walking stick. CARRY turns it to a low ready
-       (about 10 degrees below level standing, 20 crouched); looking up or down
-       still swings it with the arms. It fades out exactly as prone fades in, so
-       the v8.35 prone solution below is untouched. */
+       so the barrel stays level with the WORLD while the operator lies flat. */
+    /* v2.14.0 LOW READY: CARRY turns the muzzle from 79 degrees down to about
+       10 below level (20 crouched); it fades out exactly as prone fades in. */
     av.gun.rotation.x = CARRY * (1 - p) + R * 0.42 - p * (Math.PI / 2) * 0.92;
     av.gun.rotation.z = R * 0.18;
 
     av.torso.scale.z = 1 + br * 1.4;
     av.head.rotation.x = -s.rx * 0.5 + R * 0.18;
-    av.head.rotation.y = -av.side * 0.10;
+    av.head.rotation.y = -av.side * 0.10 + twist * 0.85;
     av.group.rotation.z = -s.lean * 0.18;
   }
 
-  /* v8.31 THE TEAM-MODE BUG. THIS ONE LINE.
-
-     `myTeam` is declared `var myTeam = null` INSIDE the Net IIFE in net.js.
-     It was never visible here, so reading it bare threw ReferenceError.
-
-     It only ever fired for an ALLY, because of short-circuit evaluation:
-       ally ? (myTeam ? ...) : '#e8563e'
-     With `ally` false the expression resolves to the enemy colour and never
-     touches `myTeam`. In FFA `myTeam` is null, so `ally` is ALWAYS false and
-     the branch is unreachable — which is exactly why free-for-all was flawless
-     while every team match broke. The first time a teammate's bar needed
-     drawing (hbDrawn starts at -1 against dispHp 100, so the very first frame
-     they are visible) this threw.
-
-     The throw landed inside Net.updateRemotes(), which the render loop calls
-     BEFORE FX.update, Pickups.update, Minimap.update, the match clock and the
-     team score. Before v8.30 it also skipped renderer.render() outright: the
-     black screen. v8.30's error boundary let the frame render, which turned the
-     fatal into the visible symptom that finally identified it — muzzle flashes
-     and tracers that never age out, a clock frozen at 10:00, and a team score
-     stuck at 0-0.
-
-     minimap.js already did this correctly: `var myTeam = Net.getMyTeam();`. */
+  /* v8.31 THE TEAM-MODE BUG: `myTeam` lives inside the Net IIFE; reading it
+     bare here threw ReferenceError, and only for an ALLY's bar — so FFA was
+     flawless and every team match froze (the throw starved FX, pickups, the
+     clock and the score behind it). Ask Net for it. */
   function drawHpBar(r, ally) {
     var g = r.av.hb.ctx, W = 128, H = 18;
     g.clearRect(0, 0, W, H);
@@ -1021,35 +938,20 @@ var Avatars = (function () {
     r.av.hb.tex.needsUpdate = true;
   }
 
-  /* v8.32: the half-extent of the RENDERED head, derived from the very numbers
-     the head mesh is built from above (0.195 x 0.235 x 0.185) times RIG. Hit
-     detection imports this instead of keeping its own copy, so resizing the
-     head resizes the box that protects it. A little generosity is deliberate:
-     rounding UP never makes a visible head unhittable. */
-  /* v2.14.0: HEAD is measured from the sculpted v3 head at load (see geoHeadRaw):
-     about 0.205 wide (ears) x 0.228 tall x 0.188 deep. The resulting box is
-     within 1 cm of the v8.32 box head on every axis, so headshot difficulty
-     is unchanged. */
+  /* The half-extent of the RENDERED head: HEAD is measured from the sculpt at
+     load, times RIG. Hit detection imports this, so resizing the head resizes
+     the box that protects it; rounding UP never makes a visible head
+     unhittable. Within 1 cm of the v8.32 box head on every axis. */
   var HEAD_HALF = {
     x: (HEAD.w * RIG.x) / 2 + 0.02,
     y: (HEAD.h * RIG.y) / 2 + 0.02,
     z: (HEAD.d * RIG.z) / 2 + 0.02
   };
 
-  /* ===== v10.9 - FREE WHAT IS ACTUALLY PER-AVATAR =====
-
-     With geometry shared (see boxGeo at the head of this file) an avatar owns
-     exactly four disposable things: a 256x64 name-tag CanvasTexture, a 128x18
-     hp-bar CanvasTexture, and the SpriteMaterial wrapping each. Nothing else
-     here is unique to one player.
-
-     This is deliberately NOT a generic scene-graph walk that disposes every
-     geometry and material it finds. Such a walk is the obvious implementation
-     and it is wrong in this file: it would free AVM.skin, AVM.fatigue, the
-     RGM gun materials and the cached accent the moment ANY player left, and
-     every remaining operator would render black. Naming the four owned
-     resources explicitly is what makes that impossible.
-
+  /* v10.9 - FREE WHAT IS ACTUALLY PER-AVATAR: the name-tag and hp-bar
+     CanvasTextures and their two SpriteMaterials. Deliberately NOT a scene
+     walk that disposes whatever it finds: geometry and the body material are
+     shared, and freeing them when one player leaves turns the rest black.
      Called from net.js removeRemote(). Safe to call twice. */
   function disposeAvatar(av) {
     if (!av || av.disposed) return;
@@ -1074,6 +976,7 @@ var Avatars = (function () {
     setRemoteGun: setRemoteGun,
     drawHpBar: drawHpBar,
     setGear: setGear,
+    kitGeo: kitGeo,                // v2.14.1: the worn helmet / vest, for the loot on the ground
     poseAvatar: poseAvatar,
     XRAY_MAT: XRAY_MAT
   };

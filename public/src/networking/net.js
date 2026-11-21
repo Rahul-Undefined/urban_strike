@@ -1172,7 +1172,12 @@ var Net = (function () {
       var movedNow = Math.sqrt(dxw * dxw + dzw * dzw) +
         Math.abs(r.smooth.y - r.lastRP.y) * 0.25;
       var cs = Math.cos(r.smoothRy), sn = Math.sin(r.smoothRy);
-      var lz = dxw * sn + dzw * cs, lx = dxw * cs - dzw * sn;
+      /* v2.14.1: into the BODY frame. The operator faces (sin ry, -cos ry) and is
+         drawn with rotation.y = -ry + PI, so forward is dx*sin - dz*cos and the
+         model's +x (its left) is -(dx*cos + dz*sin). This read `dx*sn + dz*cs` —
+         a different compass — so "forward" came out as -cos(2*ry): backwards
+         when facing north, a sidestep when facing north-east. */
+      var lz = dxw * sn - dzw * cs, lx = -dxw * cs - dzw * sn;
       var mag = Math.sqrt(lx * lx + lz * lz) || 1;
       r.lastRP.copy(r.smooth);
       Avatars.poseAvatar(r.av, {

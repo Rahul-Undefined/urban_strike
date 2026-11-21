@@ -1,5 +1,7 @@
 # URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
+**v2.14.1 — legs that walk, kit that has levels.** The knees bent backwards and "forward" depended on the compass: the walk is rebuilt (stance and swing, forward / back / sideways / run), both hands stay on the rifle, helmet and vest have three distinct levels in one uniform, loot on the ground is the piece you will wear, and your own third-person body carries your weapon and wears your kit.
+
 **v2.14.0 — the v3 operator.** A new avatar that looks like a person — face, skin and hair from the callsign, a plate carrier and helmet that appear with the gear, all 29 weapons in the hands — measured against the old rig before the swap: same height, same head box, same hit detection.
 
 **v2.13.1 — riders shoot.** Everyone in an open vehicle (bike, auto, sedan, bus) fires from the seat, the driver included — from the hip, with a spread penalty that grows with speed. The tank's crew does not. In team modes a vehicle carries one side.

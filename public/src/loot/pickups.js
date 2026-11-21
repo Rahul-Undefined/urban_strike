@@ -102,6 +102,11 @@ var Pickups = (function () {
       else cylP(L, 0.09, 0.22, 0xf0f2f4, 0, 0, 0);
     } else if (it.kind === 'ammo') {
       boxP(L, 0.4, 0.22, 0.26, 0x4a6238, 0, 0, 0); boxP(L, 0.42, 0.06, 0.28, 0x39502b, 0, 0.13, 0);
+    } else if ((it.kind === 'armor' || it.kind === 'helm') && typeof Avatars !== 'undefined' && Avatars.kitGeo) {
+      /* v2.14.1: the very helmet or vest an operator wears (avatars.js), at its
+         level — on the ground it was a coloured block that turned into
+         something else on the body. The ring under it still says the level. */
+      return (templates[t] = it.kind === 'helm' ? Avatars.kitGeo(true, it.l) : Avatars.kitGeo(false, it.lvl));
     } else if (it.kind === 'armor') {
       vestParts(L, it.lvl);
     } else if (it.kind === 'helm') {
