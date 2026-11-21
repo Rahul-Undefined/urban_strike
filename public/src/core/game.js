@@ -361,14 +361,18 @@ var Game = (function () {
          Rahul: "vehicles PUBG style mei road pe khade rahenge, usko lekar drive
          kar sakte hai." N was the last free letter beside the movement cluster
          (E is lean-right, F the flashbang). While seated only the movement
-         keys, N, H (horn) and L (headlights) do anything: W/S drive, A/D
-         steer, Space is the handbrake; a rider throws nothing and reloads
-         nothing. */
+         keys, N, H (horn) and L (headlights) do anything — plus, v2.13.1
+         (Rahul: "car mei baithe avatar shoot kar sakte h ... usko bhi include
+         kar do"), R and the number row in an open vehicle: a rider FIRES,
+         reloads and changes guns. Nothing is thrown from a seat, and the
+         tank's crew, behind its armour, does not fire at all. */
       if (e.code === 'KeyN') { if (window.Vehicles) Vehicles.use(); return; }
       if (riding) {
         if (e.code === 'KeyH') Vehicles.horn();          // H is the horn at the wheel (a molotov on foot)
         else if (e.code === 'KeyL') Vehicles.lights();   // L the headlights (drop-sight on foot)
         else if (map[e.code]) { Input[map[e.code]] = true; if (e.code === 'Space') e.preventDefault(); }
+        else if (Vehicles.canFire() && e.code === 'KeyR') Weapons.startReload();
+        else if (Vehicles.canFire() && e.code.indexOf('Digit') === 0) { var seatN = parseInt(e.code.slice(5), 10); if (seatN >= 1 && seatN <= 9) Weapons.selectByKey(seatN); }
         return;
       }
       if (map[e.code]) { Input[map[e.code]] = true; if (e.code === 'Space') e.preventDefault(); return; }
@@ -455,7 +459,8 @@ var Game = (function () {
     });
     document.addEventListener('mousedown', function (e) {
       if (!locked) return;
-      if (window.Vehicles && Vehicles.mounted()) return;   /* v2.13: nobody fires or aims from a seat */
+      /* v2.13.1: a rider in an open vehicle fires from the hip — no ADS, no scope — and the tank's crew not at all */
+      if (window.Vehicles && Vehicles.mounted()) { if (e.button === 0 && Vehicles.canFire()) Weapons.setTrigger(true); return; }
       if (e.button === 0) Weapons.setTrigger(true);
       if (e.button === 2) Input.aim = true;
     });
@@ -986,8 +991,17 @@ var Game = (function () {
          the camera ray and hit detection never meet it. */
       step('ownbody', function () {
         if (!tpp || !PlayerCtl.alive || riding) { if (ownAv) ownAv.group.visible = false; return; }
+        /* v2.14: your own body wears what everyone else sees on you — your
+           callsign's face (Avatars.lookFor) and your side's colour — and is
+           rebuilt if either changes (a new match on the other team). It was
+           the anonymous default rig. */
+        var meRow = null;
+        try { var rosterNow = Net.getRoster() || []; for (var ri = 0; ri < rosterNow.length; ri++) if (rosterNow[ri].id === Net.myId()) meRow = rosterNow[ri]; } catch (e) { meRow = null; }
+        var ownKey = meRow ? (meRow.name + '|' + meRow.color) : '';
+        if (ownAv && ownAv._key !== ownKey) { try { scene.remove(ownAv.group); Avatars.disposeAvatar(ownAv); } catch (e) { } ownAv = null; }
         if (!ownAv) {
-          ownAv = Avatars.buildAvatar();
+          ownAv = meRow ? Avatars.buildAvatar(meRow.name, meRow.color) : Avatars.buildAvatar();
+          ownAv._key = ownKey;
           if (ownAv.tagHolder) ownAv.tagHolder.visible = false;   // no name tag over your own head
           scene.add(ownAv.group);
         }

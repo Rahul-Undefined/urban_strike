@@ -81,9 +81,10 @@ const botsIn = (G) => ((G.lobby && G.lobby.players) || []).filter(p => p.bot);
 
   console.log('--- 3. gunfire draws them ---');
   const fire = setInterval(() => G.A.emit('shoot', { w: 'ak47', o: G.pos, dir: [0, 0, 1], sup: 0 }), 900);
-  for (let i = 0; i < 700 && (G.shots.length < 3 || G.damaged.length < 1); i++) await wait(100);
+  /* v2.12.1 operators are deadlier: two rounds can be a kill, and a dead tester draws no more fire until it is back — so two rounds is the bar */
+  for (let i = 0; i < 700 && (G.shots.length < 2 || G.damaged.length < 1); i++) await wait(100);
   clearInterval(fire);
-  ok(G.shots.length >= 3, 'operators open fire on a player who gives his position away [' + G.shots.length + ' shots]');
+  ok(G.shots.length >= 2, 'operators open fire on a player who gives his position away [' + G.shots.length + ' shots]');
   ok(G.damaged.length >= 1, 'and the human is hit [' + G.damaged.length + ' hits, hp ' + (G.damaged.length ? G.damaged[G.damaged.length - 1].hp : '-') + ']');
   ok(G.shots.every(s => CFG.WEAPONS[s.w] && Array.isArray(s.o) && s.o.length === 3), 'every operator shot is a real weapon with an origin the client can draw');
 

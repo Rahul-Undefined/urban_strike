@@ -1,5 +1,9 @@
 # URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
+**v2.14.0 — the v3 operator.** A new avatar that looks like a person — face, skin and hair from the callsign, a plate carrier and helmet that appear with the gear, all 29 weapons in the hands — measured against the old rig before the swap: same height, same head box, same hit detection.
+
+**v2.13.1 — riders shoot.** Everyone in an open vehicle (bike, auto, sedan, bus) fires from the seat, the driver included — from the hip, with a spread penalty that grows with speed. The tank's crew does not. In team modes a vehicle carries one side.
+
 **v2.13.0 — VEHICLES, and the game's own art.** Urban now has 22 vehicles parked at the kerb — motorbike, auto rickshaw, sedan, city bus, battle tank. N gets in and out; W/S A/D drive, Space brakes, H is the horn, L the headlights. Each has a hull you can shoot until it blows up (everyone aboard dies with it), petrol that runs out, and it hurts or kills whoever it runs over. The server only keeps the list — the driver's own client drives — so a parked vehicle costs it nothing. Also: an intro film once per session, map wallpapers behind the menu, the map you are about to play as a moving photograph under the 5-second countdown and on the loading screen, and behind the scorecard. Prone is now 20% damage, half the view.
 
 **v2.12.1 — Bot Ops fixed after the first playtest.** Operators can no longer end up standing in the air (their height now follows the path they walk), and they are tuned by measurement: against a scripted player who moves and shoots back, Medium went from a walkover (player K/D 4.4) to a fight (0.68) and Hard from 0.83 to 0.24. Prone: no camera shake anywhere, 20% gun range, half the view.

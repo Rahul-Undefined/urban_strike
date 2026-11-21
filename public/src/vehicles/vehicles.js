@@ -382,6 +382,28 @@ var Vehicles = (function () {
     if (!veh || msg.by === myId()) return;
     try { if (typeof AudioSys !== 'undefined' && AudioSys.vehicleHorn) AudioSys.vehicleHorn(new THREE.Vector3(veh.x, veh.y + 1, veh.z), veh.type); } catch (err) { /* cosmetic */ }
   }
+  /* ===== v2.13.1 - RIDERS SHOOT =====
+     Rahul: "car mei baithe avatar shoot kar sakte h, abhi shoot nahi kar sakte,
+     usko bhi include kar do." Everybody in an OPEN vehicle fires — the driver
+     too, or a player alone in a car could never shoot from it. The tank's crew
+     does not: they are behind armour nothing can reach, and a gun that cannot
+     be answered is not a fight.
+     It costs accuracy: a seat is not a firing position. The spread is the
+     gun's hip spread times aimPenalty() — more for the one steering than for a
+     passenger, and more the faster the vehicle goes. No scope and no ADS from
+     a seat; nothing is thrown from one. */
+  function canFire() { return !!mine && !mine.T.sealed; }
+  function aimPenalty() {
+    if (!mine) return 1;
+    var load = Math.min(1, Math.abs(mine.sp) / mine.T.max);
+    return mySeat === 0 ? 1.7 + 1.5 * load : 1.2 + 0.8 * load;
+  }
+  /* where a rider's rounds leave from: head height at the seat, an arm's length
+     toward the aim (the camera is a chase camera; the gun is not at the lens) */
+  function muzzle(out, dir) {
+    var pos = PlayerCtl.pos;
+    return out.set(pos.x + dir.x * 1.2, pos.y + 0.75 + dir.y * 1.2, pos.z + dir.z * 1.2);
+  }
   function horn() {
     if (!mine || mySeat !== 0) return;
     var nowT = performance.now();
@@ -545,6 +567,7 @@ var Vehicles = (function () {
       return;
     }
     if (!nearest || !PlayerCtl.alive) return;
+    if (PlayerCtl.prone) { if (typeof UI !== 'undefined') UI.toast('Stand up to get in'); return; }   // v2.13.1: a rider fires at full strength, so nobody boards lying down
     var target = nearest;
     Net.emitVeh('vehEnter', { id: target.id }, function (res) {
       if (res && res.ok) { if (list[target.id]) mount(list[target.id], res.seat); }
@@ -805,7 +828,8 @@ var Vehicles = (function () {
     var fbar = kids[3].lastChild.firstChild;
     fbar.style.width = (fuel * 100).toFixed(0) + '%';
     fbar.style.background = fuel > 0.25 ? '#e9c46a' : '#e2513f';
-    var hint = mySeat === 0 ? 'W/S drive \u00b7 A/D steer \u00b7 SPACE brake \u00b7 H horn \u00b7 L lights \u00b7 ' + keyName() + ' out' : keyName() + ' get out';
+    var fire = veh.T.sealed ? '' : 'CLICK fire \u00b7 R reload \u00b7 ';
+    var hint = mySeat === 0 ? 'W/S A/D drive \u00b7 SPACE brake \u00b7 ' + fire + 'H horn \u00b7 L lights \u00b7 ' + keyName() + ' out' : fire + keyName() + ' get out';
     if (frac < V.fireAt) hint = 'ON FIRE \u2014 GET OUT (' + keyName() + ')';
     if (kids[4].textContent !== hint) kids[4].textContent = hint;
   }
@@ -815,6 +839,7 @@ var Vehicles = (function () {
   }
   return { init: init, reset: reset, sync: sync, onSeat: onSeat, onBoom: onBoom, update: update, drive: drive, mounted: mounted,
            camera: camera, use: use, horn: horn, lights: lights, onHorn: onHorn, rayHit: rayHit, report: report, isRider: isRider, riderOf: riderOf,
+           canFire: canFire, aimPenalty: aimPenalty, muzzle: muzzle, ridden: function () { return mine; },
            driving: function () { return !!mine && mySeat === 0; },
            _list: function () { return list; }, _build: buildModel, _mount: mount, _hullFree: hullFree, _exitSpot: exitSpot };
 })();

@@ -72,6 +72,8 @@ module.exports = function initVehicles(ctx) {
     const v = find(room, d && d.id); if (!v) return { ok: false, err: 'That vehicle is gone' };
     const T = V.types[v.type];
     if (Math.hypot(p.pos[0] - v.x, p.pos[2] - v.z) > V.enterDist + T.len / 2 || Math.abs(p.pos[1] - v.y) > 4) return { ok: false, err: 'Too far' };
+    /* v2.13.1: now that riders shoot, a seat beside the enemy is not on offer: in a team mode a vehicle carries one side */
+    if (ctx.modeInfo(room).teams && v.seats.some(pid => { const q = pid && room.players.get(pid); return q && q.team && p.team && q.team !== p.team; })) return { ok: false, err: 'Enemy vehicle' };
     const k = v.seats.indexOf(null); if (k < 0) return { ok: false, err: 'No free seat' };
     v.seats[k] = p.id; pushSeats(room, v);
     return { ok: true, seat: k, id: v.id };
@@ -104,6 +106,9 @@ module.exports = function initVehicles(ctx) {
   function hit(room, shooter, d) {
     if (!shooter || !shooter.alive || !d) return;
     const v = find(room, d.id); if (!v) return;
+    /* v2.13.1: riders fire — at other vehicles, never the one they sit in, and not from inside a sealed hull */
+    const mineSeat = seatOf(room, shooter.id);
+    if (mineSeat && (mineSeat.v === v || V.types[mineSeat.v.type].sealed)) return;
     const W = CFG.WEAPONS[d.w]; if (!W || W.gear || W.type === 'melee') return;
     if (CFG.gunAllowed && !CFG.gunAllowed(room.settings.mode, d.w)) return;
     const t = now(), gap = 60000 / (W.rpm || 600) * 0.75;

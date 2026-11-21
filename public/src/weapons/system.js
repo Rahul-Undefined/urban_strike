@@ -91,6 +91,7 @@ var Weapons = (function () {
   var projectiles = [];           // rockets + grenades (local sim on every client)
   var _vmDir = new THREE.Vector3();   // v9.12: reused for the viewmodel wall probe
   var tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpQ = new THREE.Quaternion();
+  var tmpMz = new THREE.Vector3();   /* v2.13.1: the aim direction for a rider's muzzle */
 
   function init(cam, sc) {
     camera = cam; scene = sc;
@@ -504,7 +505,13 @@ var Weapons = (function () {
   }
 
   // ---------- firing ----------
+  /* v2.13.1: is the local player firing from a vehicle seat? (0 when not) */
+  function ridingPenalty() { return (typeof Vehicles !== 'undefined' && Vehicles.mounted && Vehicles.mounted()) ? Vehicles.aimPenalty() : 0; }
+  function myVehicle() { return (typeof Vehicles !== 'undefined' && Vehicles.ridden) ? Vehicles.ridden() : null; }
   function muzzleWorld(out) {
+    /* from a seat the camera is a chase camera metres behind the vehicle — the
+       round and its flash leave from the rider, not from the lens */
+    if (myVehicle()) return Vehicles.muzzle(out, camera.getWorldDirection(tmpMz));
     out.set(0.24, -0.15, -0.6).applyQuaternion(camera.getWorldQuaternion(tmpQ)).add(camera.position);
     return out;
   }
@@ -562,8 +569,13 @@ var Weapons = (function () {
       });
     }
     var P = CFG.PLAYER;
+    /* v2.13.1: the people in my own vehicle are beside me, not in my line of fire.
+       (Spelled out here, not through a helper: tools/verify-hitbox.js lifts this
+       function out of the file and runs it alone.) */
+    var mineV = (typeof Vehicles !== 'undefined' && Vehicles.ridden) ? Vehicles.ridden() : null;
     Net.eachRemote(function (id, r) {
       if (!r.alive) return;
+      if (mineV && Vehicles.riderOf(id) === mineV) return;
       var c = r.renderPos;
       /* v8.19 HIT BOXES FOLLOW THE RENDERED RIG.
 
@@ -708,6 +720,8 @@ var Weapons = (function () {
   function fireBullet(w) {
     var E2 = eff(current);
     var sp = (Input.aim ? E2.ads : E2.spread) * (PlayerCtl.prone ? 0.4 : PlayerCtl.crouch ? 0.6 : 1);
+    var seatK2 = ridingPenalty();   /* v2.13.1: a scoped rifle from a seat is fired unscoped and it shows */
+    if (seatK2) sp = E2.spread * seatK2;
     var vA = visorAim(camera.position, w);   /* v2.9 */
     var d2 = vA ? vA.clone() : rayDir(sp, new THREE.Vector3());
     bullets.push({ pos: camera.position.clone(), vel: d2.multiplyScalar(w.bulletSpeed),
@@ -722,11 +736,15 @@ var Weapons = (function () {
     var E = eff(current);
     var aiming = Input.aim && w.type !== 'melee';
     var spread = aiming ? E.ads : E.spread;
-    if (PlayerCtl.moveState === 2) spread *= 2.6;
-    else if (PlayerCtl.moveState === 1) spread *= 1.5;
-    if (!PlayerCtl.grounded) spread *= 2.2;
-    if (PlayerCtl.prone) spread *= 0.55;
-    else if (PlayerCtl.crouch) spread *= 0.75;
+    var seatK = ridingPenalty();   /* v2.13.1: from a vehicle seat — hip spread times the seat's penalty, nothing else */
+    if (seatK) spread = E.spread * seatK;
+    else {
+      if (PlayerCtl.moveState === 2) spread *= 2.6;
+      else if (PlayerCtl.moveState === 1) spread *= 1.5;
+      if (!PlayerCtl.grounded) spread *= 2.2;
+      if (PlayerCtl.prone) spread *= 0.55;
+      else if (PlayerCtl.crouch) spread *= 0.75;
+    }
 
     var o = camera.position.clone();
     var mz = muzzleWorld(tmpV2).clone();
@@ -1132,8 +1150,10 @@ var Weapons = (function () {
         var dir = tmpV.copy(p.vel).normalize();
         var wh = World.rayHit(p.pos, dir, step + 0.15);
         var hitPlayer = false;
+        var rocketV = myVehicle();
         Net.eachRemote(function (id, r) {
           if (hitPlayer || !r.alive) return;
+          if (p.mine && rocketV && Vehicles.riderOf(id) === rocketV) return;   /* v2.13.1: my own rocket does not go off on the passenger beside me */
           if (r.renderPos.distanceTo(p.pos) < 0.85) hitPlayer = true;
         });
         /* v1.0t: the ONE thing that hurts the helicopter's hull. A rocket that

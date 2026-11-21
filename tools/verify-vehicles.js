@@ -19,7 +19,7 @@
       or off the map, top speeds, petrol, the hull as a bullet target, a place
       to stand when you get out.
    D. LIVE (only when a server answers on :3000): two sockets — get in, drive,
-      be seen driving, run somebody over, be blown up.
+      shoot from the seat, be seen driving, run somebody over, be blown up.
 
    Run: node tools/verify-vehicles.js */
 'use strict';
@@ -138,12 +138,30 @@ function fakeRoom(mode) {
   /* rockets, tank */
   const tank = F.room.veh.list.find(v => v.type === 'tank'), T1 = F.add('T1', tank.x + 2, 1, tank.z), bus = F.room.veh.list.find(v => v.type === 'bus');
   F.Veh.enter(F.room, T1, { id: tank.id });
+  /* the shooter walks to what it shoots: spots are shuffled every match and a hit claimed from past 420 m is refused */
+  S.pos = [tank.x + 25, 1, tank.z];
   const t0 = tank.hp; F.clock.t += 5000; F.Veh.hit(F.room, S, { id: tank.id, w: 'ak47', n: 1 }); const tAk = t0 - tank.hp;
   F.clock.t += 5000; F.Veh.hit(F.room, S, { id: tank.id, w: 'rocket', n: 1 }); const tRk = t0 - tAk - tank.hp;
+  S.pos = [bus.x + 25, 1, bus.z];
   const b0 = bus.hp; F.clock.t += 5000; F.Veh.hit(F.room, S, { id: bus.id, w: 'rocket', n: 1 });
   ok(tAk === CFG.WEAPONS.ak47.dmg * V.types.tank.armor && tRk === CFG.WEAPONS.rocket.dmg * V.types.tank.blast && F.Veh.shields(F.room, T1) && !F.Veh.shields(F.room, S),
     'the tank shrugs off rifles (' + tAk + ' a round of ' + V.types.tank.hp + ') and its crew cannot be shot; a rocket takes ' + tRk + ' — ' + Math.ceil(V.types.tank.hp / tRk) + ' rockets to kill it');
   ok(b0 - bus.hp === CFG.WEAPONS.rocket.dmg * 6, 'a rocket takes ' + (b0 - bus.hp) + ' off a bus (' + V.types.bus.hp + ') — two finish it; one finishes a sedan');
+  /* v2.13.1: riders fire */
+  {
+    const R2 = fakeRoom('ffa'); R2.Veh.start(R2.room);
+    const c1 = R2.room.veh.list.find(v => v.type === 'car'), c2 = R2.room.veh.list.filter(v => v.type === 'car')[1], tk = R2.room.veh.list.find(v => v.type === 'tank');
+    const D1 = R2.add('D1', c1.x + 1.5, 1, c1.z), TC = R2.add('TC', tk.x + 2, 1, tk.z);
+    R2.Veh.enter(R2.room, D1, { id: c1.id }); R2.Veh.enter(R2.room, TC, { id: tk.id });
+    const own = c1.hp, other = c2.hp;
+    R2.Veh.hit(R2.room, D1, { id: c1.id, w: 'ak47', n: 1 }); R2.clock.t += 500; D1.pos = [c2.x + 25, 1, c2.z]; R2.Veh.hit(R2.room, D1, { id: c2.id, w: 'ak47', n: 1 }); R2.clock.t += 500; TC.pos = [c2.x - 25, 1, c2.z]; R2.Veh.hit(R2.room, TC, { id: c2.id, w: 'ak47', n: 1 });
+    ok(c1.hp === own && other - c2.hp === CFG.WEAPONS.ak47.dmg * V.types.car.armor, 'a rider can shoot ANOTHER vehicle (' + (other - c2.hp) + ' off it), never the one they sit in; the tank\'s sealed crew shoots nothing');
+    const T2 = fakeRoom('tdm'); if (!CFG.MODES.tdm || !CFG.MODES.tdm.teams) T2.room.settings.mode = Object.keys(CFG.MODES).find(m => CFG.MODES[m].teams && !CFG.MODES[m].bots);
+    T2.Veh.start(T2.room);
+    const tc = T2.room.veh.list.find(v => v.type === 'car'), a1 = T2.add('a1', tc.x + 1.5, 1, tc.z, 'a'), b1 = T2.add('b1', tc.x - 1.5, 1, tc.z, 'b'), a2 = T2.add('a2', tc.x, 1, tc.z + 1.5, 'a');
+    const e1 = T2.Veh.enter(T2.room, a1, { id: tc.id }), e2 = T2.Veh.enter(T2.room, b1, { id: tc.id }), e3 = T2.Veh.enter(T2.room, a2, { id: tc.id });
+    ok(e1.ok && !e2.ok && /Enemy/.test(e2.err) && e3.ok && e3.seat === 1, 'in a team mode a vehicle carries one side: a team-mate rides, an enemy is refused ("' + e2.err + '") — riders shoot now, so the seat beside you is not on offer');
+  }
   const bots = fakeRoom('bom'); bots.Veh.start(bots.room);
   ok(bots.room.veh.list.length === V.count && !bots.room.veh.list.some(v => v.type === 'tank'), 'no tank in Bot Ops (nothing an operator carries can hurt one) — a sedan stands in its bay');
 }
@@ -233,6 +251,24 @@ console.log('--- C. the client, against Urban\'s real colliders ---');
   ok(h && h.id === bus.id && Math.abs(h.t - (12 - bus.T.wid / 2)) < 0.05 && !over && (!away || away.id !== bus.id), 'a round fired at a bus from 12 m meets its side at ' + (h ? h.t.toFixed(2) : '?') + ' m; one over the roof or the other way does not');
   PlayerCtl.pos.set(bus.x + 2, bus.y + 0.97, bus.z); Vehicles._mount(bus, 1);
   ok(Vehicles.rayHit(from, dir, 60) === null || Vehicles.rayHit(from, dir, 60).id !== bus.id, 'the vehicle you sit in is never your own target');
+  /* v2.13.1: riders fire */
+  {
+    Vehicles.use(); clock.t += 1000;
+    const c = list.find(v => v.type === 'car'), tk = list.find(v => v.type === 'tank');
+    PlayerCtl.pos.set(c.x + 1.5, c.y + 0.97, c.z); Vehicles._mount(c, 0); c.sp = 0;
+    const drv0 = Vehicles.aimPenalty(), fireCar = Vehicles.canFire(); c.sp = c.T.max; const drv1 = Vehicles.aimPenalty();
+    Vehicles.drive(1 / 60, {}); const mz = Vehicles.muzzle(new THREE.Vector3(), new THREE.Vector3(Math.sin(c.ry), 0, -Math.cos(c.ry))), off = mz.distanceTo(PlayerCtl.pos);
+    c.sp = 0; Vehicles.use(); clock.t += 1000;
+    PlayerCtl.pos.set(c.x + 1.5, c.y + 0.97, c.z); Vehicles._mount(c, 1); const pas0 = Vehicles.aimPenalty(); c.sp = c.T.max; const pas1 = Vehicles.aimPenalty(); c.sp = 0; Vehicles.use(); clock.t += 1000;
+    PlayerCtl.pos.set(tk.x + 2, tk.y + 0.97, tk.z); Vehicles._mount(tk, 0); const fireTank = Vehicles.canFire(); Vehicles.use(); clock.t += 1000;
+    ok(fireCar && !fireTank && Vehicles.canFire() === false, 'riders of an open vehicle can fire — driver and passengers; the tank\'s crew cannot; nobody on foot is "riding"');
+    ok(pas0 >= 1.1 && pas1 > pas0 && drv0 > pas0 && drv1 > pas1 && drv1 <= 3.5, 'a seat is not a firing position: spread x' + pas0.toFixed(1) + ' for a passenger at rest, x' + pas1.toFixed(1) + ' flat out; x' + drv0.toFixed(1) + ' and x' + drv1.toFixed(1) + ' for the one steering');
+    ok(off > 0.8 && off < 2, 'the round leaves from the rider (' + off.toFixed(1) + ' m from the seat, toward the aim), not from the chase camera behind the vehicle');
+    const sys = fs.readFileSync(path.join(ROOT, 'public/src/weapons/system.js'), 'utf8'), gm = fs.readFileSync(path.join(ROOT, 'public/src/core/game.js'), 'utf8'), sv = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+    ok(/if \(mineV && Vehicles\.riderOf\(id\) === mineV\) return;/.test(sys) && /if \(seatK\) spread = E\.spread \* seatK;/.test(sys) && /Vehicles\.muzzle\(out/.test(sys), 'the weapon code: co-riders are not in the line of fire, the seat penalty replaces the on-foot spread rules, the muzzle is the rider\'s');
+    ok(/if \(e\.button === 0 && Vehicles\.canFire\(\)\) Weapons\.setTrigger\(true\); return;/.test(gm) && /Vehicles\.canFire\(\) && e\.code === 'KeyR'/.test(gm) && /if \(Vehicles\.shields\(room, shooter\)\) return;/.test(sv) && !/if \(Vehicles\.seatOf\(room, socket\.id\)\) return;/.test(sv),
+      'left click fires and R reloads from a seat (no ADS — the right button does nothing there); the server accepts a rider\'s hit and refuses a sealed crew\'s');
+  }
   ok(fs.readFileSync(path.join(ROOT, 'public/src/weapons/system.js'), 'utf8').indexOf("type: 'vehicle'") > 0 && fs.readFileSync(path.join(ROOT, 'public/src/core/game.js'), 'utf8').indexOf("e.code === 'KeyN'") > 0, 'the weapon ray tests hulls, and N is bound');
 }
 
@@ -269,19 +305,20 @@ console.log('--- C. the client, against Urban\'s real colliders ---');
   ok(en && en.ok && en.seat === 0 && st.seat.some(d => d.id === car[0] && d.seats[0] === A.id), 'the driver gets in; the other player is told who is at the wheel');
   await wait((CFG.spawnProtectFor ? CFG.spawnProtectFor('urban') : 3) * 1000 + 600);
   A.emit('vehHorn', {});
-  /* drive at the walker: 9 m in 1 s */
+  /* v2.13.1: the driver shoots the walker from the seat */
+  A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: ahead }); await wait(350);
+  const shot = st.dmg.length ? st.dmg[st.dmg.length - 1] : null;
+  ok(shot && shot.dmg === CFG.WEAPONS.ak47.dmg, 'a rider\'s shot lands: the driver fires an AK from the seat and the walker takes ' + (shot ? shot.dmg : 'nothing'));
+  /* drive at the walker: 5 m in 1 s */
   let x = car[2], z = car[4]; const fx = Math.sin(car[5]), fz = -Math.cos(car[5]);
-  for (let i = 0; i < 20; i++) { x += fx * 0.42; z += fz * 0.42; A.emit('veh', { id: car[0], p: [x, car[3], z], ry: car[5], sp: 8.4, f: 50, l: 1 }); A.emit('st', { p: [x, car[3] + 0.5, z], ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0, ping: 20 }); await wait(50); }
+  for (let i = 0; i < 20; i++) { x += fx * 0.25; z += fz * 0.25; A.emit('veh', { id: car[0], p: [x, car[3], z], ry: car[5], sp: 5, f: 50, l: 1 }); A.emit('st', { p: [x, car[3] + 0.5, z], ry: 0, rx: 0, cr: 0, mv: 0, ln: 0, wp: 0, ping: 20 }); await wait(50); }
+  const dmgBefore = st.dmg.length;
   A.emit('vehRam', { id: car[0], victim: B.id });
   await wait(400);
   const seen = st.vh[car[0]];
-  ok(seen && Math.hypot(seen[2] - x, seen[4] - z) < 1.5 && seen[9] === 1, 'the other player sees it drive in the snapshot — 8.4 m on, headlights lit — from ' + st.vhN + ' vehicle updates');
+  ok(seen && Math.hypot(seen[2] - x, seen[4] - z) < 1.5 && seen[9] === 1, 'the other player sees it drive in the snapshot — 5 m on, headlights lit — from ' + st.vhN + ' vehicle updates');
   ok(st.horn.some(d => d.id === car[0]), 'and hears the horn');
-  ok(st.dmg.length >= 1 || st.deaths.some(d => d.victimId === B.id), 'run over at 8.4 m/s: the walker takes ' + (st.dmg.length ? st.dmg[st.dmg.length - 1].dmg : 'lethal') + ' damage, weapon "vehicle"');
-  /* a seated player cannot shoot */
-  const before = st.dmg.length + st.deaths.length;
-  A.emit('hit', { victim: B.id, w: 'ak47', part: 'body', pellets: 1, vp: ahead }); await wait(300);
-  ok(st.dmg.length + st.deaths.length === before, 'nobody fires from a seat: a hit claimed by the driver is refused');
+  ok(st.dmg.length > dmgBefore && st.dmg[st.dmg.length - 1].dmg === 5 * V.ramDmg, 'run over at 5 m/s (18 km/h): the walker takes ' + (st.dmg.length > dmgBefore ? st.dmg[st.dmg.length - 1].dmg : 'nothing') + ' more, weapon "vehicle"');
   /* blow it up with the driver aboard */
   clearInterval(hb);
   for (let i = 0; i < 6 && !st.boom.length; i++) { B.emit('vehHit', { id: car[0], w: 'rocket', n: 1 }); await wait(1700); }

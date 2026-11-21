@@ -72,64 +72,122 @@ var Avatars = (function () {
     return s;
   }
 
-  // ---------- third-person weapon models ----------
-  var RGM = {
-    dark: new THREE.MeshLambertMaterial({ color: 0x23262c }),
-    steel: new THREE.MeshLambertMaterial({ color: 0x54595f }),
-    wood: new THREE.MeshLambertMaterial({ color: 0x6b4a2a }),
-    tan: new THREE.MeshLambertMaterial({ color: 0x4a4438 }),
-    green: new THREE.MeshLambertMaterial({ color: 0x36402e })
-  };
-  function rgBox(g, x, y, z, w, h, d, m) {
-    var b = new THREE.Mesh(boxGeo(w, h, d), m);
-    b.position.set(x, y, z); g.add(b); return b;
+  // ---------- third-person weapon models (v2.14.0) ----------
+  /* Rebuilt for the v3 operator: a receiver, handguard, barrel, muzzle, grip,
+     curved or box magazine, stock and optics — real rifle silhouettes instead
+     of a plank. Each weapon is ONE mesh: its parts are merged into a single
+     vertex-coloured geometry (the body material, AVM.body), built once per
+     weapon name and shared by every player holding it. That is fewer draw
+     calls than the v7 box guns (5-8 meshes each), not more.
+     Convention unchanged: the grip sits at the origin, the barrel runs along
+     -z, so the v8.32 hand position and the v8.35 prone maths still apply. */
+  var GC = { dark: 0x23262c, steel: 0x4a4f55, black: 0x18191c, wood: 0x6b4a2a, tan: 0x7a6a4c,
+             green: 0x3e4a34, glass: 0x2b4a5e, brass: 0x8a6d3a, olive: 0x4f5638 };
+  var gunCache = {};
+  function remoteGunGeo(name) {
+    if (gunCache[name]) return gunCache[name];
+    var w = CFG.WEAPONS[name] || CFG.WEAPONS.ak47 || {};
+    var L = [], C = function (h) { return hexRGB(h); };
+    var X = Math.PI / 2;
+    function bx(x, y, z, sx, sy, sz, col, rx) { piece(L, box(sx, sy, sz), [x, y, z], rx ? [rx, 0, 0] : null, null, C(col)); }
+    function tube(x, y, z, r, len, col, seg) { piece(L, cyl(r, r, len, seg || 10), [x, y, z], [X, 0, 0], null, C(col)); }
+    function grip(col) { bx(0, -0.065, 0.012, 0.034, 0.095, 0.042, col, 0.28); }
+    function rifle(o) {
+      var len = o.len, body = o.body, furn = o.furn;
+      bx(0, 0.008, -0.09, 0.054, 0.072, 0.3, body);                                 // receiver
+      bx(0, 0.0, -0.1 - len * 0.32, 0.05, 0.058, len * 0.36, furn);                 // handguard
+      tube(0, 0.012, -0.1 - len * 0.5 - len * 0.12, 0.011, len * 0.36, GC.black);   // barrel
+      tube(0, 0.012, -0.1 - len * 0.72, 0.016, 0.06, GC.black);                     // muzzle device
+      grip(GC.black);
+      if (o.mag === 'curve') {
+        bx(0, -0.075, -0.155, 0.034, 0.08, 0.062, GC.dark, 0.12);
+        bx(0, -0.14, -0.178, 0.033, 0.07, 0.058, GC.dark, 0.42);
+      } else if (o.mag === 'box') {
+        bx(0, -0.085, -0.15, 0.03, 0.12, 0.06, GC.dark, 0.08);
+      } else if (o.mag === 'drum') {
+        piece(L, cyl(0.07, 0.07, 0.07, 16), [0, -0.1, -0.15], [0, 0, X], null, C(GC.steel));   // drum
+      }
+      if (o.stock !== false) {
+        bx(0, -0.005, 0.16, 0.038, 0.058, 0.2, o.stockCol || furn);                 // stock
+        bx(0, -0.025, 0.268, 0.044, 0.11, 0.03, GC.black);                          // butt pad
+      }
+      if (o.rail) bx(0, 0.051, -0.14, 0.024, 0.012, 0.3, GC.black);                 // top rail
+      if (o.optic === 'dot') { bx(0, 0.078, -0.06, 0.03, 0.04, 0.055, GC.black); bx(0, 0.083, -0.088, 0.024, 0.024, 0.004, GC.glass); }
+      if (o.optic === 'scope') {
+        tube(0, 0.085, -0.1, 0.019, 0.26, GC.black, 12);
+        tube(0, 0.085, -0.245, 0.026, 0.05, GC.black, 12);
+        tube(0, 0.085, 0.045, 0.024, 0.04, GC.black, 12);
+        bx(0, 0.06, -0.1, 0.02, 0.03, 0.04, GC.black);
+      }
+      if (o.bipod) { bx(0.02, -0.06, -0.1 - len * 0.58, 0.01, 0.12, 0.012, GC.black, -0.5); bx(-0.02, -0.06, -0.1 - len * 0.58, 0.01, 0.12, 0.012, GC.black, -0.5); }
+      if (o.bolt) bx(0.04, 0.02, -0.02, 0.04, 0.012, 0.012, GC.steel);
+      if (o.carry) bx(0, 0.07, -0.12, 0.02, 0.03, 0.12, GC.black);
+    }
+    if (w.type === 'melee') {
+      bx(0, 0.0, -0.14, 0.006, 0.035, 0.2, 0xb9bfc6);                               // blade
+      bx(0, 0.0, -0.035, 0.05, 0.012, 0.014, GC.black);                             // guard
+      bx(0, -0.005, 0.02, 0.026, 0.032, 0.11, GC.black);                            // handle
+    } else if (name === 'pistol') {
+      bx(0, 0.02, -0.07, 0.03, 0.035, 0.19, GC.black);                              // slide
+      bx(0, -0.004, -0.06, 0.028, 0.02, 0.14, GC.dark);                             // frame
+      bx(0, -0.06, 0.0, 0.03, 0.1, 0.045, GC.dark, 0.22);                           // grip
+    } else if (w.type === 'rocket') {
+      tube(0, 0.05, -0.12, 0.05, 0.95, GC.olive, 14);                               // launch tube
+      tube(0, 0.05, -0.64, 0.06, 0.12, GC.dark, 14);                                // warhead
+      bx(0, -0.03, 0.0, 0.03, 0.09, 0.04, GC.black, 0.2);                           // grip
+      bx(0.055, 0.08, -0.05, 0.03, 0.05, 0.08, GC.black);                           // sight
+    } else if (w.flame) {
+      tube(0, 0.0, -0.3, 0.03, 0.62, GC.dark, 10);
+      tube(0, -0.12, 0.05, 0.08, 0.34, GC.steel, 14);
+      grip(GC.black);
+    } else if (w.gear) {
+      bx(0, -0.02, -0.1, 0.16, 0.06, 0.22, GC.dark);
+      bx(0, 0.02, -0.1, 0.08, 0.02, 0.08, w.type === 'emp' ? GC.steel : GC.green);
+    } else if (w.type === 'bow') {
+      bx(0, 0.0, -0.05, 0.02, 0.9, 0.02, GC.wood);
+      bx(0, -0.01, 0.0, 0.03, 0.12, 0.035, GC.black);
+    } else {
+      var S = {
+        ak47:   { len: 0.62, body: GC.dark, furn: GC.wood, mag: 'curve' },
+        akm:    { len: 0.62, body: GC.dark, furn: GC.wood, mag: 'curve' },
+        m4a1:   { len: 0.58, body: GC.dark, furn: GC.black, mag: 'box', rail: 1, optic: 'dot' },
+        scarh:  { len: 0.62, body: GC.tan, furn: GC.tan, mag: 'box', rail: 1, optic: 'dot', stockCol: GC.tan },
+        famas:  { len: 0.5, body: GC.dark, furn: GC.black, mag: 'box', carry: 1 },
+        aug:    { len: 0.56, body: GC.olive, furn: GC.olive, mag: 'box', optic: 'dot', stock: false },
+        sniper: { len: 0.86, body: GC.green, furn: GC.green, mag: 'box', optic: 'scope', bolt: 1, bipod: 1 },
+        awm:    { len: 0.92, body: GC.tan, furn: GC.tan, mag: 'box', optic: 'scope', bolt: 1, bipod: 1, stockCol: GC.tan },
+        kar98:  { len: 0.84, body: GC.wood, furn: GC.wood, mag: null, optic: 'scope', bolt: 1 },
+        k98w:   { len: 0.84, body: GC.wood, furn: GC.wood, mag: null, bolt: 1 },
+        garand: { len: 0.78, body: GC.wood, furn: GC.wood, mag: null },
+        mk14:   { len: 0.72, body: GC.dark, furn: GC.wood, mag: 'box', rail: 1, optic: 'scope' },
+        m249:   { len: 0.72, body: GC.green, furn: GC.dark, mag: 'drum', rail: 1, bipod: 1, carry: 1 },
+        shotgun:{ len: 0.62, body: GC.dark, furn: GC.wood, mag: null },
+        aa12:   { len: 0.56, body: GC.dark, furn: GC.dark, mag: 'drum' },
+        uzi:    { len: 0.3, body: GC.dark, furn: GC.dark, mag: 'box', stock: false },
+        p90:    { len: 0.36, body: GC.black, furn: GC.black, mag: null, optic: 'dot', stock: false },
+        ump9:   { len: 0.38, body: GC.dark, furn: GC.dark, mag: 'box', rail: 1 },
+        mp5:    { len: 0.36, body: GC.dark, furn: GC.dark, mag: 'curve' },
+        vector: { len: 0.36, body: GC.black, furn: GC.black, mag: 'box', rail: 1, optic: 'dot' }
+      };
+      var o = S[name] || { len: 0.6, body: GC.dark, furn: GC.dark, mag: 'box', rail: 1 };
+      if (w.scope && !o.optic) o.optic = 'scope';
+      rifle(o);
+      if (name === 'shotgun') { tube(0, -0.03, -0.32, 0.013, 0.34, GC.black); bx(0, -0.04, -0.3, 0.046, 0.05, 0.14, GC.wood); }
+      if (name === 'p90') bx(0, 0.06, -0.08, 0.05, 0.03, 0.28, 0x6a6f58);
+    }
+    gunCache[name] = merge(L);
+    return gunCache[name];
   }
   function buildRemoteGun(name) {
-    var w = CFG.WEAPONS[name] || CFG.WEAPONS.ak47;
     var g = new THREE.Group();
-    if (w.type === 'melee') {
-      rgBox(g, 0, 0, -0.12, 0.02, 0.05, 0.26, RGM.steel);
-      rgBox(g, 0, -0.02, 0.04, 0.035, 0.06, 0.1, RGM.wood);
-      return g;
-    }
-    if (name === 'pistol') {
-      rgBox(g, 0, 0, -0.08, 0.05, 0.07, 0.22, RGM.dark);
-      rgBox(g, 0, -0.07, 0.02, 0.045, 0.1, 0.06, RGM.dark);
-      return g;
-    }
-    if (w.type === 'rocket') {
-      rgBox(g, 0, 0.02, -0.1, 0.11, 0.11, 0.85, RGM.green);
-      rgBox(g, 0, 0.02, -0.55, 0.13, 0.13, 0.1, RGM.dark);
-      return g;
-    }
-    /* v1.0b: the flamethrower reads as a tank and a fat tube. */
-    if (w.flame) {
-      rgBox(g, 0, 0.0, -0.25, 0.12, 0.12, 0.7, RGM.dark);
-      rgBox(g, 0, -0.14, 0.05, 0.16, 0.16, 0.4, RGM.steel);
-      return g;
-    }
-    /* v15.0: gear slots (drone, EMP) are hand-held devices, not rifles. Until
-       now a carried drone wore a generic rifle silhouette in third person;
-       a small case in the hands is both cheaper and honest. */
-    if (w.gear) {
-      rgBox(g, 0, -0.02, -0.10, 0.16, 0.06, 0.22, RGM.dark);
-      rgBox(g, 0, 0.02, -0.10, 0.08, 0.02, 0.08, w.type === 'emp' ? RGM.steel : RGM.green);
-      return g;
-    }
-    var LEN = { sniper: 0.9, awm: 0.98, mk14: 0.82, m249: 0.78, shotgun: 0.68, scarh: 0.66, ak47: 0.64, m4a1: 0.64, uzi: 0.4, p90: 0.44, aa12: 0.62 };
-    var len = LEN[name] || 0.62;
-    var bodyM = (name === 'ak47' || name === 'mk14') ? RGM.wood
-      : (name === 'm249' || name === 'sniper') ? RGM.green
-      : (name === 'scarh' || name === 'awm') ? RGM.tan : RGM.dark;
-    rgBox(g, 0, 0, -len * 0.28, 0.07, 0.095, len, bodyM);                    // body
-    rgBox(g, 0, 0.005, -len * 0.78, 0.03, 0.035, len * 0.5, RGM.dark);       // barrel
-    var magB = rgBox(g, 0, -0.1, -0.06, 0.05, 0.13, 0.07, RGM.dark);         // magazine
-    rgBox(g, 0, -0.02, 0.2, 0.05, 0.08, 0.16, bodyM);                        // stock
-    if (w.scope) rgBox(g, 0, 0.085, -0.12, 0.045, 0.05, 0.2, RGM.dark);      // scope
-    if (name === 'm249') rgBox(g, 0, -0.08, 0.02, 0.1, 0.12, 0.12, RGM.green); // belt box
-    if (name === 'shotgun') rgBox(g, 0, -0.045, -0.34, 0.05, 0.05, 0.16, RGM.wood); // pump
-    if (name === 'aa12') rgBox(g, 0, -0.1, -0.08, 0.11, 0.11, 0.11, RGM.steel);     // drum mag
-    if (name === 'p90') { magB.visible = false; rgBox(g, 0, 0.075, -0.05, 0.05, 0.03, 0.26, RGM.steel); } // top mag
+    var m = new THREE.Mesh(remoteGunGeo(name), AVM.body);
+    /* Measured: the holder's local +y points DOWN in every stance (standing,
+       crouched and prone), so every third-person gun since v7.9 was drawn
+       upside down — scope underneath, magazine on top. A roll about the barrel
+       axis puts it right way up without moving the barrel or the grip. */
+    m.rotation.z = Math.PI;
+    m.castShadow = true;
+    g.add(m);
     return g;
   }
   // Swap the avatar's held model whenever the snapshot weapon index changes.
@@ -143,82 +201,326 @@ var Avatars = (function () {
   }
 
   /* ==========================================================================
-     TACTICAL OPERATOR RIG (v7.9)
+     OPERATOR v3 — A HUMAN, NOT A STACK OF BOXES (v2.14.0)
      ==========================================================================
-     The old avatar was seven boxes with a 0.30 m cube for a head on a 0.70 m
-     torso — cartoon proportions next to a city that now has brick courses and
-     shop counters. It also minted THREE new materials per avatar instance, so
-     ten players cost thirty materials and ~140 draw calls: more than the entire
-     Urban map.
+     Rahul: "real human like avatar hona chahiye."
 
-     What changed:
+     WHAT CHANGED. Every body part used to be one BoxGeometry. Each part is now
+     a SCULPTED mesh: limbs are lathed profiles (a thigh is thick at the hip
+     and narrows to the knee, a calf swells and narrows to the ankle), the
+     torso tapers from chest to waist, the head has a skull, jaw, chin, nose,
+     ears, hair, eyes and brows, the hands are gloved, the boots have soles.
 
-     MATERIALS ARE SHARED. Every body material is module-level and built once.
-     The only per-player material is the identity accent, cached by colour, so
-     ten players sharing two team colours cost two accent materials, not thirty.
+     WHAT DID NOT CHANGE — THE CONTRACT. Every joint sits at exactly the
+     position it did in v7.9-v1.0e: hips (±0.115, -0.02), knees -0.42, spine
+     0.02, shoulders (±0.245, 0.495), elbows -0.29, neck 0.625, head +0.118.
+     poseAvatar, RIG, RIG_LIFT, the head hitbox (net.js reads headMesh's world
+     position), the gun holder on the right elbow and the returned field names
+     are untouched, so movement, prone, reload, hit detection and every gate
+     that reads the rig behave exactly as before.
 
-     REAL JOINTS. Limbs hang from nested Groups placed at the hip, knee,
-     shoulder and elbow, so a thigh rotates about the hip instead of scissoring
-     about its own centre. Groups are free — this costs zero draw calls and is
-     the difference between walking and swimming.
+     WHY IT COSTS NO MORE THAN THE BOXES. The detail is in VERTICES, not in
+     meshes. Each rigid segment (one joint's worth of body) is ONE mesh whose
+     colours are baked into a vertex-colour attribute — shirt, trousers,
+     gloves, skin and webbing on one draw call. So:
+       - always visible: 12 meshes (pelvis, chest, neck, head, 2 upper arms,
+         2 forearms, 2 thighs, 2 shins)            budget 17
+       - detail (hidden past 30 m): 2 knee pads, the face  -> 15 near, 12 far
+       - kitted: + plate carrier + helmet                   -> 17   budget 20
+     ONE body material for every player on the server. The team colour is
+     baked into the GEOMETRY of the four accent-bearing segments and cached
+     by colour, so two players on one team share every buffer.
 
-     CROUCH BENDS THE KNEES. It used to be `group.scale.y = 0.72`, which
-     squashed the head too. Crouch and prone are now poses, not scaling.
+     REAL-PERSON VARIETY. Skin tone, hair colour and beard are picked from the
+     callsign with a stable hash, so the same player always looks the same to
+     everyone and a lobby is not fifteen clones. Head geometries are cached per
+     look (5 x 3 x 2 at most).
 
-     EQUIPMENT IS MODULAR. Helmet, vest and backpack are built once per avatar
-     and toggled with `.visible`. Three.js skips invisible objects entirely, so
-     an unequipped player pays nothing for gear they are not wearing, and new
-     equipment slots in the same way without a second character model.
-
-     Budget: 12 parts unequipped, 15 fully kitted, plus the weapon group and two
-     sprites. Small parts hide beyond 30 m where they cannot be resolved.
-     ====================================================================== */
+     Facing: +z is the front of the operator (knee pads, toes, face). */
   var AVM = {
-    skin:    new THREE.MeshLambertMaterial({ color: 0x9c8468 }),
-    /* v8.17: was 0x4c5344, a realistic olive that Rahul could not pick out
-       against asphalt, dirt and the green foliage — see his screenshot of six
-       operators standing in the open that read as scenery. The rig now wears
-       the player's IDENTITY ACCENT on shirt and trousers instead (see
-       buildAvatar), so this is only the fallback for anything unaccented.
-       Kept bright rather than realistic: readability beats camouflage in a
-       4-player arena where you are supposed to find each other. */
-    /* v8.23: TROUSERS ARE BACK TO A DARK NEUTRAL.
-
-       v8.17 put the identity accent on shirt AND trousers to make players
-       findable. It worked too well — Rahul's screenshot shows a featureless
-       yellow slab, because arms, torso and legs were all one flat colour and
-       nothing cast a readable edge against anything else. A silhouette needs
-       internal contrast to look like a person rather than a crate.
-
-       Torso keeps the accent, so team identity still reads at range. Legs go
-       dark, which restores the waist line and the arm edges. Bright above,
-       dark below is also the standard way this is done. */
-    /* ===== v12.0 - WARM GEAR AGAINST A COOL WORLD (brief item 9) =====
-       "The current avatar can visually merge with map colors." It did, and
-       the reason is right in the old hex values: trousers 0x2f3540 and vest
-       0x3a3f34 are the SAME desaturated blue-grey/olive family as Urban's
-       sky (0x2b3348), asphalt and walls — an operator standing still was a
-       column of map palette. The v8.23 lesson (bright above, dark below,
-       internal contrast makes a person) stays; what changes is TEMPERATURE:
-       every gear tone moves to warm coyote/khaki, the one family the maps
-       never use for surfaces. Warm-vs-cool separation survives distance and
-       fog better than value contrast alone, and it reads as fabric and
-       webbing — tactical, human — rather than as painted armour. Team accent
-       stays on torso and sleeves, exactly where it was. */
-    fatigue: new THREE.MeshLambertMaterial({ color: 0x5d5138 }),   // trousers - khaki drab
-    webbing: new THREE.MeshLambertMaterial({ color: 0x352f24 }),   // boots, gloves, straps, belt
-    vest:    new THREE.MeshLambertMaterial({ color: 0x4a4230 }),   // coyote plate carrier
-    helmet:  new THREE.MeshLambertMaterial({ color: 0x4d4432 }),
-    visor:   new THREE.MeshLambertMaterial({ color: 0x14181c }),
-    pack:    new THREE.MeshLambertMaterial({ color: 0x514936 })
+    body: new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 14, specular: 0x161616 }),
+    visor: new THREE.MeshLambertMaterial({ color: 0x14181c })   // kept for anything external that reads it
   };
-  /* One material per DISTINCT colour, not one per player. */
-  var accentCache = {};
-  function accentMat(hex) {
-    var k = String(hex);
-    if (!accentCache[k]) accentCache[k] = new THREE.MeshLambertMaterial({ color: new THREE.Color(hex) });
-    return accentCache[k];
+  /* Colours in sRGB hex; vertex colours are written as-is, like the rest of
+     the game's Lambert/Phong palette. */
+  var COL = {
+    fatigue: 0x5d5138, fatigueDk: 0x4a4130, webbing: 0x2f2a21, sole: 0x17140f,
+    vest: 0x5a4f37, vestDk: 0x463d2b, pouch: 0x655a40, helmet: 0x544a36, helmetDk: 0x3a3326,
+    cup: 0x1d1f22, lip: 0x7a4a40, sclera: 0xd8d2c8, iris: 0x23201c, pack: 0x514936
+  };
+  var SKINS = [0xe0b48f, 0xc8956c, 0xa8744f, 0x8a5a3c, 0x5e3b27];
+  var HAIRS = [0x1c1712, 0x3b2a1c, 0x6b4a2c];
+
+  function hexRGB(h) { var c = new THREE.Color(h); return [c.r, c.g, c.b]; }
+  function shade(rgb, k) { return [rgb[0] * k, rgb[1] * k, rgb[2] * k]; }
+  function mix(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+
+  /* ---- a tiny merger: every piece becomes non-indexed, transformed, coloured,
+     then all pieces are concatenated into ONE BufferGeometry. ---- */
+  var _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
+  function piece(list, geo, pos, rot, scl, color) {
+    var g = geo.index ? geo.toNonIndexed() : geo;
+    _e.set(rot ? rot[0] : 0, rot ? rot[1] : 0, rot ? rot[2] : 0);
+    _q.setFromEuler(_e);
+    _m.compose(_p.set(pos[0], pos[1], pos[2]), _q, _s.set(scl ? scl[0] : 1, scl ? scl[1] : 1, scl ? scl[2] : 1));
+    g.applyMatrix4(_m);
+    var n = g.attributes.position.count, col = new Float32Array(n * 3);
+    var P = g.attributes.position.array;
+    for (var i = 0; i < n; i++) {
+      var c = typeof color === 'function' ? color(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]) : color;
+      col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2];
+    }
+    list.push({ p: g.attributes.position.array, n: g.attributes.normal.array, c: col });
+    if (g !== geo) g.dispose();
+    geo.dispose();
   }
+  function merge(list) {
+    var len = 0, i;
+    for (i = 0; i < list.length; i++) len += list[i].p.length;
+    var P = new Float32Array(len), N = new Float32Array(len), C = new Float32Array(len), o = 0;
+    for (i = 0; i < list.length; i++) { P.set(list[i].p, o); N.set(list[i].n, o); C.set(list[i].c, o); o += list[i].p.length; }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(C, 3));
+    g.computeBoundingSphere(); g.computeBoundingBox();
+    return g;
+  }
+  /* primitives */
+  function sph(r, w, h, ts, tl) { return new THREE.SphereGeometry(r, w || 16, h || 12, 0, Math.PI * 2, ts || 0, tl || Math.PI); }
+  function box(w, h, d) { return new THREE.BoxGeometry(w, h, d); }
+  function cyl(rt, rb, h, seg) { return new THREE.CylinderGeometry(rt, rb, h, seg || 14, 1, false); }
+  /* A limb or trunk turned on a lathe: prof = [[radius, y], ...] from bottom to top. */
+  function lathe(prof, seg) {
+    var pts = prof.map(function (p) { return new THREE.Vector2(Math.max(0.0005, p[0]), p[1]); });
+    var g = new THREE.LatheGeometry(pts, seg || 18);
+    g.computeVertexNormals();
+    return g;
+  }
+
+  var geoCache3 = {};
+  function cached(key, fn) { return geoCache3[key] || (geoCache3[key] = fn()); }
+
+  /* ---------------- the segments ---------------- */
+  function geoPelvis(acc) {
+    return cached('pelvis|' + acc, function () {
+      var L = [], A = hexRGB(acc), F = hexRGB(COL.fatigue), W = hexRGB(COL.webbing);
+      // hips and tucked shirt, one lathe: trousers below the belt, shirt above
+      piece(L, lathe([[0.06, -0.115], [0.13, -0.095], [0.165, -0.055], [0.172, -0.01], [0.166, 0.05], [0.156, 0.13], [0.152, 0.2], [0.158, 0.26]], 16),
+        [0, 0, 0], null, [1, 1, 0.72], function (x, y) { return y < 0.02 ? F : shade(A, 0.92); });
+      piece(L, cyl(0.178, 0.178, 0.055, 18), [0, 0.0, 0], null, [1, 1, 0.74], W);            // belt
+      piece(L, box(0.06, 0.042, 0.02), [0, 0.0, 0.132], null, null, hexRGB(0x6f6656));        // buckle
+      piece(L, box(0.07, 0.085, 0.05), [0.15, -0.02, 0.05], [0, 0.5, 0], null, W);            // pouch R
+      piece(L, box(0.07, 0.085, 0.05), [-0.15, -0.02, 0.05], [0, -0.5, 0], null, W);          // pouch L
+      piece(L, box(0.13, 0.07, 0.05), [0, -0.01, -0.13], null, null, W);                     // dump pouch
+      return merge(L);
+    });
+  }
+  function geoChest(acc) {
+    return cached('chest|' + acc, function () {
+      var L = [], A = mix(hexRGB(acc), hexRGB(0x6a6658), 0.22);
+      // waist -> ribcage -> chest -> trapezius slope; deeper at the chest than the waist
+      piece(L, lathe([[0.153, 0.22], [0.165, 0.3], [0.19, 0.38], [0.203, 0.45], [0.205, 0.5], [0.19, 0.545], [0.15, 0.575], [0.09, 0.6], [0.06, 0.61]], 18),
+        [0, 0, 0], null, [1, 1, 0.62], function (x, y, z) {
+          y += 0.40;
+          // a seam down the side and a darker collar read as a garment
+          var k = (Math.abs(x) > 0.185 && y < 0.5) ? 0.82 : 1.0;
+          if (y > 0.585) k = 0.75;
+          return shade(A, k);
+        });
+      piece(L, sph(0.08, 12, 8), [0.075, 0.445, 0.07], null, [1, 0.7, 0.45], shade(A, 0.97));   // chest L/R give the shirt a body under it
+      piece(L, sph(0.08, 12, 8), [-0.075, 0.445, 0.07], null, [1, 0.7, 0.45], shade(A, 0.97));
+      piece(L, box(0.07, 0.05, 0.012), [-0.1, 0.5, 0.126], [0, -0.25, 0], null, shade(A, 0.7)); // sleeve-pocket flap (left chest)
+      var g = merge(L); g.translate(0, -0.40, 0); g.computeBoundingBox(); g.computeBoundingSphere();
+      return g;
+    });
+  }
+  function geoNeck(skin) {
+    return cached('neck|' + skin, function () {
+      var L = [], S = hexRGB(skin);
+      piece(L, lathe([[0.072, -0.085], [0.058, -0.055], [0.054, 0.0], [0.05, 0.04]], 14), [0, 0, 0.004], null, [1, 1, 0.95], S);
+      return merge(L);
+    });
+  }
+  /* The head is built about its own centre — the point net.js caches as the
+     head position for hit detection — so the hit box stays centred on what
+     is drawn. Its extent is measured at load (HEAD, below the builders). */
+  function geoHead(skin, hair, beard) {
+    return cached('head|' + skin + '|' + hair + '|' + beard, function () {
+      var g = geoHeadRaw(skin, hair, beard);
+      g.translate(-HEAD_OFF.x, -HEAD_OFF.y, -HEAD_OFF.z); g.computeBoundingBox(); g.computeBoundingSphere();
+      return g;
+    });
+  }
+  function geoHeadRaw(skin, hair, beard) {
+    {
+      var L = [], S = hexRGB(skin), H = hexRGB(hair), Sd = shade(S, 0.86);
+      var stub = mix(S, H, 0.42);
+      /* A short military crop painted into the cranium's own vertex colours:
+         a high, slightly receding hairline at the front, down to the ears at
+         the sides and low on the nape. No shell over the skull, so nothing
+         can cut across the face. */
+      var hairline = function (x, y, z) {
+        var back = Math.max(0, Math.min(1, (0.055 - z) / 0.13));        // 0 at the forehead -> 1 behind the ears
+        var line = 0.052 - back * 0.115 + Math.abs(x) * 0.12 * (1 - back);   // recedes at the temples
+        var t = Math.max(0, Math.min(1, (y - line) / 0.012));
+        t = t * t * (3 - 2 * t);
+        return mix(S, H, t * 0.96);
+      };
+      /* Stubble is painted into the jaw's own vertex colours rather than laid
+         over it as a second shell: no seam, no z-fighting, no jagged edge. */
+      var beardy = !beard ? S : function (x, y, z) {
+        var t = Math.max(0, Math.min(1, (-0.022 - y) / 0.045)); t = t * t * (3 - 2 * t);          // fades in below the cheekbones
+        if (z < 0.0) t *= Math.max(0, 1 + z / 0.03);                    // ...and out towards the ears
+        if (y < -0.06 && y > -0.075 && Math.abs(x) < 0.02 && z > 0.06) t *= 0.4;   // lighter under the lip
+        return mix(S, stub, t);
+      };
+      piece(L, sph(1, 30, 22), [0, 0.01, -0.004], null, [0.089, 0.1, 0.084], hairline);       // cranium, short crop painted on
+      piece(L, sph(1, 28, 18), [0, -0.05, 0.016], null, [0.071, 0.07, 0.07], beardy);          // jaw + cheeks
+      piece(L, sph(1, 12, 8), [0, -0.092, 0.043], null, [0.034, 0.022, 0.026], beardy);             // chin
+      piece(L, sph(1, 10, 8), [0, -0.014, 0.077], [0.3, 0, 0], [0.0105, 0.03, 0.016], S);      // nose bridge
+      piece(L, sph(1, 10, 8), [0, -0.038, 0.085], null, [0.0115, 0.011, 0.011], S);            // nose tip
+      piece(L, sph(1, 8, 6), [0.0095, -0.043, 0.079], null, [0.0075, 0.006, 0.006], S);         // nostril wings
+      piece(L, sph(1, 8, 6), [-0.0095, -0.043, 0.079], null, [0.0075, 0.006, 0.006], S);
+      piece(L, sph(1, 10, 8), [0.0905, -0.006, -0.006], null, [0.012, 0.026, 0.017], Sd);       // ears
+      piece(L, sph(1, 10, 8), [-0.0905, -0.006, -0.006], null, [0.012, 0.026, 0.017], Sd);
+      piece(L, sph(1, 12, 6), [0, 0.024, 0.062], null, [0.062, 0.015, 0.018], S);              // brow ridge
+      // short military cut: a cap of hair tilted back, so the hairline sits high at the front
+      return merge(L);
+    }
+  }
+  /* Measured once at load from the sculpted head itself (the beard sits inside
+     the jaw, so every look has the same bounds): HEAD_OFF re-centres the head
+     on its own origin, HEAD is the extent HEAD_HALF turns into the hit box.
+     Sculpt the head and the hit box follows — nothing to keep in sync by hand. */
+  var HEAD_OFF, HEAD;
+  (function () {
+    var g = geoHeadRaw(SKINS[0], HAIRS[0], true); g.computeBoundingBox();
+    var b = g.boundingBox, c = new THREE.Vector3(), z = new THREE.Vector3();
+    b.getCenter(c); b.getSize(z); g.dispose();
+    HEAD_OFF = { x: c.x, y: c.y, z: c.z };
+    var up = function (v) { return Math.ceil(v * 1000) / 1000; };
+    HEAD = { w: up(z.x), h: up(z.y), d: up(z.z) };
+  })();
+  /* face detail: eyes, brows, mouth — shed past the LOD line with the knee pads */
+  function geoFace(hair, skin) {
+    return cached('face|' + hair + '|' + skin, function () {
+      var L = [], H = hexRGB(hair), W = hexRGB(COL.sclera), I = hexRGB(COL.iris), Sk = shade(hexRGB(skin), 0.8);
+      var Lp = mix(shade(hexRGB(skin), 0.78), hexRGB(COL.lip), 0.4);
+      [-1, 1].forEach(function (s) {
+        piece(L, sph(1, 10, 6), [s * 0.03, 0.006, 0.0725], null, [0.0115, 0.0062, 0.005], W);
+        piece(L, sph(1, 8, 6), [s * 0.03, 0.006, 0.0772], null, [0.0047, 0.0047, 0.0016], I);
+        piece(L, sph(1, 10, 6), [s * 0.03, 0.0115, 0.0715], null, [0.0125, 0.004, 0.006], Sk);   // upper lid
+        piece(L, box(0.032, 0.0075, 0.01), [s * 0.031, 0.0245, 0.0775], [0, 0, -s * 0.1], null, H);
+      });
+      piece(L, sph(1, 10, 6), [0, -0.0645, 0.0805], null, [0.017, 0.0035, 0.006], Lp);          // upper lip
+      piece(L, sph(1, 10, 6), [0, -0.0705, 0.0795], null, [0.015, 0.0042, 0.0062], shade(Lp, 1.15)); // lower lip
+      var g = merge(L); g.translate(-HEAD_OFF.x, -HEAD_OFF.y, -HEAD_OFF.z);
+      return g;
+    });
+  }
+  function geoUpperArm(acc, side) {
+    return cached('uarm|' + acc + '|' + side, function () {
+      var L = [], A = hexRGB(acc);
+      piece(L, sph(1, 14, 10), [0, -0.05, 0], null, [0.056, 0.055, 0.062], shade(A, 0.95));   // deltoid (kept below the joint: a cap above it swings out when the arm lifts)
+      piece(L, lathe([[0.046, -0.3], [0.05, -0.25], [0.055, -0.16], [0.057, -0.09], [0.057, -0.03]], 14), [0, 0, 0], null, [1, 1, 1.08], A);
+      piece(L, box(0.055, 0.05, 0.008), [side * 0.054, -0.085, 0], [0, side * Math.PI / 2, 0], null, shade(A, 0.72)); // shoulder pocket
+      return merge(L);
+    });
+  }
+  function geoForearm(acc, skin) {
+    return cached('farm|' + acc + '|' + skin, function () {
+      var L = [], A = shade(hexRGB(acc), 0.84), G = hexRGB(COL.webbing), S = hexRGB(skin);
+      piece(L, sph(0.04, 10, 8), [0, 0, 0], null, null, A);                                                  // elbow
+      piece(L, lathe([[0.036, -0.215], [0.042, -0.16], [0.046, -0.08], [0.043, -0.01]], 12), [0, 0, 0], null, null, A);
+      piece(L, cyl(0.036, 0.037, 0.016, 10), [0, -0.222, 0], null, null, S);                                 // wrist
+      piece(L, lathe([[0.027, -0.305], [0.036, -0.285], [0.041, -0.26], [0.039, -0.232]], 10), [0, 0, 0.004], null, [0.82, 1, 1.12], G); // gloved hand
+      piece(L, sph(1, 8, 6), [0.024, -0.265, 0.026], [0.4, 0, 0.5], [0.012, 0.03, 0.012], G);             // thumb
+      return merge(L);
+    });
+  }
+  function geoThigh(side) {
+    return cached('thigh|' + side, function () {
+      var L = [], F = hexRGB(COL.fatigue), W = hexRGB(COL.webbing);
+      piece(L, lathe([[0.058, -0.43], [0.062, -0.38], [0.072, -0.26], [0.082, -0.13], [0.088, -0.04], [0.084, 0.02], [0.05, 0.05]], 16), [0, 0, 0], null, [1, 1, 1.08],
+        function (x, y) { return y > -0.02 ? shade(F, 0.95) : F; });
+      piece(L, box(0.028, 0.11, 0.09), [side * 0.08, -0.2, 0.0], null, null, shade(F, 0.82));               // cargo pocket
+      if (side > 0) {                                                                                        // drop-leg holster, right thigh
+        piece(L, box(0.035, 0.16, 0.075), [0.09, -0.14, -0.005], null, null, W);
+        piece(L, box(0.03, 0.05, 0.05), [0.098, -0.04, 0.01], null, null, hexRGB(0x23262c));
+      }
+      return merge(L);
+    });
+  }
+  function geoShin() {
+    return cached('shin', function () {
+      var L = [], F = hexRGB(COL.fatigue), B = hexRGB(COL.webbing), So = hexRGB(COL.sole);
+      piece(L, sph(0.059, 12, 8), [0, 0, 0], null, null, F);                                                // knee
+      piece(L, lathe([[0.05, -0.33], [0.052, -0.26], [0.063, -0.12], [0.06, -0.04], [0.056, 0.0]], 16), [0, 0, 0], null, [1, 1, 1.08], F);
+      piece(L, lathe([[0.058, -0.46], [0.058, -0.4], [0.054, -0.34], [0.055, -0.3]], 14), [0, 0, 0], null, [1, 1, 1.1], B); // boot shaft
+      piece(L, sph(1, 14, 10), [0, -0.44, 0.05], null, [0.06, 0.045, 0.105], B);                            // foot
+      piece(L, box(0.126, 0.03, 0.245), [0, -0.485, 0.035], null, null, So);                                 // sole
+      piece(L, box(0.04, 0.12, 0.012), [0, -0.37, 0.058], null, null, shade(B, 0.75));                       // laces
+      return merge(L);
+    });
+  }
+  function geoKneePad() {
+    return cached('kneepad', function () {
+      var L = [], W = hexRGB(COL.webbing);
+      piece(L, sph(1, 12, 10), [0, -0.005, 0.058], null, [0.058, 0.066, 0.028], shade(W, 1.15));
+      piece(L, cyl(0.062, 0.062, 0.02, 14), [0, -0.05, 0.0], null, [1, 1, 1.05], W);
+      return merge(L);
+    });
+  }
+  function geoVest(acc) {
+    return cached('vest|' + acc, function () {
+      var L = [], V = hexRGB(COL.vest), Vd = hexRGB(COL.vestDk), Pp = hexRGB(COL.pouch), A = hexRGB(acc);
+      piece(L, box(0.33, 0.29, 0.05), [0, 0.405, 0.098], [-0.06, 0, 0], null, V);                           // front plate bag
+      piece(L, box(0.33, 0.3, 0.045), [0, 0.405, -0.1], [0.05, 0, 0], null, V);                             // back plate bag
+      piece(L, cyl(0.212, 0.212, 0.12, 18), [0, 0.31, 0], null, [1, 1, 0.66], Vd);                          // cummerbund
+      [-1, 1].forEach(function (s) {
+        piece(L, box(0.075, 0.03, 0.235), [s * 0.115, 0.565, 0], [0, 0, s * 0.18], null, Vd);              // shoulder straps
+      });
+      [-0.105, 0, 0.105].forEach(function (x) {
+        piece(L, box(0.078, 0.12, 0.048), [x, 0.335, 0.14], null, null, Pp);                                // triple mag pouch
+        piece(L, box(0.078, 0.025, 0.052), [x, 0.392, 0.14], null, null, Vd);                               // flaps
+      });
+      piece(L, box(0.16, 0.07, 0.03), [0, 0.47, 0.13], null, null, Pp);                                     // admin pouch
+      piece(L, box(0.09, 0.05, 0.008), [0, 0.5, 0.148], null, null, A);                                     // team patch
+      piece(L, box(0.2, 0.15, 0.05), [0, 0.36, -0.14], null, null, Pp);                                     // hydration pouch
+      return merge(L);
+    });
+  }
+  function geoHelmet(acc) {
+    return cached('helmet|' + acc, function () {
+      var L = [], Hm = hexRGB(COL.helmet), Hd = hexRGB(COL.helmetDk), C = hexRGB(COL.cup), A = hexRGB(acc);
+      piece(L, sph(1, 18, 10, 0, Math.PI * 0.52), [0, 0.012, -0.008], [-0.14, 0, 0], [0.111, 0.118, 0.12], Hm); // high-cut shell
+      piece(L, cyl(0.113, 0.113, 0.013, 18), [0, 0.03, -0.006], [-0.14, 0, 0], [1, 1, 1.06], A);          // team band
+      [-1, 1].forEach(function (s) {
+        piece(L, box(0.012, 0.022, 0.12), [s * 0.11, 0.035, -0.01], null, null, Hd);                       // ARC rails
+        piece(L, cyl(0.036, 0.036, 0.034, 14), [s * 0.103, -0.012, -0.004], [0, 0, Math.PI / 2], null, C);  // ear defenders
+        piece(L, box(0.012, 0.11, 0.012), [s * 0.1, 0.03, -0.004], [0, 0, -s * 0.15], null, C);           // headband
+      });
+      piece(L, box(0.055, 0.04, 0.025), [0, 0.085, 0.112], [0.35, 0, 0], null, Hd);                       // NVG shroud
+      piece(L, box(0.04, 0.03, 0.03), [0, 0.11, -0.115], null, null, Hd);                                  // battery pack
+      return merge(L);
+    });
+  }
+  function geoPack() {
+    return cached('pack', function () {
+      var L = [], Pk = hexRGB(COL.pack);
+      piece(L, box(0.28, 0.33, 0.13), [0, 0.34, 0.19 * -1], null, null, Pk);
+      piece(L, box(0.22, 0.12, 0.05), [0, 0.28, -0.27], null, null, shade(Pk, 0.85));
+      return merge(L);
+    });
+  }
+
+  function lookFor(name) {
+    var s = String(name || ''), h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return { skin: SKINS[h % SKINS.length], hair: HAIRS[(h >>> 4) % HAIRS.length], beard: ((h >>> 8) % 3) !== 0 };
+  }
+  function accentHex(colorHex) { return new THREE.Color(colorHex).getHex(); }
 
   function joint(parent, x, y, z) {
     var j = new THREE.Group();
@@ -226,154 +528,74 @@ var Avatars = (function () {
     parent.add(j);
     return j;
   }
-  function part(parent, x, y, z, w, h, d, m) {
-    var b = new THREE.Mesh(boxGeo(w, h, d), m);
-    b.position.set(x, y, z);
-    b.castShadow = true;
-    parent.add(b);
-    return b;
+  function seg(parent, geo, x, y, z) {
+    var m = new THREE.Mesh(geo, AVM.body);
+    m.position.set(x || 0, y || 0, z || 0);
+    m.castShadow = true;
+    parent.add(m);
+    return m;
   }
 
-  /* v8.15 SILHOUETTE SCALE. Rahul: "the player body is very small, very tough
-     to notice". The rig measures correctly against CFG.PLAYER.standH — this is
-     not a bug, it is a readability problem. A realistically-proportioned
-     operator at 60 m on a 200 m map is a few pixels.
-
-     Scaled mostly in X and Z. Broadening the silhouette is what makes a target
-     resolvable at range; height barely helps and growing Y pushes the feet
-     through the floor, because the group origin sits at the capsule centre and
-     the network pins it there. Y gets a token 1.04 so the head still reads
-     above cover. Y stayed at 1.00 in the end: 1.04 measurably pushed the feet
-     0.04 m through the floor at every stance, for no readability gain.
-
-     THIS DOES NOT CHANGE THE HITBOX. Hit detection uses the CFG.PLAYER capsule,
-     which is independent of the visual rig, so aim stays honest — the model is
-     easier to SEE, not easier to hit. */
-  /* v9.10: y 1.22 -> 1.301, tracking CFG.PLAYER.standH from 1.8 to 1.92 by the
-     same 1.0667. The rig is proportioned against the capsule, so scaling one
-     without the other is how a model ends up floating or with its head through
-     the ceiling. x and z are UNCHANGED — a taller operator, not a wider one. */
-  /* ===== v12.0 - THE OPERATOR GROWS ~5% (brief item 9) =====
-     "Slightly larger overall character proportions ... must not break
-     gameplay." Three different numbers wear the word "size" here, and only
-     two of them move:
-       - VISUALS: this RIG scale. 1.52->1.60 wide/deep, 1.301->1.36 tall.
-       - HIT GEOMETRY: follows automatically. HEAD_HALF below derives from
-         RIG, and the body ray-box half-width is CFG.PLAYER.radius (0.35) —
-         the new rendered torso half-width is 0.336, still inside it, so
-         verify-hitbox's "every ray through the visible torso hits" holds
-         with zero combat-balance change.
-       - MOVEMENT CAPSULE: CFG.PLAYER.radius/heights, UNTOUCHED. Doorways,
-         corridors and every verify-access route behave identically because
-         the thing that collides did not change; tools/verify-doorfit.js
-         bounds the SHOULDER SPAN so the wider render cannot visually clip
-         the narrowest door frame either. */
-  /* ===== v1.0e - THE OPERATOR IS TALL (Rahul: "as the map is bigger, make
-     the avatar taller so it is easy to spot and kill... make the height
-     seriously tall") =====
-     y 1.36 -> 1.62 (+19%): the rendered operator stands ~2.28 m. x/z 1.60 ->
-     1.68 (+5%) so the silhouette does not turn into a pole; the worst-case
-     shoulder span stays inside the 1.14 m door frame verify-doorfit bounds.
-     What moves and what does not, the same three numbers as v12.0:
-       - VISUALS: this rig.
-       - HIT GEOMETRY: follows — the head box derives from RIG, so a shot at
-         the visible head is a headshot; the body ray half-width is still
-         CFG.PLAYER.radius, and the torso stays inside it (verify-hitbox).
-       - MOVEMENT CAPSULE: CFG.PLAYER UNTOUCHED. Every doorway, corridor,
-         stair headroom and verify-access route behaves exactly as before,
-         because the thing that collides did not change. The taller render
-         would poke its head through the 2.1-2.3 m door lintels the maps were
-         built with, so world.js now LIFTS every doorway lintel it can prove
-         is over an opening to 2.65 m at build time (World._liftLintels) —
-         cosmetic geometry following the cosmetic body. */
+  /* RIG / RIG_LIFT: unchanged from v1.0e — see the long notes in git history
+     (v8.15, v9.10, v12.0, v1.0e). Hit geometry, door fit and the feet-on-floor
+     lift all derive from these three numbers. */
   var RIG = { x: 1.68, y: 1.62, z: 1.68 };
-
-  /* Growing Y is only safe with a matching lift. The group origin is pinned by
-     the network to the CAPSULE CENTRE, and the legs hang half the stance height
-     below it, so scaling Y by s drops the feet by half*(s-1) and buries them.
-     poseAvatar adds that lift back, using the same half-height the capsule
-     itself uses: 0.90 standing, 0.60 crouched, 0.35 prone. */
   var RIG_LIFT = RIG.y - 1;
+  var CARRY = -1.45;            // v2.14.0: rifle at low ready, see poseAvatar
 
   function buildAvatar(name, colorHex) {
-    var accent = accentMat(colorHex);
+    var acc = accentHex(colorHex);
+    var look = lookFor(name);
     var g = new THREE.Group();
     g.scale.set(RIG.x, RIG.y, RIG.z);
     var detail = [];              // parts hidden at distance
 
-    /* ---- lower body. Origin sits at the hip, as before, so camera height,
-       name tag and hp bar offsets are unchanged. ---- */
+    /* ---- legs: same hip and knee joints as v7.9 ---- */
     var hipL = joint(g, -0.115, -0.02, 0);
     var hipR = joint(g, 0.115, -0.02, 0);
-    [hipL, hipR].forEach(function (hip) {
-      part(hip, 0, -0.21, 0, 0.155, 0.42, 0.175, AVM.fatigue);     // thigh
+    [[hipL, -1], [hipR, 1]].forEach(function (hs) {
+      var hip = hs[0];
+      seg(hip, geoThigh(hs[1]));
       var knee = joint(hip, 0, -0.42, 0);
-      part(knee, 0, -0.20, 0, 0.135, 0.40, 0.155, AVM.fatigue);    // shin
-      var boot = part(knee, 0, -0.43, 0.025, 0.155, 0.14, 0.245, AVM.webbing);
-      detail.push(boot);
-      /* v12.0: knee pad — distance-culled with the boot; tactical dress that
-         also marks the leg joint so a crouch reads at a glance. */
-      var pad = part(knee, 0, 0.02, 0.075, 0.145, 0.11, 0.06, AVM.webbing);
-      detail.push(pad);
+      seg(knee, geoShin());
+      detail.push(seg(knee, geoKneePad()));
       hip.knee = knee;
     });
 
-    /* ---- torso ---- */
+    /* ---- trunk ---- */
     var spine = joint(g, 0, 0.02, 0);
-    part(spine, 0, 0.12, 0, 0.34, 0.24, 0.22, accent);             // abdomen
-    /* v12.0: a belt line. One shared-geometry box that breaks the torso
-       column where a person actually breaks — the single cheapest "this is a
-       human, not a crate" signal the rig can buy. */
-    part(spine, 0, 0.005, 0, 0.36, 0.06, 0.24, AVM.webbing);       // belt
-    var chest = part(spine, 0, 0.40, 0, 0.42, 0.32, 0.25, accent);
-    /* Identity colour lives on the SLEEVES, not on separate patch meshes. Two
-       fewer parts per player, and a coloured upper arm reads at twice the
-       distance a shoulder patch does. */
+    seg(spine, geoPelvis(acc));
+    var chest = seg(spine, geoChest(acc), 0, 0.40, 0);   // origin at the chest centre, as v7.9's box was
 
-    /* ---- head + neck.
-       v8.32: there was a 0.079 m gap between the top of the chest and the
-       bottom of the head with NOTHING in it, so the head read as a box
-       balanced on the shoulders. Rahul: "it is like a square box on top of the
-       body without the neck."
-
-       A short neck now bridges that gap, overlapping both ends slightly so
-       there is no seam. The head itself was 0.296 wide but 0.312 DEEP — deeper
-       than it was wide, which is what made it read as a crate rather than a
-       head. It is now slightly taller and slightly shallower, so the
-       proportions read as a person while the silhouette stays exactly as wide.
-       Nothing here shrinks the body: width is untouched, and total height goes
-       UP by 0.031 m, which the hitbox follows (see HEAD below). ---- */
+    /* ---- neck + head. The neck mesh is added to the neck joint FIRST and the
+       helmet last: verify-hitbox takes the first non-head mesh under av.head
+       as the neck. ---- */
     var neck = joint(spine, 0, 0.625, 0);
-    part(neck, 0, -0.030, 0, 0.115, 0.085, 0.115, AVM.skin);        // neck
-    var headMesh = part(neck, 0, 0.118, 0, 0.195, 0.235, 0.185, AVM.skin);   // head
+    seg(neck, geoNeck(look.skin), 0, 0, 0);
+    var headMesh = seg(neck, geoHead(look.skin, look.hair, look.beard), 0, 0.118, 0);
+    var face = new THREE.Mesh(geoFace(look.hair, look.skin), AVM.body);
+    headMesh.add(face); detail.push(face);
 
-    /* ---- arms ---- */
+    /* ---- arms: same shoulder and elbow joints ---- */
     function buildArm(sx) {
       var sh = joint(spine, sx * 0.245, 0.495, 0);
-      part(sh, 0, -0.145, 0, 0.115, 0.29, 0.13, accent);                // upper arm = team colour
+      seg(sh, geoUpperArm(acc, sx));
       var el = joint(sh, 0, -0.29, 0);
-      part(el, 0, -0.14, 0, 0.10, 0.30, 0.115, AVM.webbing);            // forearm + glove
+      seg(el, geoForearm(acc, look.skin));
       sh.elbow = el;
       return sh;
     }
     var armL = buildArm(-1), armR = buildArm(1);
 
     /* ---- modular equipment: built once, toggled by .visible ---- */
-    /* Equipment is deliberately ONE mesh each plus a single accent band. Every
-       extra greeble multiplies by the player count, and a mag pouch is not
-       resolvable at the range you actually see other players. */
-    var vest = part(spine, 0, 0.39, -0.02, 0.445, 0.30, 0.30, AVM.vest);
+    var vest = seg(spine, geoVest(acc));
     vest.visible = false;
-    var helmet = part(neck, 0, 0.185, 0.005, 0.235, 0.145, 0.25, AVM.helmet);
-    part(helmet, 0, 0.03, 0.13, 0.17, 0.06, 0.02, accent);              // team band
+    var helmet = seg(neck, geoHelmet(acc), 0, 0.118, 0);
     helmet.visible = false;
-    var pack = part(spine, 0, 0.34, 0.19, 0.30, 0.34, 0.14, AVM.pack);
+    var pack = seg(spine, geoPack());
     pack.visible = false;
 
-    /* ---- weapon holder, parented to the RIGHT HAND so it follows the arm ---
-       v8.32: was (0, -0.28, -0.06), which hung the weapon a full forearm below
-       the elbow. Combined with the forward shoulder rotation and the rig's
-       non-uniform scale that threw it 0.79 m clear of the chest. */
+    /* ---- weapon holder on the right hand (v8.32 position, unchanged) ---- */
     var gun = new THREE.Group();
     gun.position.set(0, -0.12, 0.10);
     armR.elbow.add(gun);
@@ -746,7 +968,13 @@ var Avatars = (function () {
        rotation, because that is what it physically is — if the 0.92 lie-flat
        factor is ever retuned the barrel follows instead of silently drifting
        back into the dirt. Without this the muzzle buried 0.76 m underground. */
-    av.gun.rotation.x = R * 0.42 - p * (Math.PI / 2) * 0.92;
+    /* v2.14.0 LOW READY. Measured with the v8.21 arm pose and rx = 0, the
+       barrel pointed 79 degrees DOWN — every standing operator held his rifle
+       muzzle-to-the-floor like a walking stick. CARRY turns it to a low ready
+       (about 10 degrees below level standing, 20 crouched); looking up or down
+       still swings it with the arms. It fades out exactly as prone fades in, so
+       the v8.35 prone solution below is untouched. */
+    av.gun.rotation.x = CARRY * (1 - p) + R * 0.42 - p * (Math.PI / 2) * 0.92;
     av.gun.rotation.z = R * 0.18;
 
     av.torso.scale.z = 1 + br * 1.4;
@@ -798,10 +1026,14 @@ var Avatars = (function () {
      detection imports this instead of keeping its own copy, so resizing the
      head resizes the box that protects it. A little generosity is deliberate:
      rounding UP never makes a visible head unhittable. */
+  /* v2.14.0: HEAD is measured from the sculpted v3 head at load (see geoHeadRaw):
+     about 0.205 wide (ears) x 0.228 tall x 0.188 deep. The resulting box is
+     within 1 cm of the v8.32 box head on every axis, so headshot difficulty
+     is unchanged. */
   var HEAD_HALF = {
-    x: (0.195 * RIG.x) / 2 + 0.02,
-    y: (0.235 * RIG.y) / 2 + 0.02,
-    z: (0.185 * RIG.z) / 2 + 0.02
+    x: (HEAD.w * RIG.x) / 2 + 0.02,
+    y: (HEAD.h * RIG.y) / 2 + 0.02,
+    z: (HEAD.d * RIG.z) / 2 + 0.02
   };
 
   /* ===== v10.9 - FREE WHAT IS ACTUALLY PER-AVATAR =====
@@ -836,6 +1068,7 @@ var Avatars = (function () {
   return {
     RIG: RIG,                      // v8.19: hit detection must use these too
     HEAD_HALF: HEAD_HALF,          // v8.32: and the head box comes from here
+    lookFor: lookFor,              // v2.14.0: skin / hair / beard from the callsign (render-only)
     buildAvatar: buildAvatar,
     disposeAvatar: disposeAvatar,
     setRemoteGun: setRemoteGun,

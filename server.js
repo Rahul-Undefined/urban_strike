@@ -1632,8 +1632,8 @@ io.on('connection', (socket) => {
   });
   socket.on('vehHit', (d) => {
     const room = getRoom(socket); if (!room || room.state !== 'playing') return;
-    const p = room.players.get(socket.id); if (!p || !p.alive || Vehicles.seatOf(room, p.id)) return;
-    Vehicles.hit(room, p, d);
+    const p = room.players.get(socket.id); if (!p || !p.alive) return;
+    Vehicles.hit(room, p, d);   /* v2.13.1: a rider may shoot ANOTHER vehicle (hit() refuses their own, and a sealed crew) */
   });
   socket.on('vehHorn', () => {
     const room = getRoom(socket); if (!room || room.state !== 'playing') return;
@@ -1756,7 +1756,7 @@ io.on('connection', (socket) => {
     if (d.w === 'frag' && CFG.isArena(room.settings.map || 'urban')
         && (shooter.fragThrows | 0) > CFG.fragCountFor(room.settings.map || 'urban')) return;
     const victim = room.players.get(d.victim); if (!victim || !victim.alive) return;
-    if (Vehicles.seatOf(room, socket.id)) return;   /* v2.13: nobody fires from a seat (driver or passenger) */
+    if (Vehicles.shields(room, shooter)) return;    /* v2.13.1: riders of an open vehicle fire; the tank's sealed crew does not */
 
     const explosive = d.w === 'frag' || d.w === 'rocket' || d.w === 'molotov';
     if (!explosive && d.victim === socket.id) return;

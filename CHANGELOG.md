@@ -1,3 +1,92 @@
+# v2.14.0 (build 46) — THE v3 OPERATOR: A BODY THAT LOOKS LIKE A PERSON (2026-11-21)
+
+Built on v2.13.1. Rahul sent a new avatars.js ("operator v3") with a reference
+sheet and a turntable: "avatar ka code check karo aur dekho isko use kar sakte
+h kya ... ensure ki game theek rahe, saare map mei sahi se implement hona
+chahiye, height sahi se hai ki nahi ... guns, bomb, and other weapons sahi se
+implement kar dena."
+
+## Can it be used? Yes — it is a drop-in, and that was measured, not assumed
+An avatar is not only a picture here: the hit boxes are read from it, the
+doorways were fitted to it, and net.js, game.js and the menu reach into the
+object it returns. Old rig against new, in a real browser, before the swap:
+
+|                              | old rig        | v3             |
+|------------------------------|---------------:|---------------:|
+| standing: feet / top         | -0.01 / 2.94 m | -0.01 / 2.94 m |
+| head centre, standing        | 2.75 m         | 2.75 m         |
+| head centre, crouch (y, z)   | 2.34, 0.27     | 2.34, 0.27     |
+| head centre, prone (y, z)    | 1.15, 0.75     | 1.15, 0.75     |
+| head hit box (half extents)  | .184 .210 .175 | .192 .206 .175 |
+| rig scale                    | 1.68 1.62 1.68 | 1.68 1.62 1.68 |
+| weapons that build a model   | 29 / 29        | 29 / 29        |
+| meshes / triangles           | 24 / 288       | 20 / 9,890     |
+
+- Same functions, same returned object, same rig scale: the head box is within
+  a centimetre, so shooting is exactly as hard as it was (tools/verify-hitbox,
+  rays at the rendered body: 32 / 0).
+- All 29 things a player can hold — rifles, snipers, shotguns, pistol, knife,
+  bow, rocket, seeker, flamethrower, C4, the drone and EMP remotes — sit in
+  the hands. Helmet and plate carrier appear with the gear level.
+- A callsign always gets the same face; twelve callsigns get ten different
+  ones (skin, hair, beard). Render only — nothing is sent.
+- Cost: 9,890 triangles an operator instead of 288 (sixteen players: 158k,
+  small for any GPU), four FEWER meshes, and geometry is shared: 600 joins and
+  leaves level off at 121 geometries in memory (the v10.9 leak rule holds).
+- Run in the real client on all five maps, with five Bot Ops operators on
+  Urban Small: no errors, feet 2 cm from the floor, nothing NaN.
+- NEW: your own third-person body (P) now wears your callsign's face and your
+  side's colour, like everybody else sees you. It was the anonymous default.
+- The file's own notes called this work "v2.12.0" (it was written against an
+  older base); relabelled v2.14.0 here, where 2.12 is Bot Ops.
+
+## Height — the honest answer
+v3 is EXACTLY as tall as the rig it replaces: 2.95 m, feet on the ground, on
+every map. That is 1.5x the 1.92 m body that collides and the 1.73 m eye you
+look out of — the v1.0e decision ("make the avatar seriously tall"), kept.
+Two things follow from it that this release does NOT change, because both are
+a decision about how the game plays, not a bug in the new avatar:
+- doorways were raised to 2.65 m in v1.0e, so a 2.95 m head still passes
+  through the top 30 cm of every door frame;
+- the v2.13 vehicles are real size (a sedan is 1.5 m tall), so a player
+  standing beside one looks like a giant — the car's roof is at the waist.
+
+## Gates
+- NEW tools/verify-operator.js, 21 checks: the table above as assertions, every
+  weapon in the hands, every gear combination, every pose finite, the memory
+  rule. verify-avatar 35/0, verify-hitbox 32/0, verify-tpp 19/0 unchanged.
+
+# v2.13.1 (build 45) — RIDERS SHOOT (2026-11-21)
+
+Built on v2.13.0. Rahul: "car mei baithe avatar shoot kar sakte h, abhi shoot
+nahi kar sakte, usko bhi include kar do."
+
+- EVERYONE IN AN OPEN VEHICLE FIRES — bike, auto, sedan, bus; the driver too
+  (a player alone in a car could otherwise never shoot from it). Left click
+  fires, R reloads, the number row and the wheel change guns.
+- NOT THE TANK'S CREW. They sit behind armour nothing can reach; a gun that
+  cannot be answered is not a fight. The server refuses their hits as well.
+- A SEAT IS NOT A FIRING POSITION. Spread is the gun's hip spread times a seat
+  penalty: x1.2 for a passenger at rest rising to x2.0 flat out; x1.7 rising
+  to x3.2 for the one steering. No ADS and no scope from a seat (the right
+  button does nothing there) — a sniper rifle is fired unscoped and it shows.
+  Nothing is thrown from a seat.
+- WHERE THE ROUND COMES FROM. You aim with the chase camera's crosshair (the
+  same over-the-shoulder rule as third person); the tracer and the flash leave
+  from the rider, not from the lens behind the vehicle. The people in your own
+  vehicle are never in your line of fire, and your own rocket does not go off
+  on the passenger beside you.
+- A rider can shoot ANOTHER vehicle, never the one they sit in.
+- IN A TEAM MODE A VEHICLE CARRIES ONE SIDE: now that riders shoot, an enemy
+  cannot take the empty seat beside you ("Enemy vehicle"). Free For All is
+  unchanged — anybody may ride, and co-riders cannot hit each other inside.
+- You cannot board lying down ("Stand up to get in"): a rider fires at full
+  strength, and prone is 20%.
+- tools/verify-vehicles.js: 61 checks (was 54) — a rider's shot lands on a
+  live server; the tank crew's does not; the team rule; the seat penalty.
+  tools/verify-botmode.js: the Hard vest check accepted only level 2 and failed
+  whenever two of six drew a level 3 — it now accepts 2 or 3.
+
 # v2.13.0 (build 44) — VEHICLES ON URBAN, AND THE GAME'S OWN ART (2026-11-21)
 
 Built on v2.12.1. Rahul: "Vehicles banao ... PUBG style mei road pe khade
