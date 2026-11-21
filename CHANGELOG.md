@@ -1,3 +1,102 @@
+# v2.16.2 (build 51) — THE RIDER IS THE OPERATOR (2026-11-21)
+
+Rahul: "fix the avatar when on bike it is completely bad, it needs to be
+aligned with the current avatar layout."
+
+## What was there
+It was not the avatar at all. Since v2.13 a rider's own rig was HIDDEN and
+vehicles.js showed five grey boxes at the seat (a torso, a head, a cap, a slab
+of thighs, two sticks for the driver's arms) — the look v2.14 replaced
+everywhere else.
+
+## What is there now
+- The rider is their own operator, sitting: the callsign's face, the side's
+  colours, the helmet and vest that are worn. Everyone else's, and your own
+  under the chase camera.
+- Motorbike: astride, knees out, feet either side of the engine; the driver
+  leans over the tank with both hands on the bars (9 cm from the grips,
+  measured against the model). The pillion sits up and HAS the weapon —
+  riders shoot — turns the shoulders to where the player aims, and holds the
+  muzzle up when facing the driver's back.
+- The rig is placed in the vehicle's own frame, so in a bend the rider leans
+  with the bike.
+- Auto rickshaw: the driver holds the bars from the driver's seat and two
+  armed passengers sit on the bench. Its seat points were 45 cm ahead of both
+  seats the model has — the driver was sitting in the windscreen. Moved.
+- Sedan and bus: behind glass, weapon down. In the sedan the pose is low and
+  reclined: sat upright, boots showed between the wheels and a helmet reached
+  the roof (both measured). The tank's crew is still not drawn.
+
+## The one thing that had to give: size
+On foot the rig is drawn 1.62x life size so a target can be found at range —
+2.95 m tall. A motorbike is 2.2 m long and a sedan 1.5 m high. Aboard, the
+operator is drawn at 0.62 of that: life size, which is what the vehicles were
+built to. Getting off puts it back. The head hit box is read from the head
+that is drawn (v8.32), so what you see is still what you hit — checked in the
+browser: drawn head and hit head at the same 1.58 m on the pillion.
+The underlying mismatch — a 2.95 m operator in a world of real-size vehicles
+— is the avatar-height question that is still open.
+
+## Verified
+- tools/verify-rider.js (32): real avatars on real vehicle models through the
+  game's own two calls — size, hands on the bars, feet, heads under roofs and
+  canopy, boots above floors, the lean, the look, getting off, dying aboard.
+- Real Chromium, console captured: driving a bike with a second player riding
+  pillion; getting off and looking at the pillion still seated; the pillion
+  getting off and standing at full size again. No errors.
+- Firing re-proven on this build (on foot and from a seat).
+
+## Cost
+First load 514 -> 516 KB gzipped; budget 514 -> 517, itemised in
+tools/verify-bandwidth.js. The box figures and their materials were deleted.
+
+# v2.16.1 (build 50) — GUNS FIRE AGAIN (2026-11-21)
+
+v2.16.0 could not shoot. Rahul, within minutes of unzipping it: "vehicle mei
+baith ke enemy ko shoot nahi kar pa rahe h" — then: "not only on vehicle but
+gun shot nahi ho raha h ... bullet count wala update ho raha hai."
+
+## What was wrong
+- tryFire() handed the new recoil a variable called `aiming`. That name exists
+  in update() and in fireHitscan(); it does not exist in tryFire(). Every
+  trigger pull threw a ReferenceError AFTER the magazine was decremented and
+  BEFORE the round left — exactly what he described: the count goes down,
+  nothing is fired. On foot and from a vehicle seat alike; it was one bug.
+- The game's frame loop catches a step's exception and logs it to the console,
+  so the page showed nothing.
+
+## Why v2.16.0's checks missed it
+- No gate ran the firing path. verify-v216 simulated the recoil springs in
+  isolation, where they were perfect.
+- The real-browser pass DID show it — trigger held, magazine 30 -> 30 — and it
+  was put down to the headless browser's frame rate. That was wrong, and the
+  zip went out on it. The pass also listened for page errors only, not for
+  the console, where this one was.
+
+## The fix
+- One line: recoilPunch(w, !!Input.aim).
+- tools/verify-client.js now PULLS THE TRIGGER: with the whole bundle loaded
+  it gives the player each of the 29 weapons and fires, from the hip and
+  through the sights, then steps the frames after. On the v2.16.0 code it
+  fails with "ak47 (hip): aiming is not defined"; on this it passes, and all
+  44 firearm pulls send their round.
+
+## Verified in a real browser, console captured
+- AK, M4, pistol, shotgun, sniper: each fires (magazine goes down on the HUD).
+- On foot: 2 rounds at a second player 8 m away -> 2 hits -> killed.
+- From the driver's seat of a sedan: 2 rounds at a player 14 m ahead -> 2
+  hits -> killed.
+- No errors on the console.
+
+## Found while looking, NOT changed (they alter behaviour — Rahul's call)
+A scan of every client script for names used but never defined turned up two
+more, both older than today:
+- core/game.js, the Q key-up handler (v1.0v): `playing` is not defined there,
+  so a quick tap of Q — meant to drop an attachment — throws instead. It has
+  never worked.
+- ui/showcase.js: `Viewmodels.build()` (the object is called WeaponModels), so
+  the menu's weapon reel silently shows nothing.
+
 # v2.16.0 (build 49) — SEATS, A SPEEDOMETER, BLOOD, AND GUNS WORTH LOOKING AT (2026-11-21)
 
 Built on v2.15.0. Rahul's eight-point list, then three follow-ups: "blood

@@ -929,7 +929,10 @@ var Weapons = (function () {
     }
     nextFireAt = t + 60000 / w.rpm;
     kick = 1;
-    if (w.type !== 'melee') recoilPunch(w, aiming);
+    /* v2.16.1: v2.16.0 passed `aiming` here — a name that exists in update() and
+       fireHitscan() but NOT in this function. Every trigger pull threw before the
+       round left: the magazine went down and nothing was fired. */
+    if (w.type !== 'melee') recoilPunch(w, !!Input.aim);
     var EF = eff(current);
     // Pattern recoil: vertical kick + horizontal drift that wanders as a burst grows.
     recoilAccum += EF.recoil;

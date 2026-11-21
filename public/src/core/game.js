@@ -1007,7 +1007,11 @@ var Game = (function () {
         WeaponModels.setDress(row.color, Avatars.lookFor(row.name).skin);
       });
       step('ownbody', function () {
-        if (!tpp || !PlayerCtl.alive || riding) { if (ownAv) ownAv.group.visible = false; return; }
+        /* v2.16.2: aboard, your own operator is on the seat (the chase camera
+           is always third person). It was hidden, and a box figure sat there. */
+        var ownSeat = (riding && window.Vehicles && Vehicles.seatOf) ? Vehicles.seatOf(Net.myId(), PlayerCtl.yaw) : null;
+        if (ownSeat && ownSeat.sealed) ownSeat = null;
+        if (!PlayerCtl.alive || (riding ? !ownSeat : !tpp)) { if (ownAv) ownAv.group.visible = false; return; }
         /* v2.14: your own body wears what everyone else sees on you — your
            callsign's face (Avatars.lookFor) and your side's colour — and is
            rebuilt if either changes (a new match on the other team). It was
@@ -1045,8 +1049,10 @@ var Game = (function () {
           run: PlayerCtl.moveState === 2, crouch: PlayerCtl.crouch, prone: PlayerCtl.prone,
           dead: false, deadT: 0, rx: PlayerCtl.pitch, ry: PlayerCtl.yaw, lean: PlayerCtl.lean,
           reloading: Weapons.isReloading(),
+          seat: ownSeat,
           dist: 4, dt: dt
         });
+        if (ownSeat) Vehicles.sit(g2, ownSeat);
       });
 
       /* Remote avatars are their own step. This is the one that broke in team

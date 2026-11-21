@@ -206,5 +206,62 @@ Object.keys(ctx.CFG.MODES).filter(m => ctx.CFG.MODES[m].hidden).forEach(m => {
 catIds.forEach(c => ok(ctx.CFG.modesInCat(c).length > 0,
   'category ' + c + ' has at least one selectable variant'));
 
+
+/* ===== v2.16.1 - PULL THE TRIGGER =====
+   v2.16.0 shipped with a gun that could not fire. tryFire() passed `aiming` to
+   the new recoil — a name that exists in update() and fireHitscan() and not in
+   tryFire(). Every trigger pull threw AFTER the magazine went down and BEFORE
+   the round left; the game's frame loop catches a step's exception and logs
+   it, so the page showed no error at all. Rahul found it in a minute of play.
+
+   No gate ran the firing path. They load the bundle (above), lift single
+   functions out (verify-hitbox) or simulate a block in isolation (verify-v216
+   did exactly that to the recoil springs — in isolation it was perfect). So
+   this section does the plain thing: with every script loaded, it gives the
+   player each weapon in the table and pulls the trigger, hip and sighted, and
+   steps the frames after. Anything that throws anywhere in that path fails
+   here, with the weapon and the line.
+
+   The HUD is a stub (this is the weapon system's path, not the DOM's) and the
+   world is empty: a round that hits nothing must still be a round. */
+console.log('\n--- every weapon fires when the trigger is pulled ---');
+{
+  let clock = 5e6; ctx.performance.now = () => clock;
+  const run = (code) => vm.runInContext(code, ctx, { filename: 'trigger-pull' });
+  let ready = false;
+  try {
+    run(`
+      var __cam = new THREE.PerspectiveCamera(70, 16 / 9, 0.05, 500), __sc = new THREE.Scene(); __sc.add(__cam);
+      UI = new Proxy({}, { get: function () { return function () { return 0; }; } });
+      var __sent = { shoot: 0, hit: 0 };
+      Net.sendShoot = function () { __sent.shoot++; }; Net.sendHit = function () { __sent.hit++; };
+      FX.init(__sc, __cam); Weapons.init(__cam, __sc); PlayerCtl.alive = true;
+    `);
+    ready = true;
+  } catch (e) { ok(false, 'the weapon system starts with the bundle loaded — ' + e.message); }
+  if (ready) {
+    const order = ctx.CFG.WEAPON_ORDER, W = ctx.CFG.WEAPONS, threw = [], silent = [];
+    let fired = 0;
+    order.forEach((n) => {
+      ['hip', 'sights'].forEach((how) => {
+        try {
+          run('Weapons.applyGrant({ t: "weapon", w: "' + n + '" }); Input.aim = ' + (how === 'sights') + ';');
+          clock += 3000; run('Weapons.update(0.016);'); clock += 16;
+          const before = run('__sent.shoot');
+          run('Weapons.setTrigger(true); Weapons.update(0.016);'); clock += 16;
+          run('Weapons.setTrigger(false);');
+          for (let f = 0; f < 12; f++) { run('Weapons.update(0.016); FX.update(0.016);'); clock += 16; }   // the recoil settling, the flash dying
+          const after = run('__sent.shoot');
+          if (['auto', 'semi', 'bolt'].indexOf(W[n].type) >= 0) { if (after > before) fired++; else silent.push(n + ' (' + how + ')'); }
+        } catch (e) { threw.push(n + ' (' + how + '): ' + e.message + ' @' + String(e.stack || '').split('\n')[1].trim().replace(/^at /, '').slice(0, 70)); }
+      });
+    });
+    run('Input.aim = false;');
+    const guns = order.filter(n => ['auto', 'semi', 'bolt'].indexOf(W[n].type) >= 0).length;
+    ok(threw.length === 0, 'all ' + order.length + ' weapons take a trigger pull, from the hip and through the sights, without throwing' + (threw.length ? ' — ' + threw.slice(0, 4).join(' | ') : ''));
+    ok(silent.length === 0 && fired === guns * 2, 'and every firearm actually sends its round to the server: ' + fired + ' of ' + guns * 2 + ' pulls' + (silent.length ? ' — NOTHING LEFT: ' + silent.slice(0, 6).join(', ') : ''));
+  }
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

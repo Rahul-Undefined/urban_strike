@@ -1039,9 +1039,11 @@ var Net = (function () {
       var deadFor = (!r.alive && r.deadAt) ? (performance.now() - r.deadAt) : 1e9;
       var deadAnim = deadFor < CORPSE_MS;
       r.av.group.visible = vis || deadAnim;
-      /* v2.13: a rider is drawn as the seated figure in the vehicle, not as a
-         standing rig through its roof */
-      if (r.alive && window.Vehicles && Vehicles.isRider(id)) r.av.group.visible = false;
+      /* v2.16.2: a rider is the operator, SEATED (it was hidden and a box
+         figure stood in). Only a tank's crew, behind armour, is not drawn. */
+      var seatS = (r.alive && window.Vehicles && Vehicles.seatOf) ? Vehicles.seatOf(id, r.smoothRy) : null;
+      if (seatS && seatS.sealed) { r.av.group.visible = false; seatS = null; }
+      else if (seatS) r.av.group.visible = true;
       if (deadAnim && !vis) {
         var fade = deadFor > (CORPSE_MS - FADE_MS)
           ? Math.max(0, (CORPSE_MS - deadFor) / FADE_MS) : 1;
@@ -1186,8 +1188,10 @@ var Net = (function () {
         run: r.mv === 2, crouch: r.crouch, prone: r.prone,
         dead: deadAnim, deadT: deadFor / 1000, rx: r.rx, ry: r.ry, lean: r.ln,
         reloading: !!b.rl,
+        seat: seatS,
         dist: r.renderPos.distanceTo(_camPos), dt: dt
       });
+      if (seatS) Vehicles.sit(g, seatS);   // on the seat, in the vehicle's frame — BEFORE the head is read below (seatOf's object is reused: nothing else may ask in between)
 
       /* v8.32 ONE SOURCE OF TRUTH FOR WHERE THE HEAD IS.
 

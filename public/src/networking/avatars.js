@@ -725,6 +725,87 @@ var Avatars = (function () {
      own frame by the caller), which is what makes strafing readable. Nothing
      here is networked: direction, turn rate and stride are all derived from
      interpolated position and yaw. */
+  /* ===== v2.16.2 - A RIDER IS THE OPERATOR, SEATED =====
+     Rahul: "fix the avatar when on bike it is completely bad, it needs to be
+     aligned with the current avatar layout."
+     It was not the avatar at all. Since v2.13 a rider's own rig was HIDDEN
+     and vehicles.js showed five grey boxes at the seat — the look this file
+     left behind in v2.14. Now the rider is this operator: the callsign's
+     face, the side's colours, the helmet and vest that are worn, sitting.
+
+     ONE THING HAD TO GIVE: SIZE. RIG draws an operator 1.62x life size so a
+     target can be found at range — 2.95 m tall. A motorbike is 2.2 m long and
+     a sedan 1.5 m high: at full size the rider is a giant on a toy and his
+     head goes through the roof. Aboard, the rig is drawn at SEAT_K of that
+     (almost exactly life size, 1.83 m), which is what the vehicles were built
+     to. The head hit box reads the head that is drawn (net.js, v8.32), so
+     what you see is still what you hit.
+
+     s.seat (from Vehicles.seatOf): kind (the vehicle), driver, open (no
+     window sill: the gun can be shown), look (where the player looks,
+     relative to the nose; + is to the right). vehicles.js places and tilts the group — this only
+     bends the joints. */
+  var SEAT_K = 0.62;
+  /* per vehicle: hip, knee, knees apart, the trunk's lean (whoever steers /
+     a passenger), then the driver's shoulder, elbow and hands-apart.
+       bike  astride: knees out, feet back on the pegs, over the bars
+       auto  a bench under a low canopy: sat back, arms straight to the bars
+       car   the seat is on the floor: knees up, legs out under the dash, the
+             back reclined (upright, the helmet is through the roof and the
+             boots through the floor pan — both measured)
+       bus   a chair and a big flat wheel */
+  var SEATS = {
+    bike: [-1.20, 1.66, 0.30, 0.36, 0.10, -1.08, -0.50, 0.10],
+    auto: [-1.50, 1.40, 0.10, -0.10, -0.12, -0.74, -0.42, 0.02],
+    car:  [-1.85, 0.70, 0.09, -0.20, -0.20, -1.22, -0.58, -0.06],
+    bus:  [-1.46, 1.40, 0.09, 0.05, 0.05, -0.98, -0.86, -0.06]
+  };
+  function poseSeat(av, s, seat) {
+    var k = Math.min(1, s.dt * 10);
+    av.breath += s.dt * 1.6;
+    var br = Math.sin(av.breath) * 0.012;
+    var P = SEATS[seat.kind] || SEATS.bus, drv = !!seat.driver;
+    av.hipL.rotation.x = P[0]; av.hipR.rotation.x = P[0];
+    av.hipL.rotation.z = -P[2]; av.hipR.rotation.z = P[2];
+    av.hipL.knee.rotation.x = P[1]; av.hipR.knee.rotation.x = P[1];
+    var lean = drv ? P[3] : P[4];
+    var look = Math.max(-1.35, Math.min(1.35, seat.look || 0));
+    /* a passenger with a weapon turns the shoulders to the target; whoever
+       steers keeps them square and turns only the head */
+    var armed = !drv && !!seat.open;
+    var twist = armed ? look * 0.72 : look * 0.12;
+    av.sLook = lerp(av.sLook === undefined ? twist : av.sLook, twist, k);
+    av.spine.position.y = 0.02;
+    av.spine.rotation.x = lean;
+    av.spine.rotation.y = -av.sLook;
+    av.spine.rotation.z = 0;
+    var aim = -s.rx * 0.62;
+    if (drv) {
+      /* both hands on the controls */
+      av.armR.rotation.x = P[5] + br; av.armL.rotation.x = P[5] + br;
+      av.armR.rotation.z = P[7]; av.armL.rotation.z = -P[7];
+      av.armR.elbow.rotation.x = P[6]; av.armL.elbow.rotation.x = P[6];
+    } else if (armed) {
+      /* the carry, as on foot: a pillion rider or someone in an auto can shoot */
+      av.armR.rotation.x = -0.40 + aim + br; av.armR.rotation.z = -0.20; av.armR.elbow.rotation.x = -1.10;
+      av.armL.rotation.x = -0.58 + aim + br; av.armL.rotation.z = 0.34; av.armL.elbow.rotation.x = -1.24;
+    } else {
+      /* behind glass: hands on the knees */
+      av.armR.rotation.x = -0.52 + br; av.armL.rotation.x = -0.52 + br;
+      av.armR.rotation.z = 0.04; av.armL.rotation.z = -0.04;
+      av.armR.elbow.rotation.x = -0.74; av.armL.elbow.rotation.x = -0.74;
+    }
+    if (av.gun.visible !== armed) av.gun.visible = armed;
+    /* looking ahead there is somebody's back a forearm away: the muzzle goes UP
+       (high port) and comes level as the shoulders turn to a target */
+    var port = 1 - Math.min(1, Math.abs(av.sLook) / 0.45);
+    av.gun.rotation.x = CARRY - 0.80 * port; av.gun.rotation.z = 0;
+    av.torso.scale.z = 1 + br * 1.4;
+    av.head.rotation.x = -lean * 0.9 - s.rx * 0.5;
+    av.head.rotation.y = -(look - av.sLook);
+    /* the name plate: lowered to sit over a seated head, and upright */
+    if (av.tagHolder) { av.tagHolder.rotation.x = 0; av.tagHolder.rotation.z = 0; av.tagHolder.position.y = -0.55; }
+  }
   function poseAvatar(av, s) {
     var k = Math.min(1, s.dt * 10);
     var kSlow = Math.min(1, s.dt * 5.5);
@@ -734,6 +815,18 @@ var Avatars = (function () {
       av.detailShown = showDetail;
       for (var i = 0; i < av.detail.length; i++) av.detail[i].visible = showDetail;
     }
+
+    /* v2.16.2: aboard a vehicle (see poseSeat). Getting on and off changes the
+       size the rig is drawn at, once, and puts back what the seat bent. */
+    var seat = s.dead ? null : (s.seat || null);
+    if (!!av.seated !== !!seat) {
+      av.seated = !!seat;
+      var sk = seat ? SEAT_K : 1;
+      av.group.scale.set(RIG.x * sk, RIG.y * sk, RIG.z * sk);
+      if (av.tagHolder) av.tagHolder.scale.set(1 / (RIG.x * sk), 1 / (RIG.y * sk), 1 / (RIG.z * sk));
+      if (!seat) { av.hipL.rotation.z = 0; av.hipR.rotation.z = 0; av.spine.rotation.y = 0; av.gun.visible = true; av.sLook = undefined; }
+    }
+    if (seat) { poseSeat(av, s, seat); return; }
 
     if (s.dead) {
       /* Three stages rather than one topple: the knees give, the spine folds,
@@ -978,6 +1071,7 @@ var Avatars = (function () {
     setGear: setGear,
     kitGeo: kitGeo,                // v2.14.1: the worn helmet / vest, for the loot on the ground
     poseAvatar: poseAvatar,
+    SEAT_K: SEAT_K,                // v2.16.2: the size a rider is drawn at, as a share of RIG
     XRAY_MAT: XRAY_MAT
   };
 })();

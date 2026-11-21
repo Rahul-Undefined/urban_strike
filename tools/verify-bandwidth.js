@@ -256,7 +256,14 @@ ok(pictures.length <= 2 && picBytes / 1024 <= PICTURE_BUDGET_KB,
    files in the repository untouched — would take first load to roughly
    300 KB. It changes what the browser is sent, so it is proposed to Rahul
    rather than slipped in. */
-const GZ_BUDGET_KB = 514;
+/* ===== v2.16.2 — 514 -> 517 KB: THE RIDER IS THE AVATAR. =====
+   networking/avatars.js  the seated pose for four vehicles, the size
+                          change on and off                          1.8 KB
+   vehicles, net, game    seatOf / sit and their two callers; the box
+                          figures and their two materials deleted    0.7 KB
+   516 KB measured. ~10,210 -> ~10,160 fresh loads per 5 GB. The comment
+   stripping proposed under v2.16 above is still the real answer. */
+const GZ_BUDGET_KB = 517;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

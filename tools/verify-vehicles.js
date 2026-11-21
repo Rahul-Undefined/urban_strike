@@ -203,7 +203,8 @@ console.log('--- C. the client, against Urban\'s real colliders ---');
   ok(Object.keys(info).every(t => info[t].meshes <= 22 && info[t].tris < 2600), 'five models, merged by material: ' + Object.keys(info).map(t => t + ' ' + info[t].tris + ' triangles') .join(', '));
   ok(Object.keys(info).every(t => Math.abs(info[t].wid - T[t].wid) <= 0.55 && info[t].len >= T[t].len - 0.5 && info[t].len <= T[t].len + 1.5 && info[t].hgt >= T[t].hgt - 0.2 && info[t].hgt <= T[t].hgt + 1.2),
     'what you see is what you collide with: each model matches its hull box, bar what sticks out past it (mirrors, the tank\'s gun and aerial) [' + Object.keys(info).map(t => t + ' ' + info[t].len.toFixed(1) + 'x' + info[t].wid.toFixed(1) + 'x' + info[t].hgt.toFixed(1) + ' vs ' + T[t].len + 'x' + T[t].wid + 'x' + T[t].hgt).join(', ') + ']');
-  ok(Object.keys(info).every(t => info[t].beams && (T[t].sealed ? info[t].figs === 0 : info[t].figs === T[t].seats)), 'every one has headlight beams, and a seated figure for each seat (the tank\'s crew is inside)');
+  /* v2.16.2: the box figures are gone — a rider is the operator itself, seated (tools/verify-rider.js) */
+  ok(Object.keys(info).every(t => info[t].beams && info[t].figs === 0), 'every one has headlight beams, and no stand-in figures: whoever rides is drawn as their own avatar');
   /* a match */
   const F = fakeRoom('ffa'); const pkt = F.Veh.start(F.room);
   const scene = new THREE.Scene(); Vehicles.init(scene); Vehicles.sync(pkt); Vehicles.update(0.016);

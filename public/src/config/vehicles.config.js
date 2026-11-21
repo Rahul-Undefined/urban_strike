@@ -44,7 +44,7 @@
       bike: { label: 'Motorbike',     seats: 2, dial: 160, hp: 260, burn: 0.26,  max: 27, rev: 4, accel: 16,  brake: 28, turn: 2.6,  len: 2.2,  wid: 0.8,  hgt: 1.25, r: 0.5,
               armor: 1.0, ram: 0.8, boom: 5.5, seatY: 0.45, seatsAt: [[0, -0.05], [0, -0.6]] },
       auto: { label: 'Auto Rickshaw', seats: 3, dial: 100, hp: 380, burn: 0.3,  max: 15, rev: 4, accel: 8,   brake: 18, turn: 2.2,  len: 2.9,  wid: 1.45, hgt: 1.85, r: 0.75,
-              armor: 1.0, boom: 6.5, seatY: 0.58, seatsAt: [[0, 0.55], [-0.36, -0.55], [0.36, -0.55]] },
+              armor: 1.0, boom: 6.5, seatY: 0.58, seatsAt: [[0, 0.10], [-0.36, -0.95], [0.36, -0.95]] },   // v2.16.2: ON the driver's seat and the bench the model has (they were 45 cm ahead of both)
       car:  { label: 'Sedan',         seats: 4, dial: 160, hp: 650, burn: 0.36,  max: 25, rev: 7, accel: 11,  brake: 24, turn: 1.9,  len: 4.4,  wid: 1.9,  hgt: 1.5,  r: 0.98,
               armor: 0.8, boom: 7.5, sill: 0.95, seatY: 0.2, seatsAt: [[0.42, 0.25], [-0.42, 0.25], [0.42, -0.75], [-0.42, -0.75]] },
       bus:  { label: 'City Bus',      seats: 6, dial: 100, hp: 1400, burn: 0.48, max: 15, rev: 4, accel: 5,   brake: 14, turn: 1.05, len: 10.5, wid: 2.6,  hgt: 3.1,  r: 1.35, big: 1,

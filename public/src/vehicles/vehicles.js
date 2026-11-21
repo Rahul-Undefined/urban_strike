@@ -11,8 +11,8 @@
               reports the pose 20 times a second — the same division of labour
               as walking in this game. Everyone else sees it through the
               snapshot, interpolated.
-     riding   a seated player is carried at the seat; their avatar is hidden
-              and a seated figure is shown at the wheel instead.
+     riding   a seated player is carried at the seat, and drawn there as
+              their own avatar, sitting (v2.16.2: seatOf / sit).
      camera   a chase camera on the mouse, pulled in when a wall is behind it.
      damage   a local shot whose ray meets a hull before it meets a wall is
               reported ('vehHit'); a driver who runs into a player reports the
@@ -40,9 +40,8 @@ var Vehicles = (function () {
   var hornAt = 0;
   var dryToldAt = 0;
   var puffs = [];
-  /* a rider's position is reported so that the head of their hit box sits where
-     the seated figure's head is drawn (figure head: seat + 1.02; hit box head:
-     centre + 0.81) */
+  /* a rider's reported position (the middle of their body box) is this far
+     above the seat; the head box is read from the head that is drawn */
   var SEAT_UP = 0.22;
 
   /* ------------------------------------------------------------ models */
@@ -51,7 +50,7 @@ var Vehicles = (function () {
     if (mats) return mats;
     mats = { glass: lam(0x16222e), tyre: lam(0x141414), rim: lam(0x8d939a), trim: lam(0x23272c), chrome: lam(0x8b949c),
              seat: lam(0x3a2f28), olive: lam(0x4d5a37), oliveD: lam(0x38422a), track: lam(0x1b1b19),
-             yellow: lam(0xe2b21f), green: lam(0x1f7a46), white: lam(0xe8e6e0), figure: lam(0x2c3038), skin: lam(0xb98a64),
+             yellow: lam(0xe2b21f), green: lam(0x1f7a46), white: lam(0xe8e6e0),
              beam: new THREE.MeshBasicMaterial({ color: 0xfff0c2, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
              smoke: new THREE.MeshBasicMaterial({ color: 0x1d1d1f, transparent: true, opacity: 0.55, depthWrite: false }),
              flame: new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }),
@@ -262,25 +261,10 @@ var Vehicles = (function () {
     for (var lk = 0; lk < lamps.length; lk++) kit.beam(lamps[lk][0], lamps[lk][1], lamps[lk][2], type === 'bike' || type === 'auto' ? 9 : 12, type === 'bike' ? 1.5 : 1.9);
     var group = kit.merge();
     group.rotation.order = 'YXZ';   // heading, then pitch and roll in the vehicle's own frame
-    /* a seated figure per seat — shown only while that seat is taken (the rider's
-       own avatar is hidden: a standing rig would poke through the roof) */
-    var spec = V.types[type];
+    /* v2.16.2: no more box figures. Until now a rider's avatar was hidden and
+       five grey boxes were shown at the seat; the rider is now the operator
+       itself, seated (seatOf / sit below, Avatars.poseSeat). */
     group.userData.figures = [];
-    if (!spec.sealed) {
-      for (var seat = 0; seat < spec.seatsAt.length; seat++) {
-        var fig = new Kit();
-        var off = spec.seatsAt[seat];
-        fig.box(M().figure, 0.44, 0.5, 0.26, off[0], spec.seatY + 0.6, -off[1]);              // torso
-        fig.box(M().skin, 0.23, 0.24, 0.23, off[0], spec.seatY + 0.99, -off[1]);              // head
-        if (!spec.sill) fig.box(M().figure, 0.25, 0.09, 0.25, off[0], spec.seatY + 1.15, -off[1]);   // helmet/cap on the open ones
-        fig.box(M().figure, 0.4, 0.14, 0.42, off[0], spec.seatY + 0.36, -off[1] - 0.2);       // thighs
-        if (seat === 0) { fig.box(M().figure, 0.1, 0.1, 0.4, off[0] - 0.2, spec.seatY + 0.72, -off[1] - 0.26); fig.box(M().figure, 0.1, 0.1, 0.4, off[0] + 0.2, spec.seatY + 0.72, -off[1] - 0.26); }   // arms to the wheel
-        var figure = fig.merge();
-        figure.visible = false;
-        group.add(figure);
-        group.userData.figures.push(figure);
-      }
-    }
     return group;
   }
 
@@ -723,6 +707,34 @@ var Vehicles = (function () {
   }
   /* net.js asks before it shows a remote avatar; system.js before it lets a round through a hull */
   function isRider(pid) { return riders[pid] !== undefined; }
+  /* ===== v2.16.2 - THE RIDER IS THE OPERATOR =====
+     seatOf: who sits where, in the words the avatar code poses from (one
+     object, reused — read it before the next call). lookYaw is where the
+     player is looking; `look` is that relative to the nose, + to the right.
+     sit: puts a rig ON the seat in the vehicle's own frame, so a rider leans
+     into a bend with the bike and pitches with the bonnet. The rig faces +z
+     and a vehicle's nose is -z: half a turn about Y. */
+  var SEAT_HIP = { bike: 0.37, auto: 0.28, car: 0.34, bus: 0.40 };   // hips above seatY: on the saddle, sunk a little into a bench, low in a sedan
+  var seatS = { veh: null, k: 0, kind: '', bike: false, open: false, driver: false, sealed: false, look: 0 };
+  var sitV = null, sitQ = null;
+  function seatOf(pid, lookYaw) {
+    var vid = riders[pid];
+    if (vid === undefined) return null;
+    var veh = list[vid];
+    if (!veh || !veh.seats) return null;
+    var k = veh.seats.indexOf(pid);
+    if (k < 0) return null;
+    seatS.veh = veh; seatS.k = k; seatS.kind = veh.type; seatS.bike = veh.type === 'bike'; seatS.open = !veh.T.sill; seatS.sealed = !!veh.T.sealed;
+    seatS.driver = k === 0; seatS.look = wrap((lookYaw || 0) - veh.ry);
+    return seatS;
+  }
+  function sit(group, st) {
+    var veh = st.veh, off = veh.T.seatsAt[st.k] || veh.T.seatsAt[0];
+    if (!sitV) { sitV = new THREE.Vector3(); sitQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); }
+    sitV.set(off[0], veh.T.seatY + (SEAT_HIP[veh.type] || 0.4), -off[1]).applyQuaternion(veh.group.quaternion).add(veh.group.position);
+    group.position.copy(sitV);
+    group.quaternion.copy(veh.group.quaternion).multiply(sitQ);
+  }
   function riderOf(pid) { var vid = riders[pid]; return vid === undefined ? null : (list[vid] || null); }
   function update(dt) {
     if (!V || !scene) return;
@@ -745,8 +757,6 @@ var Vehicles = (function () {
       var beams = veh.group.userData.beams;
       if (beams && beams.visible !== !!veh.lit) beams.visible = !!veh.lit;
       smoke(veh, nowT);
-      var figs = veh.group.userData.figures || [];
-      for (var fk = 0; fk < figs.length; fk++) figs[fk].visible = !!(veh.seats && veh.seats[fk]);
       if (veh.seats) for (var sk = 0; sk < veh.seats.length; sk++) if (veh.seats[sk]) riders[veh.seats[sk]] = veh.id;
       if (!mine && pos && freeSeat(veh) >= 0) {
         var gap = Math.hypot(veh.x - pos.x, veh.z - pos.z) - veh.T.len / 2;
@@ -919,7 +929,7 @@ var Vehicles = (function () {
     try { if (typeof AudioSys !== 'undefined' && AudioSys.vehicleEngine) AudioSys.vehicleEngine(!!on, Math.min(1, Math.abs(speed) / (top || 1)), !!deep); } catch (err) { /* no sound is not a reason to stop driving */ }
   }
   return { init: init, reset: reset, sync: sync, onSeat: onSeat, onBoom: onBoom, update: update, drive: drive, mounted: mounted,
-           camera: camera, use: use, horn: horn, lights: lights, onHorn: onHorn, rayHit: rayHit, report: report, isRider: isRider, riderOf: riderOf,
+           camera: camera, use: use, horn: horn, lights: lights, onHorn: onHorn, rayHit: rayHit, report: report, isRider: isRider, riderOf: riderOf, seatOf: seatOf, sit: sit, _seatHip: SEAT_HIP,
            canFire: canFire, aimPenalty: aimPenalty, muzzle: muzzle, ridden: function () { return mine; },
            driving: function () { return !!mine && mySeat === 0; },
            _list: function () { return list; }, _seat: function () { return mySeat; }, _gauge: gauge, _dial: DIAL, _dialAt: dialAt, _dialStep: dialStep, _build: buildModel, _mount: mount, _hullFree: hullFree, _exitSpot: exitSpot };
