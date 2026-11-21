@@ -42,6 +42,7 @@ const MODULES = new Set(['CFG', 'THREE', 'World', 'Avatars', 'Net', 'UI', 'FX', 
   'Heli',     // v1.0l: the helicopter (src/environment/heli.js)
   'Vehicles', // v2.13: vehicles on Urban (src/vehicles/vehicles.js)
   'MapArt',   // v2.13: map wallpapers and the intro film (src/ui/mapart.js)
+  'Soundtrack', // v2.15: the recorded track — match start, car radio, menu (src/audio/track.js)
   'PlayerCtl', 'Weapons', 'WeaponModels', 'Pickups', 'Minimap', 'DevHUD',
   'Game', 'Input', 'Districts', 'Access', 'Deco', 'Merge', 'MetroMap', 'RuralMap', 'io',
   'StaticMerge',

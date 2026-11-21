@@ -185,9 +185,10 @@ var MapArt = (function () {
   function end(on) {
     var el = $('end-overlay');
     if (!el) return;
-    if (!on) { el.classList.remove('ma-on'); nextMatchPicture(); return; }
+    if (!on) { el.classList.remove('ma-on'); voltStop(); nextMatchPicture(); return; }
     el.style.setProperty('--ma-art', css(match.pick));
     el.classList.add('ma-on');
+    try { voltStart(el); } catch (err) { /* the board without the lightning is still the board */ }
     if (!el.querySelector('.ma-end-art')) el.insertBefore(mk('div', 'ma-end-art', '<i></i>'), el.firstChild);
     var plate = $('ma-end-plate');
     if (!plate) {
@@ -196,6 +197,153 @@ var MapArt = (function () {
       if (sub && sub.parentNode) sub.parentNode.insertBefore(plate, sub.nextSibling); else el.insertBefore(plate, el.firstChild);
     }
     plate.innerHTML = '<i></i><b>' + esc(String(match.label || '').toUpperCase()) + '</b>' + (match.mode ? '<span>' + esc(String(match.mode).toUpperCase()) + '</span>' : '') + '<i></i>';
+  }
+
+  /* ------------------------------------------------------------ the scorecard, electrified (v2.15)
+     Rahul: "End scorecard should show electrifying graphics animation."
+     One canvas over the result, drawn only while the result is on screen:
+       - a first BIG strike lands on the title as it stamps in (flash, crack of
+         thunder from AudioSys.zap, sparks), then strikes keep finding the
+         board's frame — a storm for three seconds, steady for nine, now and
+         then after that (a result can sit on screen for minutes);
+       - a current crawls round the scoreboard's edge the whole time;
+       - sparks fall from wherever a strike lands.
+     Bolts are midpoint-displaced paths, stroked three times (wide blue, mid,
+     white core) with additive blending — no shadowBlur, which is the slow way
+     to glow. Nothing here touches the game's renderer or the board's numbers;
+     the canvas takes no clicks. prefers-reduced-motion: none of it runs. */
+  var volt = { cv: null, g: null, host: null, raf: 0, strikes: [], sparks: [], next: 0, born: 0, last: 0, n: 0, flash: 0, w: 0, h: 0, box: null, titleY: 0, boxAt: 0 };
+  function calm() { try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (err) { return false; } }
+  /* a jagged path from (x0,y0) to (x1,y1) as a flat [x, y, x, y ...] list */
+  function jag(x0, y0, x1, y1, rough, depth) {
+    var pts = [x0, y0, x1, y1];
+    for (var d = 0; d < depth; d++) {
+      var out = [pts[0], pts[1]];
+      for (var i = 2; i < pts.length; i += 2) {
+        var ax = pts[i - 2], ay = pts[i - 1], bx = pts[i], by = pts[i + 1], dx = bx - ax, dy = by - ay, off = (Math.random() - 0.5) * rough;
+        out.push((ax + bx) / 2 - dy * off, (ay + by) / 2 + dx * off, bx, by);
+      }
+      pts = out;
+    }
+    return pts;
+  }
+  /* a point `d` pixels round the board's frame, clockwise from its top-left corner */
+  function onFrame(b, d, out) {
+    var w = b.r - b.l, h = b.b - b.t, P = 2 * (w + h);
+    d = ((d % P) + P) % P;
+    if (d < w) { out[0] = b.l + d; out[1] = b.t; out[2] = 0; out[3] = -1; }
+    else if (d < w + h) { out[0] = b.r; out[1] = b.t + d - w; out[2] = 1; out[3] = 0; }
+    else if (d < 2 * w + h) { out[0] = b.r - (d - w - h); out[1] = b.b; out[2] = 0; out[3] = 1; }
+    else { out[0] = b.l; out[1] = b.b - (d - 2 * w - h); out[2] = -1; out[3] = 0; }
+    return P;
+  }
+  function measure() {
+    var host = volt.host, r = host.getBoundingClientRect();
+    var w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+    if (w !== volt.w || h !== volt.h) { volt.w = volt.cv.width = w; volt.h = volt.cv.height = h; }
+    var tb = host.querySelector('.end-table'), tt = $('end-title');
+    var q = tb ? tb.getBoundingClientRect() : null;
+    volt.box = (q && q.width > 40 && q.height > 20) ? { l: q.left - r.left - 4, t: q.top - r.top - 4, r: q.right - r.left + 4, b: q.bottom - r.top + 4 } : null;
+    var tq = tt ? tt.getBoundingClientRect() : null;
+    volt.titleY = tq && tq.height ? tq.top - r.top + tq.height * 0.55 : h * 0.22;
+  }
+  function strike(now, big) {
+    var w = volt.w, h = volt.h, b = volt.box || { l: w * 0.25, t: h * 0.45, r: w * 0.75, b: h * 0.8 };
+    var tx, ty, side = Math.random();
+    if (big) { tx = w / 2 + (Math.random() - 0.5) * (b.r - b.l) * 0.5; ty = volt.titleY; }
+    else if (side < 0.5) { tx = b.l + Math.random() * (b.r - b.l); ty = b.t; }
+    else { tx = side < 0.75 ? b.l : b.r; ty = b.t + Math.random() * (b.b - b.t) * 0.7; }
+    var main = jag(tx + (Math.random() - 0.5) * w * 0.45, -24, tx, ty, 0.3, big ? 6 : 5), paths = [{ p: main, w: big ? 3 : 1.7 }];
+    for (var f = 0, forks = big ? 4 : 2; f < forks; f++) {
+      var at = 2 * (2 + Math.floor(Math.random() * Math.max(1, main.length / 2 - 5))), len = (big ? 240 : 130) * (0.5 + Math.random()), ang = Math.PI / 2 + (Math.random() - 0.5) * 1.7;
+      paths.push({ p: jag(main[at], main[at + 1], main[at] + Math.cos(ang) * len, main[at + 1] + Math.sin(ang) * len, 0.36, 4), w: big ? 1.4 : 0.9 });
+    }
+    volt.strikes.push({ paths: paths, t: now, life: big ? 560 : 300 });
+    volt.flash = big ? 1 : 0.4;
+    for (var k = 0, many = big ? 28 : 10; k < many; k++) {
+      var a = -Math.PI * Math.random(), v = 80 + Math.random() * (big ? 430 : 230);
+      volt.sparks.push({ x: tx, y: ty, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: now, life: 360 + Math.random() * 560 });
+    }
+    try { if (window.AudioSys && AudioSys.zap) AudioSys.zap(big); } catch (err) { /* silent lightning is still lightning */ }
+    if (big) { volt.host.classList.remove('ma-jolt'); void volt.host.offsetWidth; volt.host.classList.add('ma-jolt'); }
+  }
+  function trace(c, p, style, width) {
+    c.strokeStyle = style; c.lineWidth = width;
+    c.beginPath(); c.moveTo(p[0], p[1]);
+    for (var i = 2; i < p.length; i += 2) c.lineTo(p[i], p[i + 1]);
+    c.stroke();
+  }
+  var tmp4 = [0, 0, 0, 0];
+  function voltFrame(now) {
+    var host = volt.host;
+    if (!host || !volt.cv.parentNode || host.classList.contains('hidden')) { voltStop(); return; }
+    volt.raf = requestAnimationFrame(voltFrame);
+    var dt = Math.min(0.05, Math.max(0, (now - volt.last) / 1000)); volt.last = now;
+    if (now - volt.boxAt > 400) { volt.boxAt = now; measure(); }
+    var c = volt.g, w = volt.w, h = volt.h, i, k;
+    c.clearRect(0, 0, w, h);
+    if (now >= volt.next) {
+      var age = now - volt.born;
+      strike(now, volt.n === 0 || Math.random() < 0.16);
+      volt.n++;
+      volt.next = now + (age < 3200 ? 170 + Math.random() * 380 : age < 9000 ? 380 + Math.random() * 800 : 1700 + Math.random() * 2600);   // a storm at first, then weather
+    }
+    c.globalCompositeOperation = 'lighter'; c.lineJoin = 'round'; c.lineCap = 'round';
+    if (volt.flash > 0.01) { c.fillStyle = 'rgba(150,215,255,' + (volt.flash * 0.14).toFixed(3) + ')'; c.fillRect(0, 0, w, h); volt.flash *= Math.pow(0.0006, dt); }
+    /* the current round the board: two arcs chasing each other, re-jittered every frame */
+    if (volt.box) {
+      for (k = 0; k < 2; k++) {
+        var head = now * 0.42 + k * 0.5 * onFrame(volt.box, 0, tmp4), span = 170 + 70 * Math.sin(now / 700 + k * 2), arc = [];
+        for (var d = 0; d <= span; d += 11) {
+          onFrame(volt.box, head - d, tmp4);
+          var j = (d === 0 || d + 11 > span) ? 1 : (Math.random() - 0.3) * 9;
+          arc.push(tmp4[0] + tmp4[2] * j, tmp4[1] + tmp4[3] * j);
+        }
+        var fl = 0.55 + Math.random() * 0.45;
+        trace(c, arc, 'rgba(70,170,255,' + (0.22 * fl).toFixed(3) + ')', 7);
+        trace(c, arc, 'rgba(225,245,255,' + (0.85 * fl).toFixed(3) + ')', 1.4);
+      }
+    }
+    for (i = volt.strikes.length - 1; i >= 0; i--) {
+      var s = volt.strikes[i], t = (now - s.t) / s.life;
+      if (t >= 1) { volt.strikes.splice(i, 1); continue; }
+      var al = t < 0.14 ? 1 : Math.pow(1 - t, 1.5) * (0.5 + Math.random() * 0.5);   // it flickers as it dies
+      for (k = 0; k < s.paths.length; k++) {
+        var ph = s.paths[k];
+        trace(c, ph.p, 'rgba(60,160,255,' + (0.2 * al).toFixed(3) + ')', ph.w * 6.5);
+        trace(c, ph.p, 'rgba(140,215,255,' + (0.5 * al).toFixed(3) + ')', ph.w * 2.6);
+        trace(c, ph.p, 'rgba(240,250,255,' + al.toFixed(3) + ')', ph.w);
+      }
+    }
+    for (i = volt.sparks.length - 1; i >= 0; i--) {
+      var sp = volt.sparks[i], st = (now - sp.t) / sp.life;
+      if (st >= 1) { volt.sparks.splice(i, 1); continue; }
+      sp.vy += 620 * dt; sp.x += sp.vx * dt; sp.y += sp.vy * dt;
+      c.strokeStyle = 'rgba(200,235,255,' + ((1 - st) * 0.9).toFixed(3) + ')'; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(sp.x, sp.y); c.lineTo(sp.x - sp.vx * 0.028, sp.y - sp.vy * 0.028); c.stroke();
+    }
+  }
+  function voltStart(host) {
+    if (typeof document === 'undefined' || !window.requestAnimationFrame) return;
+    host.classList.add('ma-volt');
+    if (calm()) return;
+    if (!volt.cv) { volt.cv = mk('canvas', 'ma-end-fx'); volt.g = volt.cv.getContext('2d'); }
+    if (!volt.g) return;
+    volt.host = host;
+    if (volt.cv.parentNode !== host) host.appendChild(volt.cv);
+    volt.strikes.length = 0; volt.sparks.length = 0; volt.n = 0; volt.flash = 0; volt.w = volt.h = 0;
+    measure();
+    volt.born = volt.last = volt.boxAt = performance.now();
+    volt.next = volt.born + 430;                 // the title's stamp lands about here
+    cancelAnimationFrame(volt.raf);
+    volt.raf = requestAnimationFrame(voltFrame);
+  }
+  function voltStop() {
+    if (volt.raf) cancelAnimationFrame(volt.raf);
+    volt.raf = 0;
+    if (volt.host) volt.host.classList.remove('ma-volt', 'ma-jolt');
+    if (volt.cv && volt.cv.parentNode) volt.cv.parentNode.removeChild(volt.cv);
+    volt.strikes.length = 0; volt.sparks.length = 0;
   }
 
   /* ------------------------------------------------------------ the intro film */
@@ -270,7 +418,7 @@ var MapArt = (function () {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
   }
 
-  return { setMatch: setMatch, countdown: countdown, loading: loading, end: end, intro: intro, ART: ART, MENU: MENU,
+  return { setMatch: setMatch, countdown: countdown, loading: loading, end: end, intro: intro, ART: ART, MENU: MENU, _jag: jag, _onFrame: onFrame, _volt: volt,
            _state: function () { return { map: match.map, pick: match.pick, label: match.label, mode: match.mode }; } };
 })();
 if (typeof window !== 'undefined') window.MapArt = MapArt;

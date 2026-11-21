@@ -370,6 +370,7 @@ var Game = (function () {
       if (riding) {
         if (e.code === 'KeyH') Vehicles.horn();          // H is the horn at the wheel (a molotov on foot)
         else if (e.code === 'KeyL') Vehicles.lights();   // L the headlights (drop-sight on foot)
+        else if (e.code === 'KeyB' && window.Soundtrack) UI.toast(Soundtrack.toggleRadio() ? 'RADIO ON' : 'RADIO OFF');   // v2.15: B the radio (smoke on foot)
         else if (map[e.code]) { Input[map[e.code]] = true; if (e.code === 'Space') e.preventDefault(); }
         else if (Vehicles.canFire() && e.code === 'KeyR') Weapons.startReload();
         else if (Vehicles.canFire() && e.code.indexOf('Digit') === 0) { var seatN = parseInt(e.code.slice(5), 10); if (seatN >= 1 && seatN <= 9) Weapons.selectByKey(seatN); }

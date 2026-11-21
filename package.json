@@ -1,6 +1,6 @@
 {
   "name": "urban-strike",
-  "version": "2.14.1",
+  "version": "2.15.0",
   "description": "Browser-based tactical FPS. Room codes, human modes incl. squads, last stand and assault, Bot Ops vs AI operators, five theatres, full weapon sandbox.",
   "main": "server.js",
   "scripts": {

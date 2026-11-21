@@ -24,14 +24,31 @@ var AudioSys = (function () {
       noiseBuf = buildNoise(2);
     } catch (e) { console.warn('Audio unavailable', e); }
   }
-  function resume() {
+  /* ===== v2.15 - THE MENU WAS SILENT =====
+     The context is created at load, where no browser lets it run, and the only
+     resume() was in requestLock() — the click that takes the pointer for a
+     MATCH. So v13.0's welcome cue and menu bed were scheduled into a context
+     that stayed suspended for the whole menu and lobby: measured in Chromium,
+     ctx.state was 'suspended' until the match began. wake() is resume()
+     without the city (ambient belongs to a map) and it runs on the first
+     click or key anywhere — and on every one after, which costs a comparison
+     and lets a browser that refused the soundtrack's play() accept it. */
+  function wake() {
     if (!ctx) init();
     if (ctx && ctx.state === 'suspended') ctx.resume();
-    if (ctx && !started) { started = true; ambient(); }
     /* v13.0 (item 6): the browser forbids sound before a gesture, so the
        welcome cue is armed by music('menu') and FIRES here, on the first
        input — the earliest instant the platform allows. */
     if (ctx && pendingMusic) { var pm = pendingMusic; pendingMusic = null; music(pm); }
+    if (window.Soundtrack) Soundtrack.poke();
+  }
+  function resume() {
+    wake();
+    if (ctx && !started) { started = true; ambient(); }
+  }
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('pointerdown', wake, true);
+    document.addEventListener('keydown', wake, true);
   }
   function setVolume(v) { volume = v; if (master) master.gain.value = v; }
 
@@ -599,6 +616,11 @@ var AudioSys = (function () {
   function music(state) {
     if (!ctx) { pendingMusic = state; return; }
     if (state === musicState) return;
+    /* v2.15: the recorded track (track.js) is asked first. On the menu it
+       takes the place of the synthesized cue and bed; if the player turned it
+       off or the file would not play, it says no and they play as before. */
+    var song = false;
+    try { song = !!(window.Soundtrack && Soundtrack.cue(state)); } catch (err) { song = false; }
     mStop();
     musicState = state;
     if (!state) return;
@@ -607,14 +629,39 @@ var AudioSys = (function () {
     musicG.gain.linearRampToValueAtTime(MUSIC_VOL, ctx.currentTime + 1.2);
     musicG.connect(master);
     if (state === 'menu') {
-      if (!menuCuePlayed) { menuCuePlayed = true; menuCue(musicG); }
-      menuBed(musicG);
+      if (!song) {
+        if (!menuCuePlayed) { menuCuePlayed = true; menuCue(musicG); }
+        menuBed(musicG);
+      }
     } else if (state === 'game') {
       gameBed(musicG);
     }
   }
 
+  /* v2.15: re-decide who has the music (the soundtrack was switched, or failed) */
+  function musicRefresh() { var was = musicState; if (!ctx || !was) return; musicState = null; music(was); }
+  /* v2.15: the scorecard's lightning (mapart.js). A crack of filtered noise,
+     and under a big strike a falling thump. Synthesized like everything else. */
+  var zapAt = 0;
+  function zap(big) {
+    if (!ctx || !noiseBuf) return;
+    var t = ctx.currentTime;
+    if (t - zapAt < (big ? 0.25 : 0.12)) return;
+    zapAt = t;
+    var n = ctx.createBufferSource(); n.buffer = noiseBuf;
+    var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(big ? 2600 : 4200, t); bp.frequency.exponentialRampToValueAtTime(big ? 500 : 1800, t + (big ? 0.5 : 0.12)); bp.Q.value = 0.8;
+    var g = ctx.createGain(), peak = big ? 0.34 : 0.07, len = big ? 0.7 : 0.14;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    n.connect(bp); bp.connect(g); g.connect(master); n.start(t, Math.random()); n.stop(t + len + 0.05);
+    if (!big) return;
+    var o = ctx.createOscillator(), og = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(32, t + 0.6);
+    og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.32, t + 0.02); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+    o.connect(og); og.connect(master); o.start(t); o.stop(t + 0.85);
+  }
   return {
+    bus: function () { return ctx && master ? { ctx: ctx, master: master } : null; },
+    musicRefresh: musicRefresh, zap: zap, wake: wake,
     music: music,
     init: init, resume: resume, setVolume: setVolume, updateListener: updateListener, ambient: ambient,
     shot: shot, reload: reload, magIn: magIn, bolt: bolt, step: step,

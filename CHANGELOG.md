@@ -1,3 +1,76 @@
+# v2.15.0 (build 48) — THE SOUNDTRACK, THE CAR RADIO, AND A SCORECARD WITH LIGHTNING (2026-11-21)
+
+Built on v2.14.1. Rahul sent an mp3: "you need to implement this song in the
+game properly, like in the game when someone drives the car then this sound
+will play and also when the game starts there should be music. End scorecard
+should show electrifying graphics animation."
+
+## READ THIS FIRST — the licence
+The track is "LUZ ROJA (Instrumental - Sped Up)" by bxkq, a commercial
+recording. Shipping it in a public game and a public repository needs the
+rights holder's permission; nothing here grants it. It is wired in as ONE
+swappable file: replace public/assets/music/track.mp3 and set DROP in
+public/src/audio/track.js (public/assets/music/README.txt says how).
+
+## The song — one file, three places, strict priority
+| where        | what happens                                                    | level |
+|--------------|-----------------------------------------------------------------|------:|
+| match start  | at "5" the track is cut to five seconds before its own drop; the bass lands on zero, carries through loading and ~5 s of play, then fades over 5 s and stops | 0.60 |
+| car radio    | everyone aboard a vehicle that has a DRIVER hears it; it resumes where the radio was; **B** switches it (first time: a second before the drop) | 0.42 |
+| menu / lobby | a quiet loop in place of the synthesized bed; waits for the intro film | 0.20 |
+
+- The drop was MEASURED on the file (silence 12.7-14.3 s, full level from
+  14.40 s). In a real browser the track read 14.36-14.40 s at zero. Each tick
+  re-checks; a stream more than 0.35 s out is put back.
+- The music LEAVES once the match is being played. v13.0's rule stands:
+  gunfire and footsteps are information, music is not.
+- It cannot be left blaring: a countdown that is called off drops to the menu
+  level, and 30 s without a tick stands it down.
+- Two switches, both remembered: ♪ MUSIC ON/OFF on the menu (and a box in the
+  pause panel) for menu + match start; B for the radio. The radio masks
+  footsteps — that is a choice the driver makes, so it has an off.
+- It runs through AudioSys's master bus: the VOLUME slider governs it.
+- If the file will not play (or music is switched off) the synthesized score
+  takes the menu back exactly as before.
+- NOT built: people OUTSIDE the vehicle do not hear its radio.
+
+## A bug this uncovered: the menu was silent
+The AudioContext is created at load, where no browser lets it run, and the
+only resume() was in the click that takes the pointer for a MATCH. So v13.0's
+welcome cue and menu bed were scheduled into a suspended context — measured in
+Chromium: 'suspended' through the whole menu and lobby. The context now wakes
+on the first click or key anywhere.
+
+## The scorecard, electrified
+One canvas over the result, alive only while the result is on screen:
+- a first BIG strike lands on the title as it stamps in — flash, a crack of
+  thunder (synthesized, AudioSys.zap), sparks, and the title flinches;
+- a storm for three seconds, steady strikes for nine, an occasional one after
+  (a result can sit for minutes) — measured: 16 strikes in the first 9 s;
+- a current crawls round the scoreboard's frame the whole time; the board and
+  the MVP plate glow with it.
+Bolts are midpoint-displaced paths stroked three times with additive blending
+(no shadowBlur). The canvas takes no clicks — BACK TO LOBBY works through it.
+Leaving the result stops the loop and removes the canvas; a result hidden any
+other way stops it too; prefers-reduced-motion runs none of it.
+
+## Cost, stated plainly
+- First load 484 -> 493 KB gzipped; the budget is raised 485 -> 494, by the
+  spend, with the itemised note in tools/verify-bandwidth.js.
+- The bigger number: track.mp3 is 1.2 MB (re-encoded from the 4.6 MB upload
+  at 96 kbps). It is NOT requested until the first click, then once per device
+  (304 afterwards). A brand-new player now costs ~5.2 MB instead of ~4.0:
+  about 960 new devices per 5 GB instead of 1,250. Returning players: nothing.
+
+## Tested
+tools/verify-v215.js (58): the countdown arithmetic, the stall correction, the
+fade-out, called-off and never-arrives, the radio's memory and switch, the
+fallbacks, no request before a click, the lightning's start/stop and its
+reduced-motion path. Real Chromium: menu, intro film then menu, a full
+countdown into a match, getting into and out of a sedan — no page errors.
+NOT tested: with ears. Levels and the 96 kbps encode were chosen by
+measurement, not by listening; Safari and phones were not run.
+
 # v2.14.1 (build 47) — LEGS THAT WALK, KIT THAT HAS LEVELS (2026-11-21)
 
 Built on v2.14.0. Rahul: "avatar animation thora gadbad hai. Front walk ke

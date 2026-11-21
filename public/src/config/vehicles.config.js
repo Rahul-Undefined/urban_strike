@@ -26,7 +26,7 @@
     ramMin: 4.5,            // m/s before a hit on a player counts
     ramKill: 9,             // m/s at which it is a kill outright
     ramDmg: 9,              // damage per m/s below that
-    useKey: 'KeyN', hornKey: 'KeyH', lightKey: 'KeyL',   // N in/out; while driving H is the horn and L the headlights
+    useKey: 'KeyN', hornKey: 'KeyH', lightKey: 'KeyL', radioKey: 'KeyB',   // N in/out; while driving H is the horn and L the headlights
     /* PETROL (Rahul: "petrol ho"). A tank holds 100; `burn` is units a second at full
        throttle (a third of that idling along). A vehicle is found with fuelMin..100
        in it. Empty: the engine dies and it coasts to a stop — it is still cover, and

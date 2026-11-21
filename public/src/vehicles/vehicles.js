@@ -308,6 +308,7 @@ var Vehicles = (function () {
     for (var pk = 0; pk < puffs.length; pk++) if (puffs[pk].mesh.parent) puffs[pk].mesh.parent.remove(puffs[pk].mesh);
     puffs = [];
     engine(false, 0, 1);
+    if (typeof Soundtrack !== 'undefined') Soundtrack.radio(false);   /* v2.15: the match is over; update() will not run to say so */
     showHud(false);
     showPrompt(null);
   }
@@ -753,6 +754,8 @@ var Vehicles = (function () {
       }
     }
     nearest = (!mine && typeof PlayerCtl !== 'undefined' && PlayerCtl.alive) ? best : null;
+    /* v2.15: the radio plays for everyone aboard a vehicle somebody is DRIVING (track.js; one comparison a frame) */
+    if (typeof Soundtrack !== 'undefined') Soundtrack.radio(!!(mine && (mySeat === 0 || (mine.seats && mine.seats[0]))));
     showPrompt(nearest);
     if (mine) hud(mine);
   }
@@ -829,7 +832,7 @@ var Vehicles = (function () {
     fbar.style.width = (fuel * 100).toFixed(0) + '%';
     fbar.style.background = fuel > 0.25 ? '#e9c46a' : '#e2513f';
     var fire = veh.T.sealed ? '' : 'CLICK fire \u00b7 R reload \u00b7 ';
-    var hint = mySeat === 0 ? 'W/S A/D drive \u00b7 SPACE brake \u00b7 ' + fire + 'H horn \u00b7 L lights \u00b7 ' + keyName() + ' out' : fire + keyName() + ' get out';
+    var hint = mySeat === 0 ? 'W/S A/D drive \u00b7 SPACE brake \u00b7 ' + fire + 'H horn \u00b7 L lights \u00b7 B radio \u00b7 ' + keyName() + ' out' : fire + 'B radio \u00b7 ' + keyName() + ' get out';
     if (frac < V.fireAt) hint = 'ON FIRE \u2014 GET OUT (' + keyName() + ')';
     if (kids[4].textContent !== hint) kids[4].textContent = hint;
   }

@@ -195,7 +195,23 @@ console.log('        ' + refs.length + ' files: ' + (raw / 1024).toFixed(0) +
    THE BIGGER NUMBER IS NOT IN THIS GATE: the intro film is 3.1 MB (re-encoded
    from the pack's 8.7) and the menu wallpapers up to 0.4 MB — once per DEVICE
    (they are cached), nothing per match. A hundred new players is ~0.35 GB. */
-const GZ_BUDGET_KB = 485;
+/* ===== v2.15 — 485 -> 494 KB, RAISED BY THE SPEND AND NO FURTHER. =====
+   v2.14.1 came in UNDER 485 by deleting, not by raising: 12 KB of superseded
+   history in avatars.js (notes about the box rig that no longer exists) was
+   condensed to the lessons it left, which paid for the three-level kit, the
+   new walk and the pickups. That well is dry now, so this one is content:
+     src/audio/track.js   the soundtrack's player — drop-on-zero countdown,
+                          car radio, menu loop, fallbacks          3.7 KB gz
+     src/ui/mapart.js     the scorecard's lightning (one canvas)   2.7 KB gz
+     audio.js, CSS, HTML  thunder, wake-on-first-click, the switch 1.6 KB gz
+   493 KB measured; 494 leaves one kilobyte, deliberately — the next feature
+   argues for its own bytes.
+   THE BIGGER NUMBER IS NOT IN THIS GATE, AGAIN: assets/music/track.mp3 is
+   1.2 MB (re-encoded from the 4.6 MB upload). It is fetched after the first
+   click, once per DEVICE (ETag, 304 afterwards). With the film and the
+   wallpapers a brand-new player now costs about 5.2 MB instead of 4.0:
+   ~960 new devices per 5 GB instead of ~1,250. Returning players: nothing. */
+const GZ_BUDGET_KB = 494;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

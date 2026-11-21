@@ -1,5 +1,7 @@
 # URBAN STRIKE — browser multiplayer FPS (2–15 players · FFA / teams / squads / Last Stand)
 
+**v2.15.0 — the soundtrack, the car radio, and a scorecard with lightning.** A supplied track (one swappable file — it is a commercial recording; see public/assets/music/README.txt) plays where it should: the match countdown is cut so the bass drops on zero and it fades out once the fight starts; it is the radio in a vehicle somebody is driving (B switches it); and a quiet loop on the menu (♪ MUSIC ON/OFF). The result screen now has lightning striking the title and the board, with thunder. Also fixed: the menu had been silent since v13.0 — the audio only woke when a match took the pointer.
+
 **v2.14.1 — legs that walk, kit that has levels.** The knees bent backwards and "forward" depended on the compass: the walk is rebuilt (stance and swing, forward / back / sideways / run), both hands stay on the rifle, helmet and vest have three distinct levels in one uniform, loot on the ground is the piece you will wear, and your own third-person body carries your weapon and wears your kit.
 
 **v2.14.0 — the v3 operator.** A new avatar that looks like a person — face, skin and hair from the callsign, a plate carrier and helmet that appear with the gear, all 29 weapons in the hands — measured against the old rig before the swap: same height, same head box, same hit detection.

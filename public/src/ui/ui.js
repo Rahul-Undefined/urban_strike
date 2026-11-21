@@ -1343,6 +1343,7 @@ var UI = (function () {
     var el = els['countdown'];
     if (!el) return;
     try { if (window.MapArt) MapArt.countdown(n); } catch (e) { /* v2.13: the map behind the number */ }
+    try { if (window.Soundtrack) Soundtrack.count(n); } catch (e) { /* v2.15: the track, cut so its drop lands on zero */ }
     if (!(n > 0)) { el.classList.add('hidden'); el.innerHTML = ''; return; }
     el.innerHTML =
       '<div class="cd-label">MATCH STARTS IN</div>' +

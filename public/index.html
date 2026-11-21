@@ -298,7 +298,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
               <div class="mrow"><b>RECONNECT</b><span>drop out? rejoin with the same code &amp; callsign &#183; same team</span></div>
               <div class="mrow"><b>J &#183; O</b><span>J hunter drone &#183; O recon flare &#183; adrenaline fires on pickup</span></div>
               <div class="mrow"><b>PRONE</b><span>X goes down &#183; 20% damage, half the view, no screen shake</span></div>
-              <div class="mrow"><b>VEHICLES</b><span>Urban &#183; N in/out &#183; W/S A/D drive &#183; SPACE brake &#183; CLICK fire &#183; H horn &#183; L lights</span></div>
+              <div class="mrow"><b>VEHICLES</b><span>Urban &#183; N in/out &#183; W/S A/D drive &#183; SPACE brake &#183; CLICK fire &#183; H horn &#183; L lights &#183; B radio</span></div>
             </div>
           </div>
         </div>
@@ -437,6 +437,8 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
         </select>
       </label>
       <label class="field check"><input type="checkbox" id="quality-shadows" checked><span>Dynamic shadows (turn off on slow PCs)</span></label>
+      <!-- v2.15: the soundtrack on the menu and at match start. The car radio has its own key (B, in a vehicle). -->
+      <label class="field check"><input type="checkbox" id="song-on" checked><span>Soundtrack (menu and match start) · B is the car radio</span></label>
       <button class="btn btn-primary wide" id="btn-resume">RESUME (click)</button>
       <button class="btn wide ghost" id="btn-quit">QUIT TO MENU</button>
     </div>
@@ -466,6 +468,7 @@ button.mini{font-size:10px;letter-spacing:.12em;padding:3px 8px;background:rgba(
   <script src="src/config/districts.config.js"></script>
   <script src="src/config/index.js"></script>
   <script src="src/audio/audio.js"></script>
+  <script src="src/audio/track.js"></script>   <!-- v2.15: the one recorded track — match start, car radio, menu (the mp3 itself is only fetched after the first click) -->
   <script src="src/environment/merge.js"></script>
   <script src="src/environment/world.js"></script>
   <script src="src/environment/districts-south.js"></script>
