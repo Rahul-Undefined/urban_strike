@@ -106,17 +106,29 @@
      Killhouse; Urban Small and Kasbah are theatres and keep their stock.
      One resolver per number, read by the client's loadout, the server's
      spawn refill and the server's pickup cap, so the three can never disagree. */
-  C.fragCountFor = function (mapId) {
-    var F = C.THROWS.frag;
+  /* v2.17: a mode may carry its own kit (Bot Ops: 8 frags, 10 mines, on every
+     map it plays). The mode is the SECOND argument and optional - every older
+     caller that passes only the map gets exactly what it always got. */
+  function modeKit(modeId) { var m = modeId && C.MODES && C.MODES[modeId]; return (m && m.kit) || null; }
+  C.fragCountFor = function (mapId, modeId) {
+    var F = C.THROWS.frag, K = modeKit(modeId);
+    if (K && K.frags !== undefined) return K.frags;
     return (C.isArena && C.isArena(mapId) && F.countArena !== undefined) ? F.countArena : F.count;
   };
-  C.mineStartFor = function (mapId) {
-    var G = C.GEAR.mine;
+  C.mineStartFor = function (mapId, modeId) {
+    var G = C.GEAR.mine, K = modeKit(modeId);
+    if (K && K.mines !== undefined) return K.mines;
     return (C.isArena && C.isArena(mapId) && G.startArena !== undefined) ? G.startArena : G.start;
   };
-  C.mineCapFor = function (mapId) {
-    var G = C.GEAR.mine;
-    return (C.isArena && C.isArena(mapId) && G.maxCarryArena !== undefined) ? G.maxCarryArena : G.maxCarry;
+  C.mineCapFor = function (mapId, modeId) {
+    var G = C.GEAR.mine, K = modeKit(modeId);
+    var cap = (C.isArena && C.isArena(mapId) && G.maxCarryArena !== undefined) ? G.maxCarryArena : G.maxCarry;
+    return (K && K.mines !== undefined) ? Math.max(cap, K.mines) : cap;
+  };
+  /* v2.17: how many AI operators Bot Ops keeps on a map for this many humans (world.config BOTOPS) */
+  C.botCountFor = function (mapId, humans) {
+    var T = (C.BOTOPS && C.BOTOPS.count) || {}, r = T[mapId] || T.urbansmall || [8, 12, 2];
+    return Math.min(r[1], r[0] + (Math.max(1, humans | 0) - 1) * r[2]);
   };
   /* ===== v2.8 - ASSAULT: WHICH GUNS A MODE ALLOWS =====
      gunAllowed(mode, w) is false only for a FIREARM outside ASSAULT_GUNS in an

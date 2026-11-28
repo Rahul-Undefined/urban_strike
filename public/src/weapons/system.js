@@ -22,6 +22,8 @@ var Weapons = (function () {
      that depend on it (CFG.fragCountFor / mineStartFor). World.builtMap is set
      by buildMap, which Game.onMatchStart runs before matchReset. */
   function loadoutMap() { return (typeof World !== 'undefined' && World.builtMap) || 'urban'; }
+  /* v2.17: and the MODE it is for — Bot Ops issues its own kit (8 frags, 10 mines) on every map */
+  function loadoutMode() { var m = (typeof Net !== 'undefined' && Net.getMatch && Net.getMatch()) || {}; return m.mode || null; }
   var ammo = {};                  // name -> {mag, reserve}
   var throwsLeft = { frag: 2, smoke: 1, flash: 1 };
   var zoneFragSched = null;   /* v2.6: the zone schedule the current frag stock was issued for */
@@ -156,7 +158,7 @@ var Weapons = (function () {
     baseWeapons().forEach(function (n) { owned[n] = true; });
     current = baseWeapons()[0];   /* v14.0: never boot a Blacksite spawn holding an id it does not own */
     atts = { sight: null, muzzle: null, mag: null };
-    mineCount = CFG.mineStartFor ? CFG.mineStartFor(loadoutMap()) : CFG.GEAR.mine.start;   /* v2.8: 3 on an arena */
+    mineCount = CFG.mineStartFor ? CFG.mineStartFor(loadoutMap(), loadoutMode()) : CFG.GEAR.mine.start;   /* v2.8: 3 on an arena */
     /* v9.4: drones are per-MATCH. The server decides the real number (zero in
        bot modes) and corrects this on the first grant; starting at the config
        value keeps the HUD honest for the first second. */
@@ -192,7 +194,7 @@ var Weapons = (function () {
     var zSched = (typeof Zone !== 'undefined' && Zone.schedule) ? Zone.schedule() : null;
     /* v2.8 (Rahul: "max 1 frag ... in the small maps, every new life"): the
        per-life stock is the MAP's — one on an arena, five elsewhere. */
-    var fragStock = CFG.fragCountFor ? CFG.fragCountFor(loadoutMap()) : CFG.THROWS.frag.count;
+    var fragStock = CFG.fragCountFor ? CFG.fragCountFor(loadoutMap(), loadoutMode()) : CFG.THROWS.frag.count;
     var keepFrag = zSched && zoneFragSched === zSched ? Math.min(fragStock, throwsLeft.frag | 0) : fragStock;
     zoneFragSched = zSched;
     throwsLeft = { frag: keepFrag, smoke: CFG.THROWS.smoke.count, flash: CFG.THROWS.flash.count, molotov: CFG.THROWS.molotov.count };
@@ -322,7 +324,7 @@ var Weapons = (function () {
       }
       else if (d.g === 'frag') {   /* v2.6: the zone crate's bundle — back to the full five, never above */
         var before = throwsLeft.frag | 0;
-        throwsLeft.frag = Math.min(CFG.fragCountFor ? CFG.fragCountFor(loadoutMap()) : CFG.THROWS.frag.count, before + (d.n | 0));
+        throwsLeft.frag = Math.min(CFG.fragCountFor ? CFG.fragCountFor(loadoutMap(), loadoutMode()) : CFG.THROWS.frag.count, before + (d.n | 0));
         UI.toast(throwsLeft.frag > before ? 'Frags +' + (throwsLeft.frag - before) + ' \u00b7 ' + throwsLeft.frag + ' carried' : 'Frags already full');
       }
     }
@@ -965,11 +967,18 @@ var Weapons = (function () {
 
   // ---------- throwables ----------
   function hurl(type, fuse) {
-    var o = camera.position.clone();
     var d = camera.getWorldDirection(new THREE.Vector3());
+    /* v2.17: from a seat the camera is the chase camera, metres behind and
+       above the vehicle. The grenade leaves the RIDER's hand (the same point
+       a rider's rounds leave from, a little higher to clear the sill) and
+       keeps the vehicle's speed — thrown ahead at 60 km/h it lands ahead. */
+    var veh = myVehicle();
+    var o = veh ? Vehicles.muzzle(new THREE.Vector3(), d) : camera.position.clone();
+    if (veh) o.y += 0.25;
     var spec = CFG.THROWS[type];
     var v = d.multiplyScalar(spec.throwVel).add(new THREE.Vector3(0, 2.6, 0));
-    v.x += PlayerCtl.vel.x * 0.4; v.z += PlayerCtl.vel.z * 0.4;
+    if (veh) { v.x += Math.sin(veh.ry) * (veh.sp || 0); v.z -= Math.cos(veh.ry) * (veh.sp || 0); }
+    else { v.x += PlayerCtl.vel.x * 0.4; v.z += PlayerCtl.vel.z * 0.4; }
     spawnGrenade(type, o, v, true, fuse);
     Net.sendThrow({ type: type, o: [o.x, o.y, o.z], v: [v.x, v.y, v.z], f: fuse });
     AudioSys.whoosh(null);
@@ -1111,8 +1120,15 @@ var Weapons = (function () {
     }
   }
   function explosionDamage(center, radius, maxDmg, weaponName) {
+    /* v2.18 (Rahul: a grenade "doesnt damage the player inside the car"): a
+       frag's blast is taken by the HULL of a vehicle it goes off beside (the
+       server's, from Net.blast) and by nobody aboard one — so no claim is
+       sent for a rider, and none for yourself in a seat. The server refuses
+       them anyway; not sending them keeps a false hitmarker off the screen. */
+    var fragRule = weaponName === 'frag' && typeof Vehicles !== 'undefined';
     Net.eachRemote(function (id, r) {
       if (!r.alive) return;
+      if (fragRule && Vehicles.isRider && Vehicles.isRider(id)) return;
       var d = r.renderPos.distanceTo(center);
       if (d > radius) return;
       /* v9.4 FULL DAMAGE ACROSS THE RADIUS.
@@ -1143,7 +1159,7 @@ var Weapons = (function () {
     // self-damage
     var selfR = (CFG.THROWS[weaponName] && CFG.THROWS[weaponName].selfRadius) || radius;   // v1.0b: the OLD 7 m for your own frag
     var sd = PlayerCtl.pos.distanceTo(center);
-    if (PlayerCtl.alive && sd < selfR) {
+    if (PlayerCtl.alive && sd < selfR && !(fragRule && myVehicle())) {
       /* Self-damage keeps the falloff even when the weapon is flat. Standing at
          the edge of your own frag should hurt, not delete you — a flat 100 here
          would make every close throw a suicide and nobody would ever use it. */

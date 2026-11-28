@@ -68,7 +68,7 @@ module.exports = function initBotAI(ctx) {
               scopeMul: 0.6, snipeSettle: 1050, moveMul: 0.97, cover: 0.55, peek: 0.3, retreatHp: 30, flankK: 0.6,
               crouchK: 0.7, strafe: [700, 1400], maxShooters: 3, armorP: 1.0, vest: 1, vestUp: 0, helm: 1, helmP: 0.4, pool: 'base',
               intelMs: 22000, intelErr: 20, reach: 1.4,
-              count: (h) => Math.min(10, 3 + 2 * h) },
+              count: (h) => Math.min(10, 3 + 2 * h) },   /* (v2.17: the head count is the MAP's now - CFG.botCountFor; kept for a map with no entry) */
     hard:   { label: 'HARD', react: [230, 380], turn: 10, err: 0.018, tau: 320, fov: 1.25, view: 105, detect: 2.2, flinch: 1.25,
               memory: 20000, commsMs: 700, hearErr: 0.06, hurtErr: 2, headPct: 0.2, burst: [4, 9], pause: [140, 360],
               scopeMul: 0.45, snipeSettle: 650, moveMul: 1.0, cover: 0.85, peek: 0.55, retreatHp: 40, flankK: 1.0,
@@ -162,7 +162,8 @@ module.exports = function initBotAI(ctx) {
     while (bot.history.length && bot.history[0].t < cut) bot.history.shift();
   }
   function ensureCount(room, S) {
-    const want = S.prof.count(Math.max(1, humans(room).length));
+    /* v2.17: per map (Urban 20-25, Urban Small 8-12, Killhouse 6-8), the same at both difficulties */
+    const want = CFG.botCountFor ? CFG.botCountFor(room.settings.map || 'urban', Math.max(1, humans(room).length)) : S.prof.count(Math.max(1, humans(room).length));
     let added = 0;
     while (S.list.length < want) {
       const bot = makeBot(room, S, S.list.length);
@@ -209,9 +210,22 @@ module.exports = function initBotAI(ctx) {
 
   /* ---------------- movement on the graph ---------------- */
   const curNode = (A, nav) => Nav.nearest(nav, A.x, A.z, A.feet, 1.6, 0.9);
+  /* ===== v2.17 - TWO ROUTES A TICK, FOR THE WHOLE SQUAD =====
+     Urban now fields 20-25 operators (it was 10-12). A route search on its
+     900,000-node graph costs 1-10 ms, and nothing stopped twenty of them
+     landing in one server tick: measured, a 25 ms tick, on a server whose
+     whole tick is 66 ms and whose CPU (Render's free plan) is a fraction of
+     the machine that measured it. So the squad shares a budget. An operator
+     that asks when it is spent keeps walking and asks again next tick — the
+     `pending` slot a bot on a staircase already used. Demand measured at
+     5-14 searches a second; two a tick is thirty. */
+  const PATHS_PER_TICK = 2;
+  let pathBudget = PATHS_PER_TICK;
   function goTo(A, nav, node, mode, tag) {
     if (node < 0) return false;
     if (Nav.isStair(nav, A.x, A.z, A.feet)) { A.pending = [node, mode, tag]; return true; }   // finish the flight first
+    if (pathBudget <= 0) { A.pending = [node, mode, tag]; return true; }                       // the squad's two are spent: next tick
+    pathBudget--;
     const from = curNode(A, nav); if (from < 0) return false;
     const ids = Nav.path(nav, from, node, 22000); if (!ids || ids.length < 2) return false;
     A.path = Nav.smooth(nav, ids); A.pi = 0; A.ref = A.feet; A.moveMode = mode; A.goalNode = node; A.goalTag = tag || null; A.pathAt = now(); A.pending = null;
@@ -725,6 +739,7 @@ module.exports = function initBotAI(ctx) {
   function tick(room, dt) {
     const S = room._bots; if (!S || !S.ready || room.state !== 'playing') return;
     const t = now(); S.tickN++;
+    pathBudget = PATHS_PER_TICK;
     if (S.tickN % 45 === 0) ensureCount(room, S);
     const focus = {}; for (const b of S.list) if (b.alive && b.ai.target) focus[b.ai.target] = (focus[b.ai.target] || 0) + 1;
     S.focus = focus;

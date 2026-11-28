@@ -122,15 +122,30 @@ module.exports = function initVehicles(ctx) {
     v.hp -= dmg; v.dirty = true;
     if (v.hp <= 0) destroy(room, v, shooter);
   }
-  /* the hull is spent: everyone aboard dies with it */
-  function destroy(room, v, by) {
+  /* the hull is spent: everyone aboard dies with it.
+
+     ===== v2.17 - EVERYONE. =====
+     Rahul: "when car is blasted, driver is pushed out of the car."
+     Reproduced on a live server in Bot Ops, where every human is one side: a
+     team-mate's rounds blew the sedan up and BOTH riders were left standing
+     where it had been. applyDamage refuses a team-mate's damage (friendly
+     fire is off) and anything aimed at a player under spawn protection — so
+     the car was destroyed and the people in it were not.
+     A wreck is not a bullet. Whoever is aboard dies, whoever fired. The kill
+     is CREDITED only to an enemy who destroyed it; a team-mate's rounds, your
+     own, or a train (`cause`) leave it a death that nobody scores. */
+  function destroy(room, v, by, cause) {
     const S = room.veh; if (!S) return;
     const i = S.list.indexOf(v); if (i < 0) return;
     S.list.splice(i, 1);
     io.to(room.code).emit('vehBoom', { id: v.id, p: [v.x, v.y, v.z] });
+    const teams = !!ctx.modeInfo(room).teams;
     v.seats.forEach(pid => {
       const q = pid && room.players.get(pid);
-      if (q && q.alive) ctx.applyDamage(room, q, 999, by && by.id !== pid ? by.id : pid, 'vehicle', false, true);
+      if (!q || !q.alive) return;
+      const enemy = !!(by && by.id !== pid && !(teams && by.team && by.team === q.team));
+      q.protUntil = 0;
+      ctx.applyDamage(room, q, 999, enemy ? by.id : pid, cause || 'vehicle', false, true);
     });
     S.respawns.push({ at: now() + V.respawnSec * 1000, type: v.type });
     S.full = true;
@@ -203,5 +218,37 @@ module.exports = function initVehicles(ctx) {
     return pkt;
   }
 
-  return { enabled, start, reset, enter, exit, drive, hit, ram, horn, tick, snapshot, shields, speedCap, seatOf, find, TYPES };
+  /* ===== v2.18 - EXPLOSIVES AND THE HULL =====
+     Rahul: "grenads damage the car too but doesnt damage the player inside the
+     car, 4 granade blasts the car with the players inside it."
+     blastAt: an explosive went off at `pos`. Every vehicle whose hull is within
+     V.blast.reach of it loses V.blast[kind]; one that runs out is destroyed,
+     with everyone aboard (destroy, above). Whoever is aboard takes nothing from
+     the explosion itself — the callers ask `riding` and leave them alone.
+     The distance is to the HULL (its box, turned to its heading), not to its
+     centre: a frag at a bus's back bumper is as close as one at its door. */
+  function hullDist(v, pos) {
+    const T = V.types[v.type]; if (!T) return 1e9;
+    const dx = pos[0] - v.x, dz = pos[2] - v.z, fx = Math.sin(v.ry), fz = -Math.cos(v.ry);
+    const along = dx * fx + dz * fz, across = dx * fz - dz * fx;              // forward is (sin ry, -cos ry)
+    const ox = Math.max(0, Math.abs(along) - T.len / 2), oz = Math.max(0, Math.abs(across) - T.wid / 2);
+    const oy = pos[1] < v.y ? v.y - pos[1] : Math.max(0, pos[1] - (v.y + T.hgt));
+    return Math.sqrt(ox * ox + oy * oy + oz * oz);
+  }
+  function blastAt(room, by, pos, kind) {
+    const S = room.veh, B = V && V.blast;
+    if (!S || !B || !Array.isArray(pos) || pos.length !== 3) return 0;
+    const dmg = B[kind] | 0; if (dmg <= 0) return 0;
+    let n = 0;
+    for (let i = S.list.length - 1; i >= 0; i--) {
+      const v = S.list[i];
+      if (hullDist(v, pos) > B.reach) continue;
+      v.hp -= dmg; v.dirty = true; n++;
+      if (v.hp <= 0) destroy(room, v, by || null);
+    }
+    return n;
+  }
+  function riding(room, pid) { return !!seatOf(room, pid); }
+
+  return { enabled, start, reset, enter, exit, drive, hit, ram, horn, tick, snapshot, shields, speedCap, seatOf, find, TYPES, wreck: destroy, blastAt, riding, hullDist };
 };

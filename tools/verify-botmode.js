@@ -72,11 +72,13 @@ const botsIn = (G) => ((G.lobby && G.lobby.players) || []).filter(p => p.bot);
   const me = (G.lobby.players || []).find(p => p.id === G.A.id), bots = botsIn(G);
   console.log('--- 2. the operators ---');
   ok(me && me.team === 'a', 'the human is on side A');
-  ok(bots.length === 5 && bots.every(b => b.team === 'b'), bots.length + ' operators in the roster, flagged as bots, all on side B [' + bots.map(b => b.name).join(', ') + ']');
+  /* v2.17: the head count is the map's (CFG.botCountFor): Urban Small fields 8 for one player, Urban 20 */
+  const wantSmall = CFG.botCountFor('urbansmall', 1);
+  ok(bots.length === wantSmall && wantSmall === 8 && bots.every(b => b.team === 'b'), bots.length + ' operators in the roster, flagged as bots, all on side B [' + bots.map(b => b.name).join(', ') + ']');
   ok(G.toasts.some(m => /BOT OPS .* MEDIUM/.test(m)), 'announced: "' + (G.toasts.find(m => /BOT OPS/.test(m)) || '') + '"');
   await wait(6000);
   const tracked = Object.keys(G.track);
-  ok(tracked.length === 5, 'all ' + tracked.length + ' are in the snapshot');
+  ok(tracked.length === wantSmall, 'all ' + tracked.length + ' are in the snapshot');
   ok(tracked.filter(id => G.track[id].dist > 4).length >= 4, 'and they move there [' + tracked.map(id => G.track[id].dist.toFixed(0)).join(', ') + ' m in 6 s]');
 
   console.log('--- 3. gunfire draws them ---');
@@ -111,7 +113,7 @@ const botsIn = (G) => ((G.lobby && G.lobby.players) || []).filter(p => p.bot);
   ok(H.lobby.settings.map === 'urban', 'Bot Ops Hard runs on Urban');
   const t0 = Date.now(); await begin(H);
   for (let i = 0; i < 300 && botsIn(H).length === 0; i++) await wait(100);
-  ok(botsIn(H).length === 6 && H.toasts.some(m => /HARD/.test(m)), botsIn(H).length + ' Hard operators on the 440 m map, fielded ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s after START');
+  ok(botsIn(H).length === CFG.botCountFor('urban', 1) && botsIn(H).length === 20 && H.toasts.some(m => /HARD/.test(m)), botsIn(H).length + ' Hard operators on the 440 m map, fielded ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s after START');
   await wait(3000);
   ok(H.maxGap < 1500, 'building Urban’s walk graph never stalled the match [longest snapshot gap ' + H.maxGap + ' ms]');
   /* v2.12.1: level 2, one in three level 3 — the v2.12 check wanted exactly 2 and failed whenever two of six drew a 3 */

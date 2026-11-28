@@ -365,13 +365,26 @@ var Game = (function () {
          keys, N, H (horn) and L (headlights) do anything — plus, v2.13.1
          (Rahul: "car mei baithe avatar shoot kar sakte h ... usko bhi include
          kar do"), R and the number row in an open vehicle: a rider FIRES,
-         reloads and changes guns. Nothing is thrown from a seat, and the
-         tank's crew, behind its armour, does not fire at all. */
-      if (e.code === 'KeyN') { if (window.Vehicles) Vehicles.use(); return; }
+         reloads and changes guns. The tank's crew, behind its armour, does
+         not fire at all.
+         v2.17 (Rahul: "player cannot throw bombs from inside the car"): G
+         throws a frag from the seat — hold to cook, release to throw, as on
+         foot — and F a flash. It leaves from the RIDER, not from the chase
+         camera, and carries the vehicle's speed (Weapons.hurl). H, B and L
+         stay the horn, the radio and the lights. */
+      /* v2.17: N also steps aboard (and off) a standing train — unless a
+         vehicle is asking for the key, which comes first */
+      if (e.code === 'KeyN') {
+        if (window.Vehicles && (Vehicles.mounted() || (Vehicles.offering && Vehicles.offering()))) Vehicles.use();
+        else if (!(window.Train && Train.use && Train.use()) && window.Vehicles) Vehicles.use();
+        return;
+      }
       if (riding) {
         if (e.code === 'KeyH') Vehicles.horn();          // H is the horn at the wheel (a molotov on foot)
         else if (e.code === 'KeyL') Vehicles.lights();   // L the headlights (drop-sight on foot)
         else if (e.code === 'KeyB' && window.Soundtrack) UI.toast(Soundtrack.toggleRadio() ? 'RADIO ON' : 'RADIO OFF');   // v2.15: B the radio (smoke on foot)
+        else if (Vehicles.canFire() && e.code === 'KeyG') Weapons.startCook();
+        else if (Vehicles.canFire() && e.code === 'KeyF') Weapons.throwGrenade('flash');
         else if (map[e.code]) { Input[map[e.code]] = true; if (e.code === 'Space') e.preventDefault(); }
         else if (Vehicles.canFire() && e.code === 'KeyR') Weapons.startReload();
         else if (Vehicles.canFire() && e.code.indexOf('Digit') === 0) { var seatN = parseInt(e.code.slice(5), 10); if (seatN >= 1 && seatN <= 9) Weapons.selectByKey(seatN); }

@@ -246,32 +246,265 @@ var FX = (function () {
   // Quick soft white fade (respawn feedback) — visual only, no flash audio.
   function softFlash(v) { flashLevel = Math.max(flashLevel, Math.min(0.4, v)); }
 
-  function explosion(pos, radius) {
-    var core = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 10),
-      new THREE.MeshBasicMaterial({ color: 0xffc060, transparent: true, opacity: 0.95 }));
-    core.position.copy(pos);
-    add(core, 0.35, function (e, t) {
-      e.mesh.scale.setScalar(1 + t * radius * 1.4);
-      e.mesh.material.opacity = 0.95 * (1 - t);
-    });
-    for (var i = 0; i < 10; i++) {
-      var s = new THREE.Sprite(smokeMat.clone());
-      s.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 1.5, (Math.random() - 0.5) * 2));
-      s.scale.setScalar(1);
-      var vy = 1 + Math.random() * 2;
-      (function (vv) {
-        add(s, 1.6 + Math.random(), function (e, t, dt) {
-          e.mesh.position.y += vv * dt * (1 - t);
-          e.mesh.scale.setScalar(1 + t * 4);
-          e.mesh.material.opacity = 0.5 * (1 - t);
-        });
-      })(vy);
+  /* ===== v2.18 - THE BLAST =====
+     Rahul: "add animations for bombs blasting which should show a blast with
+     yellow tint and fire and it should looks real" — with a picture: a
+     white-yellow heart, orange fire rolling over itself with dark creases, a
+     stem, a cap, and fire running out along the ground.
+
+     What was here: one translucent orange ball that grew and faded in a third
+     of a second, and ten grey squares. (A mine's did not even have the ball:
+     it was called with no radius, and a ball scaled by NaN is not drawn.)
+
+     Now a blast is built the way the picture is:
+       flash    one frame of white-yellow, and a warm light on everything near
+       fire     billows thrown outward that slow, rise and cool — white-yellow,
+                yellow, orange, deep red — drawn ADDITIVE, so where they pile
+                up the heart burns white
+       smoke    dark brown-black billows that come out of the fire as it cools
+                and keep rising after it is gone; in front of the fire they
+                are the dark creases
+       ground   a pale ring racing out, fire rolling along the ground behind
+                it, and a scorch left where it stood
+       embers   sparks thrown high, falling under gravity
+       a stem and a cap — the mushroom — for anything the size of a frag, a
+       bomb or a vehicle; a flashbang's pop gets none of that.
+     The billows are not round blobs: three lumpy shapes are painted once on a
+     canvas (soft discs piled inside a disc, creases cut back out), and every
+     sprite takes one at its own angle and turns slowly.
+
+     Cost, since a firefight is where this runs: a frag is 58 sprites, most of
+     them gone inside a second and a half, counted down by the quality tier
+     (40% on POTATO); a flashbang's pop is 10. The
+     light is ONE pooled lamp, switched on and off — the old code added and
+     removed a light per blast, which makes three.js rebuild every lit shader
+     twice per explosion. */
+  var blastTex = null, blastLight = null, blastLightT = 0, blastLightI = 0, ringGeo = null, flatGeo = null, glowEl = null, glowAmt = 0;
+  function blastRng(seed) { var a = seed >>> 0; return function () { a = (a + 0x6D2B79F5) >>> 0; var t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  /* A billow, painted once. Its ALPHA is the lumpy outline (soft discs piled inside a disc); when `shaded`
+     its COLOUR is the relief — lit lumps, dark creases — which the sprite's own colour multiplies, so an
+     orange billow has dark red folds in it and a smoke billow has depth. */
+  function puffTexture(seed, lumps, creases, shaded) {
+    var S = 160, h = S / 2, r = blastRng(seed), i, a, d, x, y, rad, gr;
+    var A = document.createElement('canvas'); A.width = A.height = S;
+    var ga = A.getContext('2d');
+    ga.clearRect(0, 0, S, S);
+    ga.globalCompositeOperation = 'lighter';
+    for (i = 0; i < lumps; i++) {
+      a = r() * 6.2832; d = Math.sqrt(r()) * h * 0.58; x = h + Math.cos(a) * d; y = h + Math.sin(a) * d; rad = h * (0.2 + r() * 0.34);
+      gr = ga.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, 'rgba(255,255,255,0.7)'); gr.addColorStop(0.6, 'rgba(255,255,255,0.34)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      ga.fillStyle = gr; ga.beginPath(); ga.arc(x, y, rad, 0, 6.2832); ga.fill();
     }
-    var fl = new THREE.PointLight(0xffa050, 3, radius * 3.2, 2);
-    fl.position.copy(pos); scene.add(fl);
-    add(fl, 0.3, function (e, t) { e.mesh.intensity = 3 * (1 - t); });
+    ga.globalCompositeOperation = 'destination-in';
+    gr = ga.createRadialGradient(h, h, h * 0.42, h, h, h * 0.98);
+    gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ga.fillStyle = gr; ga.fillRect(0, 0, S, S);
+    ga.globalCompositeOperation = 'source-over';
+    if (!shaded) return new THREE.CanvasTexture(A);
+    var c = document.createElement('canvas'); c.width = c.height = S;
+    var g = c.getContext('2d');
+    g.fillStyle = 'rgb(118,118,118)'; g.fillRect(0, 0, S, S);
+    g.globalCompositeOperation = 'lighter';
+    for (i = 0; i < lumps * 1.5; i++) {
+      a = r() * 6.2832; d = Math.sqrt(r()) * h * 0.82; x = h + Math.cos(a) * d; y = h + Math.sin(a) * d; rad = h * (0.09 + r() * 0.2);
+      gr = g.createRadialGradient(x - rad * 0.2, y - rad * 0.25, 0, x, y, rad);
+      gr.addColorStop(0, 'rgba(255,255,255,0.55)'); gr.addColorStop(0.7, 'rgba(255,255,255,0.16)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(x, y, rad, 0, 6.2832); g.fill();
+    }
+    g.globalCompositeOperation = 'source-over';
+    for (i = 0; i < creases; i++) {
+      a = r() * 6.2832; d = Math.sqrt(r()) * h * 0.85; x = h + Math.cos(a) * d; y = h + Math.sin(a) * d; rad = h * (0.09 + r() * 0.2);
+      gr = g.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, 'rgba(0,0,0,0.44)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(x, y, rad, 0, 6.2832); g.fill();
+    }
+    g.globalCompositeOperation = 'destination-in';
+    g.drawImage(A, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    return new THREE.CanvasTexture(c);
+  }
+  function blastAssets() {
+    if (blastTex) return blastTex;
+    blastTex = {
+      fire: [puffTexture(11, 30, 15, true), puffTexture(29, 28, 18, true), puffTexture(47, 34, 13, true)],
+      smoke: [puffTexture(63, 34, 14, true), puffTexture(81, 30, 17, true), puffTexture(97, 38, 12, true)],
+      glow: [puffTexture(113, 24, 0, false), puffTexture(131, 20, 0, false)],
+      soft: puffTexture(5, 40, 0, false)
+    };
+    ringGeo = new THREE.RingGeometry(0.88, 1.0, 44); ringGeo.rotateX(-Math.PI / 2);
+    flatGeo = new THREE.PlaneGeometry(2, 2); flatGeo.rotateX(-Math.PI / 2);
+    return blastTex;
+  }
+  /* colour and opacity along a life: stops of [t, r, g, b, opacity] */
+  /* BODY is the fire you see the shape of: opaque, orange, creased, going dark red and then to smoke.
+     GLOW is drawn additive over its heart: yellow that stacks up to white where the billows pile. */
+  var RAMP_BODY  = [[0, 1, 0.92, 0.50, 0], [0.05, 1, 0.86, 0.36, 0.97], [0.28, 1, 0.62, 0.14, 0.97], [0.56, 0.92, 0.33, 0.06, 0.92], [0.80, 0.40, 0.16, 0.07, 0.7], [1, 0.12, 0.10, 0.10, 0]];
+  var RAMP_GLOW  = [[0, 1, 0.90, 0.50, 0], [0.05, 1, 0.84, 0.36, 0.62], [0.35, 1, 0.60, 0.12, 0.50], [0.7, 0.9, 0.30, 0.04, 0.22], [1, 0.4, 0.08, 0.02, 0]];
+  var RAMP_SMOKE = [[0, 0.46, 0.27, 0.10, 0], [0.10, 0.36, 0.23, 0.12, 0.72], [0.40, 0.17, 0.14, 0.13, 0.64], [1, 0.10, 0.10, 0.11, 0]];
+  var RAMP_SURGE = [[0, 1, 0.92, 0.55, 0], [0.08, 1, 0.80, 0.30, 0.9], [0.5, 1, 0.48, 0.10, 0.6], [1, 0.40, 0.10, 0.03, 0]];
+  var RAMP_DUST  = [[0, 0.50, 0.42, 0.32, 0], [0.15, 0.44, 0.38, 0.30, 0.42], [1, 0.30, 0.28, 0.26, 0]];
+  function applyRamp(R, t, m) {
+    var i = 1; while (i < R.length - 1 && R[i][0] < t) i++;
+    var A = R[i - 1], B = R[i], k = (t - A[0]) / ((B[0] - A[0]) || 1); if (k < 0) k = 0; else if (k > 1) k = 1;
+    m.color.setRGB(A[1] + (B[1] - A[1]) * k, A[2] + (B[2] - A[2]) * k, A[3] + (B[3] - A[3]) * k);
+    m.opacity = A[4] + (B[4] - A[4]) * k;
+  }
+  /* one billow: thrown with v, slowed by drag, lifted, grown from s0 to s1, coloured along a ramp;
+     `out`/`flare` is a sideways push that starts late — the cap rolling over */
+  function billow(o) {
+    var m = new THREE.SpriteMaterial({ map: o.tex, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false,
+      blending: o.additive ? THREE.AdditiveBlending : THREE.NormalBlending, rotation: Math.random() * 6.2832 });
+    var s = new THREE.Sprite(m); s.position.copy(o.p); s.scale.setScalar(o.s0);
+    var v = o.v, age = 0, delay = o.delay || 0, spin = (Math.random() - 0.5) * (o.spin === undefined ? 0.8 : o.spin), floorY = o.floor;
+    s.visible = delay <= 0;
+    add(s, o.ttl + delay, function (e, tt, dt) {
+      age += dt; var a = age - delay; if (a < 0) return;
+      if (!s.visible) s.visible = true;
+      var t = a / o.ttl; if (t > 1) t = 1;
+      var k = Math.exp(-o.drag * dt); v.x *= k; v.z *= k; v.y = v.y * k + o.lift * dt;
+      if (o.out && t > 0.3) { v.x += o.out.x * o.flare * dt; v.z += o.out.z * o.flare * dt; }
+      s.position.addScaledVector(v, dt);
+      if (floorY !== undefined && s.position.y < floorY) { s.position.y = floorY; if (v.y < 0) v.y = 0; }
+      s.scale.setScalar(o.s0 + (o.s1 - o.s0) * (1 - (1 - t) * (1 - t)));
+      applyRamp(o.ramp, t, m);
+      m.rotation += spin * dt;
+    });
+  }
+  function blastQuality() {
+    var t = (typeof Quality !== 'undefined' && Quality.getTier) ? Quality.getTier() : 'high';
+    return t === 'potato' ? 0.4 : t === 'low' ? 0.6 : t === 'medium' ? 0.8 : 1;
+  }
+  var _bDown = null, _bFrom = null;
+  function groundBelow(pos) {
+    if (typeof World !== 'undefined' && World.rayHit) {
+      if (!_bDown) { _bDown = new THREE.Vector3(0, -1, 0); _bFrom = new THREE.Vector3(); }
+      _bFrom.set(pos.x, pos.y + 0.4, pos.z);
+      var hit = World.rayHit(_bFrom, _bDown, 3.2);
+      if (hit && hit.point) return hit.point.y;
+    }
+    return pos.y <= 2.6 ? 0 : null;                       // open ground, or an airburst: no ring, no scorch
+  }
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function explosion(pos, radius) {
+    if (!scene || typeof document === 'undefined') return;
+    var R = (typeof radius === 'number' && isFinite(radius) && radius > 0) ? radius : 5;      // a mine's blast is called without one
+    var T = blastAssets(), q = blastQuality(), big = R >= 4.5, pop = R < 2.5;
+    var n = function (c) { return Math.max(1, Math.round(c * q)); };
+    var ground = groundBelow(pos), onGround = ground !== null, gy = onGround ? ground : pos.y;
+    var c = new THREE.Vector3(pos.x, Math.max(pos.y, gy + (pop ? 0.2 : 0.6)), pos.z), i, a, e, sp, dir;
+    var fr = pop ? R * 0.9 : R * 0.5;                                                         // the fireball's own radius
     var d = camera ? camera.position.distanceTo(pos) : 99;
+
+    /* the flash */
+    var fm = new THREE.SpriteMaterial({ map: T.soft, color: 0xffe08a, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+    var fs = new THREE.Sprite(fm); fs.position.copy(c); fs.scale.setScalar(fr * 1.4);
+    add(fs, pop ? 0.16 : 0.22, function (en, t) { en.mesh.scale.setScalar(fr * (1.4 + t * 2.6)); en.mesh.material.opacity = 0.9 * (1 - t) * (1 - t); });
+
+    /* the fire: thrown outward, slowing, rising, cooling — a body you can see the shape of, and a glow in its heart */
+    for (i = 0; i < n(pop ? 4 : big ? 11 : 8); i++) {
+      a = Math.random() * 6.2832; e = Math.random() * (onGround ? 0.95 : 2.6) - (onGround ? 0.05 : 1.3);
+      dir = new THREE.Vector3(Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e));
+      sp = fr * rnd(2.2, 4.4);
+      billow({ tex: T.fire[i % 3], p: c.clone().addScaledVector(dir, fr * 0.12), v: dir.multiplyScalar(sp), drag: 4.2, lift: pop ? 0.6 : rnd(0.5, 1.6),
+        s0: fr * 0.7, s1: fr * rnd(1.5, 2.1), ttl: pop ? rnd(0.28, 0.42) : rnd(0.85, 1.35) * (big ? 1.15 : 0.9), ramp: RAMP_BODY, floor: onGround ? gy + 0.15 : undefined });
+    }
+    for (i = 0; i < n(pop ? 2 : big ? 5 : 4); i++) {
+      a = Math.random() * 6.2832; e = Math.random() * 1.2;
+      dir = new THREE.Vector3(Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e));
+      billow({ tex: T.glow[i % 2], additive: true, p: c.clone().addScaledVector(dir, fr * 0.08), v: dir.multiplyScalar(fr * rnd(1.0, 2.2)), drag: 4.2, lift: pop ? 0.6 : rnd(1.6, 2.8),
+        s0: fr * 0.6, s1: fr * rnd(1.2, 1.6), ttl: pop ? rnd(0.2, 0.3) : rnd(0.6, 0.95), ramp: RAMP_GLOW, floor: onGround ? gy + 0.15 : undefined });
+    }
+    /* the smoke that comes out of it */
+    for (i = 0; i < n(pop ? 3 : big ? 9 : 6); i++) {
+      a = Math.random() * 6.2832; e = Math.random() * 1.3;
+      dir = new THREE.Vector3(Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e));
+      billow({ tex: T.smoke[i % 3], p: c.clone().addScaledVector(dir, fr * rnd(0.1, 0.5)), v: dir.multiplyScalar(fr * rnd(1.0, 2.6)), drag: 2.6, lift: rnd(1.6, 3.4) * (pop ? 0.5 : 1),
+        s0: fr * 0.8, s1: fr * rnd(1.9, 2.7), ttl: pop ? rnd(0.7, 1.1) : rnd(2.3, 3.6), delay: pop ? 0.05 : rnd(0.25, 0.7), ramp: RAMP_SMOKE, floor: onGround ? gy + 0.2 : undefined });
+    }
+    /* the mushroom: a stem of fire and smoke, and a cap that rolls outward at the top */
+    if (big) {
+      var H = R * rnd(1.0, 1.2);                                                              // how high the cap stands
+      for (i = 0; i < n(5); i++) {
+        billow({ tex: T.fire[i % 3], p: c.clone().add(new THREE.Vector3(rnd(-0.3, 0.3) * fr, 0, rnd(-0.3, 0.3) * fr)), v: new THREE.Vector3(0, H * rnd(1.3, 2.9), 0), drag: 3.0, lift: 1.5,
+          s0: fr * 0.7, s1: fr * rnd(1.0, 1.35), ttl: rnd(1.0, 1.5), delay: i * 0.04, ramp: RAMP_BODY });
+        billow({ tex: T.smoke[i % 3], p: c.clone().add(new THREE.Vector3(rnd(-0.3, 0.3) * fr, 0, rnd(-0.3, 0.3) * fr)), v: new THREE.Vector3(0, H * rnd(1.0, 2.6), 0), drag: 3.0, lift: 1.8,
+          s0: fr * 0.7, s1: fr * rnd(1.2, 1.6), ttl: rnd(2.6, 3.8), delay: 0.3 + i * 0.07, ramp: RAMP_SMOKE });
+      }
+      var nc = n(8);
+      for (i = 0; i < nc; i++) {
+        a = (i / nc) * 6.2832 + rnd(-0.3, 0.3);
+        var out = new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), kind = i % 5;               // three of five are fire, one its glow, one smoke
+        billow({ tex: kind === 4 ? T.smoke[i % 3] : kind === 3 ? T.glow[i % 2] : T.fire[i % 3], additive: kind === 3, p: c.clone().addScaledVector(out, fr * 0.2), v: new THREE.Vector3(out.x * fr * 0.5, H * 3.05, out.z * fr * 0.5), drag: 3.0, lift: 1.2,
+          out: out, flare: fr * rnd(1.8, 2.8), s0: fr * 0.75, s1: fr * rnd(1.6, 2.2), ttl: kind === 4 ? rnd(2.8, 4.0) : kind === 3 ? rnd(0.9, 1.2) : rnd(1.5, 2.1), delay: kind === 4 ? 0.3 : 0.05,
+          ramp: kind === 4 ? RAMP_SMOKE : kind === 3 ? RAMP_GLOW : RAMP_BODY });
+      }
+    }
+    /* along the ground: the ring, the fire behind it, dust, and the scorch */
+    if (onGround && !pop) {
+      var rm = new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+      var ring = new THREE.Mesh(ringGeo, rm); ring.userData.sharedGeo = true; ring.position.set(pos.x, gy + 0.08, pos.z); ring.scale.setScalar(0.4);
+      add(ring, 0.36, function (en, t) { var g2 = 1 - (1 - t) * (1 - t); en.mesh.scale.set(0.4 + g2 * R * 1.5, 1, 0.4 + g2 * R * 1.5); en.mesh.material.opacity = 0.5 * (1 - t) * (1 - t); });
+      for (i = 0; i < n(big ? 7 : 5); i++) {
+        a = (i / Math.max(1, n(big ? 7 : 5))) * 6.2832 + rnd(-0.35, 0.35);
+        dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+        billow({ tex: T.glow[i % 2], additive: true, p: new THREE.Vector3(pos.x, gy + fr * 0.22, pos.z), v: dir.clone().multiplyScalar(R * rnd(2.6, 3.8)), drag: 3.6, lift: 0.5,
+          s0: fr * 0.4, s1: fr * rnd(0.8, 1.1), ttl: rnd(0.6, 1.0), ramp: RAMP_SURGE, floor: gy + fr * 0.2 });
+        billow({ tex: T.smoke[(i + 1) % 3], p: new THREE.Vector3(pos.x, gy + fr * 0.2, pos.z), v: dir.multiplyScalar(R * rnd(2.9, 4.2)), drag: 3.2, lift: 0.7,
+          s0: fr * 0.4, s1: fr * rnd(1.0, 1.4), ttl: rnd(1.5, 2.4), delay: 0.08, ramp: RAMP_DUST, floor: gy + fr * 0.25 });
+      }
+      var sm = new THREE.MeshBasicMaterial({ map: T.smoke[0], color: 0x070605, transparent: true, opacity: 0.0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      var scorch = new THREE.Mesh(flatGeo, sm); scorch.userData.sharedGeo = true; scorch.position.set(pos.x, gy + 0.03, pos.z); scorch.rotation.y = Math.random() * 6.2832; scorch.scale.set(fr * 1.25, 1, fr * 1.25);
+      add(scorch, 16, function (en, t) { en.mesh.material.opacity = 0.78 * Math.min(1, t * 40) * (t > 0.7 ? (1 - t) / 0.3 : 1); });
+    }
+    /* embers: one cloud of points, thrown and falling */
+    if (!pop) {
+      var ne = Math.max(6, Math.round((big ? 34 : 18) * q)), P = new Float32Array(ne * 3), V = [];
+      for (i = 0; i < ne; i++) {
+        a = Math.random() * 6.2832; e = rnd(0.25, 1.45); sp = rnd(5, 15) * Math.sqrt(Math.min(1.4, R / 7));
+        P[i * 3] = c.x; P[i * 3 + 1] = c.y; P[i * 3 + 2] = c.z;
+        V.push(Math.cos(a) * Math.cos(e) * sp, Math.sin(e) * sp, Math.sin(a) * Math.cos(e) * sp);
+      }
+      var eg = new THREE.BufferGeometry(); eg.setAttribute('position', new THREE.BufferAttribute(P, 3));
+      var pm = new THREE.PointsMaterial({ map: T.soft, color: 0xffb648, size: 0.34, sizeAttenuation: true, transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending });
+      var pts = new THREE.Points(eg, pm); pts.frustumCulled = false;
+      add(pts, 1.5, function (en, t, dt) {
+        for (var k = 0; k < ne; k++) {
+          V[k * 3 + 1] -= 9.8 * dt;
+          P[k * 3] += V[k * 3] * dt; P[k * 3 + 1] += V[k * 3 + 1] * dt; P[k * 3 + 2] += V[k * 3 + 2] * dt;
+          if (onGround && P[k * 3 + 1] < gy + 0.05) { P[k * 3 + 1] = gy + 0.05; V[k * 3] *= 0.5; V[k * 3 + 1] *= -0.25; V[k * 3 + 2] *= 0.5; }
+        }
+        eg.attributes.position.needsUpdate = true;
+        pm.opacity = t < 0.5 ? 1 : (1 - t) * 2; pm.color.setRGB(1, 0.71 - t * 0.4, 0.28 - t * 0.22);
+      });
+    }
+    /* the warm light on everything near, and on the lens */
+    if (!blastLight) blastLight = new THREE.PointLight(0xffc452, 0, 30, 2);
+    if (blastLight.parent !== scene) scene.add(blastLight);
+    blastLight.position.set(c.x, c.y + (pop ? 0.3 : fr * 0.6), c.z); blastLight.distance = Math.max(8, R * 3.4);
+    blastLightI = pop ? 2.2 : 3.4 + Math.min(2.2, R * 0.22); blastLightT = pop ? 0.2 : 0.55; blastLight.userData.t0 = blastLightT;
+    blastLight.intensity = blastLightI;
+    if (!pop) glowAmt = Math.max(glowAmt, Math.max(0, 1 - d / (R * 3.5 + 6)) * 0.55);
     shake(Math.max(0, 0.6 - d * 0.02));
+  }
+  /* the pooled light fades; the lens glow fades (called from update) */
+  function updateBlast(dt) {
+    if (blastLight && blastLightT > 0) {
+      blastLightT -= dt;
+      var k = Math.max(0, blastLightT / (blastLight.userData.t0 || 0.55));
+      blastLight.intensity = blastLightI * k * k;
+      blastLight.color.setRGB(1, 0.5 + 0.27 * k, 0.12 + 0.2 * k);                              // yellow going to orange as it dies
+    }
+    if (glowAmt > 0.004 || (glowEl && glowEl.style.opacity !== '0')) {
+      if (!glowEl && typeof document !== 'undefined' && document.body && document.body.appendChild) {
+        glowEl = document.createElement('div'); glowEl.id = 'blast-glow';
+        glowEl.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:6;pointer-events:none;opacity:0;mix-blend-mode:screen;' +
+          'background:radial-gradient(ellipse at center,rgba(255,214,120,.16) 0%,rgba(255,170,60,.42) 62%,rgba(255,120,30,.72) 100%)';
+        document.body.appendChild(glowEl);
+      }
+      glowAmt = glowAmt > 0.004 ? glowAmt * Math.exp(-3.6 * dt) : 0;
+      if (glowEl) glowEl.style.opacity = glowAmt > 0.004 ? glowAmt.toFixed(3) : '0';
+    }
   }
 
   // Smoke grenade cloud — vision denial, ~12 s
@@ -304,6 +537,7 @@ var FX = (function () {
   function update(dt) {
     updatePings();          // v9.11: team pings fade on the same clock
     updateFireZones(dt);    // v1.0b
+    updateBlast(dt);        // v2.18: the blast's light and lens glow
     for (var i = live.length - 1; i >= 0; i--) {
       var e = live[i];
       e.life += dt;

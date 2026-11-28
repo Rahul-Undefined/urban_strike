@@ -263,7 +263,32 @@ ok(pictures.length <= 2 && picBytes / 1024 <= PICTURE_BUDGET_KB,
                           figures and their two materials deleted    0.7 KB
    516 KB measured. ~10,210 -> ~10,160 fresh loads per 5 GB. The comment
    stripping proposed under v2.16 above is still the real answer. */
-const GZ_BUDGET_KB = 517;
+/* ===== v2.17 — 517 -> 521 KB: N BOARDS THE TRAIN. =====
+   environment/train.js   the board / step-off offer, its prompt, the
+                          step itself                                2.3 KB
+   config (world, index)  Bot Ops on Killhouse, the per-map head
+                          counts, the mode's own frag and mine kit   0.9 KB
+   game.js, system.js     N for the train; G and F from a seat, the
+                          grenade leaving from the rider             0.5 KB
+   index.html, others     the field manual's train line, wiring      0.2 KB
+   520 KB measured. ~10,160 -> ~10,090 fresh loads per 5 GB. */
+/* ===== v2.18 — 521 -> 538 KB: VEHICLES THAT LOOK LIKE VEHICLES, AND THE BLAST. =====
+   The largest step this budget has taken, for the three things Rahul asked
+   to SEE: "Cars, Bike, Bus graphics ... very close to real", "a blast with
+   yellow tint and fire", and getting in as an animation.
+   vehicles/vehicles.js   five models rebuilt (bevelled bodies, glazed
+                          cabins with interiors, wire and alloy wheels,
+                          hinged doors), the kit that builds them, wheels
+                          and doors moving, the path a rider takes in    10.3 KB
+   effects/effects.js     the blast: painted billows, fire / smoke /
+                          mushroom / ground ring / embers / scorch        5.5 KB
+   networking/avatars.js  the body getting in (fold, leg over, hop)       0.6 KB
+   system.js, config,     explosives and the hull; the field manual
+   index.html                                                             0.5 KB
+   537 KB measured. ~10,090 -> ~9,770 fresh loads per 5 GB — the first time
+   under ten thousand. No model files and no texture files were added: it is
+   all code, and 44% of this download is still comments (see v2.16). */
+const GZ_BUDGET_KB = 538;
 ok(gz / 1024 <= GZ_BUDGET_KB,
   'first load is ' + (gz / 1024).toFixed(0) + ' KB gzipped (budget ' + GZ_BUDGET_KB + ' KB)' +
   '  → ' + Math.round(5 * 1024 * 1024 / (gz / 1024)).toLocaleString() + ' fresh loads per 5 GB');

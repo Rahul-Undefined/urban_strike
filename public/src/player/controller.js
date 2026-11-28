@@ -375,6 +375,7 @@ var PlayerCtl = (function () {
     get lean() { return lean; },
     get moveState() { return moveState; },
     get alive() { return alive; }, set alive(v) { alive = v; },
+    get halfY() { return halfY; },   /* v2.17: the train's N step needs to know how tall the player stands */
     consumeLand: function () { var l = landHit; landHit = 0; return l; },
     setPlatform: function (fn) { platformFn = typeof fn === 'function' ? fn : null; },   /* v1.0e */
     get onPlatform() { return onPlatform; },

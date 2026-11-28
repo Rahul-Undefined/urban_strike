@@ -166,11 +166,31 @@
        `mapAllow` the maps the mode may be played on (CFG.mapFor). The v1.0d
        removal of the old bot modes stands for THOSE modes (co2, bm_*, the
        backfill): none of them is back. */
+    /* ===== v2.17 - BOT OPS: THE KILLHOUSE, A BIGGER KIT, MORE OF THEM =====
+       Rahul: "Bot mode should be available in killhouse as well" - mapAllow.
+       "Only in bot mode, bombs should be 8 at once and 10 mines" - `kit`, the
+       per-life frags and mines of THIS mode on every map it plays (the
+       Killhouse's 1 frag / 3 mines rule is for people fighting people). Read
+       through CFG.fragCountFor / mineStartFor / mineCapFor, which now take
+       the mode as well as the map. How many operators: BOTOPS below. */
     bom: { label: 'Bot Ops \u00b7 Medium', vlabel: 'Medium \u00b7 they make mistakes', cat: 'bots', teams: true, teamCount: 2, maxPlayers: 6,
-           bots: 'medium', mapAllow: ['urbansmall', 'urban'], fullMapContacts: false },
+           bots: 'medium', mapAllow: ['urbansmall', 'urban', 'killhouse'], kit: { frags: 8, mines: 10 }, fullMapContacts: false },
     boh: { label: 'Bot Ops \u00b7 Hard', vlabel: 'Hard \u00b7 they hunt as a team', cat: 'bots', teams: true, teamCount: 2, maxPlayers: 6,
-           bots: 'hard', mapAllow: ['urbansmall', 'urban'], fullMapContacts: false }
+           bots: 'hard', mapAllow: ['urbansmall', 'urban', 'killhouse'], kit: { frags: 8, mines: 10 }, fullMapContacts: false }
   };
+  /* ===== v2.17 - HOW MANY OPERATORS ARE ON THE MAP AT ONCE =====
+     Rahul: "In urban big map bot should be 20-25 at a given time to make it
+     feel engaging, urban small should have maximum 12 at a time, killhouse
+     should have 6-8."
+     [solo, ceiling, more per extra human]. A dead operator comes back, so
+     this is the number alive-or-returning at any moment, not a total. It was
+     min(10, 3 + 2h) Medium and min(12, 4 + 2h) Hard on both maps: on Urban
+     (640 m across) ten operators were a rumour. Difficulty no longer changes
+     the head count - it never changed what a bullet does either.
+       urban       20, 21 ... 25 with a full squad of six
+       urbansmall  8, 10, 12
+       killhouse   6, 7, 8 */
+  var BOTOPS = { count: { urban: [20, 25, 1], urbansmall: [8, 12, 2], killhouse: [6, 8, 1] } };
 
   /* ===== v1.0j - THE ZONE SCHEDULE =====
      Shared by server (damage) and client (walls, map, HUD), like the train:
@@ -756,7 +776,7 @@
     return out;
   }
 
-  return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, activeTeams: activeTeams, TRAIN: TRAIN, TRAINS: TRAINS, trainOffset: trainOffset,
+  return { COLORS: COLORS, TEAMS: TEAMS, TEAM_IDS: TEAM_IDS, MODES: MODES, BOTOPS: BOTOPS, activeTeams: activeTeams, TRAIN: TRAIN, TRAINS: TRAINS, trainOffset: trainOffset,
     trainSchedule: trainSchedule, trainHeadAt: trainHeadAt, trainCars: trainCars, trainStops: trainStops,
     ZONE: ZONE, ZONE_PROFILES: ZONE_PROFILES, zoneParams: zoneParams, zoneSchedule: zoneSchedule, zoneCircleAt: zoneCircleAt, zoneInside: zoneInside,   /* v2.4: profiles */
     HELI: HELI, heliPoseAt: heliPoseAt, heliReturnPose: heliReturnPose, heliCrashPose: heliCrashPose, heliRoute: heliRoute, heliRouteBox: routeBox, heliDamageFor: heliDamageFor,

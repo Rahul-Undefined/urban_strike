@@ -261,7 +261,10 @@ const Combat = require('./server/lib/combat.js')({ io, now, modeInfo, pushLobby,
   onKillStreak: () => {},             /* v2.0: no kill-streak strikes */
   onDeathClearStreakReward: () => {} });
 const { weaponServerDamage, applyDamage, positionPlausible, fireRateOk } = Combat;
-const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo }); // code -> room
+const Mines = require('./server/lib/mines.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo,
+  /* v2.18: a mine by a vehicle hits the hull, not the people in it */
+  riding: (room, id) => Vehicles.riding(room, id),
+  vehBlast: (room, by, pos, kind) => Vehicles.blastAt(room, by, pos, kind) }); // code -> room
 /* v10.10 NUKE KILLSTREAK — killhouse only. Server-authoritative for the same
    reason as the strike drone: the client is told it HAS one and asked WHERE to
    put it, never whether it has one. See server/lib/nuke.js. */
@@ -276,7 +279,13 @@ const Zone = require('./server/lib/zone.js')({ io, now, applyDamage: (...a) => a
 const Hazards = require('./server/lib/hazards.js')({ io, now, applyDamage: (...a) => applyDamage(...a), modeInfo,
   colliders: (mapId) => Bots.buildColliders(mapId),
   trainPath: (mapId) => Bots.trainPath(mapId),
-  pathFrom: (wp, fillet) => Bots.pathFrom(wp, fillet) });   /* v1.0f/r: the moving trains kill what they hit */
+  pathFrom: (wp, fillet) => Bots.pathFrom(wp, fillet),
+  /* v2.17: and what they hit includes vehicles — the whole car, with everyone in it */
+  vehList: (room) => (room.veh ? room.veh.list : null),
+  vehWreck: (room, v, cause) => Vehicles.wreck(room, v, null, cause),
+  /* v2.18: and C4 beside a vehicle ends it; the riders are the hull's to kill */
+  riding: (room, id) => Vehicles.riding(room, id),
+  vehBlast: (room, by, pos, kind) => Vehicles.blastAt(room, by, pos, kind) });   /* v1.0f/r: the moving trains kill what they hit */
 /* v10.14: OUTBREAK REMOVED. It shipped in v10.13 having never been run, and it
    did not work: the zombies stood still holding rifles and could not be killed.
 
@@ -609,7 +618,7 @@ function startMatch(room) {
     p.out = false;                    // v8.37: Last Stand elimination flag, cleared per match
     room.insights = null;   // v8.29: insights are per match, never cumulative
     p.att = { sight: null, muzzle: null, mag: null }; p.exW = {}; p.rd = {};
-    p.ready = false; p.mines = CFG.mineStartFor(room.settings.map || 'urban'); p.lastMolo = {};   /* v2.8: per map */
+    p.ready = false; p.mines = CFG.mineStartFor(room.settings.map || 'urban', room.settings.mode); p.lastMolo = {};   /* v2.8: per map; v2.17: and per mode */
     p.mineIssued = 0; p.mineKills = 0;   /* v15.0: fix 8 ration budget, fix 9 KPI — both per match */
     /* v9.4: drones are per-MATCH, not per-life. Refilling them on respawn
        would mean an unlimited supply for anybody willing to die. */
@@ -1196,7 +1205,10 @@ io.on('connection', (socket) => {
     const ack = typeof cb === 'function' ? cb : () => {};
     const room = getRoom(socket); if (!room || room.state !== 'playing') return ack({ ok: false, err: 'Not in a match' });
     const p = room.players.get(socket.id); if (!p) return ack({ ok: false, err: 'Not in a room' });
-    if (modeInfo(room).bots) return ack({ ok: false, err: 'Not in this mode' });
+    /* v2.17 (Rahul: "hunter drone should be active in the mode"): this line
+       refused the launch in any mode with bots - a rule written for the bot
+       modes removed in v1.0d, and still standing in front of Bot Ops. Gone:
+       a hunter from a crate hunts AI operators like anyone else. */
     ack(Drones.launch(room, p, 'hunter'));
   });
   socket.on('launchDrone', (d, cb) => {
@@ -1427,6 +1439,15 @@ io.on('connection', (socket) => {
     const radius = Math.min(12, (w && (w.radius || w.fxRadius || w.killRadius)) || 6);
     const pos = d.p.map(Number);
     if (pos.some(v => !isFinite(v)) || Math.hypot(pos[0] - p.pos[0], pos[2] - p.pos[2]) > 160) return ack({ ok: false });
+    /* ===== v2.18 - A FRAG BY A VEHICLE HITS THE HULL =====
+       Rahul: "grenads damage the car too ... 4 granade blasts the car with the
+       players inside it." This message is the thrower's client saying where
+       its frag went off; the hull damage is the server's (Vehicles.blastAt).
+       It is paid for with a THROW: every frag relayed (see 'throw') leaves one
+       credit, and a blast spends it — so a client cannot report explosions it
+       never threw and take the city's vehicles apart from a rooftop. Rockets
+       are not counted here: a rocket that hits a hull already says so itself. */
+    if (d.w !== 'rocket' && (p.blastCredit | 0) > 0) { p.blastCredit--; Vehicles.blastAt(room, p, pos, 'frag'); }
     ack(Mines.blast(room, p, pos, radius));
   });
   /* ===== v1.0q - LANDING THE HELICOPTER (a rider presses Q) ===== */
@@ -1738,9 +1759,11 @@ io.on('connection', (socket) => {
       const tp = room.players.get(socket.id);
       if (tp) {
         tp.fragThrows = (tp.fragThrows | 0) + 1;
-        if (tp.fragThrows > CFG.fragCountFor(room.settings.map || 'urban')) return;
+        if (tp.fragThrows > CFG.fragCountFor(room.settings.map || 'urban', room.settings.mode)) return;
       }
     }
+    /* v2.18: one relayed frag is one hull-damaging blast, no more (see 'blast') */
+    if (d && d.type === 'frag') { const bp = room.players.get(socket.id); if (bp) bp.blastCredit = Math.min(8, (bp.blastCredit | 0) + 1); }
     socket.to(room.code).emit('throw', { id: socket.id, type: d && d.type, o: d && d.o, v: d && d.v });
   });
 
@@ -1758,9 +1781,13 @@ io.on('connection', (socket) => {
     if (!CFG.gunAllowed(room.settings.mode, d.w)) return;
     /* v2.8: a frag past this life's arena stock (see 'throw') deals nothing */
     if (d.w === 'frag' && CFG.isArena(room.settings.map || 'urban')
-        && (shooter.fragThrows | 0) > CFG.fragCountFor(room.settings.map || 'urban')) return;
+        && (shooter.fragThrows | 0) > CFG.fragCountFor(room.settings.map || 'urban', room.settings.mode)) return;
     const victim = room.players.get(d.victim); if (!victim || !victim.alive) return;
     if (Vehicles.shields(room, shooter)) return;    /* v2.13.1: riders of an open vehicle fire; the tank's sealed crew does not */
+    /* v2.18 (Rahul: a grenade "doesnt damage the player inside the car"): aboard
+       ANY vehicle a frag's blast is the hull's to take ('blast', above). The
+       thrower's own, thrown from the seat, included. */
+    if (d.w === 'frag' && Vehicles.riding(room, victim.id)) return;
 
     const explosive = d.w === 'frag' || d.w === 'rocket' || d.w === 'molotov';
     if (!explosive && d.victim === socket.id) return;

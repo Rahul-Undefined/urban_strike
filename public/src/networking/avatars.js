@@ -765,10 +765,31 @@ var Avatars = (function () {
     av.breath += s.dt * 1.6;
     var br = Math.sin(av.breath) * 0.012;
     var P = SEATS[seat.kind] || SEATS.bus, drv = !!seat.driver;
-    av.hipL.rotation.x = P[0]; av.hipR.rotation.x = P[0];
-    av.hipL.rotation.z = -P[2]; av.hipR.rotation.z = P[2];
-    av.hipL.knee.rotation.x = P[1]; av.hipR.knee.rotation.x = P[1];
-    var lean = drv ? P[3] : P[4];
+    /* ===== v2.18 - GETTING IN =====
+       Rahul: "animations ... when pressing N to a car that it is opening the
+       gate of the car and then sitting inside, same in bike it taking one leg
+       above and then sitting on the bike, jumping up in the bus."
+       seat.enter runs 0..1 for the first second in a seat (Vehicles.seatOf).
+       The vehicle walks the rig in from the door (Vehicles.sit) and opens and
+       shuts that door; here the BODY does its part: it starts standing and
+       folds down onto the seat (`fold`), and on the way
+         bike  the right leg goes up, out and over the saddle
+         bus   both knees come up for the hop onto the step
+         car   the head and shoulders duck under the roof
+       The seat itself is taken at once — this is what it looks like, not a
+       delay before you can drive or shoot. */
+    var en = (seat.enter === undefined || seat.enter >= 1) ? 1 : Math.max(0, seat.enter);
+    var f0 = Math.max(0, Math.min(1, (en - 0.3) / 0.58)), fold = en >= 1 ? 1 : f0 * f0 * (3 - 2 * f0);
+    var over = 0, hop = 0, duck = 0, w;
+    if (en < 1) {
+      if (seat.kind === 'bike') { w = Math.max(0, Math.min(1, (en - 0.1) / 0.55)); over = Math.sin(Math.PI * w); }
+      else if (seat.kind === 'bus') { w = Math.max(0, Math.min(1, (en - 0.05) / 0.37)); hop = Math.sin(Math.PI * w); }
+      else { w = Math.max(0, Math.min(1, (en - 0.25) / 0.5)); duck = Math.sin(Math.PI * w); }
+    }
+    av.hipL.rotation.x = P[0] * fold - 0.75 * hop; av.hipR.rotation.x = P[0] * fold - 0.75 * hop + 0.5 * over;
+    av.hipL.rotation.z = -P[2] * fold; av.hipR.rotation.z = P[2] * fold + 1.3 * over;
+    av.hipL.knee.rotation.x = P[1] * fold + 1.1 * hop; av.hipR.knee.rotation.x = P[1] * fold * (1 - 0.65 * over) + 1.1 * hop + 0.5 * over;
+    var lean = (drv ? P[3] : P[4]) * fold + 0.3 * over + 0.42 * duck + 0.15 * hop;
     var look = Math.max(-1.35, Math.min(1.35, seat.look || 0));
     /* a passenger with a weapon turns the shoulders to the target; whoever
        steers keeps them square and turns only the head */
@@ -778,13 +799,14 @@ var Avatars = (function () {
     av.spine.position.y = 0.02;
     av.spine.rotation.x = lean;
     av.spine.rotation.y = -av.sLook;
-    av.spine.rotation.z = 0;
+    av.spine.rotation.z = -0.22 * over;                        // v2.18: leaning away from the leg that is going over
     var aim = -s.rx * 0.62;
     if (drv) {
-      /* both hands on the controls */
-      av.armR.rotation.x = P[5] + br; av.armL.rotation.x = P[5] + br;
-      av.armR.rotation.z = P[7]; av.armL.rotation.z = -P[7];
-      av.armR.elbow.rotation.x = P[6]; av.armL.elbow.rotation.x = P[6];
+      /* both hands on the controls (v2.18: reaching for them as the body comes down) */
+      var reach = 0.25 + 0.75 * fold;
+      av.armR.rotation.x = P[5] * reach + br; av.armL.rotation.x = P[5] * reach + br;
+      av.armR.rotation.z = P[7] * fold; av.armL.rotation.z = -P[7] * fold;
+      av.armR.elbow.rotation.x = P[6] * reach; av.armL.elbow.rotation.x = P[6] * reach;
     } else if (armed) {
       /* the carry, as on foot: a pillion rider or someone in an auto can shoot */
       av.armR.rotation.x = -0.40 + aim + br; av.armR.rotation.z = -0.20; av.armR.elbow.rotation.x = -1.10;

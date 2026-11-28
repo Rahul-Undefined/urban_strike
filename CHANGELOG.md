@@ -1,3 +1,213 @@
+# v2.18.0 (build 53) — WHAT YOU SEE: THE BLAST, THE VEHICLES, GETTING IN — AND GRENADES AGAINST A HULL (2026-11-27)
+
+The three points of Rahul's ten that are pictures (7, 9, 10), and the rule he
+added after v2.17.
+
+## Explosives and the hull (new rule)
+"yes grenads damage the car too but doesnt damage the player inside the car,
+4 granade blasts the car with the players inside it."
+- A frag that goes off within 5 m of a vehicle's hull takes 163 off it — a
+  quarter of a sedan. Whoever is aboard takes NOTHING from that frag, in any
+  vehicle. When the hull is gone everyone aboard dies with it (the v2.17
+  rule): an enemy thrower gets every kill, a team-mate none.
+- By hull, frags to wreck: bike 2, auto 3, SEDAN 4, bus 9, tank 26. Only the
+  sedan's number is Rahul's; the rest follow from the hulls the vehicles
+  already had.
+- A mine counts as two frags (it used to kill the rider over it); C4 beside
+  a vehicle ends it. On foot, mines and C4 are what they were.
+- Bullets and frags add up on the same hull.
+- A client cannot report explosions it never threw: each frag the server
+  relays leaves one credit, and a reported blast spends it.
+
+## 9. The blast
+"add animations for bombs blasting which should show a blast with yellow tint
+and fire and it should looks real" — with a picture of a mushroom fireball.
+- Was: one translucent orange ball for a third of a second and ten grey
+  squares. (A mine's did not even have the ball: its radius was missing, and
+  a ball scaled by NaN is not drawn.)
+- Now: a yellow flash that lights the street and warms the screen; fire that
+  is thrown out, slows, rises and cools from yellow through orange to deep
+  red, with dark folds in it; dark smoke that comes out of the fire and
+  stays; a stem and a cap that rolls over — the mushroom — for anything
+  frag-sized or bigger; a ring and fire running out along the ground; embers
+  that fall; a scorch left behind.
+- The same call serves a frag, a mine, a rocket, C4, a wrecked vehicle and a
+  drone, scaled by its radius. A flashbang's pop stays a pop.
+- Cost: a frag is 58 sprites, most gone in a second and a half; 24 on the
+  lowest quality tier. The light is one pooled lamp — the old code added and
+  removed a light per blast, which makes three.js rebuild every lit shader.
+
+## 10. Cars, bike, bus
+"Cars, Bike, Bus graphics should be enhanced so that it looks very close to
+real."
+- Bodywork is rounded and glossy and reflects the sky; windows are tinted
+  glass you see through, into a cabin with seats, a dashboard and a steering
+  wheel — so riders are seen riding.
+- Wheels are wheels (tyre, rim, spokes; wire wheels on the bike) and they
+  turn with the road and steer with the bend.
+- The sedan: grille, lamp clusters, bumpers, mirrors, wipers, handles,
+  number plates, four doors that open. The bus: a glazed shell with rows of
+  seats, a sliding front door, a destination board. The motorbike: a tubular
+  frame, a tank, a finned engine, an exhaust, forks, shocks, mirrors.
+- The auto rickshaw and the tank get the new paint and (auto) turning
+  wheels; their shapes are unchanged.
+- NOT photo-real, and it cannot be from here: these are still shapes made in
+  code. There are no model files and no texture files in this build.
+- Cost: triangles per vehicle went up about six times (sedan 13,600, bus
+  19,100, bike 6,400). Draw calls — what a frame is billed by — stayed about
+  where they were, because colour is carried per vertex and every vehicle of
+  a type and colour shares one set of geometry. If a weak GPU struggles
+  with many vehicles in view, this is where to look first.
+
+## 7. Getting in
+"animations ... when pressing N to a car that it is opening the gate of the
+car and then sitting inside, same in bike it taking one leg above and then
+sitting on the bike, jumping up in the bus."
+- Sedan: the door by your seat swings open, you step in, duck under the
+  roof, sit, and it shuts. Each of the four seats has its own door.
+- Motorbike: from the left, the right leg up and over the saddle, down
+  astride, hands to the bars.
+- Bus: the front door slides back, a hop up the step with the knees tucked,
+  along the aisle to the seat (up to 1.9 s for the back row).
+- Getting out opens and shuts the door.
+- It is what it looks like, not a wait: the seat is yours the moment you
+  press N — you can drive and fire during it.
+- The honest flaw: on foot the operator is drawn 2.95 m tall and aboard at
+  life size (the open avatar-height question), so pressing N shows him
+  shrink before he steps in.
+
+## Verified
+- tools/verify-v218.js (46): the hull rule on the real vehicle, combat, mine
+  and hazard modules; live, three sockets — six unpaid explosions do
+  nothing, three thrown frags take the hull 650 -> 161 with the driver
+  untouched though the client claimed 100 each time, the fourth kills him.
+  The blast, headless: what it is built of, one lamp, no NaN, the clean-up.
+- tools/verify-vehicles.js (74) and tools/verify-rider.js (46): shared
+  geometry, wheels rolling by the distance driven and steering into the
+  bend, each door for its seat, the path and pose of getting in for every
+  seat of every vehicle.
+- Real Chromium, console captured: four frags thrown by the real client at a
+  sedan with a driver in it — 487, 324, 161, gone, driver dead, "vehicle";
+  the blast photographed frame by frame; each of the three ways of getting
+  in photographed at six moments while another player does it.
+
+## Cost
+First load 520 -> 537 KB gzipped (vehicles 10.3, blast 5.5); budget 521 ->
+538, itemised in tools/verify-bandwidth.js.
+
+# v2.17.0 (build 52) — THE RULES: WRECKS, TRAINS, GRENADES FROM A SEAT, BOT OPS (2026-11-27)
+
+Rahul, after v2.16: ten points. This release is the seven that are rules and
+fixes (1-6 and 8). The three that are pictures — boarding animations, the
+explosion, the vehicle models (7, 9, 10) — are v2.18.
+
+## 1 + 2. A wrecked vehicle kills everyone in it
+"when the car is getting hit by the train or anything, only the driver is
+getting killed not the entire team" / "when car is blasted, driver is pushed
+out of the car."
+- The blast was handed to the ordinary damage rule one rider at a time, and
+  that rule refuses a team-mate's damage and anyone still spawn-protected. In
+  Bot Ops — one human side — every wreck by your own side's bullets left the
+  riders standing in the road. Reproduced on the live server before the fix:
+  sedan destroyed, both riders alive.
+- Now the hull going is the cause of death, not the shooter. Everyone aboard
+  dies. An enemy who did it gets every kill; a team-mate gets nothing; spawn
+  protection does not apply.
+- The train killed whoever was under its wheels (a 20 cm box per person). It
+  now wrecks the VEHICLE it runs into — bike, auto, sedan, bus, tank — and
+  everyone in it dies, tagged "train". Parked 7 m beside the line: untouched.
+- The v2.13 gate had passed all along because its stand-in for the damage
+  rule killed whoever it was given. The new gate runs the real one.
+- Found while proving it: four parking bays where a train would hit whatever
+  was parked there — one 0.5 m from the centre line, inside Sector 7 Central.
+  A train has been driving through the vehicle parked in that bay since
+  v2.13; with the new rule it would have blown up at the station every time
+  the bay was dealt one. The generator's "7 m from the railway" rule skipped
+  every stretch of track 90 m or longer, which on this loop is nearly all of
+  it. Rule rewritten against the path the trains use; those four bays are
+  gone (90 -> 86), every other bay is exactly where it was. The 22 kerb bays
+  that run alongside the line stay: a parked bus is 0.85 m clear of a passing
+  coach, a tank 0.45 m.
+- Still true, on purpose: a grenade, mine or C4 beside a car hurts the people
+  by distance, as on foot — it does not hurt the hull. Only bullets, rockets
+  and trains wreck a vehicle.
+
+## 3. Grenades from a seat
+"player cannot throw bombs from inside the car."
+- Seated in an open vehicle: hold G to cook a frag, release to throw; F is a
+  flash. The tank's sealed crew does neither, as with firing.
+- It leaves from the rider's hand, not from the chase camera 10 m behind, and
+  keeps the vehicle's speed — thrown ahead at 60 km/h it lands ahead.
+- H, B and L stay the horn, the radio and the lights at the wheel, so molotov
+  and smoke are on-foot only.
+
+## 4. Bot Ops kit, and the hunter drone
+"Only in bot mode, bombs should be 8 at once and 10 mines" / the hunter:
+"It is broken, just fix it."
+- Bot Ops (both modes, all three maps): 8 frags and 10 mines every life. On
+  Killhouse, where the server counts frags, it counts to the same eight: the
+  eighth is relayed and the ninth is not. Every other mode is exactly as it
+  was (5/5; Killhouse 1/3).
+- The hunter drone: the server answered "Not in this mode" to any launch in
+  a mode with bots — a rule written for the bot modes removed in v1.0d, still
+  standing in front of Bot Ops. Removed. A hunter found in a crate launches
+  with J and hunts AI operators; the kills are yours and score for the side.
+  (Killhouse crates have never carried hunters, in any mode.)
+
+## 5 + 6. Bot Ops on Killhouse; how many operators
+- Killhouse is offered in both Bot Ops modes. Its walk graph: 16,627 nodes,
+  all reachable.
+- Operators on the map at one time, by map and by how many humans:
+    Urban        20 for one player, +1 a player, 25 at most
+    Urban Small   8, 10, then 12 at most
+    Killhouse     6, 7, then 8 at most
+- 25 operators ask for routes more often than one tick can afford. Route
+  searches are now rationed to two a tick; the rest wait one tick (66 ms).
+  Measured here on Urban with 25: about 1 ms a tick on average, the odd tick
+  10-30 ms when a long route is searched. Render's free CPU is slower than
+  this machine: if Urban hitches, the number is BOTOPS.count.urban in
+  public/src/config/world.config.js.
+
+## 8. N boards the train
+"player should be provided a similar N option to onboard to a train so that
+player doesnt fall on the track while boarding."
+- At a halt, within 5 m of a coach door — on the platform or on the ground
+  beside the line — the prompt reads N — BOARD TRAIN. N puts you inside that
+  door, on the floor.
+- Aboard, at a halt: N — GET OFF AT THE PLATFORM puts you on the deck outside
+  the nearest door, on whichever side has one.
+- A moving train offers nothing, either way (the server kills whoever leaves
+  one above 2 m/s; that rule is unchanged). Walking on and off still works.
+- A vehicle's own N prompt comes first when both are in reach.
+- The train still stands for 3 s (your original number). N makes that enough;
+  walking through a 1.9 m door in 3 s was the problem.
+
+## Verified
+- tools/verify-v217.js (46), the real combat, vehicle, hazard, drone and mine
+  modules: wrecks by a team-mate / an enemy / in free-for-all / of a tank;
+  six vehicles on the rails round the loop, all wrecked with all aboard; the
+  kit by mode; the hunter killing two AI operators in 2.7 s. Run against the
+  v2.16.2 wreck code it fails: "D ALIVE, P ALIVE, Q ALIVE".
+- tools/verify-vehicles.js (62): every bay holding the largest vehicle it
+  may hold, four trains, a whole lap, the server's own rule — nothing
+  wrecked. On the v2.16.2 bay list the same check reports a bus and a tank
+  wrecked at (100.35, -87), a bus at (-20, -103.65), a tank at (188, -213.65).
+- tools/verify-train.js (+12): at all four halts and all twelve coach
+  positions — offered, aboard on the floor, off onto the deck, clear of every
+  wall; nothing offered between halts.
+- tools/verify-client.js (+7): the throw is run with the whole client loaded
+  — 1.5 m from the rider, 9.9 m from the camera, carrying the car's 16 m/s —
+  and the belt reads 8 / 10 in Bot Ops, 5 / 5 otherwise.
+- tools/verify-bots.js (66): Killhouse graph, head counts, a minute of each
+  map with tick timing.
+- Real Chromium, console captured: N aboard at Sector 7, rode at 30 m/s to
+  the next halt, N off onto the platform, alive ten seconds later; the server
+  had the same positions throughout.
+
+## Cost
+First load 516 -> 520 KB gzipped; budget 517 -> 521, itemised in
+tools/verify-bandwidth.js.
+
 # v2.16.2 (build 51) — THE RIDER IS THE OPERATOR (2026-11-21)
 
 Rahul: "fix the avatar when on bike it is completely bad, it needs to be

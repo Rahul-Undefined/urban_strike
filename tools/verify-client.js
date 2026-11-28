@@ -263,5 +263,55 @@ console.log('\n--- every weapon fires when the trigger is pulled ---');
   }
 }
 
+/* ===== v2.17 - A GRENADE FROM A SEAT, AND THE BOT OPS BELT =====
+   Rahul: "player cannot throw bombs from inside the car" and "Only in bot
+   mode, bombs should be 8 at once and 10 mines". Same harness, same reason as
+   above: the throw is run, not read. From a seat the camera is the chase
+   camera — metres behind and above — so the two things that can go wrong are
+   a grenade that starts at the lens, and one that forgets the car is moving. */
+console.log('\n--- a grenade thrown from a vehicle seat; the Bot Ops belt ---');
+{
+  let clock = 9e6; ctx.performance.now = () => clock;
+  const run = (code) => vm.runInContext(code, ctx, { filename: 'seat-throw' });
+  try {
+    run(`
+      var __hud = { frag: -1, mines: -1 }, __throws = [];
+      UI = new Proxy({ setWeapon: function (l, m, r, t) { __hud.frag = t.frag; __hud.flash = t.flash; }, setGear: function (m) { __hud.mines = m; } }, { get: function (t, k) { return t[k] || function () { return 0; }; } });
+      Net.sendThrow = function (d) { __throws.push(d); };
+      var __mode = 'ffa'; Net.getMatch = function () { return { mode: __mode }; };
+      PlayerCtl.alive = true; PlayerCtl.pos.set(40, 1.4, -30); PlayerCtl.vel.set(0, 0, 0);
+      __cam.position.set(34, 4.6, -24); __cam.lookAt(60, 2, -50); __cam.updateMatrixWorld(true);
+      var __dir = __cam.getWorldDirection(new THREE.Vector3());
+      Weapons.matchReset(); Weapons.resetLoadout();
+    `);
+    /* the mine number reaches the HUD with the next full refresh (in a match the server's spawn message sets it) — a smoke thrown does one */
+    const belt = (mode) => { run('__mode = "' + mode + '"; Weapons.matchReset(); Weapons.resetLoadout(); Weapons.throwGrenade("smoke");'); clock += 400; return [run('__hud.frag'), run('__hud.mines')]; };
+    const base = belt('ffa'); run('__throws.length = 0;');
+    const foot = base[0], footMines = base[1];
+    /* on foot: from the eye, as always */
+    run('Weapons.throwGrenade("molotov");'); clock += 400;
+    const t0 = run('__throws[0]'), cam = run('[__cam.position.x, __cam.position.y, __cam.position.z]'), dir = run('[__dir.x, __dir.y, __dir.z]'), pos = [40, 1.4, -30];
+    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    ok(t0 && t0.type === 'molotov' && dist(t0.o, cam) < 0.01, 'on foot a throw leaves from the eye, as before');
+    /* seated: a sedan at 16 m/s, heading 0.7 rad */
+    run('var __ridden = Vehicles.ridden; Vehicles.ridden = function () { return { ry: 0.7, sp: 16, type: "car" }; };');
+    run('Weapons.throwGrenade("flash");'); clock += 400;
+    const t1 = run('__throws[1]'), tv = ctx.CFG.THROWS.flash.throwVel;
+    ok(t1 && dist(t1.o, pos) < 2.0 && dist(t1.o, cam) > 5, 'from a seat it leaves from the RIDER — ' + (t1 ? dist(t1.o, pos).toFixed(1) : '?') + ' m from them, ' + (t1 ? dist(t1.o, cam).toFixed(1) : '?') + ' m from the chase camera');
+    const want = [dir[0] * tv + Math.sin(0.7) * 16, dir[1] * tv + 2.6, dir[2] * tv - Math.cos(0.7) * 16];
+    ok(t1 && dist(t1.v, want) < 0.01, 'and carries the car\'s 16 m/s with it [' + (t1 ? t1.v.map(n => n.toFixed(1)).join(', ') : '?') + ']');
+    /* a cooked frag: G down, G up */
+    run('Weapons.startCook();'); clock += 900; run('Weapons.update(0.016); Weapons.releaseCook();');
+    const t2 = run('__throws[2]');
+    ok(t2 && t2.type === 'frag' && t2.f > 0.5 && t2.f < ctx.CFG.THROWS.frag.fuse - 0.5 && dist(t2.o, pos) < 2.0, 'a frag cooked for 0.9 s in the seat is thrown from the rider with the fuse that is left [' + (t2 ? t2.f.toFixed(2) : '?') + ' s]');
+    ok(run('__hud.frag') === foot - 1, 'and comes off the belt [' + foot + ' → ' + run('__hud.frag') + ']');
+    run('Vehicles.ridden = __ridden;');
+    /* the belt by mode */
+    const bo = belt('bom'), bF = bo[0], bM = bo[1], t4 = belt('t4');
+    ok(bF === 8 && bM === 10, 'Bot Ops: the belt shows 8 frags and 10 mines [' + bF + ', ' + bM + ']');
+    ok(t4[0] === foot && t4[1] === footMines && foot === ctx.CFG.THROWS.frag.count && footMines === ctx.CFG.GEAR.mine.start, 'any other mode: ' + foot + ' frags and ' + footMines + ' mines, as before');
+  } catch (e) { ok(false, 'the seat throw runs — ' + e.message + ' @' + String(e.stack || '').split('\n')[1]); }
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

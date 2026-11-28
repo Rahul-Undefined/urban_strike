@@ -26,7 +26,7 @@ module.exports = function initMinesModule(ctx) {
   function refillFor(room, p) {
     const m = room && room.settings && room.settings.map;
     /* v2.8: the per-life stock is the map's (3 on an arena, CFG.mineStartFor) */
-    const start = (CFG.mineStartFor ? CFG.mineStartFor(m || 'urban') : G.start) | 0;
+    const start = (CFG.mineStartFor ? CFG.mineStartFor(m || 'urban', room && room.settings && room.settings.mode) : G.start) | 0;
     const small = !!(m && CFG.MAPS && CFG.MAPS[m] && CFG.MAPS[m].smallMap);
     const cap = small ? (G.lifetimeSmall | 0) : 0;
     if (!cap) return start;
@@ -69,9 +69,16 @@ module.exports = function initMinesModule(ctx) {
       if (!trig) continue;
       room.mines.splice(i, 1);
       io.to(room.code).emit("mineBoom", { id: m.id, x: m.x, y: m.y, z: m.z });
-      applyDamage(room, trig, G.dmg, m.owner, "mine", false, true); // instant kill through armor
+      /* v2.18: under or beside a vehicle the mine takes it out of the HULL, and
+         whoever is aboard takes nothing from it (they go when the hull does).
+         Who was aboard is read BEFORE the hull is hit: a rider whose bike this
+         destroys is already dead by the time the splash is counted. */
+      const aboard = new Set();
+      if (ctx.riding) for (const p of room.players.values()) if (p.alive && ctx.riding(room, p.id)) aboard.add(p.id);
+      if (ctx.vehBlast) ctx.vehBlast(room, room.players.get(m.owner) || { id: m.owner, team: m.team }, [m.x, m.y, m.z], "mine");
+      if (!aboard.has(trig.id)) applyDamage(room, trig, G.dmg, m.owner, "mine", false, true); // instant kill through armor
       for (const p of room.players.values()) {                      // splash with falloff
-        if (!p.alive || p === trig) continue;
+        if (!p.alive || p === trig || aboard.has(p.id)) continue;
         const dx = p.pos[0] - m.x, dz = p.pos[2] - m.z;
         const d = Math.sqrt(dx * dx + dz * dz);
         if (d > G.radius || Math.abs(p.pos[1] - m.y) > 2.4) continue;

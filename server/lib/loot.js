@@ -156,7 +156,7 @@ function tryCollect(room, p) {
         grant = { t: 'gear', g: 'visor2', n: 1 };
       } else if (it.g === 'mine') {
         /* v2.8: the carry cap is the map's — 3 on an arena (CFG.mineCapFor) */
-        const mcap = CFG.mineCapFor ? CFG.mineCapFor(room.settings.map || 'urban') : CFG.GEAR.mine.maxCarry;
+        const mcap = CFG.mineCapFor ? CFG.mineCapFor(room.settings.map || 'urban', room.settings.mode) : CFG.GEAR.mine.maxCarry;
         if ((p.mines | 0) >= mcap) continue;
         p.mines = Math.min(mcap, (p.mines | 0) + it.n);
         grant = { t: 'gear', g: 'mine', n: p.mines };

@@ -54,11 +54,39 @@ ok(SPOTS.every(s => !hullHits(s[0], s[1], s[2], s[3], s[4] ? V.types.bus : V.typ
   let minGap = 1e9; for (let i = 0; i < SPOTS.length; i++) for (let j = i + 1; j < SPOTS.length; j++) minGap = Math.min(minGap, Math.hypot(SPOTS[i][0] - SPOTS[j][0], SPOTS[i][2] - SPOTS[j][2]));
   const q = [0, 0, 0, 0]; SPOTS.forEach(s => { q[(s[0] >= 0 ? 1 : 0) + (s[2] >= 0 ? 2 : 0)]++; });
   ok(minGap >= 25 && Math.min.apply(null, q) >= 10, 'spread over the city: no two closer than ' + minGap.toFixed(0) + ' m, by quarter ' + q.join(' / '));
-  const rail = []; (function walk(o, d) { if (!o || d > 4) return; if (Array.isArray(o)) { if (o.length >= 2 && typeof o[0] === 'number') { rail.push(o.length >= 3 ? [o[0], o[2]] : [o[0], o[1]]); return; } o.forEach(x => walk(x, d + 1)); return; }
-    if (typeof o === 'object') { if (typeof o.x === 'number' && typeof o.z === 'number') { rail.push([o.x, o.z]); return; } Object.keys(o).forEach(k => walk(o[k], d + 1)); } })(Bots.trainPath('urban'), 0);
-  const seg = (px, pz, a, b) => { const vx = b[0] - a[0], vz = b[1] - a[1], L2 = vx * vx + vz * vz || 1; let t = ((px - a[0]) * vx + (pz - a[1]) * vz) / L2; t = Math.max(0, Math.min(1, t)); return Math.hypot(px - a[0] - vx * t, pz - a[1] - vz * t); };
-  let nearest = 1e9; SPOTS.forEach(s => { for (let i = 0; i + 1 < rail.length; i++) if (Math.hypot(rail[i + 1][0] - rail[i][0], rail[i + 1][1] - rail[i][1]) < 90) nearest = Math.min(nearest, seg(s[0], s[2], rail[i], rail[i + 1])); });
-  ok(rail.length > 4 && nearest >= 7, 'none on the railway: the nearest spot is ' + nearest.toFixed(1) + ' m from the train\'s path');
+  /* ===== v2.17 - THE RAILWAY, MEASURED PROPERLY =====
+     This check used to rebuild the rails as a polyline from whatever points the
+     path object held and SKIP every stretch of 90 m or more — on a 2 km loop,
+     nearly all of it. It reported "the nearest spot is 7 m from the train's
+     path" for four releases while one bay sat 0.5 m from the centre line inside
+     Sector 7 Central. The generator had the same reading, which is how the bay
+     got there. Now: the rails as the trains read them (path.at), the real gap
+     between a parked hull and a passing coach, and the real server rule run
+     for a whole lap over every bay holding the largest thing it may hold. */
+  const RP = Bots.trainPath('urban'), railPts = [];
+  for (let sd = 0; sd < RP.length; sd += 0.5) { const a = RP.at(sd); railPts.push([a.x, a.z, Math.cos(a.yaw), Math.sin(a.yaw)]); }
+  const hullGap = (sp, T) => {
+    const fx = Math.sin(sp[3]), fz = -Math.cos(sp[3]), rx = Math.cos(sp[3]), rz = Math.sin(sp[3]); let best = 1e9; const pts = [];
+    for (let a = -T.len / 2; a <= T.len / 2 + 1e-6; a += T.len / Math.ceil(T.len / 0.4)) for (let b = -T.wid / 2; b <= T.wid / 2 + 1e-6; b += T.wid / Math.ceil(T.wid / 0.4)) pts.push([sp[0] + fx * a + rx * b, sp[2] + fz * a + rz * b]);
+    for (const c of railPts) { if (Math.abs(c[0] - sp[0]) > 20 || Math.abs(c[1] - sp[2]) > 20) continue;
+      for (const q of pts) { const dx = q[0] - c[0], dz = q[1] - c[1], d = Math.max(Math.abs(dx * c[2] + dz * c[3]) - 6.0, Math.abs(-dx * c[3] + dz * c[2]) - 1.5); if (d < best) best = d; } }
+    return best;
+  };
+  let tight = 1e9, tightWhat = '';
+  SPOTS.forEach(sp => { (sp[4] ? ['bus', 'tank'] : ['car']).forEach(t => { const g = hullGap(sp, V.types[t]); if (g < tight) { tight = g; tightWhat = 'a ' + t + ' at (' + sp[0] + ', ' + sp[2] + ')'; } }); });
+  ok(railPts.length > 3000 && tight >= 0.35, 'no bay is on the railway: the closest any parked hull comes to the body of a passing coach is ' + tight.toFixed(2) + ' m — ' + tightWhat);
+  const lap = (pickType) => {
+    const clock = { t: 7e6 }, wrecked = [];
+    const list = SPOTS.map((sp, i) => ({ id: i + 1, type: pickType(sp), x: sp[0], y: sp[1], z: sp[2], ry: sp[3], seats: [] }));
+    const room = { code: 'RAIL', state: 'playing', settings: { mode: 'ffa', map: 'urban' }, players: new Map(), startedAt: clock.t, veh: { list } };
+    const Hz = require(path.join(ROOT, 'server/lib/hazards.js'))({ io: { to: () => ({ emit() {} }) }, now: () => clock.t, applyDamage: () => {}, modeInfo: () => ({}), colliders: () => [],
+      trainPath: (m) => Bots.trainPath(m), pathFrom: (wp, f) => Bots.pathFrom(wp, f), vehList: (r) => r.veh.list,
+      vehWreck: (r, v) => { wrecked.push(v.type + ' at (' + v.x + ', ' + v.z + ')'); r.veh.list.splice(r.veh.list.indexOf(v), 1); } });
+    for (let k = 0; k < 110 * 15; k++) { clock.t += 1000 / 15; Hz.tickTrain(room); }
+    return wrecked;
+  };
+  const w1 = lap(sp => (sp[4] ? 'bus' : 'car')), w2 = lap(sp => (sp[4] ? 'tank' : 'bike'));
+  ok(w1.length === 0 && w2.length === 0, 'the server\'s own rule, four trains, a whole lap, every bay full (buses and cars, then tanks and bikes): no train wrecks a parked vehicle' + (w1.concat(w2).length ? ' — WRECKED: ' + w1.concat(w2).slice(0, 4).join(', ') : ''));
 }
 
 /* ---------------- B. the server ---------------- */
@@ -200,7 +228,22 @@ console.log('--- C. the client, against Urban\'s real colliders ---');
     info[type] = { meshes: g.children.length, tris: Math.round(tris), len: box.max.z - box.min.z, wid: box.max.x - box.min.x, hgt: box.max.y, figs: (g.userData.figures || []).length, beams: !!g.userData.beams };
   }
   const T = V.types;
-  ok(Object.keys(info).every(t => info[t].meshes <= 22 && info[t].tris < 2600), 'five models, merged by material: ' + Object.keys(info).map(t => t + ' ' + info[t].tris + ' triangles') .join(', '));
+  /* v2.18: the models were rebuilt to look like vehicles (rounded bodies, glass with a cabin behind it,
+     wheels that turn, doors that open) — the triangle budget went from "a box each" to these, and the
+     DRAW CALLS stayed where they were, which is what a frame is actually billed by: colour is per vertex,
+     so a whole body is two meshes, and every geometry is shared by all vehicles of a type and colour. */
+  const TRI = { bike: 8000, auto: 8000, car: 16000, bus: 21000, tank: 2600 };
+  ok(Object.keys(info).every(t => info[t].meshes <= 24 && info[t].tris < TRI[t]), 'five models inside their budgets: ' + Object.keys(info).map(t => t + ' ' + info[t].tris + ' triangles in ' + info[t].meshes + ' pieces').join(', '));
+  {
+    const a = Vehicles._build('car', 0xb8312f), b = Vehicles._build('car', 0xb8312f), c = Vehicles._build('car', 0x1f4e8c);
+    const geos = (g) => { const out = []; g.traverse(o => { if (o.isMesh) out.push(o.geometry); }); return out; };
+    const ga = geos(a), gb = geos(b), gc = geos(c);
+    ok(ga.length === gb.length && ga.every((g, i) => g === gb[i]) && ga[0] !== gc[0], 'two sedans of one colour share every geometry (' + ga.length + ' of them); another colour has its own body');
+    const ud = a.userData;
+    ok(ud.wheels.length === 4 && ud.wheels.filter(w => w.steer).length === 2 && ud.doors.length === 4 && ud.doors.every(d => d.meta.seats.length === 1), 'a sedan has four wheels that turn (two that steer) and four doors, one a seat');
+    const bus = Vehicles._build('bus', 0xd9a21b).userData, bike = Vehicles._build('bike', 0xb8312f).userData;
+    ok(bus.wheels.length === 4 && bus.doors.length === 1 && bus.doors[0].meta.slide && bus.doors[0].meta.seats === 'all' && bike.wheels.length === 2 && bike.doors.length === 0, 'the bus has one sliding door for everyone; the bike has two wire wheels and no doors');
+  }
   ok(Object.keys(info).every(t => Math.abs(info[t].wid - T[t].wid) <= 0.55 && info[t].len >= T[t].len - 0.5 && info[t].len <= T[t].len + 1.5 && info[t].hgt >= T[t].hgt - 0.2 && info[t].hgt <= T[t].hgt + 1.2),
     'what you see is what you collide with: each model matches its hull box, bar what sticks out past it (mirrors, the tank\'s gun and aerial) [' + Object.keys(info).map(t => t + ' ' + info[t].len.toFixed(1) + 'x' + info[t].wid.toFixed(1) + 'x' + info[t].hgt.toFixed(1) + ' vs ' + T[t].len + 'x' + T[t].wid + 'x' + T[t].hgt).join(', ') + ']');
   /* v2.16.2: the box figures are gone — a rider is the operator itself, seated (tools/verify-rider.js) */
@@ -208,6 +251,41 @@ console.log('--- C. the client, against Urban\'s real colliders ---');
   /* a match */
   const F = fakeRoom('ffa'); const pkt = F.Veh.start(F.room);
   const scene = new THREE.Scene(); Vehicles.init(scene); Vehicles.sync(pkt); Vehicles.update(0.016);
+  /* ===== v2.18: wheels turn, doors open when a seat is taken ===== */
+  {
+    const L2 = Vehicles._list(), carV = Object.values(L2).find(v => v.type === 'car'), busV = Object.values(L2).find(v => v.type === 'bus');
+    const step = (ms) => { clock.t += ms; Vehicles.update(ms / 1000); };
+    const dFR = carV.group.userData.doors.find(d => d.meta.side > 0 && d.meta.seats[0] === 0), dRL = carV.group.userData.doors.find(d => d.meta.seats[0] === 3);
+    step(16);
+    Vehicles.onSeat({ id: carV.id, seats: ['drv'] }); step(16);
+    const e0 = Vehicles.seatOf('drv', 0).enter;
+    step(300); const open1 = dFR.obj.rotation.y, eMid = Vehicles.seatOf('drv', 0).enter;
+    step(250); const open2 = dFR.obj.rotation.y, other = dRL.obj.rotation.y;
+    step(600); const shut = dFR.obj.rotation.y, eEnd = Vehicles.seatOf('drv', 0).enter;
+    ok(e0 >= 0 && e0 < 0.05 && eMid > 0.3 && eMid < 0.4 && eEnd === 1, 'taking a seat starts a second of getting in: enter runs ' + e0.toFixed(2) + ' → ' + eMid.toFixed(2) + ' → ' + eEnd);
+    ok(open1 > 0.9 && open2 > 0.9 && shut === 0 && other === 0, 'the driver\'s door swings out on its front hinge (' + (open1 * 57.3).toFixed(0) + ' degrees), holds, and shuts; no other door moves');
+    Vehicles.onSeat({ id: carV.id, seats: ['drv', null, null, 'pax'] }); step(16); step(320);
+    ok(dRL.obj.rotation.y < -0.9 && dFR.obj.rotation.y === 0, 'a rear-left passenger opens the rear-left door, outward the other way');
+    step(900);
+    Vehicles.onSeat({ id: carV.id, seats: [null, null, null, 'pax'] }); step(16); step(300);
+    const outOpen = dFR.obj.rotation.y; step(500);
+    ok(outOpen > 0.9 && dFR.obj.rotation.y === 0, 'getting OUT opens and shuts it once too');
+    const bd = busV.group.userData.doors[0];
+    Vehicles.onSeat({ id: busV.id, seats: [null, null, 'p3'] }); step(16); step(330);
+    ok(Math.abs(bd.obj.position.z - (bd.pivot[2] + bd.meta.slide[2])) < 0.02 && bd.obj.position.x < bd.pivot[0], 'the bus door slides back along the side for whichever seat is taken (' + bd.meta.slide[2] + ' m)');
+    step(Vehicles._enterMs(busV, 2));                          // a bus seat down the aisle takes longer to reach than a second
+    ok(Math.abs(bd.obj.position.z - bd.pivot[2]) < 1e-9, 'and slides shut');
+    /* wheels: a vehicle somebody else drives, moving and turning right */
+    const w0 = carV.group.userData.wheels.map(w => w.mesh.rotation.x);
+    carV.sp = 10; let ry = carV.ry;
+    for (let f = 0; f < 30; f++) { ry += 0.02; carV.tr = ry; carV.tx = carV.x; carV.tz = carV.z; step(33); }
+    const W = carV.group.userData.wheels, turned = (w0[0] - W[0].mesh.rotation.x) * W[0].r;
+    ok(Math.abs(turned - 10 * 30 * 0.033) < 0.05, 'the wheels roll by the road covered: ' + turned.toFixed(2) + ' m of tread for ' + (10 * 30 * 0.033).toFixed(2) + ' m driven');
+    ok(W.filter(w => w.steer).every(w => w.pivot.rotation.y < -0.05) && W.filter(w => !w.steer).every(w => w.pivot.rotation.y === 0), 'the front wheels turn into the bend (right: ' + (W[0].pivot.rotation.y * 57.3).toFixed(0) + ' degrees); the rear wheels do not');
+    carV.sp = 0; carV.tr = carV.ry; for (let f = 0; f < 20; f++) step(33);
+    ok(W.filter(w => w.steer).every(w => Math.abs(w.pivot.rotation.y) < 0.01), 'and straighten when it stops');
+    Vehicles.onSeat({ id: carV.id, seats: [] }); Vehicles.onSeat({ id: busV.id, seats: [] }); step(2000);
+  }
   const list = Object.values(Vehicles._list());
   ok(list.length === V.count && scene.children.length >= V.count, 'the server\'s list becomes ' + list.length + ' vehicles in the scene');
   ok(list.every(v => Vehicles._hullFree(v, v.x, v.y, v.z, v.ry)), 'every parked vehicle is free to move in the CLIENT\'s own collision test (nobody starts wedged)');

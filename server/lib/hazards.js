@@ -140,7 +140,13 @@ module.exports = function initHazards(ctx) {
       bombs.splice(i, 1);
       const cs = cols(room);
       let n = 0;
+      /* v2.18: a charge beside a vehicle ends the vehicle, and its riders with
+         it; riders are otherwise out of the charge's own count (see mines.js) */
+      const aboard = new Set();
+      if (ctx.riding) for (const q of room.players.values()) if (q.alive && ctx.riding(room, q.id)) aboard.add(q.id);
+      if (ctx.vehBlast) ctx.vehBlast(room, room.players.get(b.owner) || { id: b.owner, team: b.team }, [b.x, b.y, b.z], 'c4');
       for (const q of room.players.values()) {
+        if (aboard.has(q.id)) { if (!q.alive && q.id !== b.owner) n++; continue; }   // went with the vehicle, or was shielded by it
         if (!hostile(room, b.owner, b.team, q)) continue;
         const dx = q.pos[0] - b.x, dy = q.pos[1] - b.y, dz = q.pos[2] - b.z;
         const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -192,6 +198,30 @@ module.exports = function initHazards(ctx) {
         if (Math.abs(lx) <= k.c.L / 2 + alongPad && Math.abs(lz) <= HALF_W + sidePad) return true;
       }
       return false;
+    }
+    /* ===== v2.17 - A TRAIN DOES NOT STOP FOR A CAR =====
+       Rahul: "when the car is getting hit by the train ... only the driver
+       is getting killed not the entire team."
+       The rule below is per PERSON and its box is tight (0.2 m, 0.1 m): of
+       four people in a sedan across the rails, the train's body covered one
+       seat — whoever sat on that side died and the car stood there with the
+       rest alive in it. A vehicle on the line is now hit as a VEHICLE: if any
+       part of its hull is under a moving car of the train it is wrecked, and
+       everyone aboard dies with it (Vehicles.wreck, cause 'train' — nobody
+       scores it, exactly like a person the train hits). Done BEFORE the
+       people, so one hit reads as one event. */
+    const vl = ctx.vehList ? ctx.vehList(room) : null;
+    if (vl && vl.length && h.v >= 1.0 && CFG.VEHICLES) {
+      for (let vi = vl.length - 1; vi >= 0; vi--) {
+        const v = vl[vi], VT = CFG.VEHICLES.types[v.type];
+        if (!VT || v.y > FLOOR - 0.25) continue;                       // up on a deck beside the line, not on it
+        const fx = Math.sin(v.ry), fz = -Math.cos(v.ry), rx = Math.cos(v.ry), rz = Math.sin(v.ry);
+        let under = false;
+        for (let a = -1; a <= 1 && !under; a++) for (let b = -1; b <= 1 && !under; b++) {
+          under = scan({ pos: [v.x + fx * a * VT.len / 2 + rx * b * VT.wid / 2, 0, v.z + fz * a * VT.len / 2 + rz * b * VT.wid / 2] }, 0.2, 0.1);
+        }
+        if (under && ctx.vehWreck) ctx.vehWreck(room, v, 'train');
+      }
     }
     for (const q of room.players.values()) {
       if (!q.alive || q.out) continue;

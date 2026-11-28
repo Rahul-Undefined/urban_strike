@@ -368,6 +368,74 @@ console.log('--- v1.0f: corners, walls, and what the train does to a bystander -
   }
 }
 
+console.log('--- v2.17: N boards a standing train, and steps off onto the platform ---');
+{
+  /* Rahul: "In train, player should be provided a similar N option to onboard
+     to a train so that player doesnt fall on the track while boarding." */
+  const pose = (tSec) => vm.runInContext('(function(){ Date.now = function(){ return 1000 + ' + Math.round(tSec * 1000) + '; }; Train.update(1/60); return { v: Train.head().v, cars: Train.cars().map(function(c){ return { x:c.x, z:c.z, yaw:c.yaw, coach:c.coach, L:c.L }; }) }; })()', ctx);
+  const half = CFG.PLAYER.standH / 2, FLOOR = T.floor, DOOR = (c) => c.L / 2 - 1.7;
+  const world = (c, lx, lz) => [c.x + lx * Math.cos(c.yaw) - lz * Math.sin(c.yaw), c.z + lx * Math.sin(c.yaw) + lz * Math.cos(c.yaw)];
+  const local = (c, x, z) => { const dx = x - c.x, dz = z - c.z; return [dx * Math.cos(c.yaw) + dz * Math.sin(c.yaw), -dx * Math.sin(c.yaw) + dz * Math.cos(c.yaw)]; };
+  const stand = (x, feet, z) => vm.runInContext('PlayerCtl.spawnAt([' + x + ', ' + (feet + half + 0.02) + ', ' + z + '], 0); PlayerCtl.alive = true; var __o = Train.offer(); __o ? { kind: __o.kind, x: __o.x, y: __o.y, z: __o.z, deck: !!__o.deck, d: __o.d || 0 } : null', ctx);
+  const ground = (x, z) => vm.runInContext('(function(){ var h = World.rayHit(new THREE.Vector3(' + x + ', ' + (FLOOR + 1.6) + ', ' + z + '), new THREE.Vector3(0, -1, 0), 6); return h ? h.point.y : 0; })()', ctx);
+  /* the four halts of train 0: the middle of every stretch where it stands */
+  const halts = []; let from = null;
+  for (let t = 0; t <= S.T + 0.01; t += 0.25) { const v = pose(t).v; if (v === 0 && from === null) from = t; if (v !== 0 && from !== null) { halts.push((from + t - 0.25) / 2); from = null; } }
+  if (from !== null && halts.length < 4) halts.push((from + S.T) / 2);
+  ok(halts.length === 4, 'the train stands at four halts in a lap [' + halts.map(t => t.toFixed(1)).join(', ') + ' s]');
+  let boards = 0, floorOk = 0, rides = 0, leaves = 0, decks = 0, fit = 0, landed = 0, clearOfTrack = 0, n = 0, groundBoard = 0;
+  halts.forEach((tH) => {
+    const P0 = pose(tH), coaches = P0.cars.filter(c => c.coach);
+    coaches.forEach((c) => {
+      n++;
+      /* which side has the deck here? */
+      const sides = [1, -1].map(sd => { const w = world(c, DOOR(c) + 1.5, sd * (HALF_W + 2.0)); return { sd, gy: ground(w[0], w[1]), w }; });
+      const deck = sides.find(s => Math.abs(s.gy - FLOOR) <= 0.45) || sides[0];
+      /* from the deck, a step and a half along from the door */
+      const o = stand(deck.w[0], deck.gy, deck.w[1]);
+      if (o && o.kind === 'board') boards++;
+      if (o) { const l = local(c, o.x, o.z); if (Math.abs(l[0]) <= c.L / 2 - 0.15 && Math.abs(l[1]) <= HALF_W - 0.2 && Math.abs(o.y - half - FLOOR) < 0.1) floorOk++; }
+      /* N: aboard, on the floor, held by the train */
+      const used = vm.runInContext('Train.use()', ctx), r = vm.runInContext('__run(12)', ctx);
+      if (used && r.onPlat && Math.abs(r.y - half - FLOOR) < 0.08) rides++;
+      /* N again: off, onto the platform */
+      const o2 = vm.runInContext('(function(){ var o = Train.offer(); return o ? { kind: o.kind, x: o.x, y: o.y, z: o.z, deck: !!o.deck } : null; })()', ctx);
+      if (o2 && o2.kind === 'leave') leaves++;
+      if (o2 && o2.deck) decks++;
+      if (o2 && vm.runInContext('World.fits(' + o2.x + ', ' + o2.y + ', ' + o2.z + ', 0.36, ' + half + ', 0.36)', ctx)) fit++;
+      if (o2) { const l2 = local(c, o2.x, o2.z); if (Math.abs(l2[1]) >= HALF_W + 1.2) clearOfTrack++; }
+      vm.runInContext('Train.use()', ctx); const r2 = vm.runInContext('__run(20)', ctx);
+      if (!r2.onPlat && r2.grounded && Math.abs(r2.y - half - FLOOR) < 0.12) landed++;
+      /* and from the GROUND on the other side of the line, where there is no deck */
+      const other = sides.find(s => s !== deck);
+      if (Math.abs(other.gy - FLOOR) > 0.45) { const og = stand(other.w[0], other.gy, other.w[1]); if (og && og.kind === 'board') groundBoard++; } else groundBoard++;
+    });
+  });
+  ok(boards === n && floorOk === n, 'at every halt, at every coach (' + n + '), a player on the platform within reach of a door is offered N — and the place offered is on the coach floor, inside the walls [' + boards + ', ' + floorOk + ']');
+  ok(rides === n, 'N puts them aboard: on the floor and carried by the train, never on the track [' + rides + '/' + n + ']');
+  ok(leaves === n && decks === n, 'aboard at a halt, N offers the way off — onto the platform deck, at all four halts [' + leaves + ', deck ' + decks + '/' + n + ']');
+  ok(fit === n && clearOfTrack === n && landed === n, 'the place to step off is free of every wall, clear of the rails, and they end up standing on the deck [' + fit + ', ' + clearOfTrack + ', ' + landed + ']');
+  ok(groundBoard === n, 'someone on the ground on the far side of the line can board too [' + groundBoard + '/' + n + ']');
+  /* out of reach, on the roof, and — the rule — a moving train */
+  const P1 = pose(halts[0]), c1 = P1.cars.filter(c => c.coach)[0];
+  const far = world(c1, DOOR(c1), HALF_W + 7.5), roof = world(c1, 0, 0);
+  ok(stand(far[0], ground(far[0], far[1]), far[1]) === null, 'nine metres from the door there is no offer');
+  ok(stand(roof[0], T.roof, roof[1]) === null, 'nor on the roof');
+  let movingOffers = 0, tested = 0;
+  for (let t = halts[0] + T.dwellSec / 2 + 1.0; t < halts[1] - T.dwellSec / 2 - 1.0; t += 1.7) {
+    const Pm = pose(t); if (Pm.v <= 2.0) continue;
+    const cm = Pm.cars.filter(c => c.coach)[1], beside = world(cm, DOOR(cm), HALF_W + 2.0), inside = world(cm, DOOR(cm), 0.6);
+    tested += 2;
+    if (stand(beside[0], ground(beside[0], beside[1]), beside[1])) movingOffers++;
+    if (stand(inside[0], FLOOR, inside[1])) movingOffers++;
+  }
+  ok(tested >= 20 && movingOffers === 0, 'a moving train offers nothing — not to someone beside it, not to a rider [' + tested + ' samples between two halts, ' + movingOffers + ' offers]');
+  const tsrc = fs.readFileSync(path.join(ROOT, 'public/src/environment/train.js'), 'utf8'), gsrc = fs.readFileSync(path.join(ROOT, 'public/src/core/game.js'), 'utf8');
+  ok(/BOARD_V = 2\.0, LEAVE_V = 0\.8/.test(tsrc) && /if \(!active \|\| headV > BOARD_V\) return null;/.test(tsrc) && /if \(headV > LEAVE_V\) return null;/.test(tsrc), 'the limits: board at 2 m/s or less, step off only when it stands (the server kills who leaves above 2 m/s)');
+  ok(/Vehicles\.mounted\(\) \|\| \(Vehicles\.offering && Vehicles\.offering\(\)\)\)\) Vehicles\.use\(\);\s*\n\s*else if \(!\(window\.Train && Train\.use && Train\.use\(\)\) && window\.Vehicles\) Vehicles\.use\(\);/.test(gsrc), 'the N key: a vehicle that is asking comes first, then the train');
+  ok(/var busy = typeof Vehicles !== 'undefined' && Vehicles\.offering && Vehicles\.offering\(\);/.test(tsrc) && /id = 'train-prompt'/.test(tsrc), 'and the train\'s prompt waits while a vehicle\'s is up');
+}
+
 console.log('--- the rails are laid ---');
 const rails = vm.runInContext('(function(){ var n = 0; __sc.traverse(function(o){ if (o.isMesh && o.geometry && o.geometry.type === "BoxGeometry" && o.matrixAutoUpdate === false) n++; }); return World._colliders().length; })()', ctx);
 ok(rails > 0, 'the world built with the loop line in it');

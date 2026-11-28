@@ -151,5 +151,54 @@ console.log('--- seatOf, the question the avatar code asks ---');
   ok(a2.k === 0 && a2.driver === true && Math.abs(a2.look - 0.8) < 1e-9 && VV.seatOf('nobody', 0) === null, 'A drives, looking right; somebody on foot gets null');
 }
 
+console.log('--- v2.18: getting in ---');
+{
+  /* Rahul: "opening the gate of the car and then sitting inside, same in bike it taking one leg above and
+     then sitting on the bike, jumping up in the bus." seat.enter runs 0..1; the vehicle places the rig
+     (Vehicles.sit) and the avatar folds it (poseSeat). Posed once at each moment, as the game does per frame. */
+  const at = (type, k, e) => {
+    const veh = { id: 1, type, T: T[type], x: 0, y: 0, z: 0, ry: 0, seats: [], group: VV._build(type, 0xb8312f) };
+    veh.group.position.set(0, 0, 0); veh.group.rotation.y = 0; veh.group.updateMatrixWorld(true);
+    const av = A.buildAvatar('Rahul', '#d0412f');
+    const st = { veh, k, kind: type, bike: type === 'bike', open: !T[type].sill, driver: k === 0, sealed: false, look: 0, enter: e };
+    for (let f = 0; f < 3; f++) A.poseAvatar(av, Object.assign({}, base, { seat: st }));
+    VV.sit(av.group, st); av.group.updateMatrixWorld(true);
+    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(av.group.quaternion);   // the rig faces +z in its own frame
+    return { av, p: av.group.position.clone(), fwd };
+  };
+  const seatP = (type, k) => { const o = T[type].seatsAt[k]; return new THREE.Vector3(o[0], T[type].seatY + VV._seatHip[type], -o[1]); };
+  /* the sedan's driver (right-hand drive: the right-hand door) */
+  const c0 = at('car', 0, 0.02), c5 = at('car', 0, 0.55), c1 = at('car', 0, 1);
+  ok(c0.p.x > T.car.wid / 2 + 0.35 && Math.abs(c0.p.y - 0.93) < 0.03 && Math.abs(c0.av.hipL.rotation.x) < 0.05 && c0.av.hipL.knee.rotation.x < 0.05,
+    'sedan: it starts with the driver STANDING outside the right-hand door (' + (c0.p.x - T.car.wid / 2).toFixed(2) + ' m clear of the body, hips ' + c0.p.y.toFixed(2) + ' m up, legs straight)');
+  ok(c0.fwd.x < -0.9, 'facing into the car');
+  ok(c5.p.x < c0.p.x - 0.4 && c5.p.x > seatP('car', 0).x - 0.01 && c5.p.y < 0.93 && c5.p.y > seatP('car', 0).y && c5.av.spine.rotation.x > c1.av.spine.rotation.x + 0.25,
+    'half way he is through the doorway, coming down, head ducked under the roof');
+  ok(c1.p.distanceTo(seatP('car', 0)) < 1e-6 && c1.fwd.z < -0.999, 'and it ends exactly on the seat, facing the nose — the same pose as before');
+  const left = at('car', 1, 0.02);
+  ok(left.p.x < -T.car.wid / 2 - 0.35 && left.fwd.x > 0.9, 'the front passenger comes in from the other side');
+  /* the motorbike: from the left, a leg over */
+  const b0 = at('bike', 0, 0.02), b4 = at('bike', 0, 0.38), b1 = at('bike', 0, 1);
+  ok(b0.p.x < -0.45 && Math.abs(b0.p.y - 0.93) < 0.03, 'motorbike: he starts standing on its left');
+  ok(b4.av.hipR.rotation.z > 1.0 && Math.abs(b4.av.hipL.rotation.z) < 0.25 && b4.av.hipR.rotation.x > b4.av.hipL.rotation.x + 0.3,
+    'then the RIGHT leg goes up and over the saddle (thrown ' + (b4.av.hipR.rotation.z * 57.3).toFixed(0) + ' degrees out) while the left stays under him');
+  ok(b1.p.distanceTo(seatP('bike', 0)) < 1e-6 && Math.abs(b1.av.hipR.rotation.z + b1.av.hipL.rotation.z) < 1e-9, 'and he settles astride, both knees out the same');
+  /* the bus: a hop up the step, then the aisle */
+  const u0 = at('bus', 0, 0.02), u2 = at('bus', 0, 0.24), u1 = at('bus', 0, 1);
+  ok(u0.p.x < -T.bus.wid / 2 - 0.5 && Math.abs(u0.p.z + 4.52) < 0.05 && Math.abs(u0.p.y - 0.93) < 0.05, 'bus: he starts on the road at the front door');
+  ok(u2.p.y > 1.3 && u2.av.hipL.knee.rotation.x > 0.8 && u2.av.hipL.rotation.x < -0.5, 'and JUMPS up the step, knees tucked (' + (u2.p.y - 0.93).toFixed(2) + ' m off where he stood)');
+  ok(u1.p.distanceTo(seatP('bus', 0)) < 1e-6, 'then walks to the seat');
+  /* nobody teleports, nobody flies: the speed of the hips, in real time, for every seat of every vehicle drawn */
+  let worst = 0, where = '', worstSmall = 0;
+  ['bike', 'auto', 'car', 'bus'].forEach(type => { for (let k = 0; k < T[type].seats; k++) {
+    const ms = VV._enterMs({ type, T: T[type] }, k); let prev = null;
+    for (let t = 0; t <= ms + 0.001; t += 20) { const q = at(type, k, Math.min(1, t / ms)).p; if (prev) { const v = q.distanceTo(prev) / 0.02; if (v > worst) { worst = v; where = type + ' seat ' + k; } if (type !== 'bus' && v > worstSmall) worstSmall = v; } prev = q; }
+  } });
+  ok(worstSmall < 5 && worst < 10.5, 'no seat is reached with a jump: getting into a bike, an auto or a sedan never moves the hips faster than ' + worstSmall.toFixed(1) + ' m/s; the quickest anyone goes is ' + worst.toFixed(1) + ' m/s down the aisle (' + where + ')');
+  ok(VV._enterMs({ type: 'car', T: T.car }, 0) === 950 && VV._enterMs({ type: 'bus', T: T.bus }, 0) < 1000 && VV._enterMs({ type: 'bus', T: T.bus }, 5) > 1700 && VV._enterMs({ type: 'bus', T: T.bus }, 5) <= 1900,
+    'it takes a second — in the bus up to ' + (VV._enterMs({ type: 'bus', T: T.bus }, 5) / 1000).toFixed(1) + ' s for the seat furthest down the aisle');
+  ok(/var en = \(seat\.enter === undefined \|\| seat\.enter >= 1\) \? 1 : Math\.max\(0, seat\.enter\);/.test(read('public/src/networking/avatars.js')), 'a seat with no `enter` is a seat taken long ago: the settled pose, untouched');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

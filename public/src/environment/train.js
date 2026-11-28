@@ -272,7 +272,71 @@ function makeTrain(cfgIn, sceneIn) {
     return null;
   }
 
-  return { init: init, dispose: dispose, update: update, floorAt: floorAt,
+  /* ===== v2.17 - N BOARDS THE TRAIN =====
+     Rahul: "In train, player should be provided a similar N option to onboard
+     to a train so that player doesnt fall on the track while boarding."
+     Boarding was a walk: across a 0.7 m gap, through a 1.9 m door, onto a
+     floor 1.05 m up. Miss the door and you were on the rails, under a train
+     about to leave — and a moving train is a kill by rule.
+
+     offer(pos, halfY, aboard) answers what N would do for a player standing
+     there, or null:
+       board  within DOOR_REACH of a coach door of a train that is stopped
+              or all but (BOARD_V: the last and first third of a second of a
+              3 s halt), from the deck or from the ground beside it: the place
+              just inside that door, on the floor.
+       leave  on a coach floor of a STANDING train (LEAVE_V): the place
+              outside the nearest door — on the side that has a platform deck
+              when one side does, on the ground when neither does (a standing
+              train hurts nobody).
+     A moving train offers nothing: getting on or off one is exactly what the
+     rule forbids. The move itself is the manager's (Train.use below). */
+  var DOOR_REACH = 5.0, BOARD_V = 2.0, LEAVE_V = 0.8, _probe = null, _down = null;
+  function toWorld(c, lx, lz) { var cs = Math.cos(c.yaw), sn = Math.sin(c.yaw); return { x: c.x + lx * cs - lz * sn, z: c.z + lx * sn + lz * cs }; }
+  function groundAt(x, z) {
+    if (typeof World === 'undefined' || !World.rayHit) return 0;
+    if (!_probe) { _probe = new THREE.Vector3(); _down = new THREE.Vector3(0, -1, 0); }
+    _probe.set(x, FLOOR + 1.6, z);
+    var hit = World.rayHit(_probe, _down, 6);
+    return hit && hit.point ? hit.point.y : 0;                                      // nothing built there: the ground itself
+  }
+  function offer(pos, halfY) {
+    if (!active || headV > BOARD_V) return null;
+    var feet = pos.y - halfY, best = null, bd = 1e9, aboard = false;
+    for (var i = 0; i < cars.length; i++) {
+      var c = cars[i]; if (!c.coach) continue;
+      var dx = pos.x - c.x, dz = pos.z - c.z, cs = Math.cos(c.yaw), sn = Math.sin(c.yaw);
+      var lx = dx * cs + dz * sn, lz = -dx * sn + dz * cs;
+      if (Math.abs(lx) > c.L / 2 + DOOR_REACH || Math.abs(lz) > HALF_W + DOOR_REACH) continue;
+      /* aboard = standing on this coach's floor, by the same box floorAt uses */
+      var inside = Math.abs(lx) <= c.L / 2 - 0.1 && Math.abs(lz) <= HALF_W - 0.05 && feet >= FLOOR - 0.5 && feet < ROOF - 0.75;
+      for (var k = -1; k <= 1; k += 2) {
+        var door = k * (c.L / 2 - 1.7);
+        var d = inside ? Math.abs(lx - door) : Math.hypot(lx - door, Math.max(0, Math.abs(lz) - HALF_W));
+        if (inside && !aboard) { bd = 1e9; aboard = true; }                          // a coach you stand in beats any you stand beside
+        if (inside === aboard && d < bd) { bd = d; best = { c: c, door: door, side: lz >= 0 ? 1 : -1 }; }
+      }
+    }
+    if (!best) return null;
+    if (!aboard) {
+      if (bd > DOOR_REACH || feet < -1.5 || feet > FLOOR + 1.2) return null;       // too far, or up on a roof
+      var inW = toWorld(best.c, best.door, best.side * (HALF_W - 0.8));
+      return { kind: 'board', x: inW.x, y: FLOOR + halfY + 0.03, z: inW.z, d: bd };
+    }
+    if (headV > LEAVE_V) return null;                                                 // still rolling: stay in
+    var pick = null;
+    for (var s = 0; s < 2; s++) {
+      var side = s === 0 ? best.side : -best.side;
+      var out = toWorld(best.c, best.door, side * (HALF_W + 1.6)), gy = groundAt(out.x, out.z);
+      if (typeof World !== 'undefined' && World.fits && !World.fits(out.x, gy + halfY + 0.08, out.z, 0.36, halfY, 0.36)) continue;
+      var deck = Math.abs(gy - FLOOR) <= 0.45;
+      if (!pick || (deck && !pick.deck)) pick = { kind: 'leave', x: out.x, y: gy + halfY + 0.05, z: out.z, deck: deck };
+      if (deck) break;
+    }
+    return pick;
+  }
+
+  return { init: init, dispose: dispose, update: update, floorAt: floorAt, offer: offer,
     isActive: function () { return active; }, cars: function () { return cars; },
     head: function () { return { s: headS, v: headV }; }, schedule: function () { return sched; }, path: function () { return path; }, cfg: function () { return cfg; } };
 }
@@ -285,11 +349,65 @@ var Train = (function () {
     list = cfgs.map(function (c) { var t = makeTrain(c, sc); t.init(); return t; });
     return list.length > 0;
   }
-  function dispose() { list.forEach(function (t) { t.dispose(); }); list = []; }
-  function update(dt) { for (var i = 0; i < list.length; i++) list[i].update(dt); }
+  function dispose() { list.forEach(function (t) { t.dispose(); }); list = []; offerNow = null; prompt(''); }
+  /* ---- v2.17: the N prompt and the step (see makeTrain's offer) ---- */
+  var promptEl = null, shown = '', offerNow = null, offerAt = 0;
+  function halfOf() { return (typeof PlayerCtl !== 'undefined' && PlayerCtl.halfY) || 0.9; }
+  function currentOffer() {
+    if (!list.length || typeof PlayerCtl === 'undefined' || !PlayerCtl.alive) return null;
+    if (typeof Vehicles !== 'undefined' && Vehicles.mounted && Vehicles.mounted()) return null;
+    var h = halfOf(), board = null;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i].offer(PlayerCtl.pos, h);
+      if (o && o.kind === 'leave') return o;                 // the coach you stand in comes before one across the platform
+      if (o && (!board || o.d < board.d)) board = o;
+    }
+    return board;
+  }
+  function prompt(text) {
+    if (typeof document === 'undefined' || !document.body) return;
+    if (!promptEl) {
+      if (!text) return;
+      promptEl = document.createElement('div');
+      promptEl.id = 'train-prompt';
+      promptEl.style.cssText = 'position:fixed;left:50%;bottom:24%;transform:translateX(-50%);z-index:40;display:none;padding:8px 16px;background:rgba(10,14,20,.78);' +
+        'border:1px solid rgba(240,178,60,.45);color:#e8edf2;font:600 15px/1.2 system-ui,Segoe UI,Arial,sans-serif;letter-spacing:.06em;pointer-events:none;white-space:nowrap';
+      document.body.appendChild(promptEl);
+    }
+    if (text === shown) return;
+    shown = text;
+    promptEl.style.display = text ? 'block' : 'none';
+    if (text) promptEl.innerHTML = text;
+  }
+  function update(dt) {
+    for (var i = 0; i < list.length; i++) list[i].update(dt);
+    if (!list.length) return;
+    /* asked ten times a second, not every frame: leaving probes the ground twice */
+    var t = (typeof performance !== 'undefined') ? performance.now() : 0;
+    if (t - offerAt >= 100) {
+      offerAt = t;
+      var playing = typeof Net === 'undefined' || !Net.getPhase || Net.getPhase() === 'playing';
+      offerNow = playing ? currentOffer() : null;
+      var busy = typeof Vehicles !== 'undefined' && Vehicles.offering && Vehicles.offering();   // a car's own N prompt comes first
+      prompt(offerNow && !busy ? (offerNow.kind === 'board' ? 'N \u2014 BOARD <b style="color:#f0b23c">TRAIN</b>' : 'N \u2014 GET OFF <b style="color:#f0b23c">' + (offerNow.deck ? 'AT THE PLATFORM' : 'THE TRAIN') + '</b>') : '');
+    }
+  }
+  /* N: step aboard, or off. True when it did something. */
+  function use() {
+    var o = currentOffer();
+    if (!o) return false;
+    PlayerCtl.pos.set(o.x, o.y, o.z);
+    if (PlayerCtl.vel && PlayerCtl.vel.set) PlayerCtl.vel.set(0, 0, 0);
+    offerAt = 0;
+    try {
+      if (typeof AudioSys !== 'undefined' && AudioSys.step) AudioSys.step(null, false, false, 1);   // a boot on a metal floor
+      if (typeof UI !== 'undefined' && UI.toast) UI.toast(o.kind === 'board' ? 'ABOARD \u00b7 N to get off at a stop' : 'OFF THE TRAIN');
+    } catch (err) { /* cosmetic */ }
+    return true;
+  }
   function floorAt(pos, halfY) { for (var i = 0; i < list.length; i++) { var r = list[i].floorAt(pos, halfY); if (r) return r; } return null; }
   function first() { return list[0]; }
-  return { init: init, dispose: dispose, update: update, floorAt: floorAt,
+  return { init: init, dispose: dispose, update: update, floorAt: floorAt, use: use, offer: currentOffer,
     isActive: function () { return list.length > 0; },
     trains: function () { return list; },
     allCars: function () { var out = []; list.forEach(function (t) { out = out.concat(t.cars()); }); return out; },

@@ -64,14 +64,15 @@ for (const map of ['urbansmall', 'urban']) {
    first.) */
 const realRandom = Math.random;
 function seedRandom(s) { Math.random = () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-function world(mode, humanAt, seed) {
+function world(mode, humanAt, seed, mapId, humans) {
+  mapId = mapId || 'urbansmall';
   seedRandom(seed || 20261121);
   delete require.cache[require.resolve(path.join(ROOT, 'server/lib/botai.js'))];
   const clock = { t: 1000000 }, now = () => clock.t;
   const log = { shots: [], hits: [], noLos: 0, early: 0, prot: 0, toasts: [], kills: 0 };
-  const room = { code: 'TEST', state: 'playing', settings: { mode, map: 'urbansmall', killTarget: 0, minutes: 0 }, players: new Map(),
+  const room = { code: 'TEST', state: 'playing', settings: { mode, map: mapId, killTarget: 0, minutes: 0 }, players: new Map(),
                  teamKills: { a: 0, b: 0 }, startedAt: clock.t, snapKeyframe: false };
-  const nav = Nav.buildSync('urbansmall');
+  const nav = Nav.buildSync(mapId);
   const io = { to: () => ({ emit: (ev, d) => {
     if (ev === 'toast') log.toasts.push(d.msg);
     if (ev === 'shoot' && d.id.indexOf('bot_') === 0) {
@@ -83,7 +84,7 @@ function world(mode, humanAt, seed) {
       const k = b.ai.known.get(e.id); if (!k || !k.seenAt || clock.t - k.seenAt < AI.PROFILES[CFG.MODES[mode].bots].react[0] * 0.55 - 70) log.early++;
     }
   } }), sockets: { sockets: new Map() } };
-  const SP = CFG.MAPS_URBANSMALL.SPAWNS;
+  const SP = (CFG['MAPS_' + mapId.toUpperCase()] || { SPAWNS: CFG.SPAWNS }).SPAWNS;
   const spawnPlayer = (r, p) => {
     const c = SP.filter(s => s[3] === (p.team || 'b') || s[3] === 'n'), s = c[(Math.random() * c.length) | 0];
     p.pos = p.bot ? [s[0], 0.96, s[1]] : p.pos; p.hp = 100; p.armorLvl = 0; p.armorDur = 0; p.helmLvl = 0; p.alive = true; p.protUntil = clock.t + 2500; p.rd = {};
@@ -115,6 +116,9 @@ function world(mode, humanAt, seed) {
   const human = { id: 'human1', name: 'Tester', team: 'a', connected: true, alive: true, hp: 100, armorLvl: 0, armorDur: 0, helmLvl: 0, helmDur: 0, helmStops: 0,
     pos: [humanAt[0], humanAt[1] + 0.96, humanAt[2]], crouch: 0, mv: 0, ry: 0, rx: 0, protUntil: 0, rd: {}, kills: 0, deaths: 0, damage: 0, streak: 0, bestStreak: 0, assists: 0, history: [], lastShotAt: {}, shieldHp: 0 };
   room.players.set(human.id, human);
+  /* v2.17: a full squad, for the head count and the cost of it (they stand where they spawn) */
+  for (let hk = 1; hk < (humans || 1); hk++) { const sp = SP.filter(q => q[3] === 'a' || !q[3])[hk] || SP[hk];
+    room.players.set('human' + (hk + 1), Object.assign({}, human, { id: 'human' + (hk + 1), name: 'Mate' + hk, pos: [sp[0], 0.96, sp[1]], rd: {}, history: [], lastShotAt: {} })); }
   AI.onMatchStart(room);
   const step = (sec, each) => {
     const n = Math.round(sec * 15); let cost = 0;
@@ -137,7 +141,7 @@ for (const mode of ['bom', 'boh']) {
   const W = world(mode, centre);
   W.step(0.2);
   const bots = W.bots();
-  ok(bots.length === W.AI.PROFILES[diff].count(1) && bots.every(b => b.alive && b.team === 'b'), bots.length + ' operators field against one human, all on side B [damage pipeline: ' + (W.real ? 'combat.js' : 'plain') + ']');
+  ok(bots.length === CFG.botCountFor('urbansmall', 1) && bots.length === 8 && bots.every(b => b.alive && b.team === 'b'), bots.length + ' operators field against one human on Urban Small, all on side B [damage pipeline: ' + (W.real ? 'combat.js' : 'plain') + ']');
   ok(W.log.toasts.some(m => /BOT OPS/.test(m)), 'the room is told: "' + (W.log.toasts[0] || '') + '"');
   const start = bots.map(b => [b.ai.x, b.ai.z]), walked = bots.map(() => 0), last = bots.map(b => [b.ai.x, b.ai.z]), maxH = bots.map(() => 0), styles = {};
   const ms = W.step(120, () => bots.forEach((b, i) => {
@@ -297,6 +301,46 @@ const AI0 = require(path.join(ROOT, 'server/lib/botai.js'))({ CFG, io: { to: () 
 const guns = new Set(); Object.values(AI0.PERSONAS).forEach(p => p.all.concat(p.base).forEach(s => s.forEach(w => { if (CFG.WEAPONS[w]) guns.add(w); })));
 ok(guns.size >= 18, 'the operators’ armoury covers ' + guns.size + ' guns [' + [...guns].join(', ') + ']');
 ok(!['rocket', 'seeker', 'flamer', 'drone', 'emp', 'c4'].some(w => guns.has(w)), 'no rockets, flamethrowers or gear in an operator’s hands');
+
+
+/* ---------------- E. HOW MANY, WHERE, AND WHAT IT COSTS (v2.17) ----------------
+   Rahul: "Bot mode should be available in killhouse as well ... In urban big
+   map bot should be 20-25 at a given time to make it feel engaging, urban
+   small should have maximum 12 at a time, killhouse should have 6-8."
+   The numbers are the map's (world.config BOTOPS, CFG.botCountFor); this
+   plays 60 seconds of each with a solo player and with a squad of six, and
+   times every server tick. */
+console.log('--- E. operators per map, and the server tick ---');
+ok(['bom', 'boh'].every(m => CFG.MODES[m].mapAllow.join() === 'urbansmall,urban,killhouse') && CFG.mapFor('bom', 'killhouse') === 'killhouse' && CFG.mapFor('boh', 'kasbah') === 'urbansmall',
+  'Bot Ops may be played on Urban Small, Urban and the Killhouse (anything else falls back to Urban Small)');
+{
+  const want = { urban: [20, 25], urbansmall: [8, 12], killhouse: [6, 8] };
+  ok(Object.keys(want).every(m => CFG.botCountFor(m, 1) === want[m][0] && CFG.botCountFor(m, 6) === want[m][1] && [1, 2, 3, 4, 5, 6].every(h => CFG.botCountFor(m, h) >= want[m][0] && CFG.botCountFor(m, h) <= want[m][1] && (h === 1 || CFG.botCountFor(m, h) >= CFG.botCountFor(m, h - 1)))),
+    'the head count: Urban ' + [1, 2, 3, 4, 5, 6].map(h => CFG.botCountFor('urban', h)).join('/') + ', Urban Small ' + [1, 2, 3, 4, 5, 6].map(h => CFG.botCountFor('urbansmall', h)).join('/') + ', Killhouse ' + [1, 2, 3, 4, 5, 6].map(h => CFG.botCountFor('killhouse', h)).join('/') + ' for 1..6 humans');
+  const navK = Nav.buildSync('killhouse');
+  ok(navK.n > 5000 && navK.reachable / navK.n > 0.97, 'the Killhouse has a walk graph: ' + navK.n + ' nodes, ' + (100 * navK.reachable / navK.n).toFixed(0) + '% reachable');
+  for (const [mapId, humans] of [['killhouse', 1], ['killhouse', 6], ['urbansmall', 6], ['urban', 1], ['urban', 6]]) {
+    const nav = Nav.buildSync(mapId), SPm = (CFG['MAPS_' + mapId.toUpperCase()] || { SPAWNS: CFG.SPAWNS }).SPAWNS;
+    const at = SPm.filter(q => q[3] === 'a' || !q[3])[0] || SPm[0];
+    const W = world('boh', [at[0], 0, at[1]], 20261127, mapId, humans);
+    W.step(0.2);
+    const bots = W.bots(), last = bots.map(b => [b.ai.x, b.ai.z]), walked = bots.map(() => 0);
+    let worst = 0, over8 = 0, n = 0, sum = 0;
+    for (let i = 0; i < 15 * 60; i++) {
+      if (i % 30 === 0) for (const q of W.room.players.values()) if (!q.bot && q.alive) W.AI.onShot(W.room, q, 'ak47', false);   // the humans keep firing: nobody is idle
+      const ms = W.step(1 / 15);
+      n++; sum += ms; if (ms > worst) worst = ms; if (ms > 8) over8++;
+      bots.forEach((b, k) => { if (!b.alive) { last[k] = [b.ai.x, b.ai.z]; return; } const d = Math.hypot(b.ai.x - last[k][0], b.ai.z - last[k][1]); if (d < 3) walked[k] += d; last[k] = [b.ai.x, b.ai.z]; });
+    }
+    const moved = walked.filter(w => w > 20).length;
+    ok(bots.length === CFG.botCountFor(mapId, humans) && moved >= bots.length - 1,
+      mapId + ', ' + humans + ' human' + (humans > 1 ? 's' : '') + ': ' + bots.length + ' operators, ' + moved + ' of them on the move — ' + (sum / n).toFixed(2) + ' ms a tick, worst ' + worst.toFixed(1) + ' ms, ' + over8 + ' of ' + n + ' ticks over 8 ms');
+    ok(sum / n < 4, '  an average tick stays under 4 ms of a 66 ms tick (' + (sum / n).toFixed(2) + ')');
+  }
+  const src = require('fs').readFileSync(path.join(ROOT, 'server/lib/botai.js'), 'utf8');
+  ok(/const PATHS_PER_TICK = 2;/.test(src) && /if \(pathBudget <= 0\) \{ A\.pending = \[node, mode, tag\]; return true; \}/.test(src) && /pathBudget = PATHS_PER_TICK;/.test(src),
+    'the squad shares TWO route searches a tick (twenty operators used to be able to search in the same one: a 25 ms tick, measured); an operator that asks third keeps walking and asks again');
+}
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

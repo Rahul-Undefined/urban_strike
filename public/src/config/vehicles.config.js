@@ -31,6 +31,15 @@
     ramKill: 9,             // m/s at which it is a kill outright
     ramDmg: 9,              // damage per m/s below that
     useKey: 'KeyN', hornKey: 'KeyH', lightKey: 'KeyL', radioKey: 'KeyB',   // N in/out; while driving H is the horn and L the headlights
+    /* ===== v2.18 - EXPLOSIVES AND THE HULL =====
+       Rahul: "grenads damage the car too but doesnt damage the player inside
+       the car, 4 granade blasts the car with the players inside it."
+       An explosive that goes off within `reach` metres of a hull takes this
+       much off it, flat, and the people aboard take nothing from it — until
+       the hull is gone, and then everyone aboard is (v2.17). `frag` is a
+       quarter of a sedan, so by hull: bike 2, auto 3, SEDAN 4, bus 9, tank 26.
+       A mine is two frags; C4 beside a vehicle ends it. */
+    blast: { reach: 5, frag: 163, mine: 326, c4: 99999 },
     /* PETROL (Rahul: "petrol ho"). A tank holds 100; `burn` is units a second at full
        throttle (a third of that idling along). A vehicle is found with fuelMin..100
        in it. Empty: the engine dies and it coasts to a stop — it is still cover, and
